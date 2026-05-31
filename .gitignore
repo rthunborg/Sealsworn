@@ -1,0 +1,16 @@
+# BMAD runtime/install files can be restored on demand.
+_bmad/
+
+# Local dependencies and generated builds.
+node_modules/
+dist/
+build/
+
+# Local environment/secrets.
+.env
+.env.*
+!.env.example
+
+# OS/editor noise.
+.DS_Store
+Thumbs.db
