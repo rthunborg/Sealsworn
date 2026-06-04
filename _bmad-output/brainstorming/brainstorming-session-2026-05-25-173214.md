@@ -1856,6 +1856,6 @@ Further broad prototyping should pause until product documentation and architect
 
 The dedicated PM handoff has been created here:
 
-`C:\Users\user\Documents\Game\_bmad-output\brainstorming\pm-handoff-2026-05-29.md`
+`_bmad-output/brainstorming/pm-handoff-2026-05-29.md`
 
 Recommended next step: use the PM agent to create a Game Brief or PRD from the PM handoff and this full brainstorming artifact. After that, use the architect agent to decide technology stack, deterministic seed architecture, data-driven content format, save model, testing strategy, and mobile delivery path.

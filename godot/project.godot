@@ -1,0 +1,33 @@
+; Engine configuration file.
+; Godot 4.6.3 stable standard build.
+
+config_version=5
+
+[application]
+
+config/name="Sealsworn"
+run/main_scene="res://scenes/app/boot.tscn"
+config/features=PackedStringArray("4.6", "Mobile")
+config/icon="res://assets/art/ui/icons/icon_placeholder.svg"
+
+[autoload]
+
+GameSession="*res://scripts/autoloads/game_session.gd"
+SceneManager="*res://scripts/autoloads/scene_manager.gd"
+SaveManager="*res://scripts/autoloads/save_manager.gd"
+AudioManager="*res://scripts/autoloads/audio_manager.gd"
+Diagnostics="*res://scripts/autoloads/diagnostics.gd"
+
+[display]
+
+window/size/viewport_width=1080
+window/size/viewport_height=1920
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+textures/vram_compression/import_etc2_astc=true
+

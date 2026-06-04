@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GDD Validation: Sealsworn GDD</title>
+<style>
+  :root {
+    --bg: #fafaf9;
+    --surface: #ffffff;
+    --border: #e7e5e4;
+    --text: #1c1917;
+    --muted: #78716c;
+    --pass: #22c55e;
+    --warn: #eab308;
+    --fail: #ef4444;
+    --na: #94a3b8;
+    --sev-low: #64748b;
+    --sev-medium: #ca8a04;
+    --sev-high: #ea580c;
+    --sev-critical: #dc2626;
+    --grade-exc: #16a34a;
+    --grade-good: #65a30d;
+    --grade-fair: #d97706;
+    --grade-poor: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .container { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+
+  header.report-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+  .title h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  .title .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  .grade {
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    color: white;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .grade-excellent { background: var(--grade-exc); }
+  .grade-good { background: var(--grade-good); }
+  .grade-fair { background: var(--grade-fair); }
+  .grade-poor { background: var(--grade-poor); }
+
+  .synthesis {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--muted);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    color: var(--text);
+    font-size: 15px;
+  }
+  .synthesis:empty { display: none; }
+
+  .scoreboard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 24px;
+  }
+  .score-bar { margin: 0 0 14px; line-height: 0; }
+  .score-stats { display: flex; gap: 22px; font-size: 14px; flex-wrap: wrap; }
+  .score-stats span { display: inline-flex; align-items: center; gap: 6px; }
+  .score-stats .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-pass { background: var(--pass); }
+  .dot-warn { background: var(--warn); }
+  .dot-fail { background: var(--fail); }
+  .dot-na { background: var(--na); }
+  .total-count { margin-left: auto; color: var(--muted); }
+
+  section.category { margin-bottom: 16px; }
+  section.category details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  section.category summary {
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+  }
+  section.category summary::-webkit-details-marker { display: none; }
+  section.category summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 10px;
+    color: var(--muted);
+    transition: transform 0.15s ease;
+  }
+  section.category details[open] summary::before { transform: rotate(90deg); }
+  section.category summary h2 { display: inline; margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.005em; }
+  section.category .count { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 14px; }
+
+  article.finding { padding: 16px 20px; border-top: 1px solid var(--border); }
+  article.finding-fail { background: rgba(239, 68, 68, 0.025); }
+  article.finding header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .badge {
+    font-size: 10.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+  }
+  .badge-pass { background: rgba(34, 197, 94, 0.12); color: #15803d; }
+  .badge-warn { background: rgba(234, 179, 8, 0.14); color: #854d0e; }
+  .badge-fail { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+  .badge-na { background: rgba(148, 163, 184, 0.16); color: #475569; }
+  .badge-sev-low { background: rgba(100, 116, 139, 0.12); color: var(--sev-low); }
+  .badge-sev-medium { background: rgba(202, 138, 4, 0.14); color: var(--sev-medium); }
+  .badge-sev-high { background: rgba(234, 88, 12, 0.14); color: var(--sev-high); }
+  .badge-sev-critical { background: rgba(220, 38, 38, 0.14); color: var(--sev-critical); }
+  .finding-id { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .finding-title { margin: 0; font-size: 15px; font-weight: 500; flex: 1; min-width: 200px; }
+  .finding-location, .finding-note, .finding-fix { margin-top: 6px; font-size: 14px; color: var(--text); }
+  .finding-location strong, .finding-fix strong { color: var(--muted); font-weight: 500; }
+
+  footer.report-footer {
+    margin-top: 40px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  footer .meta { display: flex; gap: 24px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="report-header">
+      <div class="title">
+        <h1>Sealsworn GDD — GDD Validation Report</h1>
+        <div class="subtitle">_bmad-output/planning-artifacts/gdds/gdd-Game-2026-05-31/gdd.md</div>
+      </div>
+      <div class="grade grade-good">Good</div>
+    </header>
+
+    <div class="synthesis">The Sealsworn GDD is frozen for game architecture v0. Core fantasy, pillars, loop, mechanics, roguelike sections, MVP scope, platform target, and epic sequence align; remaining warnings are tuning/detail concerns that can be carried into architecture, story breakdown, and playtest planning.</div>
+
+    <div class="scoreboard">
+      <div class="score-bar"><svg width="480" height="22" viewBox="0 0 480 22" role="img" aria-label="Pass / warn / fail / n-a breakdown"><rect x="0" y="0" width="400.0" height="22" fill="#22c55e"/><rect x="400.0" y="0" width="80.0" height="22" fill="#eab308"/><rect x="480.0" y="0" width="0.0" height="22" fill="#ef4444"/><rect x="480.0" y="0" width="0.0" height="22" fill="#94a3b8"/></svg></div>
+      <div class="score-stats">
+        <span><span class="dot dot-pass"></span>15 pass</span>
+        <span><span class="dot dot-warn"></span>3 warn</span>
+        <span><span class="dot dot-fail"></span>0 fail</span>
+        <span><span class="dot dot-na"></span>0 n/a</span>
+        <span class="total-count">18 items checked</span>
+      </div>
+    </div>
+
+    <section class="category"><details open><summary><h2>Quality <span class="count">(6)</span></h2></summary><article class="finding finding-warn">
+<header>
+<span class="badge badge-status badge-warn">WARN</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">Q-1</span>
+<h3 class="finding-title">Information density</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:50, gdd.md:96, gdd.md:440, gdd.md:660; epics.md:36, epics.md:237</div>
+<div class="finding-note">Most sections carry design weight, but a few freeze-version phrases still use subjective success language such as fun, meaningful, and satisfying without a local observable definition.</div>
+<div class="finding-fix"><strong>Suggested fix:</strong> Keep the current text for architecture, but convert retained subjective phrases into playtest-observable criteria during tuning and story breakdown.</div>
+</article>
+<article class="finding finding-warn">
+<header>
+<span class="badge badge-status badge-warn">WARN</span>
+<span class="badge badge-severity badge-sev-medium">medium</span>
+<span class="finding-id">Q-2</span>
+<h3 class="finding-title">Measurability</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:547-555, gdd.md:625-664, gdd.md:698-705</div>
+<div class="finding-note">Combat has useful baseline numbers, but technical targets lack device tiers, memory or battery budget, and measurement method. Several economy, node-weight, passive, boss, and outpost values are explicitly deferred.</div>
+<div class="finding-fix"><strong>Suggested fix:</strong> Before production planning, add target device classes and measurement methods. Keep deferred economy and boss numbers as story/tuning work unless architecture needs a range now.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">Q-3</span>
+<h3 class="finding-title">Traceability</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:24, gdd.md:70-92, gdd.md:117-175, gdd.md:608-619; epics.md:17-30</div>
+<div class="finding-note">The chain from core fantasy to pillars, loop, mechanics, and development epics is intact. Major mechanics map cleanly into at least one epic.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">Q-4</span>
+<h3 class="finding-title">Core gameplay concrete</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:70-113</div>
+<div class="finding-note">The GDD has four distinct pillars, a complete repeatable core loop, and testable MVP win/loss conditions.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">Q-5</span>
+<h3 class="finding-title">Out of Scope explicit</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:668-685; epics.md:48-53, epics.md:75-80, epics.md:100-104, epics.md:125-129, epics.md:149-153, epics.md:174-178, epics.md:198-202, epics.md:223-227, epics.md:247-252, epics.md:272-276</div>
+<div class="finding-note">MVP non-goals are explicit in the GDD and each epic carries local out-of-scope boundaries.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">Q-6</span>
+<h3 class="finding-title">Dual-audience and self-contained</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:20-705; epics.md:1-280</div>
+<div class="finding-note">The documents are readable by design, production, and architecture readers. Sections are extractable via consistent headings and concrete tables/bullets.</div>
+</article></details></section>
+<section class="category"><details open><summary><h2>Discipline <span class="count">(4)</span></h2></summary><article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">D-1</span>
+<h3 class="finding-title">No engine-implementation leakage</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:117-189, gdd.md:545-599</div>
+<div class="finding-note">The GDD specifies player-facing mechanics, platform experience, performance targets, and assets without engine APIs, class/node names, shader internals, or code patterns.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">D-2</span>
+<h3 class="finding-title">Input fidelity</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> project-context.md:1-18; game-brief.md:35, game-brief.md:168-194; gdd.md:559-571, gdd.md:680-681, gdd.md:695-699; decision-log.md:235-243</div>
+<div class="finding-note">Core fantasy, guardrails, pillars, mechanics, scope, and narrative decisions are preserved. Source references now use repo-relative paths, and the MVP target is clarified as iOS/Android mobile and tablet plus Windows desktop/laptop with a native mobile packaging path preserved from architecture.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">D-3</span>
+<h3 class="finding-title">Technical Specifications stay GDD-level</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:545-599</div>
+<div class="finding-note">Technical specifications stay at GDD level: performance, platform behavior, accessibility, offline stance, save/resume, and asset budget.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">D-4</span>
+<h3 class="finding-title">No innovation theater</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:36-41</div>
+<div class="finding-note">The USPs are concrete design differentiators rather than unsupported novelty claims.</div>
+</article></details></section>
+<section class="category"><details open><summary><h2>Structural integrity <span class="count">(5)</span></h2></summary><article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">S-1</span>
+<h3 class="finding-title">Terminology integrity</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:24-705; epics.md:1-280; decision-log.md:1-229</div>
+<div class="finding-note">Game-specific terms are consistent across GDD, epics, and decision log: Oath Shards, Echoes, Seal Fragments, Wardenwork, Consume/Destroy, Larval Avatar, affinities, and class names remain stable.</div>
+</article>
+<article class="finding finding-warn">
+<header>
+<span class="badge badge-status badge-warn">WARN</span>
+<span class="badge badge-severity badge-sev-medium">medium</span>
+<span class="finding-id">S-2</span>
+<h3 class="finding-title">Epic continuity</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:608-619; epics.md:17-30, epics.md:34-280; decision-log.md:212-216</div>
+<div class="finding-note">Epic titles, sequence, scope, and playable outcomes match between the GDD, epics.md, and decision log. The epics do not yet contain explicit high-level story slices; the current Includes bullets are adequate for architecture but not a final story backlog.</div>
+<div class="finding-fix"><strong>Suggested fix:</strong> Proceed to architecture with the current epics. Expand each epic into high-level stories during gds-create-epics-and-stories.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">S-3</span>
+<h3 class="finding-title">Assumptions Index</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:689-705</div>
+<div class="finding-note">There are no inline [ASSUMPTION] tags, and the Assumptions and Dependencies section clearly lists remaining production design details.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">S-4</span>
+<h3 class="finding-title">Template completeness</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:1-705</div>
+<div class="finding-note">No unfilled template variables remain, and all canonical GDD sections are present.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">S-5</span>
+<h3 class="finding-title">Open-items density</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:696-705</div>
+<div class="finding-note">No phase-blocking design decisions remain. The remaining production design details are expected follow-on work and do not block architecture.</div>
+</article></details></section>
+<section class="category"><details open><summary><h2>Genre and game-type <span class="count">(2)</span></h2></summary><article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">G-1</span>
+<h3 class="finding-title">Genre compliance</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:193-406; genre-complexity.csv:4</div>
+<div class="finding-note">Roguelike is high complexity, and the GDD includes the expected roguelike sections: run structure, procedural generation, permadeath/meta progression, item and upgrade system, character selection, and difficulty modifiers. Numeric balance-band depth is carried by Q-2 as a later tuning warning.</div>
+</article>
+<article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">G-2</span>
+<h3 class="finding-title">Game-type cross-reference</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:1-16, gdd.md:193-259; game-types.csv:8</div>
+<div class="finding-note">The content strongly matches the roguelike game type, has an appropriate Roguelike Specific Elements section, and now uses the canonical frontmatter id roguelike.</div>
+</article></details></section>
+<section class="category"><details open><summary><h2>Scope-gated <span class="count">(1)</span></h2></summary><article class="finding finding-pass">
+<header>
+<span class="badge badge-status badge-pass">PASS</span>
+<span class="badge badge-severity badge-sev-low">low</span>
+<span class="finding-id">STK-1</span>
+<h3 class="finding-title">Required sections</h3>
+</header>
+<div class="finding-location"><strong>Location:</strong> gdd.md:20-705; epics.md:1-280</div>
+<div class="finding-note">The GDD has enough design detail for game architecture: loop, mechanics, generation constraints, save/resume expectations, platform/package target, asset budget, and epics are present.</div>
+</article></details></section>
+
+    <footer class="report-footer">
+      <div class="meta">
+        <span>Checklist: .agents/skills/gds-gdd/assets/gdd-validation-checklist.md</span>
+        <span>Generated: 2026-06-01T14:21:11+02:00</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

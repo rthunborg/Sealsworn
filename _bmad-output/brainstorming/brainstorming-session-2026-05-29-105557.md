@@ -1,8 +1,8 @@
 ---
 stepsCompleted: [1, 2, 3, 4]
 inputDocuments:
-  - 'C:\Users\user\Documents\Game\_bmad-output\brainstorming\brainstorming-session-2026-05-25-173214.md'
-  - 'C:\Users\user\Documents\Game\_bmad-output\brainstorming\pm-handoff-2026-05-29.md'
+  - '_bmad-output/brainstorming/brainstorming-session-2026-05-25-173214.md'
+  - '_bmad-output/brainstorming/pm-handoff-2026-05-29.md'
 session_topic: 'Narrative spine and MVP story promise for the fantasy turn-based roguelite'
 session_goals: 'Create a story frame that explains why the player enters forward-only procedural levels, why repeated runs and meta progression make sense, why the end bosses matter, and which other MVP-level design areas remain unsettled enough to address before PM/PRD work.'
 working_title: 'Sealsworn'

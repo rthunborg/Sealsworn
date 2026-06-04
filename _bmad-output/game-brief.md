@@ -1,7 +1,7 @@
 ---
 stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 inputDocuments:
-  - "C:\\Users\\user\\Documents\\Game\\_bmad-output\\brainstorming-game-brief-handoff-2026-05-29.md"
+  - "_bmad-output/brainstorming-game-brief-handoff-2026-05-29.md"
 documentCounts:
   brainstorming: 1
   research: 0
@@ -478,7 +478,7 @@ Primary stakeholder input came from Rasmus through this brief workflow, supporte
 
 Input document:
 
-- `C:\Users\user\Documents\Game\_bmad-output\brainstorming-game-brief-handoff-2026-05-29.md`
+- `_bmad-output/brainstorming-game-brief-handoff-2026-05-29.md`
 
 Reference and competitor games discussed:
 
