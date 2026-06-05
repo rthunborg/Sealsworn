@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-05T19:34:53+02:00
+# last_updated: 2026-06-05T22:28:26+02:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - No UI-heavy scene work should begin from this status file.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-05T19:34:53+02:00
+last_updated: 2026-06-05T22:28:26+02:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -50,7 +50,7 @@ development_status:
   1-1-production-godot-project-and-headless-test-harness: done
   1-2-tactical-domain-state-and-board-model: done
   1-3-actionresult-and-domain-event-foundation: done
-  1-4-named-rng-streams-for-deterministic-gameplay: review
+  1-4-named-rng-streams-for-deterministic-gameplay: done
   1-5-tactical-snapshot-serialization-boundary: backlog
   1-6-movecommand-with-movement-validation: backlog
   1-7-fog-line-of-sight-and-explored-memory: backlog

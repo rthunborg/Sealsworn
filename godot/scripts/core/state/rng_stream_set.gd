@@ -10,6 +10,7 @@ const STREAM_LOOT := &"loot"
 const STREAM_REWARDS := &"rewards"
 const STREAM_EVENTS := &"events"
 const STREAM_COSMETIC := &"cosmetic"
+const MAX_CONSUMER_CONTEXT_DEPTH: int = 16
 
 var _root_seed: int = 0
 var _streams: Dictionary = {}
@@ -56,20 +57,28 @@ func rand_int(stream_name: StringName, minimum: int, maximum: int, consumer_cont
 			"minimum": minimum,
 			"maximum": maximum
 		})
+	var context_result: ActionResult = _try_copy_serializable_dictionary(consumer_context)
+	if context_result.is_error():
+		return context_result
+	var copied_context: Dictionary = context_result.metadata.get("value")
 	var state_before: int = rng.state
 	var value: int = rng.randi_range(minimum, maximum)
 	var state_after: int = rng.state
-	return ActionResult.ok([], _build_draw_metadata(stream_name, &"int", value, state_before, state_after, consumer_context))
+	return ActionResult.ok([], _build_draw_metadata(stream_name, &"int", value, state_before, state_after, copied_context))
 
 
 func rand_float(stream_name: StringName, consumer_context: Dictionary = {}) -> ActionResult:
 	var rng: RandomNumberGenerator = _get_stream_or_null(stream_name)
 	if rng == null:
 		return ActionResult.error(&"unknown_rng_stream", {"stream": String(stream_name)})
+	var context_result: ActionResult = _try_copy_serializable_dictionary(consumer_context)
+	if context_result.is_error():
+		return context_result
+	var copied_context: Dictionary = context_result.metadata.get("value")
 	var state_before: int = rng.state
 	var value: float = rng.randf()
 	var state_after: int = rng.state
-	return ActionResult.ok([], _build_draw_metadata(stream_name, &"float", value, state_before, state_after, consumer_context))
+	return ActionResult.ok([], _build_draw_metadata(stream_name, &"float", value, state_before, state_after, copied_context))
 
 
 func try_rand_int(stream_name: StringName, minimum: int, maximum: int, consumer_context: Dictionary = {}) -> ActionResult:
@@ -150,7 +159,7 @@ func _get_stream_or_null(stream_name: StringName) -> RandomNumberGenerator:
 	return _streams[stream_name] as RandomNumberGenerator
 
 
-func _build_draw_metadata(stream_name: StringName, draw_type: StringName, value: Variant, state_before: int, state_after: int, consumer_context: Dictionary) -> Dictionary:
+func _build_draw_metadata(stream_name: StringName, draw_type: StringName, value: Variant, state_before: int, state_after: int, copied_context: Dictionary) -> Dictionary:
 	var draw_index: int = int(_draw_indexes.get(stream_name, 0))
 	_draw_indexes[stream_name] = draw_index + 1
 	return {
@@ -160,7 +169,7 @@ func _build_draw_metadata(stream_name: StringName, draw_type: StringName, value:
 		"state_before": state_before,
 		"state_after": state_after,
 		"draw_type": String(draw_type),
-		"consumer_context": _copy_serializable_dictionary(consumer_context)
+		"consumer_context": copied_context
 	}
 
 
@@ -190,25 +199,46 @@ static func _stable_stream_hash(stream_name: StringName) -> int:
 	return hash_value
 
 
-static func _copy_serializable_dictionary(source: Dictionary) -> Dictionary:
+static func _try_copy_serializable_dictionary(source: Dictionary) -> ActionResult:
+	var result: Dictionary = _copy_serializable_dictionary(source, 0)
+	if result.get("ok") == false:
+		return ActionResult.error(&"invalid_rng_consumer_context", {
+			"reason": str(result.get("reason", "invalid_context"))
+		})
+	return ActionResult.ok([], {"value": result.get("value", {})})
+
+
+static func _copy_serializable_dictionary(source: Dictionary, depth: int) -> Dictionary:
+	if depth > MAX_CONSUMER_CONTEXT_DEPTH:
+		return {"ok": false, "reason": "max_depth_exceeded"}
+
 	var result: Dictionary = {}
 	for key: Variant in source.keys():
 		var copied_key: Variant = _copy_serializable_key(key)
 		if copied_key == null:
 			continue
 		var value: Variant = source[key]
-		if not _is_serializable_value(value):
+		var copied_value: Dictionary = _copy_serializable_value(value, depth + 1)
+		if copied_value.get("ok") == false:
+			return copied_value
+		if not bool(copied_value.get("accepted", false)):
 			continue
-		result[copied_key] = _copy_serializable_value(value)
-	return result
+		result[copied_key] = copied_value.get("value")
+	return {"ok": true, "accepted": true, "value": result}
 
 
-static func _copy_serializable_array(source: Array) -> Array:
+static func _copy_serializable_array(source: Array, depth: int) -> Dictionary:
+	if depth > MAX_CONSUMER_CONTEXT_DEPTH:
+		return {"ok": false, "reason": "max_depth_exceeded"}
+
 	var result: Array = []
 	for item: Variant in source:
-		if _is_serializable_value(item):
-			result.append(_copy_serializable_value(item))
-	return result
+		var copied_item: Dictionary = _copy_serializable_value(item, depth + 1)
+		if copied_item.get("ok") == false:
+			return copied_item
+		if bool(copied_item.get("accepted", false)):
+			result.append(copied_item.get("value"))
+	return {"ok": true, "accepted": true, "value": result}
 
 
 static func _copy_serializable_key(key: Variant) -> Variant:
@@ -223,23 +253,18 @@ static func _copy_serializable_key(key: Variant) -> Variant:
 			return null
 
 
-static func _copy_serializable_value(value: Variant) -> Variant:
+static func _copy_serializable_value(value: Variant, depth: int) -> Dictionary:
+	if depth > MAX_CONSUMER_CONTEXT_DEPTH:
+		return {"ok": false, "reason": "max_depth_exceeded"}
+
 	match typeof(value):
 		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
-			return value
+			return {"ok": true, "accepted": true, "value": value}
 		TYPE_STRING_NAME:
-			return String(value)
+			return {"ok": true, "accepted": true, "value": String(value)}
 		TYPE_ARRAY:
-			return _copy_serializable_array(value)
+			return _copy_serializable_array(value, depth + 1)
 		TYPE_DICTIONARY:
-			return _copy_serializable_dictionary(value)
+			return _copy_serializable_dictionary(value, depth + 1)
 		_:
-			return null
-
-
-static func _is_serializable_value(value: Variant) -> bool:
-	match typeof(value):
-		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME, TYPE_ARRAY, TYPE_DICTIONARY:
-			return true
-		_:
-			return false
+			return {"ok": true, "accepted": false}

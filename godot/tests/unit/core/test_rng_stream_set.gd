@@ -16,6 +16,7 @@ func run() -> Dictionary:
 	_try_restore_replays_next_roll_for_every_stream()
 	_invalid_stream_names_do_not_mutate_known_streams()
 	_invalid_int_ranges_do_not_mutate_or_emit_draw_audit()
+	_cyclic_consumer_context_does_not_mutate_or_emit_draw_audit()
 	_deterministic_gameplay_draw_sequence_replays_from_snapshot()
 	_cosmetic_draws_do_not_change_gameplay_draw_replay()
 	return result()
@@ -227,6 +228,21 @@ func _invalid_int_ranges_do_not_mutate_or_emit_draw_audit() -> void:
 	var valid_single_value: ActionResult = streams.rand_int(RngStreamSet.STREAM_COMBAT, 4, 4, {"system": "combat"})
 	assert_true(valid_single_value.succeeded, "Equal integer range bounds should remain a valid deterministic draw.")
 	assert_equal(valid_single_value.metadata.get("value"), 4, "Equal integer range bounds should return the bound value.")
+
+
+func _cyclic_consumer_context_does_not_mutate_or_emit_draw_audit() -> void:
+	var streams: RngStreamSet = RngStreamSet.new(1122)
+	var consumer_context: Dictionary = {"system": "combat"}
+	consumer_context["self"] = consumer_context
+	var before: Dictionary = streams.to_snapshot()
+
+	var result_value: ActionResult = streams.rand_int(RngStreamSet.STREAM_COMBAT, 1, 6, consumer_context)
+	var after: Dictionary = streams.to_snapshot()
+
+	assert_true(result_value.is_error(), "Cyclic RNG consumer context should return an explicit error.")
+	assert_equal(result_value.error_code, &"invalid_rng_consumer_context", "Cyclic RNG consumer context should use a stable error code.")
+	assert_false(_metadata_has_draw_audit(result_value.metadata), "Cyclic RNG consumer context should not emit successful draw audit metadata.")
+	assert_equal(after, before, "Cyclic RNG consumer context should not mutate any named stream.")
 
 
 func _deterministic_gameplay_draw_sequence_replays_from_snapshot() -> void:

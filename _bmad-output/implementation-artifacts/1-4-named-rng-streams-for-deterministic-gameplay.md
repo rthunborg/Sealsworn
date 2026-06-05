@@ -4,14 +4,14 @@ baseline_commit: dcf393e4c15a93a219a36023b4550b091a6f3fca
 
 # Story 1.4: Named RNG Streams for Deterministic Gameplay
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
 ## Story
 
-As a developer,  
-I want named RNG streams derived from a root seed,  
+As a developer,
+I want named RNG streams derived from a root seed,
 so that gameplay-affecting randomness remains reproducible and isolated by system.
 
 ## Acceptance Criteria
@@ -62,6 +62,13 @@ so that gameplay-affecting randomness remains reproducible and isolated by syste
   - [x] Update `RunSnapshot` tests only if the RNG snapshot schema requires stronger `rng_streams` round-trip coverage now; broader tactical snapshot work belongs to Story 1.5.
   - [x] Run `godot --version` and the full headless suite before marking tasks complete.
   - [x] Run `git diff --check` before moving the story to review.
+
+### Review Findings
+
+- [x] [Review][Decision][Dismissed] Choose how to handle pre-draw-index RNG snapshots under schema 1 - dismissed during review: there are no production saves or real legacy snapshots yet, and Story 1.4 intentionally makes missing `draw_index` invalid for the new RNG audit contract.
+- [x] [Review][Patch] Failed RNG restore can desync `GameSession` seed from stream state [`godot/scripts/autoloads/game_session.gd:24`]
+- [x] [Review][Patch] `git diff --check` fails on trailing whitespace in this story file [`_bmad-output/implementation-artifacts/1-4-named-rng-streams-for-deterministic-gameplay.md:13`]
+- [x] [Review][Patch] Cyclic `consumer_context` can recurse after RNG state mutates [`godot/scripts/core/state/rng_stream_set.gd:153`]
 
 ## Dev Notes
 
@@ -253,6 +260,7 @@ Codex GPT-5
 
 ### Debug Log References
 
+- 2026-06-05: Review patches applied: `GameSession.restore_rng_snapshot()` now honors failed restore results, cyclic RNG consumer contexts fail before state mutation, and story trailing whitespace was removed; required validation passed.
 - 2026-06-05: Added focused `RunSnapshot` RNG stream dictionary round-trip coverage; headless suite passed.
 - 2026-06-05: Final validation passed: `godot --version` returned `4.6.3.stable.official.7d41c59c4`; full headless suite passed; `git diff --check` exited 0 with line-ending warnings only.
 - 2026-06-05: Added deterministic gameplay RNG replay and cosmetic-isolation fixtures; headless suite passed.
