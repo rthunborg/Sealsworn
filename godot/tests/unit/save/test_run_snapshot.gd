@@ -1,6 +1,7 @@
 extends "res://tests/unit/test_case.gd"
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 
 func run() -> Dictionary:
@@ -8,6 +9,7 @@ func run() -> Dictionary:
 	_unsupported_schema_is_rejected()
 	_seed_progression_flags_are_explicit()
 	_run_state_contract_round_trips()
+	_rng_stream_dictionary_round_trips()
 	return result()
 
 
@@ -75,3 +77,23 @@ func _run_state_contract_round_trips() -> void:
 	assert_equal(parsed.inventory.size(), 1, "RunSnapshot should preserve inventory state.")
 	assert_equal(parsed.gold, 12, "RunSnapshot should preserve run currency.")
 	assert_equal(parsed.meta_progression.get("unlock_ids"), ["starter"], "RunSnapshot should preserve meta/profile data separately.")
+
+
+func _rng_stream_dictionary_round_trips() -> void:
+	var streams: RngStreamSet = RngStreamSet.new(9876)
+	streams.rand_int(RngStreamSet.STREAM_COMBAT, 1, 6, {"system": "combat"})
+	streams.rand_float(RngStreamSet.STREAM_REWARDS, {"system": "rewards"})
+
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.rng_streams = streams.to_snapshot()
+
+	var result_value: ActionResult = RunSnapshot.parse(snapshot.to_dictionary())
+	var parsed: RunSnapshot = result_value.metadata.get("snapshot")
+	var parsed_streams: Dictionary = parsed.rng_streams.get("streams")
+
+	assert_true(result_value.succeeded, "RunSnapshot should parse RNG stream dictionaries.")
+	assert_equal(parsed.rng_streams.get("root_seed"), 9876, "RunSnapshot should preserve RNG root seed.")
+	assert_equal(parsed_streams.get("combat").get("draw_index"), 1, "RunSnapshot should preserve combat draw index.")
+	assert_equal(parsed_streams.get("rewards").get("draw_index"), 1, "RunSnapshot should preserve rewards draw index.")
+	assert_true(parsed_streams.get("combat").has("seed"), "RunSnapshot should preserve RNG stream seed.")
+	assert_true(parsed_streams.get("combat").has("state"), "RunSnapshot should preserve RNG stream state.")

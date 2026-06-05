@@ -13,6 +13,7 @@ const STREAM_COSMETIC := &"cosmetic"
 
 var _root_seed: int = 0
 var _streams: Dictionary = {}
+var _draw_indexes: Dictionary = {}
 
 func _init(new_root_seed: int = 0) -> void:
 	configure(new_root_seed)
@@ -33,36 +34,50 @@ static func required_streams() -> Array[StringName]:
 func configure(new_root_seed: int) -> void:
 	_root_seed = new_root_seed
 	_streams.clear()
+	_draw_indexes.clear()
 	for stream_name: StringName in required_streams():
 		var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 		rng.seed = _derive_seed(_root_seed, stream_name)
 		_streams[stream_name] = rng
+		_draw_indexes[stream_name] = 0
 
 
 func has_stream(stream_name: StringName) -> bool:
 	return _streams.has(stream_name)
 
 
-func rand_int(stream_name: StringName, minimum: int, maximum: int) -> ActionResult:
+func rand_int(stream_name: StringName, minimum: int, maximum: int, consumer_context: Dictionary = {}) -> ActionResult:
 	var rng: RandomNumberGenerator = _get_stream_or_null(stream_name)
 	if rng == null:
 		return ActionResult.error(&"unknown_rng_stream", {"stream": String(stream_name)})
-	return ActionResult.ok([], {"value": rng.randi_range(minimum, maximum)})
+	if minimum > maximum:
+		return ActionResult.error(&"invalid_rng_range", {
+			"stream": String(stream_name),
+			"minimum": minimum,
+			"maximum": maximum
+		})
+	var state_before: int = rng.state
+	var value: int = rng.randi_range(minimum, maximum)
+	var state_after: int = rng.state
+	return ActionResult.ok([], _build_draw_metadata(stream_name, &"int", value, state_before, state_after, consumer_context))
 
 
-func rand_float(stream_name: StringName) -> ActionResult:
+func rand_float(stream_name: StringName, consumer_context: Dictionary = {}) -> ActionResult:
 	var rng: RandomNumberGenerator = _get_stream_or_null(stream_name)
 	if rng == null:
 		return ActionResult.error(&"unknown_rng_stream", {"stream": String(stream_name)})
-	return ActionResult.ok([], {"value": rng.randf()})
+	var state_before: int = rng.state
+	var value: float = rng.randf()
+	var state_after: int = rng.state
+	return ActionResult.ok([], _build_draw_metadata(stream_name, &"float", value, state_before, state_after, consumer_context))
 
 
-func try_rand_int(stream_name: StringName, minimum: int, maximum: int) -> ActionResult:
-	return rand_int(stream_name, minimum, maximum)
+func try_rand_int(stream_name: StringName, minimum: int, maximum: int, consumer_context: Dictionary = {}) -> ActionResult:
+	return rand_int(stream_name, minimum, maximum, consumer_context)
 
 
-func try_rand_float(stream_name: StringName) -> ActionResult:
-	return rand_float(stream_name)
+func try_rand_float(stream_name: StringName, consumer_context: Dictionary = {}) -> ActionResult:
+	return rand_float(stream_name, consumer_context)
 
 
 func to_snapshot() -> Dictionary:
@@ -71,7 +86,8 @@ func to_snapshot() -> Dictionary:
 		var rng: RandomNumberGenerator = _streams[stream_name] as RandomNumberGenerator
 		stream_states[String(stream_name)] = {
 			"seed": rng.seed,
-			"state": rng.state
+			"state": rng.state,
+			"draw_index": int(_draw_indexes.get(stream_name, 0))
 		}
 	return {
 		"root_seed": _root_seed,
@@ -79,25 +95,80 @@ func to_snapshot() -> Dictionary:
 	}
 
 
-func restore(snapshot: Dictionary) -> void:
-	_root_seed = int(snapshot.get("root_seed", 0))
-	configure(_root_seed)
+func try_restore(snapshot: Dictionary) -> ActionResult:
+	if not snapshot.has("root_seed") or not snapshot.get("root_seed") is int:
+		return _snapshot_error(&"missing_or_invalid_root_seed")
+	if not snapshot.has("streams") or not snapshot.get("streams") is Dictionary:
+		return _snapshot_error(&"missing_or_invalid_streams")
 
-	var stream_states: Dictionary = snapshot.get("streams", {})
+	var restored_streams: Dictionary = {}
+	var restored_draw_indexes: Dictionary = {}
+	var stream_states: Dictionary = snapshot.get("streams")
+
 	for stream_name: StringName in required_streams():
 		var stream_key: String = String(stream_name)
 		if not stream_states.has(stream_key):
-			continue
-		var rng_state: Dictionary = stream_states[stream_key]
-		var rng: RandomNumberGenerator = _streams[stream_name] as RandomNumberGenerator
-		rng.seed = int(rng_state.get("seed", rng.seed))
-		rng.state = int(rng_state.get("state", rng.state))
+			return _snapshot_error(&"missing_required_stream", stream_key)
+
+		var stream_state_value: Variant = stream_states[stream_key]
+		if not stream_state_value is Dictionary:
+			return _snapshot_error(&"invalid_stream_state", stream_key)
+
+		var stream_state: Dictionary = stream_state_value
+		if not stream_state.has("seed") or not stream_state.get("seed") is int:
+			return _snapshot_error(&"invalid_stream_seed", stream_key)
+		if not stream_state.has("state") or not stream_state.get("state") is int:
+			return _snapshot_error(&"invalid_stream_state_value", stream_key)
+		if not stream_state.has("draw_index") or not stream_state.get("draw_index") is int:
+			return _snapshot_error(&"invalid_stream_draw_index", stream_key)
+
+		var draw_index: int = int(stream_state.get("draw_index"))
+		if draw_index < 0:
+			return _snapshot_error(&"invalid_stream_draw_index", stream_key)
+
+		var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+		rng.seed = int(stream_state.get("seed"))
+		rng.state = int(stream_state.get("state"))
+		restored_streams[stream_name] = rng
+		restored_draw_indexes[stream_name] = draw_index
+
+	_root_seed = int(snapshot.get("root_seed"))
+	_streams = restored_streams
+	_draw_indexes = restored_draw_indexes
+	return ActionResult.ok([], {"root_seed": _root_seed})
+
+
+func restore(snapshot: Dictionary) -> void:
+	var result: ActionResult = try_restore(snapshot)
+	if result.is_error():
+		push_error("RngStreamSet restore failed: %s" % String(result.error_code))
 
 
 func _get_stream_or_null(stream_name: StringName) -> RandomNumberGenerator:
 	if not _streams.has(stream_name):
 		return null
 	return _streams[stream_name] as RandomNumberGenerator
+
+
+func _build_draw_metadata(stream_name: StringName, draw_type: StringName, value: Variant, state_before: int, state_after: int, consumer_context: Dictionary) -> Dictionary:
+	var draw_index: int = int(_draw_indexes.get(stream_name, 0))
+	_draw_indexes[stream_name] = draw_index + 1
+	return {
+		"value": value,
+		"stream_name": String(stream_name),
+		"draw_index": draw_index,
+		"state_before": state_before,
+		"state_after": state_after,
+		"draw_type": String(draw_type),
+		"consumer_context": _copy_serializable_dictionary(consumer_context)
+	}
+
+
+func _snapshot_error(reason: StringName, stream_name: String = "") -> ActionResult:
+	var metadata: Dictionary = {"reason": String(reason)}
+	if not stream_name.is_empty():
+		metadata["stream_name"] = stream_name
+	return ActionResult.error(&"invalid_rng_snapshot", metadata)
 
 
 static func _derive_seed(base_seed: int, stream_name: StringName) -> int:
@@ -117,3 +188,58 @@ static func _stable_stream_hash(stream_name: StringName) -> int:
 	if hash_value == 0:
 		return 1
 	return hash_value
+
+
+static func _copy_serializable_dictionary(source: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for key: Variant in source.keys():
+		var copied_key: Variant = _copy_serializable_key(key)
+		if copied_key == null:
+			continue
+		var value: Variant = source[key]
+		if not _is_serializable_value(value):
+			continue
+		result[copied_key] = _copy_serializable_value(value)
+	return result
+
+
+static func _copy_serializable_array(source: Array) -> Array:
+	var result: Array = []
+	for item: Variant in source:
+		if _is_serializable_value(item):
+			result.append(_copy_serializable_value(item))
+	return result
+
+
+static func _copy_serializable_key(key: Variant) -> Variant:
+	match typeof(key):
+		TYPE_STRING:
+			return key
+		TYPE_STRING_NAME:
+			return String(key)
+		TYPE_INT:
+			return key
+		_:
+			return null
+
+
+static func _copy_serializable_value(value: Variant) -> Variant:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+			return value
+		TYPE_STRING_NAME:
+			return String(value)
+		TYPE_ARRAY:
+			return _copy_serializable_array(value)
+		TYPE_DICTIONARY:
+			return _copy_serializable_dictionary(value)
+		_:
+			return null
+
+
+static func _is_serializable_value(value: Variant) -> bool:
+	match typeof(value):
+		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING, TYPE_STRING_NAME, TYPE_ARRAY, TYPE_DICTIONARY:
+			return true
+		_:
+			return false
