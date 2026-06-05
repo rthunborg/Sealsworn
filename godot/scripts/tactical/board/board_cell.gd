@@ -24,8 +24,16 @@ func is_occupied() -> bool:
 	return occupant_id != &""
 
 
+func terrain_blocks_occupancy() -> bool:
+	return terrain == Terrain.WALL
+
+
+func blocks_line_of_sight() -> bool:
+	return terrain == Terrain.WALL
+
+
 func blocks_movement() -> bool:
-	return terrain == Terrain.WALL or is_occupied()
+	return terrain_blocks_occupancy() or is_occupied()
 
 
 func to_dictionary() -> Dictionary:

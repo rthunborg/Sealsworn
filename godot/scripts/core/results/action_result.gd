@@ -23,6 +23,8 @@ static func error(new_error_code: StringName, new_metadata: Dictionary = {}) -> 
 	var result: ActionResult = load("res://scripts/core/results/action_result.gd").new()
 	result.succeeded = false
 	result.error_code = new_error_code
+	if not _is_valid_error_code(result.error_code):
+		result.error_code = &"invalid_error_code"
 	result.metadata = new_metadata.duplicate(true)
 	return result
 
@@ -33,3 +35,20 @@ func is_error() -> bool:
 
 func has_events() -> bool:
 	return not events.is_empty()
+
+
+static func _is_valid_error_code(value: StringName) -> bool:
+	var text: String = String(value)
+	if text.is_empty():
+		return false
+	if text.strip_edges() != text:
+		return false
+	if text != text.to_lower():
+		return false
+
+	var invalid_fragments: Array[String] = [" ", ".", ":", ";", "-", "/", "\\", "'", "\""]
+	for fragment: String in invalid_fragments:
+		if text.contains(fragment):
+			return false
+
+	return true

@@ -81,6 +81,17 @@ Do not start with UI-heavy scenes before the model, command/event flow, RNG, and
 - Content and assets require validation plus human approval before production use.
 - Track generated or assisted assets with tool, prompt, date, source, license/provenance, editable source path, runtime export path, and approval status.
 
+## Mandatory Story Workflow
+
+- Work from the current story file under `_bmad-output/implementation-artifacts/` and keep `sprint-status.yaml` in sync with the story status.
+- Do not move a story to `done` until implementation, tests, code review, review patches, story status, sprint status, and commit cleanup are complete.
+- Use `gds-code-review` for stories reaching review. If the review records patch findings, fix them or explicitly leave them as action items before changing status.
+- Patch findings that are fixed must be checked off in the story file. Deferred findings must be recorded in `_bmad-output/implementation-artifacts/deferred-work.md` with the originating story/review date.
+- After review patches, rerun `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` and `git diff --check`.
+- When all blocking review findings are resolved, set the story file `Status: done`, update the matching `development_status` entry in `sprint-status.yaml`, and refresh `last_updated`.
+- Commit all relevant story, code, test, fixture, and tracking files before starting the next story.
+- Before handing off, remove only proven-redundant generated files or temp files, never planning artifacts or story files. Verify `git status --short` is clean.
+
 ## Before Finishing Work
 
 - Run relevant tests or explain why they could not be run.

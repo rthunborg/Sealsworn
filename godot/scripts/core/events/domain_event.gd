@@ -1,6 +1,8 @@
 class_name DomainEvent
 extends RefCounted
 
+const ActionResult = preload("res://scripts/core/results/action_result.gd")
+
 enum Type {
 	UNKNOWN,
 	RUN_STARTED,
@@ -49,12 +51,84 @@ func to_dictionary() -> Dictionary:
 
 
 static func from_dictionary(data: Dictionary) -> DomainEvent:
-	return load("res://scripts/core/events/domain_event.gd").new(
-		type_for_id(StringName(str(data.get("event_id", EVENT_ID_UNKNOWN)))),
-		int(data.get("sequence_id", 0)),
-		StringName(str(data.get("actor_id", ""))),
-		data.get("payload", {})
+	var parse_result: Variant = try_from_dictionary(data)
+	if parse_result.succeeded:
+		return parse_result.metadata.get("event") as DomainEvent
+
+	return load("res://scripts/core/events/domain_event.gd").new()
+
+
+static func try_from_dictionary(data: Dictionary) -> ActionResult:
+	if not data.has("event_id"):
+		return _error_result(&"invalid_event_id", {"field": "event_id"})
+
+	var event_id_value: Variant = data.get("event_id")
+	if not (event_id_value is String or event_id_value is StringName):
+		return _error_result(&"invalid_event_id", {"field": "event_id"})
+
+	var event_id: StringName = StringName(String(event_id_value))
+	var parsed_event_type: int = type_for_id(event_id)
+	if parsed_event_type == Type.UNKNOWN:
+		return _error_result(&"invalid_event_id", {
+			"event_id": String(event_id)
+		})
+
+	if not data.has("sequence_id"):
+		return _error_result(&"invalid_event_sequence_id", {"field": "sequence_id"})
+
+	var sequence_id_value: Variant = data.get("sequence_id")
+	if not _is_integral_number(sequence_id_value):
+		return _error_result(&"invalid_event_sequence_id", {"field": "sequence_id"})
+
+	var parsed_sequence_id: int = int(sequence_id_value)
+	if parsed_sequence_id <= 0:
+		return _error_result(&"invalid_event_sequence_id", {
+			"sequence_id": parsed_sequence_id
+		})
+
+	if not data.has("actor_id"):
+		return _error_result(&"invalid_event_actor_id", {"field": "actor_id"})
+
+	var actor_id_value: Variant = data.get("actor_id")
+	if not (actor_id_value is String or actor_id_value is StringName):
+		return _error_result(&"invalid_event_actor_id", {"field": "actor_id"})
+
+	if not data.has("payload"):
+		return _error_result(&"invalid_event_payload", {"field": "payload"})
+
+	var payload_value: Variant = data.get("payload")
+	if not payload_value is Dictionary:
+		return _error_result(&"invalid_event_payload", {"field": "payload"})
+
+	var event: DomainEvent = load("res://scripts/core/events/domain_event.gd").new(
+		parsed_event_type,
+		parsed_sequence_id,
+		StringName(String(actor_id_value)),
+		payload_value
 	)
+	return _ok_result({"event": event})
+
+
+static func _ok_result(new_metadata: Dictionary = {}) -> ActionResult:
+	var result: ActionResult = ActionResult.new()
+	result.succeeded = true
+	result.metadata = new_metadata.duplicate(true)
+	return result
+
+
+static func _error_result(new_error_code: StringName, new_metadata: Dictionary = {}) -> ActionResult:
+	return ActionResult.error(new_error_code, new_metadata)
+
+
+static func _is_integral_number(value: Variant) -> bool:
+	match typeof(value):
+		TYPE_INT:
+			return true
+		TYPE_FLOAT:
+			var numeric_value: float = float(value)
+			return is_equal_approx(numeric_value, round(numeric_value))
+		_:
+			return false
 
 
 static func id_for_type(type_value: int) -> StringName:
