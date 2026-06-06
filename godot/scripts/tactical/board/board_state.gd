@@ -170,36 +170,90 @@ func to_snapshot() -> Dictionary:
 	}
 
 
+func validate_snapshot_consistency() -> ActionResult:
+	if width <= 0 or height <= 0:
+		return ActionResult.error(&"invalid_board_snapshot_dimensions", {
+			"width": width,
+			"height": height
+		})
+	if _cells.size() != width * height:
+		return ActionResult.error(&"invalid_board_snapshot_cell_count", {
+			"expected_cell_count": width * height,
+			"actual_cell_count": _cells.size()
+		})
+
+	for y: int in range(height):
+		for x: int in range(width):
+			var expected_position: Vector2i = Vector2i(x, y)
+			if not _cells.has(expected_position):
+				return _invalid_cell_storage(expected_position, Vector2i(-1, -1))
+			var stored_cell: BoardCell = _cells.get(expected_position) as BoardCell
+			if stored_cell == null:
+				return ActionResult.error(&"invalid_board_snapshot_cell")
+			if stored_cell.position != expected_position:
+				return _invalid_cell_storage(expected_position, stored_cell.position)
+
+	var snapshot_validation: ActionResult = try_from_snapshot(to_snapshot())
+	if snapshot_validation.is_error():
+		return snapshot_validation
+	return ActionResult.ok()
+
+
 static func try_from_snapshot(snapshot: Dictionary) -> ActionResult:
-	var snapshot_width: int = int(snapshot.get("width", 0))
-	var snapshot_height: int = int(snapshot.get("height", 0))
-	var cell_snapshots: Array = snapshot.get("cells", [])
-	var entity_snapshots_value: Variant = snapshot.get("entities", [])
+	if not _has_integral_snapshot_field(snapshot, &"width") or not _has_integral_snapshot_field(snapshot, &"height"):
+		return ActionResult.error(&"invalid_board_snapshot_dimensions", {
+			"width": snapshot.get("width", null),
+			"height": snapshot.get("height", null)
+		})
+
+	var snapshot_width: int = int(_snapshot_field(snapshot, &"width"))
+	var snapshot_height: int = int(_snapshot_field(snapshot, &"height"))
 
 	if snapshot_width <= 0 or snapshot_height <= 0:
 		return ActionResult.error(&"invalid_board_snapshot_dimensions", {
 			"width": snapshot_width,
 			"height": snapshot_height
 		})
+	if not _has_snapshot_field(snapshot, &"cells") or not _snapshot_field(snapshot, &"cells") is Array:
+		return ActionResult.error(&"invalid_board_snapshot_cells")
+	if not _has_snapshot_field(snapshot, &"entities") or not _snapshot_field(snapshot, &"entities") is Array:
+		return ActionResult.error(&"invalid_board_snapshot_entities")
+
+	var cell_snapshots: Array = _snapshot_field(snapshot, &"cells")
+	var entity_snapshots_value: Variant = _snapshot_field(snapshot, &"entities")
 	if cell_snapshots.size() != snapshot_width * snapshot_height:
 		return ActionResult.error(&"invalid_board_snapshot_cell_count", {
 			"expected_cell_count": snapshot_width * snapshot_height,
 			"actual_cell_count": cell_snapshots.size()
 		})
 
+	if not _has_integral_snapshot_field(snapshot, &"next_sequence_id"):
+		return ActionResult.error(&"invalid_board_snapshot_sequence_id", {
+			"next_sequence_id": _snapshot_field(snapshot, &"next_sequence_id")
+		})
+	var snapshot_next_sequence_id: int = int(_snapshot_field(snapshot, &"next_sequence_id"))
+	if snapshot_next_sequence_id <= 0:
+		return ActionResult.error(&"invalid_board_snapshot_sequence_id", {
+			"next_sequence_id": snapshot_next_sequence_id
+		})
+
 	var board: BoardState = load("res://scripts/tactical/board/board_state.gd").new()
 	board.width = snapshot_width
 	board.height = snapshot_height
-	board._next_sequence_id = max(1, int(snapshot.get("next_sequence_id", 1)))
+	board._next_sequence_id = snapshot_next_sequence_id
 
 	var seen_positions: Dictionary = {}
 	var snapshot_occupants: Dictionary = {}
+	var snapshot_occupant_ids: Dictionary = {}
 
 	for cell_data: Variant in cell_snapshots:
 		if not cell_data is Dictionary:
 			return ActionResult.error(&"invalid_board_snapshot_cell")
 
-		var board_cell: BoardCell = BoardCell.from_dictionary(cell_data)
+		var cell_result: ActionResult = BoardCell.try_from_dictionary(cell_data)
+		if cell_result.is_error():
+			return cell_result
+		var board_cell: BoardCell = cell_result.metadata.get("cell") as BoardCell
 		if not _is_valid_terrain(board_cell.terrain):
 			return ActionResult.error(&"invalid_terrain", {
 				"x": board_cell.position.x,
@@ -223,6 +277,9 @@ static func try_from_snapshot(snapshot: Dictionary) -> ActionResult:
 
 		seen_positions[position_key] = true
 		if board_cell.occupant_id != &"":
+			if snapshot_occupant_ids.has(board_cell.occupant_id):
+				return board._invalid_cell_occupant(board_cell.position, board_cell.occupant_id)
+			snapshot_occupant_ids[board_cell.occupant_id] = board_cell.position
 			snapshot_occupants[board_cell.position] = board_cell.occupant_id
 			board_cell.occupant_id = &""
 		board._cells[board_cell.position] = board_cell
@@ -393,6 +450,15 @@ func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResul
 		if board_cell == null or board_cell.occupant_id != occupant_id:
 			return _invalid_cell_occupant(position, occupant_id)
 
+	for entity_value: Variant in _entities.values():
+		var entity: TacticalEntityState = entity_value as TacticalEntityState
+		if entity == null or not entity.blocks_movement:
+			continue
+		if not snapshot_occupants.has(entity.position):
+			return _invalid_cell_occupant(entity.position, entity.entity_id)
+		if snapshot_occupants.get(entity.position, &"") != entity.entity_id:
+			return _invalid_cell_occupant(entity.position, entity.entity_id)
+
 	return ActionResult.ok()
 
 
@@ -401,6 +467,15 @@ func _invalid_cell_occupant(cell: Vector2i, occupant_id: StringName) -> ActionRe
 		"x": cell.x,
 		"y": cell.y,
 		"occupant_id": String(occupant_id)
+	})
+
+
+func _invalid_cell_storage(expected_position: Vector2i, actual_position: Vector2i) -> ActionResult:
+	return ActionResult.error(&"invalid_board_cell_storage", {
+		"expected_x": expected_position.x,
+		"expected_y": expected_position.y,
+		"actual_x": actual_position.x,
+		"actual_y": actual_position.y
 	})
 
 
@@ -426,6 +501,20 @@ static func _is_integral_number(value: Variant) -> bool:
 			return is_equal_approx(numeric_value, round(numeric_value))
 		_:
 			return false
+
+
+static func _has_integral_snapshot_field(snapshot: Dictionary, field_name: StringName) -> bool:
+	return _has_snapshot_field(snapshot, field_name) and _is_integral_number(_snapshot_field(snapshot, field_name))
+
+
+static func _has_snapshot_field(snapshot: Dictionary, field_name: StringName) -> bool:
+	return snapshot.has(String(field_name)) or snapshot.has(field_name)
+
+
+static func _snapshot_field(snapshot: Dictionary, field_name: StringName) -> Variant:
+	if snapshot.has(String(field_name)):
+		return snapshot[String(field_name)]
+	return snapshot.get(field_name)
 
 
 static func _position_in_dimensions(position: Vector2i, board_width: int, board_height: int) -> bool:

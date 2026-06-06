@@ -1,6 +1,8 @@
 class_name BoardCell
 extends RefCounted
 
+const ActionResult = preload("res://scripts/core/results/action_result.gd")
+
 enum Terrain {
 	FLOOR,
 	WALL,
@@ -50,15 +52,81 @@ func to_dictionary() -> Dictionary:
 
 
 static func from_dictionary(data: Dictionary) -> BoardCell:
-	var position_data: Dictionary = data.get("position", {})
+	var result: ActionResult = try_from_dictionary(data)
+	if result.is_error():
+		push_error("BoardCell snapshot parse failed: %s" % String(result.error_code))
+		return null
+	return result.metadata.get("cell") as BoardCell
+
+
+static func try_from_dictionary(data: Dictionary) -> ActionResult:
+	var position_value: Variant = _field(data, &"position")
+	if not position_value is Dictionary:
+		return _invalid_cell_data(&"position")
+
+	var position_data: Dictionary = position_value
+	if not _has_integral_field(position_data, &"x") or not _has_integral_field(position_data, &"y"):
+		return _invalid_cell_data(&"position")
+	if not _has_integral_field(data, &"terrain"):
+		return _invalid_cell_data(&"terrain")
+	if not _has_string_like_field(data, &"occupant_id"):
+		return _invalid_cell_data(&"occupant_id")
+	if not _has_bool_field(data, &"explored"):
+		return _invalid_cell_data(&"explored")
+	if not _has_bool_field(data, &"visible"):
+		return _invalid_cell_data(&"visible")
+
 	var cell: BoardCell = load("res://scripts/tactical/board/board_cell.gd").new(
 		Vector2i(
-			int(position_data.get("x", 0)),
-			int(position_data.get("y", 0))
+			int(_field(position_data, &"x")),
+			int(_field(position_data, &"y"))
 		),
-		int(data.get("terrain", Terrain.FLOOR))
+		int(_field(data, &"terrain"))
 	)
-	cell.occupant_id = StringName(str(data.get("occupant_id", "")))
-	cell.explored = bool(data.get("explored", false))
-	cell.visible = bool(data.get("visible", false))
-	return cell
+	cell.occupant_id = StringName(str(_field(data, &"occupant_id")))
+	cell.explored = bool(_field(data, &"explored"))
+	cell.visible = bool(_field(data, &"visible"))
+	return ActionResult.ok([], {"cell": cell})
+
+
+static func _has_field(data: Dictionary, field_name: StringName) -> bool:
+	return data.has(String(field_name)) or data.has(field_name)
+
+
+static func _field(data: Dictionary, field_name: StringName) -> Variant:
+	if data.has(String(field_name)):
+		return data[String(field_name)]
+	return data.get(field_name)
+
+
+static func _has_string_like_field(data: Dictionary, field_name: StringName) -> bool:
+	return _has_field(data, field_name) and _is_string_like(_field(data, field_name))
+
+
+static func _has_integral_field(data: Dictionary, field_name: StringName) -> bool:
+	return _has_field(data, field_name) and _is_integral_number(_field(data, field_name))
+
+
+static func _has_bool_field(data: Dictionary, field_name: StringName) -> bool:
+	return _has_field(data, field_name) and typeof(_field(data, field_name)) == TYPE_BOOL
+
+
+static func _is_string_like(value: Variant) -> bool:
+	return typeof(value) == TYPE_STRING or typeof(value) == TYPE_STRING_NAME
+
+
+static func _is_integral_number(value: Variant) -> bool:
+	match typeof(value):
+		TYPE_INT:
+			return true
+		TYPE_FLOAT:
+			var numeric_value: float = float(value)
+			return is_equal_approx(numeric_value, round(numeric_value))
+		_:
+			return false
+
+
+static func _invalid_cell_data(field_name: StringName) -> ActionResult:
+	return ActionResult.error(&"invalid_cell_data", {
+		"field": String(field_name)
+	})

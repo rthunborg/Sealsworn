@@ -25,6 +25,10 @@ func run() -> Dictionary:
 	_blocking_terrain_rejects_entities_on_cell()
 	_entity_snapshot_round_trips_with_tactical_state()
 	_corrupt_entity_snapshots_are_rejected()
+	_malformed_cell_snapshots_are_rejected_strictly()
+	_malformed_cells_container_is_rejected_without_mutation()
+	_malformed_top_level_snapshot_fields_are_rejected()
+	_snapshot_occupant_consistency_is_strict()
 	return result()
 
 
@@ -192,7 +196,8 @@ func _corrupt_snapshot_is_rejected() -> void:
 			_cell_snapshot(1, 0),
 			_cell_snapshot(1, 0),
 			_cell_snapshot(0, 3)
-		]
+		],
+		"entities": []
 	})
 
 	assert_true(result_value.is_error(), "Corrupt board snapshots should be rejected.")
@@ -457,6 +462,81 @@ func _corrupt_entity_snapshots_are_rejected() -> void:
 	assert_equal(misplaced_occupant_result.error_code, &"invalid_cell_occupant", "Misplaced occupants should use a stable occupant error code.")
 
 
+func _malformed_cell_snapshots_are_rejected_strictly() -> void:
+	var missing_position: Dictionary = _snapshot_with_entities([])
+	missing_position["cells"][0].erase("position")
+	var non_dictionary_position: Dictionary = _snapshot_with_entities([])
+	non_dictionary_position["cells"][0]["position"] = []
+	var missing_position_x: Dictionary = _snapshot_with_entities([])
+	missing_position_x["cells"][0]["position"].erase("x")
+	var non_integral_position_y: Dictionary = _snapshot_with_entities([])
+	non_integral_position_y["cells"][0]["position"]["y"] = "0"
+	var missing_terrain: Dictionary = _snapshot_with_entities([])
+	missing_terrain["cells"][0].erase("terrain")
+	var non_integral_terrain: Dictionary = _snapshot_with_entities([])
+	non_integral_terrain["cells"][0]["terrain"] = "floor"
+	var non_string_occupant: Dictionary = _snapshot_with_entities([])
+	non_string_occupant["cells"][0]["occupant_id"] = 12
+	var non_bool_explored: Dictionary = _snapshot_with_entities([])
+	non_bool_explored["cells"][0]["explored"] = "false"
+	var non_bool_visible: Dictionary = _snapshot_with_entities([])
+	non_bool_visible["cells"][0]["visible"] = 1
+
+	_assert_invalid_board_snapshot(missing_position, &"invalid_cell_data", "Cell snapshots should require a position dictionary.")
+	_assert_invalid_board_snapshot(non_dictionary_position, &"invalid_cell_data", "Cell snapshots should reject non-dictionary positions.")
+	_assert_invalid_board_snapshot(missing_position_x, &"invalid_cell_data", "Cell snapshots should require integral x coordinates.")
+	_assert_invalid_board_snapshot(non_integral_position_y, &"invalid_cell_data", "Cell snapshots should reject non-integral y coordinates.")
+	_assert_invalid_board_snapshot(missing_terrain, &"invalid_cell_data", "Cell snapshots should require terrain.")
+	_assert_invalid_board_snapshot(non_integral_terrain, &"invalid_cell_data", "Cell snapshots should reject non-integral terrain.")
+	_assert_invalid_board_snapshot(non_string_occupant, &"invalid_cell_data", "Cell snapshots should reject non-string occupant ids.")
+	_assert_invalid_board_snapshot(non_bool_explored, &"invalid_cell_data", "Cell snapshots should require boolean explored state.")
+	_assert_invalid_board_snapshot(non_bool_visible, &"invalid_cell_data", "Cell snapshots should require boolean visible state.")
+
+
+func _malformed_cells_container_is_rejected_without_mutation() -> void:
+	var malformed_cells: Dictionary = _snapshot_with_entities([])
+	malformed_cells["cells"] = {}
+
+	_assert_invalid_board_snapshot(malformed_cells, &"invalid_board_snapshot_cells", "Board snapshots should reject a non-array cells container before typed assignment.")
+
+
+func _malformed_top_level_snapshot_fields_are_rejected() -> void:
+	var missing_sequence_id: Dictionary = _snapshot_with_entities([])
+	missing_sequence_id.erase("next_sequence_id")
+	var zero_sequence_id: Dictionary = _snapshot_with_entities([])
+	zero_sequence_id["next_sequence_id"] = 0
+	var negative_sequence_id: Dictionary = _snapshot_with_entities([])
+	negative_sequence_id["next_sequence_id"] = -1
+	var missing_entities: Dictionary = _snapshot_with_entities([])
+	missing_entities.erase("entities")
+	var malformed_entities: Dictionary = _snapshot_with_entities([])
+	malformed_entities["entities"] = {}
+
+	_assert_invalid_board_snapshot(missing_sequence_id, &"invalid_board_snapshot_sequence_id", "Board snapshots should reject missing sequence ids.")
+	_assert_invalid_board_snapshot(zero_sequence_id, &"invalid_board_snapshot_sequence_id", "Board snapshots should reject zero sequence ids.")
+	_assert_invalid_board_snapshot(negative_sequence_id, &"invalid_board_snapshot_sequence_id", "Board snapshots should reject negative sequence ids.")
+	_assert_invalid_board_snapshot(missing_entities, &"invalid_board_snapshot_entities", "Board snapshots should require an entities container.")
+	_assert_invalid_board_snapshot(malformed_entities, &"invalid_board_snapshot_entities", "Board snapshots should reject malformed entities containers.")
+
+
+func _snapshot_occupant_consistency_is_strict() -> void:
+	var missing_cell_occupant: Dictionary = _snapshot_with_entities([
+		_entity_snapshot("hero", "player", "player", 0, 0, 18, 18)
+	])
+	var nonblocking_cell_occupant: Dictionary = _snapshot_with_entities([
+		_entity_snapshot("pickup_marker", "enemy", "neutral", 0, 0, 1, 1, false)
+	])
+	nonblocking_cell_occupant["cells"][0]["occupant_id"] = "pickup_marker"
+
+	var missing_result: ActionResult = BoardState.try_from_snapshot(missing_cell_occupant)
+	var nonblocking_result: ActionResult = BoardState.try_from_snapshot(nonblocking_cell_occupant)
+
+	assert_true(missing_result.is_error(), "Blocking entities must have a matching cell occupant id in imported snapshots.")
+	assert_equal(missing_result.error_code, &"invalid_cell_occupant", "Missing blocking entity occupants should use a stable occupant error code.")
+	assert_true(nonblocking_result.is_error(), "Non-blocking entities must not occupy cells in imported snapshots.")
+	assert_equal(nonblocking_result.error_code, &"invalid_cell_occupant", "Non-blocking cell occupants should use a stable occupant error code.")
+
+
 func _new_board(new_width: int, new_height: int) -> BoardState:
 	var board: BoardState = BoardState.new()
 	var command: Variant = CreateBoardCommand.new(new_width, new_height)
@@ -533,3 +613,13 @@ func _entity_snapshot(
 		"max_hp": max_hp,
 		"blocks_movement": blocks_movement
 	}
+
+
+func _assert_invalid_board_snapshot(snapshot: Dictionary, expected_error_code: StringName, message: String) -> void:
+	var source_board: BoardState = _new_board(1, 1)
+	var before: Dictionary = source_board.to_snapshot()
+	var result_value: ActionResult = BoardState.try_from_snapshot(snapshot)
+
+	assert_true(result_value.is_error(), message)
+	assert_equal(result_value.error_code, expected_error_code, message)
+	assert_equal(source_board.to_snapshot(), before, "Rejected board imports must not mutate an existing board object.")
