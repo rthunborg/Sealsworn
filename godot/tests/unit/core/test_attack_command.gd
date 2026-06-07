@@ -108,17 +108,32 @@ func _invalid_attack_cases_do_not_mutate() -> void:
 
 func _preview_contract_target_legality_reasons_match_command() -> void:
 	for contract: Dictionary in AttackPreviewContractMatrix.baseline_cases():
-		if String(contract.get("expected_reason", "")) == "valid":
-			continue
 		var board: BoardState = _contract_board(String(contract.get("fixture", "")))
 		var weapon_id: StringName = contract.get("weapon_id")
 		var target_cell: Vector2i = contract.get("target_cell")
 		var expected_reason: String = String(contract.get("expected_reason"))
-		var result_value: ActionResult = _command(weapon_id, target_cell).execute(_context(board, RngStreamSet.new(710)))
+		var streams: RngStreamSet = RngStreamSet.new(710)
+		var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, &"hero")
+		var event_log: Array[DomainEvent] = []
+		var before: Dictionary = _tactical_snapshot_dictionary(board, streams, turn_state, event_log)
+		var sequence_before: int = board.next_sequence_id()
+		var rng_before: Dictionary = streams.to_snapshot()
+		var result_value: ActionResult = _command(weapon_id, target_cell).execute(TacticalActionContext.new(board, turn_state, streams))
+
+		if expected_reason == "valid":
+			assert_true(result_value.succeeded, "Command should accept preview-contract case %s." % contract.get("id"))
+			assert_equal(result_value.metadata.get("reason"), "valid", "Command and preview reason should match for %s." % contract.get("id"))
+			assert_equal(result_value.metadata.get("base_damage"), contract.get("expected_base_damage"), "Command should use preview damage for %s." % contract.get("id"))
+			assert_equal(result_value.metadata.get("blocker_ignored"), contract.get("expected_blocker_ignored"), "Command should preserve blocker override metadata for %s." % contract.get("id"))
+			continue
 
 		assert_true(result_value.is_error(), "Command should reject preview-contract case %s." % contract.get("id"))
 		assert_equal(result_value.error_code, &"invalid_attack", "Invalid attack commands should use the stable command error code.")
 		assert_equal(result_value.metadata.get("reason"), expected_reason, "Command and preview reason should match for %s." % contract.get("id"))
+		assert_false(result_value.has_events(), "Invalid preview-contract attacks should emit no events.")
+		assert_equal(_tactical_snapshot_dictionary(board, streams, turn_state, event_log), before, "Invalid preview-contract case %s should not mutate tactical snapshots." % contract.get("id"))
+		assert_equal(board.next_sequence_id(), sequence_before, "Invalid preview-contract case %s should not advance board sequence ids." % contract.get("id"))
+		assert_equal(streams.to_snapshot(), rng_before, "Invalid preview-contract case %s should not advance RNG streams." % contract.get("id"))
 		if expected_reason == "not_visible":
 			assert_false(result_value.metadata.has("target_entity_id"), "Hidden or memory command failures must not expose target ids.")
 			assert_false(result_value.metadata.has("target_faction"), "Hidden or memory command failures must not expose target faction.")
@@ -177,6 +192,8 @@ func _axe_and_mace_procs_use_combat_rng_only_when_target_survives() -> void:
 	var axe_streams: RngStreamSet = RngStreamSet.new(success_seed)
 	var mace_streams: RngStreamSet = RngStreamSet.new(failure_seed)
 	var kill_streams: RngStreamSet = RngStreamSet.new(success_seed)
+	var axe_before: Dictionary = axe_streams.to_snapshot()
+	var mace_before: Dictionary = mace_streams.to_snapshot()
 	var kill_before: Dictionary = kill_streams.to_snapshot()
 
 	var axe_result: ActionResult = _command(&"axe", Vector2i(2, 1)).execute(_context(axe_board, axe_streams))
@@ -189,7 +206,15 @@ func _axe_and_mace_procs_use_combat_rng_only_when_target_survives() -> void:
 	assert_equal(axe_result.events[2].event_type, DomainEvent.Type.STATUS_EFFECT_APPLIED, "Axe success should emit a status effect event.")
 	assert_equal(axe_result.events[2].payload.get("effect_id"), "bleed", "Axe success should apply bleed.")
 	assert_equal(mace_result.events.size(), 2, "Failed Mace proc should not emit a status event.")
+	var axe_damage_draws: Array = axe_result.events[1].payload.get("rng_draws", [])
+	var mace_damage_draws: Array = mace_result.events[1].payload.get("rng_draws", [])
+	assert_equal(axe_damage_draws.size(), 1, "Axe damage event should record the proc RNG draw.")
+	assert_equal(axe_damage_draws[0].get("effect_id"), "bleed", "Axe damage event should identify the proc draw.")
+	assert_equal(mace_damage_draws.size(), 1, "Failed Mace proc draw should still be captured in emitted events.")
+	assert_equal(mace_damage_draws[0].get("effect_id"), "disorient", "Mace damage event should identify the failed proc draw.")
 	assert_equal((mace_result.metadata.get("rng_draws", []) as Array)[0].get("effect_id"), "disorient", "Mace proc metadata should record disorient roll outcome.")
+	_assert_only_combat_advanced(axe_before, axe_streams.to_snapshot(), 1, "Axe proc should use only the combat RNG stream.")
+	_assert_only_combat_advanced(mace_before, mace_streams.to_snapshot(), 1, "Mace proc should use only the combat RNG stream.")
 	assert_true(kill_result.succeeded, "Killing Axe attack should succeed.")
 	assert_equal(kill_result.events.size(), 2, "Axe should not roll or emit bleed when target does not survive base damage.")
 	assert_equal(kill_streams.to_snapshot(), kill_before, "Kill attacks should not advance combat RNG for skipped survive-only procs.")

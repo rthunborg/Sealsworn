@@ -4,7 +4,7 @@ baseline_commit: c2cd14fef6ba8a55c9429d62ef04a13086110613
 
 # Story 1.9: AttackCommand with Damage Events
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -71,6 +71,16 @@ so that combat outcomes are fair, testable, and explainable.
   - [x] Run `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
   - [x] Run `git diff --check`.
   - [x] Update this story's Dev Agent Record, File List, Completion Notes, and Change Log with actual implementation work.
+
+### Review Findings
+
+- [x] [Review][Patch] Proc failure RNG is not captured in emitted domain events [godot/scripts/core/commands/attack_command.gd:138]
+- [x] [Review][Patch] Damage event parsing accepts missing or contradictory `final_damage` metadata [godot/scripts/core/events/domain_event.gd:361]
+- [x] [Review][Patch] Knockback replay validation does not verify source-cell occupancy [godot/scripts/tactical/board/board_state.gd:719]
+- [x] [Review][Patch] Attack-command contract tests skip legal target-legality cases [godot/tests/unit/core/test_attack_command.gd:109]
+- [x] [Review][Patch] Invalid target-legality cases do not get full no-mutation assertions [godot/tests/unit/core/test_attack_command.gd:109]
+- [x] [Review][Patch] Malformed attack event tests miss `entity_attacked` and `status_effect_applied` [godot/tests/unit/core/test_domain_event.gd:357]
+- [x] [Review][Patch] Support repository factory can partially mutate a provided content repository before failing [godot/scripts/content/repositories/support_repository.gd:28]
 
 ## Dev Notes
 
@@ -285,6 +295,7 @@ Codex GPT-5
 - 2026-06-07: Red phase confirmed with missing support and attack command implementation.
 - 2026-06-07: Implemented attack event factories/parser validation, BoardState replay handlers, support definitions/repository, and AttackCommand damage/support/proc/knockback resolution.
 - 2026-06-07: Headless suite passed after implementation.
+- 2026-06-07: Code review patches fixed event-log proc RNG capture, stricter damage/knockback replay validation, contract/no-mutation coverage, malformed event tests, and support repository prevalidation.
 
 ### Implementation Plan
 
@@ -302,6 +313,7 @@ Codex GPT-5
 - Added minimal `SupportDefinition`/`SupportRepository` baseline for `none`, `tome`, and `shield` without inventory, equipment, UI, save schema, or runtime file access.
 - Added Tome, Shield, Axe, Mace, and Crossbow baseline resolution with combat-stream-only RNG metadata for proc/block outcomes.
 - Added headless tests for event parsing, board replay, support repository behavior, AttackCommand valid/invalid/no-mutation cases, preview legality parity, support effects, proc RNG, and knockback outcomes.
+- Review patches capture failed proc RNG in emitted events, validate `final_damage`, guard knockback source occupancy, cover legal and invalid contract parity, and prevent partial support repository mutation.
 
 ### File List
 
@@ -322,3 +334,4 @@ Codex GPT-5
 
 - 2026-06-07: Created Story 1.9 implementation guide and marked it ready for development.
 - 2026-06-07: Implemented AttackCommand with damage events, support effects, combat RNG coverage, board replay handlers, fixtures, and headless tests; marked story ready for review.
+- 2026-06-07: Applied code review patches, reran validation, and marked story done.

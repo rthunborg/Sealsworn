@@ -26,9 +26,18 @@ static func create_baseline_repository(content_repository: ContentRepository = n
 
 
 static func create_repository_from_definitions(definitions: Array, content_repository: ContentRepository = null) -> SupportRepository:
-	var repository: SupportRepository = load("res://scripts/content/repositories/support_repository.gd").new(content_repository)
+	var validated_definitions: Array[SupportDefinition] = []
 	for definition_value: Variant in definitions:
 		var definition: SupportDefinition = definition_value as SupportDefinition
+		if definition == null:
+			return null
+		var validation: ActionResult = definition.validate()
+		if validation.is_error():
+			return null
+		validated_definitions.append(definition)
+
+	var repository: SupportRepository = load("res://scripts/content/repositories/support_repository.gd").new(content_repository)
+	for definition: SupportDefinition in validated_definitions:
 		var result: ActionResult = repository.register_support(definition)
 		if result.is_error():
 			return null

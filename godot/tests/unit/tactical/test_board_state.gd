@@ -465,6 +465,37 @@ func _invalid_attack_events_do_not_mutate() -> void:
 	)
 	var knockback_result: ActionResult = knockback_board.apply_event(bad_knockback)
 
+	var stale_knockback_board: BoardState = _knockback_event_board()
+	var stale_source_cell: BoardCell = stale_knockback_board.get_cell(Vector2i(2, 1))
+	stale_source_cell.occupant_id = &""
+	var stale_knockback_before: Dictionary = stale_knockback_board.to_snapshot()
+	var stale_knockback: DomainEvent = DomainEvent.entity_knocked_back(
+		stale_knockback_board.next_sequence_id(),
+		&"hero",
+		&"enemy_1",
+		Vector2i(2, 1),
+		Vector2i(3, 1),
+		&"crossbow",
+		{"source_cell": {"x": 0, "y": 1}}
+	)
+	var stale_knockback_result: ActionResult = stale_knockback_board.apply_event(stale_knockback)
+
+	var final_damage_board: BoardState = _attack_event_board()
+	var final_damage_before: Dictionary = final_damage_board.to_snapshot()
+	var bad_final_damage_payload: Dictionary = _damage_payload(4, 0, 0, false, 3)
+	bad_final_damage_payload["target_entity_id"] = "enemy_1"
+	bad_final_damage_payload["amount"] = 4
+	bad_final_damage_payload["hp_before"] = 10
+	bad_final_damage_payload["hp_after"] = 6
+	bad_final_damage_payload["max_hp"] = 10
+	var bad_final_damage: DomainEvent = DomainEvent.new(
+		DomainEvent.Type.DAMAGE_APPLIED,
+		final_damage_board.next_sequence_id(),
+		&"hero",
+		bad_final_damage_payload
+	)
+	var final_damage_result: ActionResult = final_damage_board.apply_event(bad_final_damage)
+
 	assert_true(damage_result.is_error(), "Damage events should reject mismatched HP preconditions.")
 	assert_equal(damage_result.error_code, &"invalid_damage_event", "Invalid damage events should use a stable board-event code.")
 	assert_equal(damage_result.metadata.get("reason"), "hp_before_mismatch", "Damage HP mismatches should expose a stable reason.")
@@ -473,6 +504,14 @@ func _invalid_attack_events_do_not_mutate() -> void:
 	assert_equal(knockback_result.error_code, &"invalid_knockback_event", "Invalid knockback events should use a stable board-event code.")
 	assert_equal(knockback_result.metadata.get("reason"), "blocked", "Blocked knockback should expose a stable reason.")
 	assert_equal(knockback_board.to_snapshot(), knockback_before, "Rejected knockback events must not mutate board state.")
+	assert_true(stale_knockback_result.is_error(), "Knockback events should reject stale source occupancy.")
+	assert_equal(stale_knockback_result.error_code, &"invalid_knockback_event", "Stale knockback should use the stable board-event code.")
+	assert_equal(stale_knockback_result.metadata.get("reason"), "from_mismatch", "Stale knockback should expose a stable source mismatch reason.")
+	assert_equal(stale_knockback_board.to_snapshot(), stale_knockback_before, "Rejected stale knockback events must not mutate board state.")
+	assert_true(final_damage_result.is_error(), "Damage events should reject contradictory final damage metadata.")
+	assert_equal(final_damage_result.error_code, &"invalid_damage_event", "Final damage mismatch should use the stable board-event code.")
+	assert_equal(final_damage_result.metadata.get("reason"), "final_damage_mismatch", "Final damage mismatches should expose a stable reason.")
+	assert_equal(final_damage_board.to_snapshot(), final_damage_before, "Rejected final damage events must not mutate board state.")
 
 
 func _event_batches_are_atomic() -> void:
@@ -989,13 +1028,23 @@ func _attack_payload() -> Dictionary:
 	}
 
 
-func _damage_payload(base_damage: int, support_bonus_damage: int, armor_reduction: int, block_succeeded: bool) -> Dictionary:
+func _damage_payload(
+	base_damage: int,
+	support_bonus_damage: int,
+	armor_reduction: int,
+	block_succeeded: bool,
+	final_damage: int = -1
+) -> Dictionary:
+	var recorded_final_damage: int = final_damage
+	if recorded_final_damage < 0:
+		recorded_final_damage = max(1, base_damage + support_bonus_damage - armor_reduction)
 	return {
 		"weapon_id": "sword",
 		"base_damage": base_damage,
 		"support_bonus_damage": support_bonus_damage,
 		"armor_reduction": armor_reduction,
 		"block_succeeded": block_succeeded,
+		"final_damage": recorded_final_damage,
 		"damage_type": "physical",
 		"rng_draws": []
 	}

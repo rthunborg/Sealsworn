@@ -152,6 +152,7 @@ func _attack_events_serialize_and_parse_stable_payloads() -> void:
 			"support_bonus_damage": 0,
 			"armor_reduction": 0,
 			"block_succeeded": false,
+			"final_damage": 4,
 			"damage_type": "physical",
 			"rng_draws": []
 		}
@@ -372,6 +373,7 @@ func _try_from_dictionary_rejects_malformed_attack_payloads() -> void:
 			"support_bonus_damage": 0,
 			"armor_reduction": 0,
 			"block_succeeded": false,
+			"final_damage": 4,
 			"damage_type": "physical",
 			"rng_draws": []
 		}
@@ -391,8 +393,77 @@ func _try_from_dictionary_rejects_malformed_attack_payloads() -> void:
 			"support_bonus_damage": 0,
 			"armor_reduction": 0,
 			"block_succeeded": false,
+			"final_damage": 4,
 			"damage_type": "physical",
 			"rng_draws": []
+		}
+	})
+	var damage_missing_final_damage: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "damage_applied",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {
+			"target_entity_id": "enemy_1",
+			"amount": 4,
+			"hp_before": 10,
+			"hp_after": 6,
+			"max_hp": 10,
+			"weapon_id": "sword",
+			"base_damage": 4,
+			"support_bonus_damage": 0,
+			"armor_reduction": 0,
+			"block_succeeded": false,
+			"damage_type": "physical",
+			"rng_draws": []
+		}
+	})
+	var damage_mismatched_final_damage: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "damage_applied",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {
+			"target_entity_id": "enemy_1",
+			"amount": 4,
+			"hp_before": 10,
+			"hp_after": 6,
+			"max_hp": 10,
+			"weapon_id": "sword",
+			"base_damage": 4,
+			"support_bonus_damage": 0,
+			"armor_reduction": 0,
+			"block_succeeded": false,
+			"final_damage": 3,
+			"damage_type": "physical",
+			"rng_draws": []
+		}
+	})
+	var attacked_missing_weapon: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "entity_attacked",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {
+			"actor_id": "hero",
+			"target_entity_id": "enemy_1",
+			"target_cell": {"x": 2, "y": 1},
+			"expected_base_damage": 4,
+			"range": 1,
+			"distance": 1,
+			"line_cells": [{"x": 1, "y": 1}, {"x": 2, "y": 1}],
+			"blocker_cells": [],
+			"blocker_ignored": false,
+			"warnings": [],
+			"effects": [],
+			"explanation": "sword previews 4 damage to enemy_1."
+		}
+	})
+	var status_missing_effect: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "status_effect_applied",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {
+			"target_entity_id": "enemy_1",
+			"weapon_id": "axe",
+			"rng_draw": _rng_draw("bleed", 0.2, 0.35, true)
 		}
 	})
 	var knockback_bad_cell: ActionResult = DomainEvent.try_from_dictionary({
@@ -410,6 +481,14 @@ func _try_from_dictionary_rejects_malformed_attack_payloads() -> void:
 	assert_equal(damage_missing_target.metadata.get("field"), "target_entity_id", "Damage target diagnostics should identify the missing field.")
 	assert_equal(damage_below_zero.error_code, &"invalid_event_payload", "Damage events should reject negative HP after damage.")
 	assert_equal(damage_below_zero.metadata.get("field"), "hp_after", "Damage HP diagnostics should identify the invalid field.")
+	assert_equal(damage_missing_final_damage.error_code, &"invalid_event_payload", "Damage events should require final damage metadata.")
+	assert_equal(damage_missing_final_damage.metadata.get("field"), "final_damage", "Damage final-damage diagnostics should identify the missing field.")
+	assert_equal(damage_mismatched_final_damage.error_code, &"invalid_event_payload", "Damage events should reject contradictory final damage metadata.")
+	assert_equal(damage_mismatched_final_damage.metadata.get("field"), "final_damage", "Damage final-damage mismatch diagnostics should identify the invalid field.")
+	assert_equal(attacked_missing_weapon.error_code, &"invalid_event_payload", "Attack events should require weapon metadata.")
+	assert_equal(attacked_missing_weapon.metadata.get("field"), "weapon_id", "Attack diagnostics should identify the missing weapon id.")
+	assert_equal(status_missing_effect.error_code, &"invalid_event_payload", "Status events should require an effect id.")
+	assert_equal(status_missing_effect.metadata.get("field"), "effect_id", "Status diagnostics should identify the missing effect id.")
 	assert_equal(knockback_bad_cell.error_code, &"invalid_event_payload", "Knockback events should require source and destination cells.")
 	assert_equal(knockback_bad_cell.metadata.get("field"), "to", "Knockback diagnostics should identify the missing destination.")
 

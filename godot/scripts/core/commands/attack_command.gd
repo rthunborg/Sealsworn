@@ -125,6 +125,11 @@ func execute(state: Variant) -> ActionResult:
 
 	var hp_before: int = target.current_hp
 	var hp_after: int = max(0, hp_before - final_damage)
+	var target_survives: bool = hp_after > 0
+	var proc_result: ActionResult = _roll_proc_if_needed(context, target_entity_id, target_survives, rng_draws)
+	if proc_result.is_error():
+		return proc_result
+
 	var next_sequence_id: int = board.next_sequence_id()
 	var events: Array[DomainEvent] = []
 	events.append(DomainEvent.entity_attacked(
@@ -153,9 +158,8 @@ func execute(state: Variant) -> ActionResult:
 		)
 	))
 
-	var target_survives: bool = hp_after > 0
 	if target_survives:
-		_append_proc_events(context, target_entity_id, events, rng_draws)
+		_append_status_event_from_proc(proc_result, events, next_sequence_id)
 		_append_knockback_event(board, actor, target, events, preview_metadata)
 
 	var apply_result: ActionResult = board.apply_events(events)
@@ -179,12 +183,15 @@ func execute(state: Variant) -> ActionResult:
 	return ActionResult.ok(events, metadata)
 
 
-func _append_proc_events(
+func _roll_proc_if_needed(
 	context: TacticalActionContext,
 	target_entity_id: StringName,
-	events: Array[DomainEvent],
+	target_survives: bool,
 	rng_draws: Array[Dictionary]
-) -> void:
+) -> ActionResult:
+	if not target_survives:
+		return ActionResult.ok()
+
 	var effect_id: StringName = &""
 	match weapon.weapon_id:
 		&"axe":
@@ -192,7 +199,7 @@ func _append_proc_events(
 		&"mace":
 			effect_id = &"disorient"
 		_:
-			return
+			return ActionResult.ok()
 
 	var roll_result: ActionResult = context.rng_streams.rand_float(
 		RngStreamSet.STREAM_COMBAT,
@@ -204,18 +211,34 @@ func _append_proc_events(
 		}
 	)
 	if roll_result.is_error():
-		return
+		return roll_result
 
 	var succeeded: bool = float(roll_result.metadata.get("value", 1.0)) <= PROC_THRESHOLD
 	var draw_metadata: Dictionary = _combat_draw_metadata(roll_result.metadata, effect_id, PROC_THRESHOLD, succeeded)
 	rng_draws.append(draw_metadata)
-	if not succeeded:
+	return ActionResult.ok([], {
+		"effect_id": String(effect_id),
+		"target_entity_id": String(target_entity_id),
+		"rng_draw": draw_metadata,
+		"succeeded": succeeded
+	})
+
+
+func _append_status_event_from_proc(
+	proc_result: ActionResult,
+	events: Array[DomainEvent],
+	next_sequence_id: int
+) -> void:
+	if proc_result.is_error() or not bool(proc_result.metadata.get("succeeded", false)):
 		return
 
+	var effect_id: StringName = StringName(str(proc_result.metadata.get("effect_id", "")))
+	var draw_metadata: Dictionary = proc_result.metadata.get("rng_draw", {})
+
 	events.append(DomainEvent.status_effect_applied(
-		context.board.next_sequence_id() + events.size(),
+		next_sequence_id + events.size(),
 		actor_id,
-		target_entity_id,
+		StringName(str(proc_result.metadata.get("target_entity_id", ""))),
 		effect_id,
 		{
 			"weapon_id": String(weapon.weapon_id),

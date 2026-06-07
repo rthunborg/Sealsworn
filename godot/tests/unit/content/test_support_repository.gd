@@ -79,5 +79,23 @@ func _support_repository_keeps_generic_content_registration_intact() -> void:
 func _support_repository_factory_fails_closed_on_invalid_definitions() -> void:
 	var invalid_definition: SupportDefinition = SupportDefinition.new()
 	var repository: SupportRepository = SupportRepository.create_repository_from_definitions([invalid_definition])
+	var shared_content_repository: ContentRepository = ContentRepository.new()
+	var valid_definition: SupportDefinition = SupportDefinition.new(
+		SupportDefinition.SUPPORT_NONE,
+		0,
+		0.0,
+		0,
+		[],
+		"No off-hand modifier."
+	)
+	var partial_repository: SupportRepository = SupportRepository.create_repository_from_definitions(
+		[valid_definition, invalid_definition],
+		shared_content_repository
+	)
 
 	assert_equal(repository, null, "Repository factory should fail closed instead of returning partially registered support content.")
+	assert_equal(partial_repository, null, "Repository factory should reject the full batch when any later definition is invalid.")
+	assert_false(
+		shared_content_repository.has_definition(SupportDefinition.DEFINITION_TYPE, SupportDefinition.SUPPORT_NONE),
+		"Failed support repository creation must not mutate a provided content repository."
+	)

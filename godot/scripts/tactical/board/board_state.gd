@@ -672,6 +672,8 @@ func _validate_damage_applied_event(event: DomainEvent) -> ActionResult:
 		return _invalid_damage_event(&"invalid_payload", {"field": "hp_after"})
 	if not _has_positive_integral_payload(event.payload, &"amount"):
 		return _invalid_damage_event(&"invalid_payload", {"field": "amount"})
+	if not _has_positive_integral_payload(event.payload, &"final_damage"):
+		return _invalid_damage_event(&"invalid_payload", {"field": "final_damage"})
 
 	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
 	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
@@ -683,6 +685,13 @@ func _validate_damage_applied_event(event: DomainEvent) -> ActionResult:
 	var hp_before: int = int(event.payload.get("hp_before"))
 	var hp_after: int = int(event.payload.get("hp_after"))
 	var amount: int = int(event.payload.get("amount"))
+	var final_damage: int = int(event.payload.get("final_damage"))
+	if final_damage != amount:
+		return _invalid_damage_event(&"final_damage_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_damage": amount,
+			"actual_damage": final_damage
+		})
 	if target.current_hp != hp_before:
 		return _invalid_damage_event(&"hp_before_mismatch", {
 			"target_entity_id": String(target_entity_id),
@@ -746,6 +755,14 @@ func _validate_entity_knocked_back_event(event: DomainEvent) -> ActionResult:
 			"expected_y": target.position.y,
 			"actual_x": from_cell.x,
 			"actual_y": from_cell.y
+		})
+	var source_cell: BoardCell = get_cell(from_cell)
+	if source_cell == null:
+		return _invalid_knockback_event(&"from_mismatch")
+	if target.blocks_movement and source_cell.occupant_id != target_entity_id:
+		return _invalid_knockback_event(&"from_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"occupant_id": String(source_cell.occupant_id)
 		})
 	if not in_bounds(to_cell):
 		return _invalid_knockback_event(&"out_of_bounds", {

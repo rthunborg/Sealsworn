@@ -122,6 +122,7 @@ static func damage_applied(
 	payload_value["hp_before"] = hp_before
 	payload_value["hp_after"] = hp_after
 	payload_value["max_hp"] = max_hp
+	payload_value["final_damage"] = amount
 	return load("res://scripts/core/events/domain_event.gd").new(
 		Type.DAMAGE_APPLIED,
 		sequence_id,
@@ -363,6 +364,10 @@ static func _validate_damage_applied_payload(payload_value: Dictionary) -> Actio
 		return _error_result(&"invalid_event_payload", {"field": "target_entity_id"})
 	if not _has_positive_integral_payload(payload_value, &"amount"):
 		return _error_result(&"invalid_event_payload", {"field": "amount"})
+	if not _has_positive_integral_payload(payload_value, &"final_damage"):
+		return _error_result(&"invalid_event_payload", {"field": "final_damage"})
+	if int(payload_value.get("final_damage")) != int(payload_value.get("amount")):
+		return _error_result(&"invalid_event_payload", {"field": "final_damage"})
 	if not _has_nonnegative_integral_payload(payload_value, &"hp_before"):
 		return _error_result(&"invalid_event_payload", {"field": "hp_before"})
 	if not _has_nonnegative_integral_payload(payload_value, &"hp_after"):

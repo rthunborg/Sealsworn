@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-07T13:29:36+02:00
+# last_updated: 2026-06-07T17:42:59+02:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - No UI-heavy scene work should begin from this status file.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-07T13:29:36+02:00
+last_updated: 2026-06-07T17:42:59+02:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -55,7 +55,7 @@ development_status:
   1-6-movecommand-with-movement-validation: done
   1-7-fog-line-of-sight-and-explored-memory: done
   1-8-weapon-definitions-and-attack-preview-rules: done
-  1-9-attackcommand-with-damage-events: review
+  1-9-attackcommand-with-damage-events: done
   1-10-enemy-turn-resolution-for-prototype-enemies: backlog
   1-11-combat-outcome-death-victory-and-explanation-log: backlog
   epic-1-retrospective: optional
