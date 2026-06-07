@@ -103,6 +103,97 @@ static func los_movement_update_memory() -> BoardState:
 	return board
 
 
+static func attack_preview_open_lane() -> BoardState:
+	var board: BoardState = _new_board(6, 3)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(3, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_adjacent_enemy() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player(&"hero", Vector2i(1, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(2, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_blocked_lane() -> BoardState:
+	var board: BoardState = _new_board(5, 3)
+	_set_terrain(board, Vector2i(2, 1), BoardCell.Terrain.WALL)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(4, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_entity_blocked_lane() -> BoardState:
+	var board: BoardState = _new_board(5, 3)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"blocker_1", Vector2i(2, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(4, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_diagonal_enemy() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player(&"hero", Vector2i.ZERO))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(1, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_hidden_enemy() -> BoardState:
+	var board: BoardState = _new_board(4, 3)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(2, 1)))
+	var hero_cell: BoardCell = board.get_cell(Vector2i(0, 1))
+	hero_cell.visible = true
+	hero_cell.explored = true
+	return board
+
+
+static func attack_preview_memory_enemy() -> BoardState:
+	var board: BoardState = attack_preview_hidden_enemy()
+	var target_cell: BoardCell = board.get_cell(Vector2i(2, 1))
+	target_cell.visible = false
+	target_cell.explored = true
+	return board
+
+
+static func attack_preview_friendly_target() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player(&"hero", Vector2i(1, 1)))
+	_place_entity(board, _ally(&"ally_1", Vector2i(2, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_dead_target() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player(&"hero", Vector2i(1, 1)))
+	_place_entity(board, _enemy_with_hp(&"enemy_1", Vector2i(2, 1), 0))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_dead_actor() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player_with_hp(&"hero", Vector2i(1, 1), 0))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(2, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_preview_empty_target() -> BoardState:
+	var board: BoardState = _new_board(4, 3)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_reveal_all(board)
+	return board
+
+
 static func expected_los_open_radius_cells() -> Array[Vector2i]:
 	return _expected_open_radius_cells(9, 9, Vector2i(4, 4), 4)
 
@@ -171,6 +262,18 @@ static func _player(entity_id: StringName, position: Vector2i) -> TacticalEntity
 	)
 
 
+static func _player_with_hp(entity_id: StringName, position: Vector2i, current_hp: int) -> TacticalEntityState:
+	return TacticalEntityState.new(
+		entity_id,
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		position,
+		current_hp,
+		18,
+		true
+	)
+
+
 static func _enemy(entity_id: StringName, position: Vector2i) -> TacticalEntityState:
 	return TacticalEntityState.new(
 		entity_id,
@@ -181,6 +284,36 @@ static func _enemy(entity_id: StringName, position: Vector2i) -> TacticalEntityS
 		10,
 		true
 	)
+
+
+static func _enemy_with_hp(entity_id: StringName, position: Vector2i, current_hp: int) -> TacticalEntityState:
+	return TacticalEntityState.new(
+		entity_id,
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		position,
+		current_hp,
+		10,
+		true
+	)
+
+
+static func _ally(entity_id: StringName, position: Vector2i) -> TacticalEntityState:
+	return TacticalEntityState.new(
+		entity_id,
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		position,
+		18,
+		18,
+		true
+	)
+
+
+static func _reveal_all(board: BoardState) -> void:
+	for board_cell: BoardCell in board.cells():
+		board_cell.visible = true
+		board_cell.explored = true
 
 
 static func _expected_open_radius_cells(board_width: int, board_height: int, origin: Vector2i, radius: int) -> Array[Vector2i]:

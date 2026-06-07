@@ -6,6 +6,7 @@ const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
+const TacticalLineQuery = preload("res://scripts/tactical/targeting/tactical_line_query.gd")
 
 const DEFAULT_LINE_OF_SIGHT_RADIUS: int = 4
 
@@ -131,62 +132,7 @@ func visible_facts_for_cell(board: BoardState, cell: Vector2i) -> ActionResult:
 
 
 func _has_line_of_sight(board: BoardState, origin: Vector2i, target: Vector2i) -> bool:
-	var line: Array[Vector2i] = _supercover_line(origin, target)
-	for index: int in range(1, max(1, line.size() - 1)):
-		var board_cell: BoardCell = board.get_cell(line[index])
-		if board_cell != null and board_cell.blocks_line_of_sight():
-			return false
-	return true
-
-
-func _supercover_line(origin: Vector2i, target: Vector2i) -> Array[Vector2i]:
-	var cells: Array[Vector2i] = [origin]
-	if origin == target:
-		return cells
-
-	var delta: Vector2i = target - origin
-	var steps_x: int = abs(delta.x)
-	var steps_y: int = abs(delta.y)
-	var step_x: int = _step_sign(delta.x)
-	var step_y: int = _step_sign(delta.y)
-	var current: Vector2i = origin
-	var walked_x: int = 0
-	var walked_y: int = 0
-
-	while walked_x < steps_x or walked_y < steps_y:
-		var decision: int = (1 + 2 * walked_x) * steps_y - (1 + 2 * walked_y) * steps_x
-		if decision == 0:
-			if walked_x < steps_x:
-				_append_unique_cell(cells, Vector2i(current.x + step_x, current.y))
-			if walked_y < steps_y:
-				_append_unique_cell(cells, Vector2i(current.x, current.y + step_y))
-			current += Vector2i(step_x, step_y)
-			walked_x += 1
-			walked_y += 1
-			_append_unique_cell(cells, current)
-		elif decision < 0:
-			current.x += step_x
-			walked_x += 1
-			_append_unique_cell(cells, current)
-		else:
-			current.y += step_y
-			walked_y += 1
-			_append_unique_cell(cells, current)
-
-	return cells
-
-
-func _append_unique_cell(cells: Array[Vector2i], cell: Vector2i) -> void:
-	if not cells.has(cell):
-		cells.append(cell)
-
-
-func _step_sign(value: int) -> int:
-	if value > 0:
-		return 1
-	if value < 0:
-		return -1
-	return 0
+	return TacticalLineQuery.has_line_of_sight(board, origin, target)
 
 
 func _serialize_cells(cells: Array[Vector2i]) -> Array[Dictionary]:
