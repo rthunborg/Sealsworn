@@ -343,6 +343,8 @@ func _apply_validated_event(event: DomainEvent) -> void:
 				int(event.payload.get("width", 0)),
 				int(event.payload.get("height", 0))
 			)
+		DomainEvent.Type.ENTITY_MOVED:
+			_apply_entity_moved(event)
 	_next_sequence_id = event.sequence_id + 1
 
 
@@ -366,10 +368,102 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 				return ActionResult.error(&"board_already_created")
 			if event_width <= 0 or event_height <= 0:
 				return ActionResult.error(&"invalid_board_size")
+		DomainEvent.Type.ENTITY_MOVED:
+			var movement_validation: ActionResult = _validate_entity_moved_event(event)
+			if movement_validation.is_error():
+				return movement_validation
 		_:
 			return ActionResult.error(&"unsupported_board_event", {
 				"event_id": String(DomainEvent.id_for_type(event.event_type))
 			})
+
+	return ActionResult.ok()
+
+
+func _apply_entity_moved(event: DomainEvent) -> void:
+	var from_cell: Vector2i = _payload_cell(event.payload.get("from", {}))
+	var to_cell: Vector2i = _payload_cell(event.payload.get("to", {}))
+	var entity: TacticalEntityState = _entities.get(event.actor_id) as TacticalEntityState
+
+	if entity.blocks_movement:
+		var previous_cell: BoardCell = get_cell(from_cell)
+		if previous_cell != null and previous_cell.occupant_id == event.actor_id:
+			previous_cell.occupant_id = &""
+		var target_cell: BoardCell = get_cell(to_cell)
+		if target_cell != null:
+			target_cell.occupant_id = event.actor_id
+
+	entity.position = to_cell
+
+
+func _validate_entity_moved_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_movement_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_movement_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_event_cell(event.payload, &"from"):
+		return _invalid_movement_event(&"invalid_payload", {"field": "from"})
+	if not _has_event_cell(event.payload, &"to"):
+		return _invalid_movement_event(&"invalid_payload", {"field": "to"})
+	if not _has_positive_integral_payload(event.payload, &"movement_cost"):
+		return _invalid_movement_event(&"invalid_payload", {"field": "movement_cost"})
+	if not _has_positive_integral_payload(event.payload, &"movement_budget"):
+		return _invalid_movement_event(&"invalid_payload", {"field": "movement_budget"})
+
+	var movement_cost: int = int(event.payload.get("movement_cost"))
+	var movement_budget: int = int(event.payload.get("movement_budget"))
+	if movement_cost > movement_budget:
+		return _invalid_movement_event(&"invalid_payload", {"field": "movement_cost"})
+
+	var from_cell: Vector2i = _payload_cell(event.payload.get("from"))
+	var to_cell: Vector2i = _payload_cell(event.payload.get("to"))
+	var entity: TacticalEntityState = _entities.get(event.actor_id) as TacticalEntityState
+	if entity == null:
+		return _invalid_movement_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if entity.position != from_cell:
+		return _invalid_movement_event(&"from_mismatch", {
+			"actor_id": String(event.actor_id),
+			"expected_x": entity.position.x,
+			"expected_y": entity.position.y,
+			"actual_x": from_cell.x,
+			"actual_y": from_cell.y
+		})
+	if not in_bounds(to_cell):
+		return _invalid_movement_event(&"out_of_bounds", {
+			"x": to_cell.x,
+			"y": to_cell.y
+		})
+
+	var source_cell: BoardCell = get_cell(from_cell)
+	if source_cell == null:
+		return _invalid_movement_event(&"from_mismatch")
+	if entity.blocks_movement and source_cell.occupant_id != event.actor_id:
+		return _invalid_movement_event(&"from_mismatch", {
+			"actor_id": String(event.actor_id),
+			"occupant_id": String(source_cell.occupant_id)
+		})
+
+	var target_board_cell: BoardCell = get_cell(to_cell)
+	if target_board_cell == null:
+		return _invalid_movement_event(&"out_of_bounds", {
+			"x": to_cell.x,
+			"y": to_cell.y
+		})
+	if target_board_cell.terrain_blocks_occupancy():
+		return _invalid_movement_event(&"blocked", {
+			"x": to_cell.x,
+			"y": to_cell.y
+		})
+	if target_board_cell.occupant_id != &"" and target_board_cell.occupant_id != event.actor_id:
+		return _invalid_movement_event(&"occupied", {
+			"x": to_cell.x,
+			"y": to_cell.y,
+			"occupant_id": String(target_board_cell.occupant_id)
+		})
 
 	return ActionResult.ok()
 
@@ -434,6 +528,45 @@ func _validate_cell_for_occupancy(cell: Vector2i, entity_id: StringName = &"") -
 		})
 
 	return ActionResult.ok()
+
+
+func _has_event_cell(payload: Dictionary, field_name: StringName) -> bool:
+	if not payload.has(String(field_name)):
+		return false
+	var cell_value: Variant = payload.get(String(field_name))
+	if not cell_value is Dictionary:
+		return false
+	var cell_data: Dictionary = cell_value
+	return (
+		cell_data.has("x")
+		and cell_data.has("y")
+		and _is_integral_number(cell_data.get("x"))
+		and _is_integral_number(cell_data.get("y"))
+	)
+
+
+func _payload_cell(value: Variant) -> Vector2i:
+	if not value is Dictionary:
+		return Vector2i.ZERO
+	var cell_data: Dictionary = value
+	return Vector2i(
+		int(cell_data.get("x", 0)),
+		int(cell_data.get("y", 0))
+	)
+
+
+func _has_positive_integral_payload(payload: Dictionary, field_name: StringName) -> bool:
+	if not payload.has(String(field_name)):
+		return false
+	var value: Variant = payload.get(String(field_name))
+	return _is_integral_number(value) and int(value) > 0
+
+
+func _invalid_movement_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_movement_event", result_metadata)
 
 
 func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResult:

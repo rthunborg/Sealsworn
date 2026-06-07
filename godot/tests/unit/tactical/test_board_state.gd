@@ -13,6 +13,8 @@ func run() -> Dictionary:
 	_invalid_board_created_event_does_not_mutate()
 	_board_created_event_rejects_malformed_payload_dimensions()
 	_replayed_board_created_event_is_rejected()
+	_entity_moved_event_updates_occupancy_atomically()
+	_invalid_entity_moved_events_do_not_mutate()
 	_event_batches_are_atomic()
 	_event_batches_reject_invalid_types_atomically()
 	_unsupported_board_events_use_stable_reason_code()
@@ -137,6 +139,85 @@ func _replayed_board_created_event_is_rejected() -> void:
 	assert_true(result_value.is_error(), "Replayed board-created event should fail.")
 	assert_equal(result_value.error_code, &"event_sequence_mismatch", "Replayed event should explain sequence mismatch.")
 	assert_equal(board.cell_count(), 4, "Replayed event must not recreate board state.")
+
+
+func _entity_moved_event_updates_occupancy_atomically() -> void:
+	var board: BoardState = _new_board(3, 2)
+	board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(0, 0),
+		18,
+		18
+	))
+	var event: DomainEvent = DomainEvent.entity_moved(board.next_sequence_id(), &"hero", Vector2i(0, 0), Vector2i(2, 1), 3, 3)
+
+	var result_value: ActionResult = board.apply_event(event)
+
+	assert_true(result_value.succeeded, "Valid movement events should apply to board state.")
+	assert_equal(board.next_sequence_id(), 3, "Movement events should advance board event sequence ids once.")
+	assert_equal(board.get_entity(&"hero").position, Vector2i(2, 1), "Movement events should update stored entity position.")
+	assert_equal(board.occupant_at(Vector2i(0, 0)), &"", "Movement events should clear previous blocking occupant.")
+	assert_equal(board.occupant_at(Vector2i(2, 1)), &"hero", "Movement events should set target blocking occupant.")
+
+
+func _invalid_entity_moved_events_do_not_mutate() -> void:
+	var missing_actor_board: BoardState = _new_board(2, 2)
+	var missing_actor_before: Dictionary = missing_actor_board.to_snapshot()
+	var missing_actor_result: ActionResult = missing_actor_board.apply_event(
+		DomainEvent.entity_moved(missing_actor_board.next_sequence_id(), &"missing", Vector2i(0, 0), Vector2i(1, 0), 1, 3)
+	)
+
+	var from_mismatch_board: BoardState = _movement_event_board()
+	var from_mismatch_before: Dictionary = from_mismatch_board.to_snapshot()
+	var from_mismatch_result: ActionResult = from_mismatch_board.apply_event(
+		DomainEvent.entity_moved(from_mismatch_board.next_sequence_id(), &"hero", Vector2i(1, 0), Vector2i(1, 1), 1, 3)
+	)
+
+	var out_of_bounds_board: BoardState = _movement_event_board()
+	var out_of_bounds_before: Dictionary = out_of_bounds_board.to_snapshot()
+	var out_of_bounds_result: ActionResult = out_of_bounds_board.apply_event(
+		DomainEvent.entity_moved(out_of_bounds_board.next_sequence_id(), &"hero", Vector2i(0, 0), Vector2i(3, 0), 3, 3)
+	)
+
+	var wall_board: BoardState = _movement_event_board()
+	wall_board.set_cell_terrain_for_setup(Vector2i(1, 0), BoardCell.Terrain.WALL)
+	var wall_before: Dictionary = wall_board.to_snapshot()
+	var wall_result: ActionResult = wall_board.apply_event(
+		DomainEvent.entity_moved(wall_board.next_sequence_id(), &"hero", Vector2i(0, 0), Vector2i(1, 0), 1, 3)
+	)
+
+	var occupied_board: BoardState = _movement_event_board()
+	occupied_board.place_entity_for_setup(_entity(
+		&"enemy_1",
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		Vector2i(1, 0),
+		10,
+		10
+	))
+	var occupied_before: Dictionary = occupied_board.to_snapshot()
+	var occupied_result: ActionResult = occupied_board.apply_event(
+		DomainEvent.entity_moved(occupied_board.next_sequence_id(), &"hero", Vector2i(0, 0), Vector2i(1, 0), 1, 3)
+	)
+
+	assert_true(missing_actor_result.is_error(), "Movement events should reject missing actors.")
+	assert_equal(missing_actor_result.error_code, &"invalid_movement_event", "Missing actor movement should use a stable board-event code.")
+	assert_equal(missing_actor_result.metadata.get("reason"), "invalid_actor", "Missing actor movement should expose reason metadata.")
+	assert_equal(missing_actor_board.to_snapshot(), missing_actor_before, "Missing actor movement must not mutate board state.")
+	assert_true(from_mismatch_result.is_error(), "Movement events should reject source-cell mismatches.")
+	assert_equal(from_mismatch_result.metadata.get("reason"), "from_mismatch", "Source mismatch should expose reason metadata.")
+	assert_equal(from_mismatch_board.to_snapshot(), from_mismatch_before, "Source mismatch movement must not mutate board state.")
+	assert_true(out_of_bounds_result.is_error(), "Movement events should reject out-of-bounds targets.")
+	assert_equal(out_of_bounds_result.metadata.get("reason"), "out_of_bounds", "Out-of-bounds movement should expose reason metadata.")
+	assert_equal(out_of_bounds_board.to_snapshot(), out_of_bounds_before, "Out-of-bounds movement must not mutate board state.")
+	assert_true(wall_result.is_error(), "Movement events should reject blocking terrain.")
+	assert_equal(wall_result.metadata.get("reason"), "blocked", "Blocking terrain movement should expose reason metadata.")
+	assert_equal(wall_board.to_snapshot(), wall_before, "Blocking terrain movement must not mutate board state.")
+	assert_true(occupied_result.is_error(), "Movement events should reject occupied targets.")
+	assert_equal(occupied_result.metadata.get("reason"), "occupied", "Occupied movement should expose reason metadata.")
+	assert_equal(occupied_board.to_snapshot(), occupied_before, "Occupied movement must not mutate board state.")
 
 
 func _event_batches_are_atomic() -> void:
@@ -542,6 +623,20 @@ func _new_board(new_width: int, new_height: int) -> BoardState:
 	var command: Variant = CreateBoardCommand.new(new_width, new_height)
 	var result_value: ActionResult = command.execute(board)
 	assert_true(result_value.succeeded, "Test helper should create a valid board.")
+	return board
+
+
+func _movement_event_board() -> BoardState:
+	var board: BoardState = _new_board(3, 2)
+	var place_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(0, 0),
+		18,
+		18
+	))
+	assert_true(place_result.succeeded, "Movement event test helper should place the hero.")
 	return board
 
 
