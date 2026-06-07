@@ -361,6 +361,10 @@ func _apply_validated_event(event: DomainEvent) -> void:
 			pass
 		DomainEvent.Type.ENEMY_WAITED:
 			pass
+		DomainEvent.Type.LEVEL_VICTORY_REACHED:
+			pass
+		DomainEvent.Type.LEVEL_DEFEAT_REACHED:
+			pass
 	_next_sequence_id = event.sequence_id + 1
 
 
@@ -420,6 +424,14 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 			var wait_validation: ActionResult = _validate_enemy_waited_event(event)
 			if wait_validation.is_error():
 				return wait_validation
+		DomainEvent.Type.LEVEL_VICTORY_REACHED:
+			var victory_validation: ActionResult = _validate_level_victory_reached_event(event)
+			if victory_validation.is_error():
+				return victory_validation
+		DomainEvent.Type.LEVEL_DEFEAT_REACHED:
+			var defeat_validation: ActionResult = _validate_level_defeat_reached_event(event)
+			if defeat_validation.is_error():
+				return defeat_validation
 		_:
 			return ActionResult.error(&"unsupported_board_event", {
 				"event_id": String(DomainEvent.id_for_type(event.event_type))
@@ -891,6 +903,66 @@ func _validate_enemy_waited_event(event: DomainEvent) -> ActionResult:
 	return ActionResult.ok()
 
 
+func _validate_level_victory_reached_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id != &"":
+		return _invalid_outcome_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if String(event.payload.get("outcome", "")) != "victory":
+		return _invalid_outcome_event(&"invalid_payload", {"field": "outcome"})
+	if not _has_positive_integral_payload(event.payload, &"living_player_count"):
+		return _invalid_outcome_event(&"invalid_payload", {"field": "living_player_count"})
+	if not _has_nonnegative_integral_payload(event.payload, &"remaining_enemy_count"):
+		return _invalid_outcome_event(&"invalid_payload", {"field": "remaining_enemy_count"})
+
+	var living_players: int = _living_entity_count(TacticalEntityState.EntityType.PLAYER)
+	var living_enemies: int = _living_entity_count(TacticalEntityState.EntityType.ENEMY)
+	if living_players <= 0:
+		return _invalid_outcome_event(&"no_living_player")
+	if int(event.payload.get("living_player_count")) != living_players:
+		return _invalid_outcome_event(&"living_player_count_mismatch", {
+			"expected_count": living_players,
+			"actual_count": int(event.payload.get("living_player_count"))
+		})
+	if living_enemies != 0 or int(event.payload.get("remaining_enemy_count")) != living_enemies:
+		return _invalid_outcome_event(&"remaining_enemy_count_mismatch", {
+			"expected_count": living_enemies,
+			"actual_count": int(event.payload.get("remaining_enemy_count"))
+		})
+
+	var defeated_enemy_ids: Array[String] = _string_array_from_variant(event.payload.get("defeated_enemy_ids", []))
+	if defeated_enemy_ids != _defeated_enemy_ids():
+		return _invalid_outcome_event(&"defeated_enemy_ids_mismatch", {
+			"expected_ids": _defeated_enemy_ids(),
+			"actual_ids": defeated_enemy_ids
+		})
+	return ActionResult.ok()
+
+
+func _validate_level_defeat_reached_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id != &"":
+		return _invalid_outcome_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if String(event.payload.get("outcome", "")) != "defeat":
+		return _invalid_outcome_event(&"invalid_payload", {"field": "outcome"})
+	if not _has_nonempty_string_payload(event.payload, &"defeated_player_id"):
+		return _invalid_outcome_event(&"invalid_payload", {"field": "defeated_player_id"})
+
+	var defeated_player_id: StringName = StringName(str(event.payload.get("defeated_player_id", "")))
+	var defeated_player: TacticalEntityState = _entities.get(defeated_player_id) as TacticalEntityState
+	if defeated_player == null or defeated_player.entity_type != TacticalEntityState.EntityType.PLAYER:
+		return _invalid_outcome_event(&"missing_defeated_player", {
+			"defeated_player_id": String(defeated_player_id)
+		})
+	if defeated_player.is_alive():
+		return _invalid_outcome_event(&"player_still_alive", {
+			"defeated_player_id": String(defeated_player_id),
+			"current_hp": defeated_player.current_hp
+		})
+	return ActionResult.ok()
+
+
 func _validate_visibility_cell_array(value: Variant, field_name: StringName, allow_empty: bool) -> ActionResult:
 	if not value is Array:
 		return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
@@ -1107,6 +1179,44 @@ func _invalid_wait_event(reason: StringName, metadata: Dictionary = {}) -> Actio
 	for key: Variant in metadata.keys():
 		result_metadata[key] = metadata[key]
 	return ActionResult.error(&"invalid_wait_event", result_metadata)
+
+
+func _invalid_outcome_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_outcome_event", result_metadata)
+
+
+func _living_entity_count(entity_type: int) -> int:
+	var count: int = 0
+	for entity_value: Variant in _entities.values():
+		var entity: TacticalEntityState = entity_value as TacticalEntityState
+		if entity != null and entity.entity_type == entity_type and entity.is_alive():
+			count += 1
+	return count
+
+
+func _defeated_enemy_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for entity_value: Variant in _entities.values():
+		var entity: TacticalEntityState = entity_value as TacticalEntityState
+		if entity != null and entity.entity_type == TacticalEntityState.EntityType.ENEMY and entity.is_dead():
+			ids.append(String(entity.entity_id))
+	ids.sort()
+	return ids
+
+
+func _string_array_from_variant(value: Variant) -> Array[String]:
+	var result: Array[String] = []
+	if not value is Array:
+		return result
+	var values: Array = value
+	for item: Variant in values:
+		if item is String or item is StringName:
+			result.append(String(item))
+	result.sort()
+	return result
 
 
 func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResult:

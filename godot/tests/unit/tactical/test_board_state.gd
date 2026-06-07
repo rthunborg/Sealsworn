@@ -1,6 +1,7 @@
 extends "res://tests/unit/test_case.gd"
 
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
+const BoardFixtureFactory = preload("res://tests/fixtures/tactical/board_fixture_factory.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const CreateBoardCommand = preload("res://scripts/core/commands/create_board_command.gd")
@@ -23,6 +24,8 @@ func run() -> Dictionary:
 	_knockback_events_update_position_and_occupancy_atomically()
 	_invalid_attack_events_do_not_mutate()
 	_detonation_events_reject_outcome_position_contradictions()
+	_outcome_events_advance_sequence_without_board_mutation()
+	_invalid_outcome_events_do_not_mutate()
 	_event_batches_are_atomic()
 	_event_batches_reject_invalid_types_atomically()
 	_unsupported_board_events_use_stable_reason_code()
@@ -553,6 +556,78 @@ func _detonation_events_reject_outcome_position_contradictions() -> void:
 	assert_equal(hit_result.error_code, &"invalid_detonation_event", "Hit contradiction should use the detonation event code.")
 	assert_equal(hit_result.metadata.get("reason"), "target_cell_mismatch", "Hit contradiction should identify the target position mismatch.")
 	assert_equal(hit_board.to_snapshot(), hit_before, "Rejected hit detonation replay must not mutate board state.")
+
+
+func _outcome_events_advance_sequence_without_board_mutation() -> void:
+	var victory_board: BoardState = BoardFixtureFactory.outcome_all_enemies_dead()
+	var defeat_board: BoardState = BoardFixtureFactory.outcome_player_dead()
+	var victory_before: Dictionary = victory_board.to_snapshot()
+	var defeat_before: Dictionary = defeat_board.to_snapshot()
+	var victory_event: DomainEvent = DomainEvent.level_victory_reached(
+		victory_board.next_sequence_id(),
+		1,
+		0,
+		["enemy_iron", "enemy_seer"],
+		12,
+		"All enemies were defeated."
+	)
+	var defeat_event: DomainEvent = DomainEvent.level_defeat_reached(
+		defeat_board.next_sequence_id(),
+		&"hero",
+		9,
+		&"damage_applied",
+		&"enemy_iron",
+		&"physical",
+		3,
+		"Hero fell to enemy_iron."
+	)
+
+	var victory_result: ActionResult = victory_board.apply_event(victory_event)
+	var defeat_result: ActionResult = defeat_board.apply_event(defeat_event)
+	var victory_after: Dictionary = victory_board.to_snapshot()
+	var defeat_after: Dictionary = defeat_board.to_snapshot()
+	victory_before["next_sequence_id"] = victory_after["next_sequence_id"]
+	defeat_before["next_sequence_id"] = defeat_after["next_sequence_id"]
+
+	assert_true(victory_result.succeeded, "Victory outcome events should replay on board state.")
+	assert_true(defeat_result.succeeded, "Defeat outcome events should replay on board state.")
+	assert_equal(victory_after, victory_before, "Victory events should only advance sequence ids, not mutate board truth.")
+	assert_equal(defeat_after, defeat_before, "Defeat events should only advance sequence ids, not mutate board truth.")
+
+
+func _invalid_outcome_events_do_not_mutate() -> void:
+	var victory_board: BoardState = BoardFixtureFactory.outcome_active_combat()
+	var victory_before: Dictionary = victory_board.to_snapshot()
+	var victory_event: DomainEvent = DomainEvent.level_victory_reached(
+		victory_board.next_sequence_id(),
+		1,
+		0,
+		["enemy_iron", "enemy_seer"],
+		12,
+		"All enemies were defeated."
+	)
+	var defeat_board: BoardState = BoardFixtureFactory.outcome_active_combat()
+	var defeat_before: Dictionary = defeat_board.to_snapshot()
+	var defeat_event: DomainEvent = DomainEvent.level_defeat_reached(
+		defeat_board.next_sequence_id(),
+		&"hero",
+		9,
+		&"damage_applied",
+		&"enemy_iron",
+		&"physical",
+		3,
+		"Hero fell to enemy_iron."
+	)
+
+	var victory_result: ActionResult = victory_board.apply_event(victory_event)
+	var defeat_result: ActionResult = defeat_board.apply_event(defeat_event)
+
+	assert_true(victory_result.is_error(), "Victory events should reject boards with living enemies.")
+	assert_equal(victory_result.error_code, &"invalid_outcome_event", "Invalid victory replay should use a stable outcome event code.")
+	assert_equal(victory_board.to_snapshot(), victory_before, "Invalid victory events must not mutate board state.")
+	assert_true(defeat_result.is_error(), "Defeat events should reject boards with living players.")
+	assert_equal(defeat_result.error_code, &"invalid_outcome_event", "Invalid defeat replay should use a stable outcome event code.")
+	assert_equal(defeat_board.to_snapshot(), defeat_before, "Invalid defeat events must not mutate board state.")
 
 
 func _event_batches_are_atomic() -> void:

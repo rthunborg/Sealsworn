@@ -332,6 +332,52 @@ static func enemy_turn_ash_seer_no_los_wait() -> BoardState:
 	return board
 
 
+static func outcome_all_enemies_dead() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(3, 2), 10, 0))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(1, 4), 8, 0))
+	_reveal_all(board)
+	return board
+
+
+static func outcome_player_dead() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player_with_hp(&"hero", Vector2i(1, 2), 0))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(3, 2), 10))
+	_reveal_all(board)
+	return board
+
+
+static func outcome_both_sides_dead() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player_with_hp(&"hero", Vector2i(1, 2), 0))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(3, 2), 10, 0))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(1, 4), 8, 0))
+	_reveal_all(board)
+	return board
+
+
+static func outcome_active_combat() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(3, 2), 10))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(1, 4), 8))
+	_reveal_all(board)
+	return board
+
+
+static func micro_combat_board() -> BoardState:
+	var board: BoardState = _new_board(6, 6)
+	_set_terrain(board, Vector2i(0, 2), BoardCell.Terrain.ENTRANCE)
+	_set_terrain(board, Vector2i(5, 5), BoardCell.Terrain.EXIT)
+	_set_terrain(board, Vector2i(3, 1), BoardCell.Terrain.WALL)
+	_place_entity(board, _player(&"hero", Vector2i(0, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(3, 2), 10))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(1, 5), 8))
+	return board
+
+
 static func expected_los_open_radius_cells() -> Array[Vector2i]:
 	return _expected_open_radius_cells(9, 9, Vector2i(4, 4), 4)
 

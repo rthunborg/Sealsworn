@@ -12,10 +12,12 @@ func run() -> Dictionary:
 	_visibility_updated_serializes_stable_payload()
 	_attack_events_serialize_and_parse_stable_payloads()
 	_enemy_turn_events_serialize_and_parse_stable_payloads()
+	_outcome_events_serialize_and_parse_stable_payloads()
 	_try_from_dictionary_rejects_malformed_entity_moved_payloads()
 	_try_from_dictionary_rejects_malformed_visibility_payloads()
 	_try_from_dictionary_rejects_malformed_attack_payloads()
 	_try_from_dictionary_rejects_malformed_enemy_turn_payloads()
+	_try_from_dictionary_rejects_malformed_outcome_payloads()
 	_try_from_dictionary_accepts_json_round_tripped_integral_sequence_ids()
 	_try_from_dictionary_rejects_malformed_event_dictionaries()
 	_from_dictionary_keeps_unknown_compatibility_wrapper()
@@ -239,6 +241,36 @@ func _enemy_turn_events_serialize_and_parse_stable_payloads() -> void:
 	assert_equal(waited.to_dictionary().get("payload", {}).get("reason"), "blocked", "Wait events should serialize the stable wait reason.")
 
 
+func _outcome_events_serialize_and_parse_stable_payloads() -> void:
+	var victory: DomainEvent = DomainEvent.level_victory_reached(
+		18,
+		1,
+		0,
+		["enemy_iron", "enemy_seer"],
+		17,
+		"All enemies were defeated."
+	)
+	var defeat: DomainEvent = DomainEvent.level_defeat_reached(
+		19,
+		&"hero",
+		18,
+		&"damage_applied",
+		&"enemy_seer",
+		&"physical",
+		4,
+		"Hero fell to Ash Seer detonation."
+	)
+
+	_assert_round_trips(victory, DomainEvent.Type.LEVEL_VICTORY_REACHED, "level_victory_reached")
+	_assert_round_trips(defeat, DomainEvent.Type.LEVEL_DEFEAT_REACHED, "level_defeat_reached")
+	assert_equal(victory.to_dictionary().get("actor_id"), "", "Outcome events should be system events without an actor.")
+	assert_equal(victory.to_dictionary().get("payload", {}).get("outcome"), "victory", "Victory events should record the outcome id.")
+	assert_equal(victory.to_dictionary().get("payload", {}).get("defeated_enemy_ids"), ["enemy_iron", "enemy_seer"], "Victory events should serialize defeated enemy ids in stable order.")
+	assert_equal(defeat.to_dictionary().get("payload", {}).get("outcome"), "defeat", "Defeat events should record the outcome id.")
+	assert_equal(defeat.to_dictionary().get("payload", {}).get("cause_event_id"), "damage_applied", "Defeat events should serialize cause event ids.")
+	assert_equal(defeat.to_dictionary().get("payload", {}).get("final_damage"), 4, "Defeat events should serialize cause damage.")
+
+
 func _try_from_dictionary_rejects_malformed_entity_moved_payloads() -> void:
 	_assert_invalid_entity_moved_payload({
 		"to": {"x": 1, "y": 0},
@@ -384,7 +416,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.ENTITY_KNOCKED_BACK: &"entity_knocked_back",
 		DomainEvent.Type.TILE_MARKED: &"tile_marked",
 		DomainEvent.Type.MARKED_TILE_DETONATED: &"marked_tile_detonated",
-		DomainEvent.Type.ENEMY_WAITED: &"enemy_waited"
+		DomainEvent.Type.ENEMY_WAITED: &"enemy_waited",
+		DomainEvent.Type.LEVEL_VICTORY_REACHED: &"level_victory_reached",
+		DomainEvent.Type.LEVEL_DEFEAT_REACHED: &"level_defeat_reached"
 	}
 
 	for event_type: int in expected_ids.keys():
@@ -597,6 +631,72 @@ func _try_from_dictionary_rejects_malformed_enemy_turn_payloads() -> void:
 	assert_equal(detonation_bad_outcome.metadata.get("field"), "outcome", "Detonation diagnostics should identify the invalid outcome.")
 	assert_equal(wait_missing_reason.error_code, &"invalid_event_payload", "Enemy wait events should require a wait reason.")
 	assert_equal(wait_missing_reason.metadata.get("field"), "reason", "Wait diagnostics should identify the missing reason.")
+
+
+func _try_from_dictionary_rejects_malformed_outcome_payloads() -> void:
+	var victory_missing_explanation: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "level_victory_reached",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "victory",
+			"living_player_count": 1,
+			"remaining_enemy_count": 0,
+			"defeated_enemy_ids": ["enemy_iron"],
+			"cause_event_sequence_id": 12
+		}
+	})
+	var victory_bad_remaining: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "level_victory_reached",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "victory",
+			"living_player_count": 1,
+			"remaining_enemy_count": 1,
+			"defeated_enemy_ids": ["enemy_iron"],
+			"cause_event_sequence_id": 12,
+			"explanation": "All enemies defeated."
+		}
+	})
+	var defeat_missing_player: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "level_defeat_reached",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "defeat",
+			"cause_event_sequence_id": 12,
+			"cause_event_id": "damage_applied",
+			"source_entity_id": "enemy_iron",
+			"damage_type": "physical",
+			"final_damage": 3,
+			"explanation": "Hero fell."
+		}
+	})
+	var defeat_bad_damage_type: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "level_defeat_reached",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "defeat",
+			"defeated_player_id": "hero",
+			"cause_event_sequence_id": 12,
+			"cause_event_id": "damage_applied",
+			"source_entity_id": "enemy_iron",
+			"damage_type": "Physical",
+			"final_damage": 3,
+			"explanation": "Hero fell."
+		}
+	})
+
+	assert_equal(victory_missing_explanation.error_code, &"invalid_event_payload", "Victory events should require readable explanations.")
+	assert_equal(victory_missing_explanation.metadata.get("field"), "explanation", "Victory diagnostics should identify missing explanations.")
+	assert_equal(victory_bad_remaining.error_code, &"invalid_event_payload", "Victory events should require zero remaining enemies.")
+	assert_equal(victory_bad_remaining.metadata.get("field"), "remaining_enemy_count", "Victory diagnostics should identify remaining enemy contradictions.")
+	assert_equal(defeat_missing_player.error_code, &"invalid_event_payload", "Defeat events should require defeated player ids.")
+	assert_equal(defeat_missing_player.metadata.get("field"), "defeated_player_id", "Defeat diagnostics should identify missing player ids.")
+	assert_equal(defeat_bad_damage_type.error_code, &"invalid_event_payload", "Defeat events should require lower-snake damage types.")
+	assert_equal(defeat_bad_damage_type.metadata.get("field"), "damage_type", "Defeat diagnostics should identify invalid damage type.")
 
 
 func _assert_invalid_visibility_payload(payload: Dictionary, expected_field: StringName, message: String) -> void:

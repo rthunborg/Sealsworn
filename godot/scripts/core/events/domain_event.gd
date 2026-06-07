@@ -17,7 +17,9 @@ enum Type {
 	ENTITY_KNOCKED_BACK,
 	TILE_MARKED,
 	MARKED_TILE_DETONATED,
-	ENEMY_WAITED
+	ENEMY_WAITED,
+	LEVEL_VICTORY_REACHED,
+	LEVEL_DEFEAT_REACHED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -34,6 +36,8 @@ const EVENT_ID_ENTITY_KNOCKED_BACK := &"entity_knocked_back"
 const EVENT_ID_TILE_MARKED := &"tile_marked"
 const EVENT_ID_MARKED_TILE_DETONATED := &"marked_tile_detonated"
 const EVENT_ID_ENEMY_WAITED := &"enemy_waited"
+const EVENT_ID_LEVEL_VICTORY_REACHED := &"level_victory_reached"
+const EVENT_ID_LEVEL_DEFEAT_REACHED := &"level_defeat_reached"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -235,6 +239,46 @@ static func enemy_waited(
 	)
 
 
+static func level_victory_reached(
+	sequence_id: int,
+	living_player_count: int,
+	remaining_enemy_count: int,
+	defeated_enemy_ids: Array,
+	cause_event_sequence_id: int,
+	explanation: String
+) -> DomainEvent:
+	return load("res://scripts/core/events/domain_event.gd").new(Type.LEVEL_VICTORY_REACHED, sequence_id, &"", {
+		"outcome": "victory",
+		"living_player_count": living_player_count,
+		"remaining_enemy_count": remaining_enemy_count,
+		"defeated_enemy_ids": _string_array_payload(defeated_enemy_ids),
+		"cause_event_sequence_id": cause_event_sequence_id,
+		"explanation": explanation
+	})
+
+
+static func level_defeat_reached(
+	sequence_id: int,
+	defeated_player_id: StringName,
+	cause_event_sequence_id: int,
+	cause_event_id: StringName,
+	source_entity_id: StringName,
+	damage_type: StringName,
+	final_damage: int,
+	explanation: String
+) -> DomainEvent:
+	return load("res://scripts/core/events/domain_event.gd").new(Type.LEVEL_DEFEAT_REACHED, sequence_id, &"", {
+		"outcome": "defeat",
+		"defeated_player_id": String(defeated_player_id),
+		"cause_event_sequence_id": cause_event_sequence_id,
+		"cause_event_id": String(cause_event_id),
+		"source_entity_id": String(source_entity_id),
+		"damage_type": String(damage_type),
+		"final_damage": final_damage,
+		"explanation": explanation
+	})
+
+
 func to_dictionary() -> Dictionary:
 	return {
 		"event_id": String(id_for_type(event_type)),
@@ -350,6 +394,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_marked_tile_detonated_payload(payload_value)
 		Type.ENEMY_WAITED:
 			return _validate_enemy_waited_payload(payload_value)
+		Type.LEVEL_VICTORY_REACHED:
+			return _validate_level_victory_reached_payload(payload_value)
+		Type.LEVEL_DEFEAT_REACHED:
+			return _validate_level_defeat_reached_payload(payload_value)
 		_:
 			return _ok_result()
 
@@ -560,6 +608,49 @@ static func _validate_enemy_waited_payload(payload_value: Dictionary) -> ActionR
 	return _ok_result()
 
 
+static func _validate_level_victory_reached_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_lower_snake_payload(payload_value, &"outcome") or String(payload_value.get("outcome")) != "victory":
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	if not _has_positive_integral_payload(payload_value, &"living_player_count"):
+		return _error_result(&"invalid_event_payload", {"field": "living_player_count"})
+	if not _has_nonnegative_integral_payload(payload_value, &"remaining_enemy_count"):
+		return _error_result(&"invalid_event_payload", {"field": "remaining_enemy_count"})
+	if int(payload_value.get("remaining_enemy_count")) != 0:
+		return _error_result(&"invalid_event_payload", {"field": "remaining_enemy_count"})
+	if not _has_string_array_payload(payload_value, &"defeated_enemy_ids", true):
+		return _error_result(&"invalid_event_payload", {"field": "defeated_enemy_ids"})
+	if _string_array_has_duplicates(payload_value.get("defeated_enemy_ids", [])):
+		return _error_result(&"invalid_event_payload", {"field": "defeated_enemy_ids"})
+	if not _has_nonnegative_integral_payload(payload_value, &"cause_event_sequence_id"):
+		return _error_result(&"invalid_event_payload", {"field": "cause_event_sequence_id"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
+	return _ok_result()
+
+
+static func _validate_level_defeat_reached_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_lower_snake_payload(payload_value, &"outcome") or String(payload_value.get("outcome")) != "defeat":
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	if not _has_nonempty_string_payload(payload_value, &"defeated_player_id"):
+		return _error_result(&"invalid_event_payload", {"field": "defeated_player_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"cause_event_sequence_id"):
+		return _error_result(&"invalid_event_payload", {"field": "cause_event_sequence_id"})
+	if not _has_lower_snake_payload(payload_value, &"cause_event_id"):
+		return _error_result(&"invalid_event_payload", {"field": "cause_event_id"})
+	if not _has_string_payload(payload_value, &"source_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "source_entity_id"})
+	var source_entity_id: String = String(payload_value.get("source_entity_id"))
+	if not source_entity_id.is_empty() and not _is_lower_snake_id(source_entity_id):
+		return _error_result(&"invalid_event_payload", {"field": "source_entity_id"})
+	if not _has_lower_snake_payload(payload_value, &"damage_type"):
+		return _error_result(&"invalid_event_payload", {"field": "damage_type"})
+	if not _has_nonnegative_integral_payload(payload_value, &"final_damage"):
+		return _error_result(&"invalid_event_payload", {"field": "final_damage"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
+	return _ok_result()
+
+
 static func _has_cell_payload(payload_value: Dictionary, field_name: StringName) -> bool:
 	if not payload_value.has(String(field_name)):
 		return false
@@ -620,6 +711,13 @@ static func _has_nonempty_string_payload(payload_value: Dictionary, field_name: 
 	return (value is String or value is StringName) and not String(value).is_empty()
 
 
+static func _has_string_payload(payload_value: Dictionary, field_name: StringName) -> bool:
+	if not payload_value.has(String(field_name)):
+		return false
+	var value: Variant = payload_value.get(String(field_name))
+	return value is String or value is StringName
+
+
 static func _has_lower_snake_payload(payload_value: Dictionary, field_name: StringName) -> bool:
 	if not _has_nonempty_string_payload(payload_value, field_name):
 		return false
@@ -642,6 +740,36 @@ static func _has_nonnegative_integral_payload(payload_value: Dictionary, field_n
 		return false
 	var value: Variant = payload_value.get(String(field_name))
 	return _is_integral_number(value) and int(value) >= 0
+
+
+static func _has_string_array_payload(payload_value: Dictionary, field_name: StringName, allow_empty: bool) -> bool:
+	if not payload_value.has(String(field_name)):
+		return false
+	var values: Variant = payload_value.get(String(field_name))
+	if not values is Array:
+		return false
+	var string_values: Array = values
+	if string_values.is_empty() and not allow_empty:
+		return false
+	for value: Variant in string_values:
+		if not (value is String or value is StringName):
+			return false
+		var text: String = String(value)
+		if text.is_empty() or not _is_lower_snake_id(text):
+			return false
+	return true
+
+
+static func _string_array_has_duplicates(values: Variant) -> bool:
+	if not values is Array:
+		return true
+	var seen: Dictionary = {}
+	for value: Variant in values:
+		var text: String = String(value)
+		if seen.has(text):
+			return true
+		seen[text] = true
+	return false
 
 
 static func _is_valid_rng_draw(draw_value: Dictionary) -> bool:
@@ -700,6 +828,15 @@ static func _cell_array_payload(cells: Array) -> Array[Dictionary]:
 	return result
 
 
+static func _string_array_payload(values: Array) -> Array[String]:
+	var result: Array[String] = []
+	for value: Variant in values:
+		if value is String or value is StringName:
+			result.append(String(value))
+	result.sort()
+	return result
+
+
 static func id_for_type(type_value: int) -> StringName:
 	match type_value:
 		Type.RUN_STARTED:
@@ -728,6 +865,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_MARKED_TILE_DETONATED
 		Type.ENEMY_WAITED:
 			return EVENT_ID_ENEMY_WAITED
+		Type.LEVEL_VICTORY_REACHED:
+			return EVENT_ID_LEVEL_VICTORY_REACHED
+		Type.LEVEL_DEFEAT_REACHED:
+			return EVENT_ID_LEVEL_DEFEAT_REACHED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -760,6 +901,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.MARKED_TILE_DETONATED
 		EVENT_ID_ENEMY_WAITED:
 			return Type.ENEMY_WAITED
+		EVENT_ID_LEVEL_VICTORY_REACHED:
+			return Type.LEVEL_VICTORY_REACHED
+		EVENT_ID_LEVEL_DEFEAT_REACHED:
+			return Type.LEVEL_DEFEAT_REACHED
 		_:
 			return Type.UNKNOWN
 
