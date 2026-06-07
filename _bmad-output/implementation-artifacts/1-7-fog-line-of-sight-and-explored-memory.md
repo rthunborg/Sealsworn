@@ -4,7 +4,7 @@ baseline_commit: 3b4034044fc7e9e504624de66947886fec2ba0f8
 
 # Story 1.7: Fog, Line of Sight, and Explored Memory
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,54 +25,58 @@ so that partial information creates fair tactical tension.
 
 ## Tasks / Subtasks
 
-- [ ] 1.7.1 Add failing headless visibility tests before implementation. (AC: 1, 2, 4, 5)
-  - [ ] Add `godot/tests/unit/tactical/test_tactical_visibility_query.gd` using the existing addon-free `TestCase` style.
-  - [ ] Cover baseline radius 4 from center and edge/corner origins.
-  - [ ] Cover blocker behavior using `BoardCell.blocks_line_of_sight()` with a visible blocker tile and hidden cells beyond it.
-  - [ ] Cover diagonal paths and corner cases with stable expected cell sets.
-  - [ ] Cover recalculation after a successful `MoveCommand` by executing the move, then explicitly recalculating visibility from the new actor position.
-  - [ ] Assert pure visibility calculations emit no events, consume no RNG, and do not mutate the board.
-- [ ] 1.7.2 Add a tactical fog/visibility service under the architecture-defined folder. (AC: 1, 2, 4, 5)
-  - [ ] Add `godot/scripts/tactical/fog/tactical_visibility_query.gd` with `class_name TacticalVisibilityQuery extends RefCounted`.
-  - [ ] Use `Vector2i` grid coordinates, `BoardState`, `BoardCell`, and `TacticalEntityState`; do not introduce scene nodes or presentation state.
-  - [ ] Expose `DEFAULT_LINE_OF_SIGHT_RADIUS: int = 4`.
-  - [ ] Return deterministic `ActionResult` values with serialized cell arrays sorted by y then x.
-  - [ ] Use the existing `BoardCell.blocks_line_of_sight()` boundary instead of duplicating terrain rules.
-  - [ ] Keep entities from blocking line of sight for this story; future rules may add entity blockers explicitly.
-- [ ] 1.7.3 Define and lock baseline line-of-sight semantics. (AC: 1, 4, 5)
-  - [ ] Treat the actor origin as visible and explored.
-  - [ ] Candidate cells are in bounds and within radius 4. Use a stable radius metric and lock it in tests; recommended baseline is squared Euclidean distance using `Vector2i.distance_squared_to(origin) <= radius * radius`.
-  - [ ] A blocking target cell can be visible if the line reaches it; cells beyond a blocking intermediate cell are not visible.
-  - [ ] Do not allow permissive corner peeking through blockers unless a golden fixture explicitly defines that case as visible.
-  - [ ] Fixture failures must report board name, actor cell, radius, blocker rule, expected cells, actual cells, missing cells, and extra cells.
-- [ ] 1.7.4 Apply visibility through a deterministic domain event boundary. (AC: 1, 2)
-  - [ ] Extend `godot/scripts/core/events/domain_event.gd` with `Type.VISIBILITY_UPDATED`, event id `visibility_updated`, and a helper such as `DomainEvent.visibility_updated(sequence_id, actor_id, origin, radius, visible_cells, newly_explored_cells)`.
-  - [ ] Extend `BoardState._validate_event()` and `_apply_validated_event()` to validate and apply visibility updates atomically.
-  - [ ] Applying the event must clear all current `visible` flags, mark payload `visible_cells` as `visible = true` and `explored = true`, and leave previously explored but now unseen cells as `explored = true`.
-  - [ ] Reject malformed visibility payloads, out-of-bounds cells, invalid actors, duplicate cells, empty visible sets, and sequence mismatches without mutating the board.
-  - [ ] Use one visibility event per recalculation, not one event per tile.
-- [ ] 1.7.5 Add player-visible fact queries that hide authoritative data correctly. (AC: 3, 6)
-  - [ ] Add the query on `TacticalVisibilityQuery` or a narrow sibling such as `tactical_visible_fact_query.gd` only if it keeps the API clearer.
-  - [ ] Hidden cells (`visible == false` and `explored == false`) return only position and `visibility_state = "hidden"`; do not expose terrain, occupants, HP, faction, hazards, rewards, or current tactical facts.
-  - [ ] Explored memory cells (`visible == false` and `explored == true`) return `visibility_state = "memory"`, position, stable terrain/display fields, and `authoritative = false`; do not expose current occupants or entity stats from `BoardCell.occupant_id`.
-  - [ ] Current visible cells return `visibility_state = "visible"`, `authoritative = true`, terrain, blockers, occupant id/type/faction/HP where present, and other current tactical facts already stored in domain state.
-  - [ ] Add tests proving an enemy on a hidden cell is unavailable and an enemy on an explored-memory cell is stale/non-authoritative.
-- [ ] 1.7.6 Preserve movement and snapshot contracts from previous stories. (AC: 2, 4, 6)
-  - [ ] Keep `MoveCommand` returning exactly one `entity_moved` event and `ActionResult.metadata["advances_turn"] == true`; do not fold fog recalculation into `MoveCommand` in this story.
-  - [ ] Add or update movement-query coverage so a target that is explored but not currently visible is rejected as `invalid_movement` with reason `not_visible`.
-  - [ ] Use `TacticalSnapshot.from_domain(board, streams, turn_state.to_dictionary(), [], event_log)` for invalid/no-mutation assertions where commands or event application can fail.
-  - [ ] Keep `TacticalSnapshot` visibility-field serialization intact and do not introduce scene, UI, audio, animation, or presentation references.
-  - [ ] Do not add attack preview, `AttackCommand`, enemy AI, hazards, Darkness affinity rules, UI fog scenes, animation, audio, save repository wiring, or autoload-owned tactical state.
-- [ ] 1.7.7 Extend reusable fixtures for golden line-of-sight cases. (AC: 4, 5)
-  - [ ] Extend `godot/tests/fixtures/tactical/board_fixture_factory.gd` with named fixtures for open radius, blockers, corner peeking, diagonal line, edge origin, and movement update memory.
-  - [ ] Add helper methods only when they reduce duplication for future targeting and enemy tests.
-  - [ ] Keep fixtures deterministic and scene-independent.
-  - [ ] Update `godot/tests/unit/tactical/test_board_fixtures.gd` to prove the new fixtures are valid, deterministic, and serialize cleanly.
-- [ ] 1.7.8 Run validation and update story records. (AC: 4)
-  - [ ] Run `godot --version`.
-  - [ ] Run `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
-  - [ ] Run `git diff --check`.
-  - [ ] Update this story's Dev Agent Record, File List, Completion Notes, and Change Log with actual implementation work.
+- [x] 1.7.1 Add failing headless visibility tests before implementation. (AC: 1, 2, 4, 5)
+  - [x] Add `godot/tests/unit/tactical/test_tactical_visibility_query.gd` using the existing addon-free `TestCase` style.
+  - [x] Cover baseline radius 4 from center and edge/corner origins.
+  - [x] Cover blocker behavior using `BoardCell.blocks_line_of_sight()` with a visible blocker tile and hidden cells beyond it.
+  - [x] Cover diagonal paths and corner cases with stable expected cell sets.
+  - [x] Cover recalculation after a successful `MoveCommand` by executing the move, then explicitly recalculating visibility from the new actor position.
+  - [x] Assert pure visibility calculations emit no events, consume no RNG, and do not mutate the board.
+- [x] 1.7.2 Add a tactical fog/visibility service under the architecture-defined folder. (AC: 1, 2, 4, 5)
+  - [x] Add `godot/scripts/tactical/fog/tactical_visibility_query.gd` with `class_name TacticalVisibilityQuery extends RefCounted`.
+  - [x] Use `Vector2i` grid coordinates, `BoardState`, `BoardCell`, and `TacticalEntityState`; do not introduce scene nodes or presentation state.
+  - [x] Expose `DEFAULT_LINE_OF_SIGHT_RADIUS: int = 4`.
+  - [x] Return deterministic `ActionResult` values with serialized cell arrays sorted by y then x.
+  - [x] Use the existing `BoardCell.blocks_line_of_sight()` boundary instead of duplicating terrain rules.
+  - [x] Keep entities from blocking line of sight for this story; future rules may add entity blockers explicitly.
+- [x] 1.7.3 Define and lock baseline line-of-sight semantics. (AC: 1, 4, 5)
+  - [x] Treat the actor origin as visible and explored.
+  - [x] Candidate cells are in bounds and within radius 4. Use a stable radius metric and lock it in tests; recommended baseline is squared Euclidean distance using `Vector2i.distance_squared_to(origin) <= radius * radius`.
+  - [x] A blocking target cell can be visible if the line reaches it; cells beyond a blocking intermediate cell are not visible.
+  - [x] Do not allow permissive corner peeking through blockers unless a golden fixture explicitly defines that case as visible.
+  - [x] Fixture failures must report board name, actor cell, radius, blocker rule, expected cells, actual cells, missing cells, and extra cells.
+- [x] 1.7.4 Apply visibility through a deterministic domain event boundary. (AC: 1, 2)
+  - [x] Extend `godot/scripts/core/events/domain_event.gd` with `Type.VISIBILITY_UPDATED`, event id `visibility_updated`, and a helper such as `DomainEvent.visibility_updated(sequence_id, actor_id, origin, radius, visible_cells, newly_explored_cells)`.
+  - [x] Extend `BoardState._validate_event()` and `_apply_validated_event()` to validate and apply visibility updates atomically.
+  - [x] Applying the event must clear all current `visible` flags, mark payload `visible_cells` as `visible = true` and `explored = true`, and leave previously explored but now unseen cells as `explored = true`.
+  - [x] Reject malformed visibility payloads, out-of-bounds cells, invalid actors, duplicate cells, empty visible sets, and sequence mismatches without mutating the board.
+  - [x] Use one visibility event per recalculation, not one event per tile.
+- [x] 1.7.5 Add player-visible fact queries that hide authoritative data correctly. (AC: 3, 6)
+  - [x] Add the query on `TacticalVisibilityQuery` or a narrow sibling such as `tactical_visible_fact_query.gd` only if it keeps the API clearer.
+  - [x] Hidden cells (`visible == false` and `explored == false`) return only position and `visibility_state = "hidden"`; do not expose terrain, occupants, HP, faction, hazards, rewards, or current tactical facts.
+  - [x] Explored memory cells (`visible == false` and `explored == true`) return `visibility_state = "memory"`, position, stable terrain/display fields, and `authoritative = false`; do not expose current occupants or entity stats from `BoardCell.occupant_id`.
+  - [x] Current visible cells return `visibility_state = "visible"`, `authoritative = true`, terrain, blockers, occupant id/type/faction/HP where present, and other current tactical facts already stored in domain state.
+  - [x] Add tests proving an enemy on a hidden cell is unavailable and an enemy on an explored-memory cell is stale/non-authoritative.
+- [x] 1.7.6 Preserve movement and snapshot contracts from previous stories. (AC: 2, 4, 6)
+  - [x] Keep `MoveCommand` returning exactly one `entity_moved` event and `ActionResult.metadata["advances_turn"] == true`; do not fold fog recalculation into `MoveCommand` in this story.
+  - [x] Add or update movement-query coverage so a target that is explored but not currently visible is rejected as `invalid_movement` with reason `not_visible`.
+  - [x] Use `TacticalSnapshot.from_domain(board, streams, turn_state.to_dictionary(), [], event_log)` for invalid/no-mutation assertions where commands or event application can fail.
+  - [x] Keep `TacticalSnapshot` visibility-field serialization intact and do not introduce scene, UI, audio, animation, or presentation references.
+  - [x] Do not add attack preview, `AttackCommand`, enemy AI, hazards, Darkness affinity rules, UI fog scenes, animation, audio, save repository wiring, or autoload-owned tactical state.
+- [x] 1.7.7 Extend reusable fixtures for golden line-of-sight cases. (AC: 4, 5)
+  - [x] Extend `godot/tests/fixtures/tactical/board_fixture_factory.gd` with named fixtures for open radius, blockers, corner peeking, diagonal line, edge origin, and movement update memory.
+  - [x] Add helper methods only when they reduce duplication for future targeting and enemy tests.
+  - [x] Keep fixtures deterministic and scene-independent.
+  - [x] Update `godot/tests/unit/tactical/test_board_fixtures.gd` to prove the new fixtures are valid, deterministic, and serialize cleanly.
+- [x] 1.7.8 Run validation and update story records. (AC: 4)
+  - [x] Run `godot --version`.
+  - [x] Run `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
+  - [x] Run `git diff --check`.
+  - [x] Update this story's Dev Agent Record, File List, Completion Notes, and Change Log with actual implementation work.
+
+### Review Findings
+
+- [x] [Review][Patch] Validate `newly_explored_cells` exactly matches all currently unexplored visible cells [godot/scripts/tactical/board/board_state.gd] — fixed by rejecting visibility events whose newly explored payload omits any visible cell that was not already explored, with regression coverage in `test_board_state.gd`.
 
 ## Dev Notes
 
@@ -253,6 +257,9 @@ Codex GPT-5
 ### Debug Log References
 
 - 2026-06-07: Created Story 1.7 implementation guide from Epic 1 source requirements, Sprint Slice 2, prior story records, root project context, game architecture, GDD requirements, current Godot code/tests, clean git baseline, recent commits, and current Godot 4.6 documentation references.
+- 2026-06-07: Confirmed red-phase headless failure on missing `visibility_updated` event and tactical visibility query API before implementation.
+- 2026-06-07: Validation passed with Godot `4.6.3.stable.official.7d41c59c4`, full headless runner, and `git diff --check`.
+- 2026-06-07: Ran local structured code review because sub-agent spawning was not user-authorized; found and fixed one patch finding around strict `newly_explored_cells` event validation.
 
 ### Implementation Plan
 
@@ -264,8 +271,28 @@ Codex GPT-5
 
 ### Completion Notes List
 
+- Implemented `TacticalVisibilityQuery` as a scene-independent tactical fog service with baseline radius 4, squared-distance candidate filtering, strict supercover line checks, deterministic sorted cell metadata, and visible-fact filtering.
+- Added `visibility_updated` as a deterministic domain event and applied visibility atomically through `BoardState`, preserving explored memory while clearing stale current-visible flags.
+- Added golden line-of-sight fixtures and headless tests for open radius, edge origins, blockers, strict corner peeking, diagonal lines, movement update memory, hidden/memory/visible facts, and movement rejection for explored-but-not-visible cells.
+- Preserved `MoveCommand` as one `entity_moved` event with `advances_turn == true`; visibility recalculation remains explicit and separate.
+- Resolved review patch by requiring `BoardState` visibility events to report exactly the cells that become newly explored, preventing accepted event payloads from understating exploration changes.
+
 ### File List
+
+- `_bmad-output/implementation-artifacts/1-7-fog-line-of-sight-and-explored-memory.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `godot/scripts/core/events/domain_event.gd`
+- `godot/scripts/tactical/board/board_state.gd`
+- `godot/scripts/tactical/fog/tactical_visibility_query.gd`
+- `godot/tests/fixtures/tactical/board_fixture_factory.gd`
+- `godot/tests/unit/core/test_domain_event.gd`
+- `godot/tests/unit/tactical/test_board_fixtures.gd`
+- `godot/tests/unit/tactical/test_board_state.gd`
+- `godot/tests/unit/tactical/test_tactical_movement_query.gd`
+- `godot/tests/unit/tactical/test_tactical_visibility_query.gd`
 
 ## Change Log
 
 - 2026-06-07: Created Story 1.7 implementation guide and marked it ready for development.
+- 2026-06-07: Implemented Story 1.7 fog/LoS domain service, visibility event boundary, visible-fact filtering, golden fixtures, and headless test coverage.
+- 2026-06-07: Addressed code review patch finding for exact `newly_explored_cells` validation and marked Story 1.7 done.

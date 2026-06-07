@@ -20,7 +20,13 @@ func _fixture_boards_are_valid_and_scene_independent() -> void:
 		BoardFixtureFactory.occupied_cell(),
 		BoardFixtureFactory.disconnected_cells(),
 		BoardFixtureFactory.line_of_sight_blockers(),
-		BoardFixtureFactory.deterministic_actor_placement()
+		BoardFixtureFactory.deterministic_actor_placement(),
+		BoardFixtureFactory.los_open_radius(),
+		BoardFixtureFactory.los_blocker_lane(),
+		BoardFixtureFactory.los_corner_peeking(),
+		BoardFixtureFactory.los_diagonal_line(),
+		BoardFixtureFactory.los_edge_origin(),
+		BoardFixtureFactory.los_movement_update_memory()
 	]
 
 	for board: BoardState in fixtures:
@@ -64,6 +70,32 @@ func _fixtures_cover_required_board_shapes() -> void:
 	assert_equal(deterministic_actors.occupant_at(Vector2i(2, 0)), &"enemy_1", "Actor fixture should place enemy_1 deterministically.")
 	assert_equal(deterministic_actors.occupant_at(Vector2i(3, 2)), &"enemy_2", "Actor fixture should place enemy_2 deterministically.")
 
+	var open_radius: BoardState = BoardFixtureFactory.los_open_radius()
+	assert_equal(open_radius.width, 9, "Open-radius LoS fixture should have enough width for radius 4.")
+	assert_equal(open_radius.height, 9, "Open-radius LoS fixture should have enough height for radius 4.")
+	assert_equal(open_radius.occupant_at(Vector2i(4, 4)), &"hero", "Open-radius LoS fixture should place the hero at the center.")
+	assert_true(BoardFixtureFactory.expected_los_open_radius_cells().has(Vector2i(4, 4)), "Open-radius expected cells should include the origin.")
+	assert_equal(BoardFixtureFactory.expected_los_open_radius_cells().size(), 49, "Open-radius fixture should lock the squared-radius cell count.")
+
+	var blocker_lane: BoardState = BoardFixtureFactory.los_blocker_lane()
+	assert_equal(blocker_lane.occupant_at(Vector2i(1, 2)), &"hero", "Blocker-lane LoS fixture should place the hero in the lane.")
+	assert_true(blocker_lane.get_cell(Vector2i(3, 2)).blocks_line_of_sight(), "Blocker-lane LoS fixture should include a visible blocker.")
+
+	var corner_peeking: BoardState = BoardFixtureFactory.los_corner_peeking()
+	assert_true(corner_peeking.get_cell(Vector2i(1, 0)).blocks_line_of_sight(), "Corner-peeking LoS fixture should block one side of the corner.")
+	assert_true(corner_peeking.get_cell(Vector2i(0, 1)).blocks_line_of_sight(), "Corner-peeking LoS fixture should block the other side of the corner.")
+
+	var diagonal_line: BoardState = BoardFixtureFactory.los_diagonal_line()
+	assert_true(diagonal_line.get_cell(Vector2i(2, 2)).blocks_line_of_sight(), "Diagonal LoS fixture should include a blocker on the diagonal line.")
+
+	var edge_origin: BoardState = BoardFixtureFactory.los_edge_origin()
+	assert_equal(edge_origin.occupant_at(Vector2i.ZERO), &"hero", "Edge-origin LoS fixture should place the hero at the origin.")
+	assert_equal(BoardFixtureFactory.expected_los_edge_origin_cells().size(), 17, "Edge-origin expected cells should lock clipped radius count.")
+
+	var memory_update: BoardState = BoardFixtureFactory.los_movement_update_memory()
+	assert_equal(memory_update.occupant_at(Vector2i.ZERO), &"hero", "Movement-memory LoS fixture should start the hero at the origin.")
+	assert_true(memory_update.in_bounds(Vector2i(4, 4)), "Movement-memory LoS fixture should include a never-seen corner candidate.")
+
 
 func _fixtures_are_deterministic() -> void:
 	assert_equal(
@@ -100,4 +132,34 @@ func _fixtures_are_deterministic() -> void:
 		BoardFixtureFactory.deterministic_actor_placement().to_snapshot(),
 		BoardFixtureFactory.deterministic_actor_placement().to_snapshot(),
 		"Actor placement fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_open_radius().to_snapshot(),
+		BoardFixtureFactory.los_open_radius().to_snapshot(),
+		"Open-radius LoS fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_blocker_lane().to_snapshot(),
+		BoardFixtureFactory.los_blocker_lane().to_snapshot(),
+		"Blocker-lane LoS fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_corner_peeking().to_snapshot(),
+		BoardFixtureFactory.los_corner_peeking().to_snapshot(),
+		"Corner-peeking LoS fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_diagonal_line().to_snapshot(),
+		BoardFixtureFactory.los_diagonal_line().to_snapshot(),
+		"Diagonal LoS fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_edge_origin().to_snapshot(),
+		BoardFixtureFactory.los_edge_origin().to_snapshot(),
+		"Edge-origin LoS fixture should serialize deterministically."
+	)
+	assert_equal(
+		BoardFixtureFactory.los_movement_update_memory().to_snapshot(),
+		BoardFixtureFactory.los_movement_update_memory().to_snapshot(),
+		"Movement-memory LoS fixture should serialize deterministically."
 	)

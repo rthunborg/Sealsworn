@@ -9,6 +9,7 @@ const TacticalMovementQuery = preload("res://scripts/tactical/movement/tactical_
 func run() -> Dictionary:
 	_reachable_paths_are_cardinal_and_budgeted()
 	_invalid_query_reasons_are_stable_and_domain_derived()
+	_explored_memory_targets_are_not_current_movement_truth()
 	_queries_do_not_mutate_board()
 	return result()
 
@@ -40,6 +41,21 @@ func _invalid_query_reasons_are_stable_and_domain_derived() -> void:
 	_assert_query_reason(query, BoardFixtureFactory.edge_corner_movement(), &"hero", Vector2i(1, 0), 3, &"not_visible")
 	_assert_query_reason(query, _visible_board(BoardFixtureFactory.disconnected_cells()), &"hero", Vector2i(2, 0), 3, &"unreachable")
 	_assert_query_reason(query, _visible_board(BoardFixtureFactory.edge_corner_movement()), &"hero", Vector2i(0, 0), 3, &"same_cell")
+
+
+func _explored_memory_targets_are_not_current_movement_truth() -> void:
+	var board: BoardState = _visible_board(BoardFixtureFactory.edge_corner_movement())
+	var target_cell: BoardCell = board.get_cell(Vector2i(1, 0))
+	target_cell.visible = false
+	target_cell.explored = true
+	var query: TacticalMovementQuery = TacticalMovementQuery.new()
+
+	var result_value: ActionResult = query.validate_target(board, &"hero", Vector2i(1, 0), 3)
+
+	assert_true(result_value.is_error(), "Explored-memory cells should not be valid movement truth.")
+	assert_equal(result_value.error_code, &"invalid_movement", "Explored-memory movement should use the stable movement error code.")
+	assert_equal(result_value.metadata.get("reason"), "not_visible", "Explored-memory movement should be rejected as not_visible.")
+	assert_false(result_value.has_events(), "Rejected explored-memory movement queries should not emit events.")
 
 
 func _queries_do_not_mutate_board() -> void:

@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-07T10:36:54+02:00
+# last_updated: 2026-06-07T11:20:13+02:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -36,7 +36,7 @@
 # - No UI-heavy scene work should begin from this status file.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-07T10:36:54+02:00
+last_updated: 2026-06-07T11:20:13+02:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -53,7 +53,7 @@ development_status:
   1-4-named-rng-streams-for-deterministic-gameplay: done
   1-5-tactical-snapshot-serialization-boundary: done
   1-6-movecommand-with-movement-validation: done
-  1-7-fog-line-of-sight-and-explored-memory: ready-for-dev
+  1-7-fog-line-of-sight-and-explored-memory: done
   1-8-weapon-definitions-and-attack-preview-rules: backlog
   1-9-attackcommand-with-damage-events: backlog
   1-10-enemy-turn-resolution-for-prototype-enemies: backlog

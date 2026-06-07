@@ -15,6 +15,8 @@ func run() -> Dictionary:
 	_replayed_board_created_event_is_rejected()
 	_entity_moved_event_updates_occupancy_atomically()
 	_invalid_entity_moved_events_do_not_mutate()
+	_visibility_updated_event_updates_current_visible_and_memory_atomically()
+	_invalid_visibility_updated_events_do_not_mutate()
 	_event_batches_are_atomic()
 	_event_batches_reject_invalid_types_atomically()
 	_unsupported_board_events_use_stable_reason_code()
@@ -218,6 +220,131 @@ func _invalid_entity_moved_events_do_not_mutate() -> void:
 	assert_true(occupied_result.is_error(), "Movement events should reject occupied targets.")
 	assert_equal(occupied_result.metadata.get("reason"), "occupied", "Occupied movement should expose reason metadata.")
 	assert_equal(occupied_board.to_snapshot(), occupied_before, "Occupied movement must not mutate board state.")
+
+
+func _visibility_updated_event_updates_current_visible_and_memory_atomically() -> void:
+	var board: BoardState = _new_board(3, 3)
+	var place_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(1, 1),
+		18,
+		18
+	))
+	board.get_cell(Vector2i(0, 0)).visible = true
+	board.get_cell(Vector2i(0, 0)).explored = true
+	board.get_cell(Vector2i(2, 2)).explored = true
+	var event: DomainEvent = DomainEvent.visibility_updated(
+		board.next_sequence_id(),
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1), Vector2i(2, 1)],
+		[Vector2i(1, 1), Vector2i(2, 1)]
+	)
+
+	var result_value: ActionResult = board.apply_event(event)
+
+	assert_true(place_result.succeeded, "Visibility event setup should place the hero.")
+	assert_true(result_value.succeeded, "Valid visibility events should apply to board state.")
+	assert_equal(board.next_sequence_id(), 3, "Visibility events should advance board event sequence ids once.")
+	assert_false(board.get_cell(Vector2i(0, 0)).visible, "Visibility updates should clear previous current-visible flags.")
+	assert_true(board.get_cell(Vector2i(0, 0)).explored, "Visibility updates should preserve old explored memory.")
+	assert_true(board.get_cell(Vector2i(1, 1)).visible, "Visibility updates should mark payload cells visible.")
+	assert_true(board.get_cell(Vector2i(1, 1)).explored, "Visible payload cells should also be explored.")
+	assert_true(board.get_cell(Vector2i(2, 1)).visible, "Visibility updates should mark newly visible payload cells visible.")
+	assert_true(board.get_cell(Vector2i(2, 1)).explored, "Newly visible payload cells should become explored.")
+	assert_false(board.get_cell(Vector2i(2, 2)).visible, "Previously explored cells outside payload should remain not visible.")
+	assert_true(board.get_cell(Vector2i(2, 2)).explored, "Previously explored cells outside payload should remain explored.")
+
+
+func _invalid_visibility_updated_events_do_not_mutate() -> void:
+	var invalid_actor_board: BoardState = _visibility_event_board()
+	var invalid_actor_before: Dictionary = invalid_actor_board.to_snapshot()
+	var invalid_actor_result: ActionResult = invalid_actor_board.apply_event(DomainEvent.visibility_updated(
+		invalid_actor_board.next_sequence_id(),
+		&"missing",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1)],
+		[Vector2i(1, 1)]
+	))
+
+	var duplicate_board: BoardState = _visibility_event_board()
+	var duplicate_before: Dictionary = duplicate_board.to_snapshot()
+	var duplicate_result: ActionResult = duplicate_board.apply_event(DomainEvent.visibility_updated(
+		duplicate_board.next_sequence_id(),
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1), Vector2i(1, 1)],
+		[Vector2i(1, 1)]
+	))
+
+	var out_of_bounds_board: BoardState = _visibility_event_board()
+	var out_of_bounds_before: Dictionary = out_of_bounds_board.to_snapshot()
+	var out_of_bounds_result: ActionResult = out_of_bounds_board.apply_event(DomainEvent.visibility_updated(
+		out_of_bounds_board.next_sequence_id(),
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1), Vector2i(3, 1)],
+		[Vector2i(1, 1)]
+	))
+
+	var empty_visible_board: BoardState = _visibility_event_board()
+	var empty_visible_before: Dictionary = empty_visible_board.to_snapshot()
+	var empty_visible_result: ActionResult = empty_visible_board.apply_event(DomainEvent.visibility_updated(
+		empty_visible_board.next_sequence_id(),
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[],
+		[]
+	))
+
+	var missing_newly_board: BoardState = _visibility_event_board()
+	var missing_newly_before: Dictionary = missing_newly_board.to_snapshot()
+	var missing_newly_result: ActionResult = missing_newly_board.apply_event(DomainEvent.visibility_updated(
+		missing_newly_board.next_sequence_id(),
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1), Vector2i(2, 1)],
+		[Vector2i(1, 1)]
+	))
+
+	var sequence_board: BoardState = _visibility_event_board()
+	var sequence_before: Dictionary = sequence_board.to_snapshot()
+	var sequence_result: ActionResult = sequence_board.apply_event(DomainEvent.visibility_updated(
+		99,
+		&"hero",
+		Vector2i(1, 1),
+		4,
+		[Vector2i(1, 1)],
+		[Vector2i(1, 1)]
+	))
+
+	assert_true(invalid_actor_result.is_error(), "Visibility events should reject missing actors.")
+	assert_equal(invalid_actor_result.error_code, &"invalid_visibility_event", "Missing actor visibility should use a stable board-event code.")
+	assert_equal(invalid_actor_result.metadata.get("reason"), "invalid_actor", "Missing actor visibility should expose reason metadata.")
+	assert_equal(invalid_actor_board.to_snapshot(), invalid_actor_before, "Missing actor visibility must not mutate board state.")
+	assert_true(duplicate_result.is_error(), "Visibility events should reject duplicate cells.")
+	assert_equal(duplicate_result.metadata.get("reason"), "duplicate_cell", "Duplicate visibility cells should expose reason metadata.")
+	assert_equal(duplicate_board.to_snapshot(), duplicate_before, "Duplicate visibility cells must not mutate board state.")
+	assert_true(out_of_bounds_result.is_error(), "Visibility events should reject out-of-bounds cells.")
+	assert_equal(out_of_bounds_result.metadata.get("reason"), "out_of_bounds", "Out-of-bounds visibility should expose reason metadata.")
+	assert_equal(out_of_bounds_board.to_snapshot(), out_of_bounds_before, "Out-of-bounds visibility must not mutate board state.")
+	assert_true(empty_visible_result.is_error(), "Visibility events should reject empty visible sets.")
+	assert_equal(empty_visible_result.metadata.get("reason"), "empty_visible_cells", "Empty visible sets should expose reason metadata.")
+	assert_equal(empty_visible_board.to_snapshot(), empty_visible_before, "Empty visible sets must not mutate board state.")
+	assert_true(missing_newly_result.is_error(), "Visibility events should reject omitted newly explored cells.")
+	assert_equal(missing_newly_result.metadata.get("reason"), "newly_explored_mismatch", "Omitted newly explored cells should expose reason metadata.")
+	assert_equal(missing_newly_board.to_snapshot(), missing_newly_before, "Omitted newly explored cells must not mutate board state.")
+	assert_true(sequence_result.is_error(), "Visibility events should reject sequence mismatches.")
+	assert_equal(sequence_result.error_code, &"event_sequence_mismatch", "Visibility sequence mismatches should use stable event sequencing.")
+	assert_equal(sequence_board.to_snapshot(), sequence_before, "Sequence mismatches must not mutate board state.")
 
 
 func _event_batches_are_atomic() -> void:
@@ -637,6 +764,20 @@ func _movement_event_board() -> BoardState:
 		18
 	))
 	assert_true(place_result.succeeded, "Movement event test helper should place the hero.")
+	return board
+
+
+func _visibility_event_board() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	var place_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(1, 1),
+		18,
+		18
+	))
+	assert_true(place_result.succeeded, "Visibility event test helper should place the hero.")
 	return board
 
 

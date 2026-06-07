@@ -9,7 +9,9 @@ func run() -> Dictionary:
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
 	_try_from_dictionary_parses_valid_event_dictionaries()
 	_try_from_dictionary_parses_entity_moved_events()
+	_visibility_updated_serializes_stable_payload()
 	_try_from_dictionary_rejects_malformed_entity_moved_payloads()
+	_try_from_dictionary_rejects_malformed_visibility_payloads()
 	_try_from_dictionary_accepts_json_round_tripped_integral_sequence_ids()
 	_try_from_dictionary_rejects_malformed_event_dictionaries()
 	_from_dictionary_keeps_unknown_compatibility_wrapper()
@@ -102,6 +104,28 @@ func _try_from_dictionary_parses_entity_moved_events() -> void:
 	assert_equal(event.payload.get("movement_cost"), 1, "Parsed movement event should preserve movement cost.")
 
 
+func _visibility_updated_serializes_stable_payload() -> void:
+	var event: DomainEvent = DomainEvent.visibility_updated(
+		9,
+		&"hero",
+		Vector2i(2, 1),
+		4,
+		[Vector2i(2, 1), Vector2i(1, 1)],
+		[Vector2i(1, 1)]
+	)
+	var serialized: Dictionary = event.to_dictionary()
+	var restored: DomainEvent = DomainEvent.from_dictionary(serialized)
+
+	assert_equal(serialized.get("event_id"), "visibility_updated", "Visibility events should serialize stable string ids.")
+	assert_equal(serialized.get("actor_id"), "hero", "Visibility events should serialize the actor id.")
+	assert_equal(serialized.get("payload", {}).get("origin"), {"x": 2, "y": 1}, "Visibility events should serialize origin cells.")
+	assert_equal(serialized.get("payload", {}).get("radius"), 4, "Visibility events should serialize radius.")
+	assert_equal(serialized.get("payload", {}).get("visible_cells"), [{"x": 1, "y": 1}, {"x": 2, "y": 1}], "Visibility events should serialize visible cells sorted by y then x.")
+	assert_equal(serialized.get("payload", {}).get("newly_explored_cells"), [{"x": 1, "y": 1}], "Visibility events should serialize newly explored cells.")
+	assert_equal(restored.event_type, DomainEvent.Type.VISIBILITY_UPDATED, "Visibility events should parse back to VISIBILITY_UPDATED.")
+	assert_equal(restored.actor_id, &"hero", "Visibility events should preserve actor id when parsed.")
+
+
 func _try_from_dictionary_rejects_malformed_entity_moved_payloads() -> void:
 	_assert_invalid_entity_moved_payload({
 		"to": {"x": 1, "y": 0},
@@ -125,6 +149,38 @@ func _try_from_dictionary_rejects_malformed_entity_moved_payloads() -> void:
 		"movement_cost": 1,
 		"movement_budget": 0
 	}, &"movement_budget", "Movement events should reject non-positive movement budgets.")
+
+
+func _try_from_dictionary_rejects_malformed_visibility_payloads() -> void:
+	_assert_invalid_visibility_payload({
+		"radius": 4,
+		"visible_cells": [{"x": 0, "y": 0}],
+		"newly_explored_cells": []
+	}, &"origin", "Visibility events should require an origin.")
+	_assert_invalid_visibility_payload({
+		"origin": {"x": 0, "y": 0},
+		"radius": 0,
+		"visible_cells": [{"x": 0, "y": 0}],
+		"newly_explored_cells": []
+	}, &"radius", "Visibility events should reject non-positive radius.")
+	_assert_invalid_visibility_payload({
+		"origin": {"x": 0, "y": 0},
+		"radius": 4,
+		"visible_cells": [],
+		"newly_explored_cells": []
+	}, &"visible_cells", "Visibility events should reject empty visible sets.")
+	_assert_invalid_visibility_payload({
+		"origin": {"x": 0, "y": 0},
+		"radius": 4,
+		"visible_cells": [{"x": 0, "y": 0}, {"x": 0, "y": 0}],
+		"newly_explored_cells": []
+	}, &"visible_cells", "Visibility events should reject duplicate visible cells.")
+	_assert_invalid_visibility_payload({
+		"origin": {"x": 0, "y": 0},
+		"radius": 4,
+		"visible_cells": [{"x": 0, "y": 0}],
+		"newly_explored_cells": [{"x": 1, "y": 0}, {"x": 1, "y": 0}]
+	}, &"newly_explored_cells", "Visibility events should reject duplicate newly explored cells.")
 
 
 func _try_from_dictionary_accepts_json_round_tripped_integral_sequence_ids() -> void:
@@ -207,7 +263,8 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.BOARD_CREATED: &"board_created",
 		DomainEvent.Type.RNG_STREAM_ADVANCED: &"rng_stream_advanced",
 		DomainEvent.Type.COMMAND_REJECTED: &"command_rejected",
-		DomainEvent.Type.ENTITY_MOVED: &"entity_moved"
+		DomainEvent.Type.ENTITY_MOVED: &"entity_moved",
+		DomainEvent.Type.VISIBILITY_UPDATED: &"visibility_updated"
 	}
 
 	for event_type: int in expected_ids.keys():
@@ -226,6 +283,19 @@ func _assert_machine_id(value: String, message: String) -> void:
 func _assert_invalid_entity_moved_payload(payload: Dictionary, expected_field: StringName, message: String) -> void:
 	var result_value: ActionResult = DomainEvent.try_from_dictionary({
 		"event_id": "entity_moved",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": payload
+	})
+
+	assert_true(result_value.is_error(), message)
+	assert_equal(result_value.error_code, &"invalid_event_payload", message)
+	assert_equal(result_value.metadata.get("field"), String(expected_field), message)
+
+
+func _assert_invalid_visibility_payload(payload: Dictionary, expected_field: StringName, message: String) -> void:
+	var result_value: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "visibility_updated",
 		"sequence_id": 1,
 		"actor_id": "hero",
 		"payload": payload

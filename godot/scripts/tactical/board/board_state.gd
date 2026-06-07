@@ -345,6 +345,8 @@ func _apply_validated_event(event: DomainEvent) -> void:
 			)
 		DomainEvent.Type.ENTITY_MOVED:
 			_apply_entity_moved(event)
+		DomainEvent.Type.VISIBILITY_UPDATED:
+			_apply_visibility_updated(event)
 	_next_sequence_id = event.sequence_id + 1
 
 
@@ -372,6 +374,10 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 			var movement_validation: ActionResult = _validate_entity_moved_event(event)
 			if movement_validation.is_error():
 				return movement_validation
+		DomainEvent.Type.VISIBILITY_UPDATED:
+			var visibility_validation: ActionResult = _validate_visibility_updated_event(event)
+			if visibility_validation.is_error():
+				return visibility_validation
 		_:
 			return ActionResult.error(&"unsupported_board_event", {
 				"event_id": String(DomainEvent.id_for_type(event.event_type))
@@ -394,6 +400,18 @@ func _apply_entity_moved(event: DomainEvent) -> void:
 			target_cell.occupant_id = event.actor_id
 
 	entity.position = to_cell
+
+
+func _apply_visibility_updated(event: DomainEvent) -> void:
+	for board_cell: BoardCell in cells():
+		board_cell.visible = false
+
+	var visible_cells: Array[Vector2i] = _payload_cell_array(event.payload.get("visible_cells", []))
+	for cell: Vector2i in visible_cells:
+		var board_cell: BoardCell = get_cell(cell)
+		if board_cell != null:
+			board_cell.visible = true
+			board_cell.explored = true
 
 
 func _validate_entity_moved_event(event: DomainEvent) -> ActionResult:
@@ -464,6 +482,133 @@ func _validate_entity_moved_event(event: DomainEvent) -> ActionResult:
 			"y": to_cell.y,
 			"occupant_id": String(target_board_cell.occupant_id)
 		})
+
+	return ActionResult.ok()
+
+
+func _validate_visibility_updated_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_visibility_event(&"invalid_actor")
+	var actor: TacticalEntityState = _entities.get(event.actor_id) as TacticalEntityState
+	if actor == null:
+		return _invalid_visibility_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_event_cell(event.payload, &"origin"):
+		return _invalid_visibility_event(&"invalid_payload", {"field": "origin"})
+	if not _has_positive_integral_payload(event.payload, &"radius"):
+		return _invalid_visibility_event(&"invalid_payload", {"field": "radius"})
+	if not event.payload.has("visible_cells") or not event.payload.get("visible_cells") is Array:
+		return _invalid_visibility_event(&"invalid_payload", {"field": "visible_cells"})
+	if not event.payload.has("newly_explored_cells") or not event.payload.get("newly_explored_cells") is Array:
+		return _invalid_visibility_event(&"invalid_payload", {"field": "newly_explored_cells"})
+
+	var origin: Vector2i = _payload_cell(event.payload.get("origin"))
+	if actor.position != origin:
+		return _invalid_visibility_event(&"origin_mismatch", {
+			"actor_id": String(event.actor_id),
+			"expected_x": actor.position.x,
+			"expected_y": actor.position.y,
+			"actual_x": origin.x,
+			"actual_y": origin.y
+		})
+	if not in_bounds(origin):
+		return _invalid_visibility_event(&"out_of_bounds", {
+			"x": origin.x,
+			"y": origin.y
+		})
+
+	var visible_validation: ActionResult = _validate_visibility_cell_array(
+		event.payload.get("visible_cells"),
+		&"visible_cells",
+		false
+	)
+	if visible_validation.is_error():
+		return visible_validation
+	var newly_validation: ActionResult = _validate_visibility_cell_array(
+		event.payload.get("newly_explored_cells"),
+		&"newly_explored_cells",
+		true
+	)
+	if newly_validation.is_error():
+		return newly_validation
+
+	var visible_cells: Array[Vector2i] = _payload_cell_array(event.payload.get("visible_cells"))
+	var visible_lookup: Dictionary = {}
+	for cell: Vector2i in visible_cells:
+		visible_lookup[cell] = true
+	if not visible_lookup.has(origin):
+		return _invalid_visibility_event(&"origin_not_visible", {
+			"x": origin.x,
+			"y": origin.y
+		})
+
+	var newly_explored_cells: Array[Vector2i] = _payload_cell_array(event.payload.get("newly_explored_cells"))
+	var newly_lookup: Dictionary = {}
+	for cell: Vector2i in newly_explored_cells:
+		if not visible_lookup.has(cell):
+			return _invalid_visibility_event(&"newly_not_visible", {
+				"x": cell.x,
+				"y": cell.y
+			})
+		var board_cell: BoardCell = get_cell(cell)
+		if board_cell != null and board_cell.explored:
+			return _invalid_visibility_event(&"already_explored", {
+				"x": cell.x,
+				"y": cell.y
+			})
+		newly_lookup[cell] = true
+
+	var expected_newly_lookup: Dictionary = {}
+	for cell: Vector2i in visible_cells:
+		var board_cell: BoardCell = get_cell(cell)
+		if board_cell != null and not board_cell.explored:
+			expected_newly_lookup[cell] = true
+	if newly_lookup.size() != expected_newly_lookup.size():
+		return _invalid_visibility_event(&"newly_explored_mismatch")
+	for cell: Vector2i in expected_newly_lookup.keys():
+		if not newly_lookup.has(cell):
+			return _invalid_visibility_event(&"newly_explored_mismatch", {
+				"x": cell.x,
+				"y": cell.y
+			})
+
+	return ActionResult.ok()
+
+
+func _validate_visibility_cell_array(value: Variant, field_name: StringName, allow_empty: bool) -> ActionResult:
+	if not value is Array:
+		return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
+	var cells: Array = value
+	if cells.is_empty() and not allow_empty:
+		return _invalid_visibility_event(&"empty_visible_cells")
+
+	var seen: Dictionary = {}
+	for cell_value: Variant in cells:
+		if not cell_value is Dictionary:
+			return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
+		var cell_data: Dictionary = cell_value
+		if not (
+			cell_data.has("x")
+			and cell_data.has("y")
+			and _is_integral_number(cell_data.get("x"))
+			and _is_integral_number(cell_data.get("y"))
+		):
+			return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
+		var cell: Vector2i = _payload_cell(cell_data)
+		if seen.has(cell):
+			return _invalid_visibility_event(&"duplicate_cell", {
+				"field": String(field_name),
+				"x": cell.x,
+				"y": cell.y
+			})
+		seen[cell] = true
+		if not in_bounds(cell):
+			return _invalid_visibility_event(&"out_of_bounds", {
+				"field": String(field_name),
+				"x": cell.x,
+				"y": cell.y
+			})
 
 	return ActionResult.ok()
 
@@ -555,6 +700,16 @@ func _payload_cell(value: Variant) -> Vector2i:
 	)
 
 
+func _payload_cell_array(value: Variant) -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	if not value is Array:
+		return result
+	var cells: Array = value
+	for cell_value: Variant in cells:
+		result.append(_payload_cell(cell_value))
+	return result
+
+
 func _has_positive_integral_payload(payload: Dictionary, field_name: StringName) -> bool:
 	if not payload.has(String(field_name)):
 		return false
@@ -567,6 +722,13 @@ func _invalid_movement_event(reason: StringName, metadata: Dictionary = {}) -> A
 	for key: Variant in metadata.keys():
 		result_metadata[key] = metadata[key]
 	return ActionResult.error(&"invalid_movement_event", result_metadata)
+
+
+func _invalid_visibility_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_visibility_event", result_metadata)
 
 
 func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResult:
