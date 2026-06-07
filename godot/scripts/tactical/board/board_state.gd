@@ -355,6 +355,12 @@ func _apply_validated_event(event: DomainEvent) -> void:
 			pass
 		DomainEvent.Type.STATUS_EFFECT_APPLIED:
 			pass
+		DomainEvent.Type.TILE_MARKED:
+			pass
+		DomainEvent.Type.MARKED_TILE_DETONATED:
+			pass
+		DomainEvent.Type.ENEMY_WAITED:
+			pass
 	_next_sequence_id = event.sequence_id + 1
 
 
@@ -402,6 +408,18 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 			var knockback_validation: ActionResult = _validate_entity_knocked_back_event(event)
 			if knockback_validation.is_error():
 				return knockback_validation
+		DomainEvent.Type.TILE_MARKED:
+			var mark_validation: ActionResult = _validate_tile_marked_event(event)
+			if mark_validation.is_error():
+				return mark_validation
+		DomainEvent.Type.MARKED_TILE_DETONATED:
+			var detonation_validation: ActionResult = _validate_marked_tile_detonated_event(event)
+			if detonation_validation.is_error():
+				return detonation_validation
+		DomainEvent.Type.ENEMY_WAITED:
+			var wait_validation: ActionResult = _validate_enemy_waited_event(event)
+			if wait_validation.is_error():
+				return wait_validation
 		_:
 			return ActionResult.error(&"unsupported_board_event", {
 				"event_id": String(DomainEvent.id_for_type(event.event_type))
@@ -781,6 +799,98 @@ func _validate_entity_knocked_back_event(event: DomainEvent) -> ActionResult:
 	return ActionResult.ok()
 
 
+func _validate_tile_marked_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_mark_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_mark_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_mark_event(&"invalid_payload", {"field": "target_entity_id"})
+	if not _has_event_cell(event.payload, &"marked_cell"):
+		return _invalid_mark_event(&"invalid_payload", {"field": "marked_cell"})
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if target == null:
+		return _invalid_mark_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+	var marked_cell: Vector2i = _payload_cell(event.payload.get("marked_cell"))
+	if not in_bounds(marked_cell):
+		return _invalid_mark_event(&"out_of_bounds", {
+			"x": marked_cell.x,
+			"y": marked_cell.y
+		})
+	if target.position != marked_cell:
+		return _invalid_mark_event(&"target_cell_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_x": target.position.x,
+			"expected_y": target.position.y,
+			"actual_x": marked_cell.x,
+			"actual_y": marked_cell.y
+		})
+	return ActionResult.ok()
+
+
+func _validate_marked_tile_detonated_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_detonation_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_detonation_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_detonation_event(&"invalid_payload", {"field": "target_entity_id"})
+	if not _has_event_cell(event.payload, &"marked_cell"):
+		return _invalid_detonation_event(&"invalid_payload", {"field": "marked_cell"})
+	if not _has_nonempty_string_payload(event.payload, &"outcome"):
+		return _invalid_detonation_event(&"invalid_payload", {"field": "outcome"})
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if target == null:
+		return _invalid_detonation_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+	var marked_cell: Vector2i = _payload_cell(event.payload.get("marked_cell"))
+	if not in_bounds(marked_cell):
+		return _invalid_detonation_event(&"out_of_bounds", {
+			"x": marked_cell.x,
+			"y": marked_cell.y
+		})
+	var outcome: String = String(event.payload.get("outcome"))
+	if outcome != "hit" and outcome != "avoided":
+		return _invalid_detonation_event(&"invalid_payload", {"field": "outcome"})
+	var target_on_marked_cell: bool = target.position == marked_cell
+	if outcome == "hit" and not target_on_marked_cell:
+		return _invalid_detonation_event(&"target_cell_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_x": marked_cell.x,
+			"expected_y": marked_cell.y,
+			"actual_x": target.position.x,
+			"actual_y": target.position.y
+		})
+	if outcome == "avoided" and target_on_marked_cell:
+		return _invalid_detonation_event(&"target_still_marked", {
+			"target_entity_id": String(target_entity_id),
+			"x": marked_cell.x,
+			"y": marked_cell.y
+		})
+	return ActionResult.ok()
+
+
+func _validate_enemy_waited_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_wait_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_wait_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"reason"):
+		return _invalid_wait_event(&"invalid_payload", {"field": "reason"})
+	return ActionResult.ok()
+
+
 func _validate_visibility_cell_array(value: Variant, field_name: StringName, allow_empty: bool) -> ActionResult:
 	if not value is Array:
 		return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
@@ -976,6 +1086,27 @@ func _invalid_knockback_event(reason: StringName, metadata: Dictionary = {}) -> 
 	for key: Variant in metadata.keys():
 		result_metadata[key] = metadata[key]
 	return ActionResult.error(&"invalid_knockback_event", result_metadata)
+
+
+func _invalid_mark_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_mark_event", result_metadata)
+
+
+func _invalid_detonation_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_detonation_event", result_metadata)
+
+
+func _invalid_wait_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_wait_event", result_metadata)
 
 
 func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResult:

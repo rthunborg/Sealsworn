@@ -11,9 +11,11 @@ func run() -> Dictionary:
 	_try_from_dictionary_parses_entity_moved_events()
 	_visibility_updated_serializes_stable_payload()
 	_attack_events_serialize_and_parse_stable_payloads()
+	_enemy_turn_events_serialize_and_parse_stable_payloads()
 	_try_from_dictionary_rejects_malformed_entity_moved_payloads()
 	_try_from_dictionary_rejects_malformed_visibility_payloads()
 	_try_from_dictionary_rejects_malformed_attack_payloads()
+	_try_from_dictionary_rejects_malformed_enemy_turn_payloads()
 	_try_from_dictionary_accepts_json_round_tripped_integral_sequence_ids()
 	_try_from_dictionary_rejects_malformed_event_dictionaries()
 	_from_dictionary_keeps_unknown_compatibility_wrapper()
@@ -187,6 +189,56 @@ func _attack_events_serialize_and_parse_stable_payloads() -> void:
 	assert_equal(knockback.to_dictionary().get("payload", {}).get("to"), {"x": 3, "y": 1}, "Knockback events should serialize destination cells.")
 
 
+func _enemy_turn_events_serialize_and_parse_stable_payloads() -> void:
+	var marked: DomainEvent = DomainEvent.tile_marked(
+		15,
+		&"enemy_seer",
+		&"hero",
+		Vector2i(1, 2),
+		"ash_seer_mark:enemy_seer:15",
+		{
+			"enemy_definition_id": "ash_seer",
+			"created_turn_number": 1,
+			"due_turn_number": 2,
+			"damage": 4,
+			"damage_type": "physical",
+			"explanation": "Ash Seer marked hero's tile."
+		}
+	)
+	var detonated: DomainEvent = DomainEvent.marked_tile_detonated(
+		16,
+		&"enemy_seer",
+		&"hero",
+		Vector2i(1, 2),
+		"ash_seer_mark:enemy_seer:15",
+		&"hit",
+		{
+			"damage": 4,
+			"damage_type": "physical",
+			"explanation": "Ash Seer mark detonated."
+		}
+	)
+	var waited: DomainEvent = DomainEvent.enemy_waited(
+		17,
+		&"enemy_iron",
+		&"blocked",
+		{
+			"enemy_definition_id": "iron_cultist",
+			"action_id": "wait",
+			"score": 0,
+			"reasons": ["no_legal_approach"],
+			"explanation": "Iron Cultist waited because it was blocked."
+		}
+	)
+
+	_assert_round_trips(marked, DomainEvent.Type.TILE_MARKED, "tile_marked")
+	_assert_round_trips(detonated, DomainEvent.Type.MARKED_TILE_DETONATED, "marked_tile_detonated")
+	_assert_round_trips(waited, DomainEvent.Type.ENEMY_WAITED, "enemy_waited")
+	assert_equal(marked.to_dictionary().get("payload", {}).get("marked_cell"), {"x": 1, "y": 2}, "Mark events should serialize marked cells.")
+	assert_equal(detonated.to_dictionary().get("payload", {}).get("outcome"), "hit", "Detonation events should serialize hit/avoided outcome.")
+	assert_equal(waited.to_dictionary().get("payload", {}).get("reason"), "blocked", "Wait events should serialize the stable wait reason.")
+
+
 func _try_from_dictionary_rejects_malformed_entity_moved_payloads() -> void:
 	_assert_invalid_entity_moved_payload({
 		"to": {"x": 1, "y": 0},
@@ -329,7 +381,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.ENTITY_ATTACKED: &"entity_attacked",
 		DomainEvent.Type.DAMAGE_APPLIED: &"damage_applied",
 		DomainEvent.Type.STATUS_EFFECT_APPLIED: &"status_effect_applied",
-		DomainEvent.Type.ENTITY_KNOCKED_BACK: &"entity_knocked_back"
+		DomainEvent.Type.ENTITY_KNOCKED_BACK: &"entity_knocked_back",
+		DomainEvent.Type.TILE_MARKED: &"tile_marked",
+		DomainEvent.Type.MARKED_TILE_DETONATED: &"marked_tile_detonated",
+		DomainEvent.Type.ENEMY_WAITED: &"enemy_waited"
 	}
 
 	for event_type: int in expected_ids.keys():
@@ -491,6 +546,57 @@ func _try_from_dictionary_rejects_malformed_attack_payloads() -> void:
 	assert_equal(status_missing_effect.metadata.get("field"), "effect_id", "Status diagnostics should identify the missing effect id.")
 	assert_equal(knockback_bad_cell.error_code, &"invalid_event_payload", "Knockback events should require source and destination cells.")
 	assert_equal(knockback_bad_cell.metadata.get("field"), "to", "Knockback diagnostics should identify the missing destination.")
+
+
+func _try_from_dictionary_rejects_malformed_enemy_turn_payloads() -> void:
+	var mark_missing_cell: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "tile_marked",
+		"sequence_id": 1,
+		"actor_id": "enemy_seer",
+		"payload": {
+			"target_entity_id": "hero",
+			"telegraph_id": "ash_seer_mark:enemy_seer:1",
+			"enemy_definition_id": "ash_seer",
+			"created_turn_number": 1,
+			"due_turn_number": 2,
+			"damage": 4,
+			"damage_type": "physical",
+			"explanation": "Ash Seer marked hero."
+		}
+	})
+	var detonation_bad_outcome: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "marked_tile_detonated",
+		"sequence_id": 1,
+		"actor_id": "enemy_seer",
+		"payload": {
+			"target_entity_id": "hero",
+			"marked_cell": {"x": 1, "y": 2},
+			"telegraph_id": "ash_seer_mark:enemy_seer:1",
+			"outcome": "maybe",
+			"damage": 4,
+			"damage_type": "physical",
+			"explanation": "Ash Seer mark detonated."
+		}
+	})
+	var wait_missing_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "enemy_waited",
+		"sequence_id": 1,
+		"actor_id": "enemy_iron",
+		"payload": {
+			"enemy_definition_id": "iron_cultist",
+			"action_id": "wait",
+			"score": 0,
+			"reasons": [],
+			"explanation": "Iron Cultist waited."
+		}
+	})
+
+	assert_equal(mark_missing_cell.error_code, &"invalid_event_payload", "Tile mark events should require marked cells.")
+	assert_equal(mark_missing_cell.metadata.get("field"), "marked_cell", "Tile mark diagnostics should identify the missing cell.")
+	assert_equal(detonation_bad_outcome.error_code, &"invalid_event_payload", "Detonation events should reject unknown outcomes.")
+	assert_equal(detonation_bad_outcome.metadata.get("field"), "outcome", "Detonation diagnostics should identify the invalid outcome.")
+	assert_equal(wait_missing_reason.error_code, &"invalid_event_payload", "Enemy wait events should require a wait reason.")
+	assert_equal(wait_missing_reason.metadata.get("field"), "reason", "Wait diagnostics should identify the missing reason.")
 
 
 func _assert_invalid_visibility_payload(payload: Dictionary, expected_field: StringName, message: String) -> void:

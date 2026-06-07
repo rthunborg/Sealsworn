@@ -22,6 +22,7 @@ func run() -> Dictionary:
 	_attack_status_events_are_replayable_noops()
 	_knockback_events_update_position_and_occupancy_atomically()
 	_invalid_attack_events_do_not_mutate()
+	_detonation_events_reject_outcome_position_contradictions()
 	_event_batches_are_atomic()
 	_event_batches_reject_invalid_types_atomically()
 	_unsupported_board_events_use_stable_reason_code()
@@ -514,6 +515,46 @@ func _invalid_attack_events_do_not_mutate() -> void:
 	assert_equal(final_damage_board.to_snapshot(), final_damage_before, "Rejected final damage events must not mutate board state.")
 
 
+func _detonation_events_reject_outcome_position_contradictions() -> void:
+	var avoided_board: BoardState = _detonation_event_board(Vector2i(1, 2))
+	var avoided_before: Dictionary = avoided_board.to_snapshot()
+	var avoided_event: DomainEvent = DomainEvent.marked_tile_detonated(
+		avoided_board.next_sequence_id(),
+		&"enemy_seer",
+		&"hero",
+		Vector2i(1, 2),
+		"ash_seer_mark:enemy_seer:2",
+		&"avoided",
+		_detonation_payload()
+	)
+
+	var avoided_result: ActionResult = avoided_board.apply_events([avoided_event])
+
+	assert_true(avoided_result.is_error(), "Avoided detonation events should reject targets still on the marked cell.")
+	assert_equal(avoided_result.error_code, &"invalid_detonation_event", "Contradictory detonation outcomes should use the detonation event code.")
+	assert_equal(avoided_result.metadata.get("reason"), "target_still_marked", "Avoided contradiction should identify the target position problem.")
+	assert_equal(avoided_board.to_snapshot(), avoided_before, "Rejected avoided detonation replay must not mutate board state.")
+
+	var hit_board: BoardState = _detonation_event_board(Vector2i(1, 1))
+	var hit_before: Dictionary = hit_board.to_snapshot()
+	var hit_event: DomainEvent = DomainEvent.marked_tile_detonated(
+		hit_board.next_sequence_id(),
+		&"enemy_seer",
+		&"hero",
+		Vector2i(1, 2),
+		"ash_seer_mark:enemy_seer:2",
+		&"hit",
+		_detonation_payload()
+	)
+
+	var hit_result: ActionResult = hit_board.apply_events([hit_event])
+
+	assert_true(hit_result.is_error(), "Hit detonation events should reject targets no longer on the marked cell.")
+	assert_equal(hit_result.error_code, &"invalid_detonation_event", "Hit contradiction should use the detonation event code.")
+	assert_equal(hit_result.metadata.get("reason"), "target_cell_mismatch", "Hit contradiction should identify the target position mismatch.")
+	assert_equal(hit_board.to_snapshot(), hit_before, "Rejected hit detonation replay must not mutate board state.")
+
+
 func _event_batches_are_atomic() -> void:
 	var board: BoardState = BoardState.new()
 	var events: Array[DomainEvent] = [
@@ -994,6 +1035,29 @@ func _knockback_event_board() -> BoardState:
 	return board
 
 
+func _detonation_event_board(hero_position: Vector2i) -> BoardState:
+	var board: BoardState = _new_board(6, 5)
+	var hero_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		hero_position,
+		18,
+		18
+	))
+	var seer_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"enemy_seer",
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		Vector2i(5, 2),
+		8,
+		8
+	))
+	assert_true(hero_result.succeeded, "Detonation replay helper should place the hero.")
+	assert_true(seer_result.succeeded, "Detonation replay helper should place the Ash Seer.")
+	return board
+
+
 func _entity(
 	entity_id: StringName,
 	entity_type: int,
@@ -1047,6 +1111,14 @@ func _damage_payload(
 		"final_damage": recorded_final_damage,
 		"damage_type": "physical",
 		"rng_draws": []
+	}
+
+
+func _detonation_payload() -> Dictionary:
+	return {
+		"damage": 4,
+		"damage_type": "physical",
+		"explanation": "Ash Seer mark detonated."
 	}
 
 

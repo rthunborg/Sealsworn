@@ -20,6 +20,7 @@ var position: Vector2i = Vector2i.ZERO
 var current_hp: int = 0
 var max_hp: int = 0
 var blocks_movement: bool = true
+var definition_id: StringName = &""
 
 func _init(
 	new_entity_id: StringName = &"",
@@ -28,7 +29,8 @@ func _init(
 	new_position: Vector2i = Vector2i.ZERO,
 	new_current_hp: int = 0,
 	new_max_hp: int = 0,
-	new_blocks_movement: bool = true
+	new_blocks_movement: bool = true,
+	new_definition_id: StringName = &""
 ) -> void:
 	entity_id = new_entity_id
 	entity_type = new_entity_type
@@ -37,6 +39,7 @@ func _init(
 	current_hp = new_current_hp
 	max_hp = new_max_hp
 	blocks_movement = new_blocks_movement
+	definition_id = new_definition_id
 
 
 func is_alive() -> bool:
@@ -58,6 +61,8 @@ func validate() -> ActionResult:
 		return _invalid_entity_data(&"max_hp")
 	if current_hp < 0 or current_hp > max_hp:
 		return _invalid_entity_data(&"current_hp")
+	if definition_id != &"" and not _is_lower_snake_id(definition_id):
+		return _invalid_entity_data(&"definition_id")
 	return ActionResult.ok()
 
 
@@ -72,7 +77,8 @@ func to_dictionary() -> Dictionary:
 		},
 		"current_hp": current_hp,
 		"max_hp": max_hp,
-		"blocks_movement": blocks_movement
+		"blocks_movement": blocks_movement,
+		"definition_id": String(definition_id)
 	}
 
 
@@ -84,7 +90,8 @@ func copy() -> TacticalEntityState:
 		position,
 		current_hp,
 		max_hp,
-		blocks_movement
+		blocks_movement,
+		definition_id
 	)
 
 
@@ -101,6 +108,8 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		return _invalid_entity_data(&"max_hp")
 	if not _has_bool_field(data, &"blocks_movement"):
 		return _invalid_entity_data(&"blocks_movement")
+	if _has_field(data, &"definition_id") and not _has_string_like_field(data, &"definition_id"):
+		return _invalid_entity_data(&"definition_id")
 
 	var position_value: Variant = _field(data, &"position")
 	if not position_value is Dictionary:
@@ -124,7 +133,8 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		),
 		int(_field(data, &"current_hp")),
 		int(_field(data, &"max_hp")),
-		bool(_field(data, &"blocks_movement"))
+		bool(_field(data, &"blocks_movement")),
+		StringName(str(_field(data, &"definition_id"))) if _has_field(data, &"definition_id") else &""
 	)
 
 	var validation: ActionResult = entity.validate()
@@ -208,6 +218,22 @@ static func _is_integral_number(value: Variant) -> bool:
 			return is_equal_approx(numeric_value, round(numeric_value))
 		_:
 			return false
+
+
+static func _is_lower_snake_id(value: StringName) -> bool:
+	var text: String = String(value)
+	if text.is_empty():
+		return false
+	if text != text.to_lower():
+		return false
+	for index: int in range(text.length()):
+		var code: int = text.unicode_at(index)
+		var is_lower: bool = code >= 97 and code <= 122
+		var is_digit: bool = code >= 48 and code <= 57
+		var is_underscore: bool = code == 95
+		if not is_lower and not is_digit and not is_underscore:
+			return false
+	return true
 
 
 static func _invalid_entity_data(field_name: StringName) -> ActionResult:

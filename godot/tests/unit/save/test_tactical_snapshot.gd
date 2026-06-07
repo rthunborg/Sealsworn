@@ -18,6 +18,7 @@ func run() -> Dictionary:
 	_from_domain_round_trips_board_rng_and_event_log()
 	_restore_and_continue_is_deterministic_after_snapshot()
 	_invalid_command_no_mutation_helper_uses_tactical_snapshots()
+	_ash_seer_pending_mark_shape_is_serializable_save_truth()
 	return result()
 
 
@@ -192,6 +193,34 @@ func _invalid_command_no_mutation_helper_uses_tactical_snapshots() -> void:
 	assert_equal(after, before, "Top-level tactical snapshots should prove invalid commands do not mutate domain state.")
 	assert_equal(board.next_sequence_id(), sequence_before, "Failed commands should not advance board sequence ids.")
 	assert_equal(streams.to_snapshot(), rng_before, "Failed commands should not advance gameplay RNG stream states.")
+
+
+func _ash_seer_pending_mark_shape_is_serializable_save_truth() -> void:
+	var board: BoardState = BoardFixtureFactory.enemy_turn_ash_seer_mark()
+	var streams: RngStreamSet = RngStreamSet.new(4040)
+	var pending_telegraphs: Array[Dictionary] = [{
+		"telegraph_id": "ash_seer_mark:enemy_seer:2",
+		"kind": "ash_seer_mark",
+		"source_entity_id": "enemy_seer",
+		"target_entity_id": "hero",
+		"marked_cell": {"x": 1, "y": 2},
+		"created_turn_number": 1,
+		"due_turn_number": 2,
+		"damage": 4,
+		"damage_type": "physical",
+		"status": "pending"
+	}]
+
+	var snapshot_result: ActionResult = TacticalSnapshot.from_domain(board, streams, {}, pending_telegraphs, [])
+	var snapshot: TacticalSnapshot = snapshot_result.metadata.get("snapshot") as TacticalSnapshot
+	var parse_result: ActionResult = TacticalSnapshot.parse(snapshot.to_dictionary())
+
+	assert_true(snapshot_result.succeeded, "Ash Seer pending marks should export through TacticalSnapshot.")
+	assert_true(parse_result.succeeded, "Ash Seer pending marks should parse back from TacticalSnapshot.")
+	assert_equal(snapshot.pending_telegraphs[0].get("kind"), "ash_seer_mark", "Pending mark should preserve stable kind.")
+	assert_equal(snapshot.pending_telegraphs[0].get("marked_cell"), {"x": 1, "y": 2}, "Pending mark should preserve target cell.")
+	assert_true(_is_json_compatible(snapshot.to_dictionary()), "Pending mark snapshots should stay JSON-compatible.")
+	assert_false(_contains_forbidden_reference(snapshot.to_dictionary()), "Pending marks must not include scene, audio, animation, or presentation references.")
 
 
 func _create_domain_snapshot() -> TacticalSnapshot:

@@ -14,7 +14,10 @@ enum Type {
 	ENTITY_ATTACKED,
 	DAMAGE_APPLIED,
 	STATUS_EFFECT_APPLIED,
-	ENTITY_KNOCKED_BACK
+	ENTITY_KNOCKED_BACK,
+	TILE_MARKED,
+	MARKED_TILE_DETONATED,
+	ENEMY_WAITED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -28,6 +31,9 @@ const EVENT_ID_ENTITY_ATTACKED := &"entity_attacked"
 const EVENT_ID_DAMAGE_APPLIED := &"damage_applied"
 const EVENT_ID_STATUS_EFFECT_APPLIED := &"status_effect_applied"
 const EVENT_ID_ENTITY_KNOCKED_BACK := &"entity_knocked_back"
+const EVENT_ID_TILE_MARKED := &"tile_marked"
+const EVENT_ID_MARKED_TILE_DETONATED := &"marked_tile_detonated"
+const EVENT_ID_ENEMY_WAITED := &"enemy_waited"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -171,6 +177,64 @@ static func entity_knocked_back(
 	)
 
 
+static func tile_marked(
+	sequence_id: int,
+	actor_id: StringName,
+	target_entity_id: StringName,
+	marked_cell: Vector2i,
+	telegraph_id: String,
+	mark_payload: Dictionary = {}
+) -> DomainEvent:
+	var payload_value: Dictionary = mark_payload.duplicate(true)
+	payload_value["target_entity_id"] = String(target_entity_id)
+	payload_value["marked_cell"] = _cell_payload(marked_cell)
+	payload_value["telegraph_id"] = telegraph_id
+	return load("res://scripts/core/events/domain_event.gd").new(
+		Type.TILE_MARKED,
+		sequence_id,
+		actor_id,
+		payload_value
+	)
+
+
+static func marked_tile_detonated(
+	sequence_id: int,
+	actor_id: StringName,
+	target_entity_id: StringName,
+	marked_cell: Vector2i,
+	telegraph_id: String,
+	outcome: StringName,
+	detonation_payload: Dictionary = {}
+) -> DomainEvent:
+	var payload_value: Dictionary = detonation_payload.duplicate(true)
+	payload_value["target_entity_id"] = String(target_entity_id)
+	payload_value["marked_cell"] = _cell_payload(marked_cell)
+	payload_value["telegraph_id"] = telegraph_id
+	payload_value["outcome"] = String(outcome)
+	return load("res://scripts/core/events/domain_event.gd").new(
+		Type.MARKED_TILE_DETONATED,
+		sequence_id,
+		actor_id,
+		payload_value
+	)
+
+
+static func enemy_waited(
+	sequence_id: int,
+	actor_id: StringName,
+	reason: StringName,
+	wait_payload: Dictionary = {}
+) -> DomainEvent:
+	var payload_value: Dictionary = wait_payload.duplicate(true)
+	payload_value["reason"] = String(reason)
+	return load("res://scripts/core/events/domain_event.gd").new(
+		Type.ENEMY_WAITED,
+		sequence_id,
+		actor_id,
+		payload_value
+	)
+
+
 func to_dictionary() -> Dictionary:
 	return {
 		"event_id": String(id_for_type(event_type)),
@@ -280,6 +344,12 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_status_effect_applied_payload(payload_value)
 		Type.ENTITY_KNOCKED_BACK:
 			return _validate_entity_knocked_back_payload(payload_value)
+		Type.TILE_MARKED:
+			return _validate_tile_marked_payload(payload_value)
+		Type.MARKED_TILE_DETONATED:
+			return _validate_marked_tile_detonated_payload(payload_value)
+		Type.ENEMY_WAITED:
+			return _validate_enemy_waited_payload(payload_value)
 		_:
 			return _ok_result()
 
@@ -423,6 +493,70 @@ static func _validate_entity_knocked_back_payload(payload_value: Dictionary) -> 
 		return _error_result(&"invalid_event_payload", {"field": "weapon_id"})
 	if payload_value.has("source_cell") and not _has_cell_payload(payload_value, &"source_cell"):
 		return _error_result(&"invalid_event_payload", {"field": "source_cell"})
+	return _ok_result()
+
+
+static func _validate_tile_marked_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_nonempty_string_payload(payload_value, &"target_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "target_entity_id"})
+	if not _has_cell_payload(payload_value, &"marked_cell"):
+		return _error_result(&"invalid_event_payload", {"field": "marked_cell"})
+	if not _has_nonempty_string_payload(payload_value, &"telegraph_id"):
+		return _error_result(&"invalid_event_payload", {"field": "telegraph_id"})
+	if not _has_lower_snake_payload(payload_value, &"enemy_definition_id"):
+		return _error_result(&"invalid_event_payload", {"field": "enemy_definition_id"})
+	if not _has_positive_integral_payload(payload_value, &"created_turn_number"):
+		return _error_result(&"invalid_event_payload", {"field": "created_turn_number"})
+	if not _has_positive_integral_payload(payload_value, &"due_turn_number"):
+		return _error_result(&"invalid_event_payload", {"field": "due_turn_number"})
+	if int(payload_value.get("due_turn_number")) <= int(payload_value.get("created_turn_number")):
+		return _error_result(&"invalid_event_payload", {"field": "due_turn_number"})
+	if not _has_positive_integral_payload(payload_value, &"damage"):
+		return _error_result(&"invalid_event_payload", {"field": "damage"})
+	if not _has_lower_snake_payload(payload_value, &"damage_type"):
+		return _error_result(&"invalid_event_payload", {"field": "damage_type"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
+	return _ok_result()
+
+
+static func _validate_marked_tile_detonated_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_nonempty_string_payload(payload_value, &"target_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "target_entity_id"})
+	if not _has_cell_payload(payload_value, &"marked_cell"):
+		return _error_result(&"invalid_event_payload", {"field": "marked_cell"})
+	if not _has_nonempty_string_payload(payload_value, &"telegraph_id"):
+		return _error_result(&"invalid_event_payload", {"field": "telegraph_id"})
+	if not _has_lower_snake_payload(payload_value, &"outcome"):
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	var outcome: String = String(payload_value.get("outcome"))
+	if outcome != "hit" and outcome != "avoided":
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	if not _has_positive_integral_payload(payload_value, &"damage"):
+		return _error_result(&"invalid_event_payload", {"field": "damage"})
+	if not _has_lower_snake_payload(payload_value, &"damage_type"):
+		return _error_result(&"invalid_event_payload", {"field": "damage_type"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
+	return _ok_result()
+
+
+static func _validate_enemy_waited_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	if payload_value.has("enemy_definition_id") and not _has_lower_snake_payload(payload_value, &"enemy_definition_id"):
+		return _error_result(&"invalid_event_payload", {"field": "enemy_definition_id"})
+	if payload_value.has("action_id") and not _has_lower_snake_payload(payload_value, &"action_id"):
+		return _error_result(&"invalid_event_payload", {"field": "action_id"})
+	if payload_value.has("score") and not _is_integral_number(payload_value.get("score")):
+		return _error_result(&"invalid_event_payload", {"field": "score"})
+	if not payload_value.has("reasons") or not payload_value.get("reasons") is Array:
+		return _error_result(&"invalid_event_payload", {"field": "reasons"})
+	for reason_value: Variant in payload_value.get("reasons", []):
+		if not (reason_value is String or reason_value is StringName):
+			return _error_result(&"invalid_event_payload", {"field": "reasons"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
 	return _ok_result()
 
 
@@ -588,6 +722,12 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_STATUS_EFFECT_APPLIED
 		Type.ENTITY_KNOCKED_BACK:
 			return EVENT_ID_ENTITY_KNOCKED_BACK
+		Type.TILE_MARKED:
+			return EVENT_ID_TILE_MARKED
+		Type.MARKED_TILE_DETONATED:
+			return EVENT_ID_MARKED_TILE_DETONATED
+		Type.ENEMY_WAITED:
+			return EVENT_ID_ENEMY_WAITED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -614,6 +754,12 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.STATUS_EFFECT_APPLIED
 		EVENT_ID_ENTITY_KNOCKED_BACK:
 			return Type.ENTITY_KNOCKED_BACK
+		EVENT_ID_TILE_MARKED:
+			return Type.TILE_MARKED
+		EVENT_ID_MARKED_TILE_DETONATED:
+			return Type.MARKED_TILE_DETONATED
+		EVENT_ID_ENEMY_WAITED:
+			return Type.ENEMY_WAITED
 		_:
 			return Type.UNKNOWN
 
@@ -626,6 +772,9 @@ static func _event_requires_actor(event_type_value: int) -> bool:
 		or event_type_value == Type.DAMAGE_APPLIED
 		or event_type_value == Type.STATUS_EFFECT_APPLIED
 		or event_type_value == Type.ENTITY_KNOCKED_BACK
+		or event_type_value == Type.TILE_MARKED
+		or event_type_value == Type.MARKED_TILE_DETONATED
+		or event_type_value == Type.ENEMY_WAITED
 	)
 
 

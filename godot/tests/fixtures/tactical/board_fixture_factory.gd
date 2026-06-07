@@ -243,6 +243,95 @@ static func attack_command_proc() -> BoardState:
 	return attack_preview_adjacent_enemy()
 
 
+static func enemy_turn_adjacent_melee(enemy_definition_id: StringName = &"iron_cultist") -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player(&"hero", Vector2i(2, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", enemy_definition_id, Vector2i(3, 2), _enemy_hp(enemy_definition_id)))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_approach(enemy_definition_id: StringName = &"iron_cultist") -> BoardState:
+	var board: BoardState = _new_board(6, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", enemy_definition_id, Vector2i(4, 2), _enemy_hp(enemy_definition_id)))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_blocked_approach() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player(&"hero", Vector2i(2, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_iron", &"iron_cultist", Vector2i(2, 4), 10))
+	_place_entity(board, _enemy_from_definition(&"blocker_left", &"gate_brute", Vector2i(1, 2), 12, 0))
+	_place_entity(board, _enemy_from_definition(&"blocker_right", &"gate_brute", Vector2i(3, 2), 12, 0))
+	_place_entity(board, _enemy_from_definition(&"blocker_up", &"gate_brute", Vector2i(2, 1), 12, 0))
+	_place_entity(board, _enemy_from_definition(&"blocker_down", &"gate_brute", Vector2i(2, 3), 12, 0))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_multiple_ordering() -> BoardState:
+	var board: BoardState = _new_board(7, 5)
+	_place_entity(board, _player(&"hero", Vector2i(3, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_b", &"iron_cultist", Vector2i(4, 2), 10))
+	_place_entity(board, _enemy_from_definition(&"enemy_a", &"iron_cultist", Vector2i(2, 2), 10))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_gate_brute_blocking() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_set_terrain(board, Vector2i(2, 1), BoardCell.Terrain.WALL)
+	_set_terrain(board, Vector2i(3, 1), BoardCell.Terrain.WALL)
+	_set_terrain(board, Vector2i(4, 1), BoardCell.Terrain.WALL)
+	_set_terrain(board, Vector2i(2, 3), BoardCell.Terrain.WALL)
+	_set_terrain(board, Vector2i(3, 3), BoardCell.Terrain.WALL)
+	_set_terrain(board, Vector2i(4, 3), BoardCell.Terrain.WALL)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_brute", &"gate_brute", Vector2i(4, 2), 12))
+	_place_entity(board, _enemy_from_definition(&"enemy_blocker", &"iron_cultist", Vector2i(3, 2), 10, 0))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_missing_definition_id() -> BoardState:
+	var board: BoardState = _new_board(5, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_unknown", &"", Vector2i(3, 2), 10))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_ash_seer_mark() -> BoardState:
+	var board: BoardState = _new_board(7, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(5, 2), 8))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_ash_seer_detonation_hit() -> BoardState:
+	return enemy_turn_ash_seer_mark()
+
+
+static func enemy_turn_ash_seer_detonation_avoided() -> BoardState:
+	var board: BoardState = _new_board(7, 5)
+	_place_entity(board, _player(&"hero", Vector2i(1, 1)))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(5, 2), 8))
+	_reveal_all(board)
+	return board
+
+
+static func enemy_turn_ash_seer_no_los_wait() -> BoardState:
+	var board: BoardState = _new_board(7, 5)
+	_set_terrain(board, Vector2i(3, 2), BoardCell.Terrain.WALL)
+	_place_entity(board, _player(&"hero", Vector2i(1, 2)))
+	_place_entity(board, _enemy_from_definition(&"enemy_seer", &"ash_seer", Vector2i(5, 2), 8))
+	_reveal_all(board)
+	return board
+
+
 static func expected_los_open_radius_cells() -> Array[Vector2i]:
 	return _expected_open_radius_cells(9, 9, Vector2i(4, 4), 4)
 
@@ -345,6 +434,39 @@ static func _enemy_with_hp(entity_id: StringName, position: Vector2i, current_hp
 		10,
 		true
 	)
+
+
+static func _enemy_from_definition(
+	entity_id: StringName,
+	definition_id: StringName,
+	position: Vector2i,
+	max_hp: int,
+	current_hp: int = -1
+) -> TacticalEntityState:
+	var resolved_current_hp: int = current_hp
+	if resolved_current_hp < 0:
+		resolved_current_hp = max_hp
+	var entity: TacticalEntityState = TacticalEntityState.new(
+		entity_id,
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		position,
+		resolved_current_hp,
+		max_hp,
+		true
+	)
+	entity.definition_id = definition_id
+	return entity
+
+
+static func _enemy_hp(definition_id: StringName) -> int:
+	match definition_id:
+		&"gate_brute":
+			return 12
+		&"ash_seer":
+			return 8
+		_:
+			return 10
 
 
 static func _ally(entity_id: StringName, position: Vector2i) -> TacticalEntityState:
