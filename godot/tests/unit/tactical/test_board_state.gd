@@ -17,6 +17,11 @@ func run() -> Dictionary:
 	_invalid_entity_moved_events_do_not_mutate()
 	_visibility_updated_event_updates_current_visible_and_memory_atomically()
 	_invalid_visibility_updated_events_do_not_mutate()
+	_attack_damage_events_update_hp_and_replay_atomically()
+	_damage_application_clamps_hp_without_outcome_events()
+	_attack_status_events_are_replayable_noops()
+	_knockback_events_update_position_and_occupancy_atomically()
+	_invalid_attack_events_do_not_mutate()
 	_event_batches_are_atomic()
 	_event_batches_reject_invalid_types_atomically()
 	_unsupported_board_events_use_stable_reason_code()
@@ -345,6 +350,129 @@ func _invalid_visibility_updated_events_do_not_mutate() -> void:
 	assert_true(sequence_result.is_error(), "Visibility events should reject sequence mismatches.")
 	assert_equal(sequence_result.error_code, &"event_sequence_mismatch", "Visibility sequence mismatches should use stable event sequencing.")
 	assert_equal(sequence_board.to_snapshot(), sequence_before, "Sequence mismatches must not mutate board state.")
+
+
+func _attack_damage_events_update_hp_and_replay_atomically() -> void:
+	var board: BoardState = _attack_event_board()
+	var replay_board: BoardState = BoardState.from_snapshot(board.to_snapshot())
+	var first_sequence_id: int = board.next_sequence_id()
+	var events: Array[DomainEvent] = [
+		DomainEvent.entity_attacked(first_sequence_id, &"hero", &"enemy_1", Vector2i(2, 1), &"sword", _attack_payload()),
+		DomainEvent.damage_applied(first_sequence_id + 1, &"hero", &"enemy_1", 4, 10, 6, 10, _damage_payload(4, 0, 0, false))
+	]
+
+	var result_value: ActionResult = board.apply_events(events)
+	var replay_result: ActionResult = replay_board.apply_events(events)
+
+	assert_true(result_value.succeeded, "Attack and damage events should apply as an atomic batch.")
+	assert_true(replay_result.succeeded, "Copied boards should replay attack event batches.")
+	assert_equal(board.get_entity(&"enemy_1").current_hp, 6, "Damage events should mutate stored target HP.")
+	assert_equal(board.next_sequence_id(), first_sequence_id + 2, "Attack event sequence ids should advance contiguously.")
+	assert_equal(replay_board.to_snapshot(), board.to_snapshot(), "Replayed attack events should reproduce the command-mutated board snapshot.")
+
+
+func _damage_application_clamps_hp_without_outcome_events() -> void:
+	var board: BoardState = _attack_event_board(3)
+	var first_sequence_id: int = board.next_sequence_id()
+	var events: Array[DomainEvent] = [
+		DomainEvent.entity_attacked(first_sequence_id, &"hero", &"enemy_1", Vector2i(2, 1), &"sword", _attack_payload()),
+		DomainEvent.damage_applied(first_sequence_id + 1, &"hero", &"enemy_1", 4, 3, 0, 10, _damage_payload(4, 0, 0, false))
+	]
+
+	var result_value: ActionResult = board.apply_events(events)
+
+	assert_true(result_value.succeeded, "Lethal damage events should apply in this story.")
+	assert_equal(board.get_entity(&"enemy_1").current_hp, 0, "Damage events should clamp target HP at zero.")
+	for event: DomainEvent in result_value.events:
+		assert_false(String(DomainEvent.id_for_type(event.event_type)).contains("death"), "Story 1.9 must not emit death events.")
+		assert_false(String(DomainEvent.id_for_type(event.event_type)).contains("victory"), "Story 1.9 must not emit victory events.")
+
+
+func _attack_status_events_are_replayable_noops() -> void:
+	var board: BoardState = _attack_event_board()
+	var before_entities: Array = board.to_snapshot().get("entities", [])
+	var event: DomainEvent = DomainEvent.status_effect_applied(
+		board.next_sequence_id(),
+		&"hero",
+		&"enemy_1",
+		&"bleed",
+		{
+			"weapon_id": "axe",
+			"rng_draw": {
+				"stream_name": "combat",
+				"draw_index": 0,
+				"roll_value": 0.2,
+				"threshold": 0.35,
+				"effect_id": "bleed",
+				"succeeded": true
+			}
+		}
+	)
+
+	var result_value: ActionResult = board.apply_event(event)
+
+	assert_true(result_value.succeeded, "Status effect events should be accepted for replay before persistent status exists.")
+	assert_equal(board.to_snapshot().get("entities", []), before_entities, "Status effect events should not mutate board entities in this story.")
+	assert_equal(board.next_sequence_id(), 3, "Status no-op events should still advance event sequence ids.")
+
+
+func _knockback_events_update_position_and_occupancy_atomically() -> void:
+	var board: BoardState = _knockback_event_board()
+	var event: DomainEvent = DomainEvent.entity_knocked_back(
+		board.next_sequence_id(),
+		&"hero",
+		&"enemy_1",
+		Vector2i(2, 1),
+		Vector2i(3, 1),
+		&"crossbow",
+		{"source_cell": {"x": 0, "y": 1}}
+	)
+
+	var result_value: ActionResult = board.apply_event(event)
+
+	assert_true(result_value.succeeded, "Valid knockback events should move the target.")
+	assert_equal(board.get_entity(&"enemy_1").position, Vector2i(3, 1), "Knockback should update stored target position.")
+	assert_equal(board.occupant_at(Vector2i(2, 1)), &"", "Knockback should clear previous target occupancy.")
+	assert_equal(board.occupant_at(Vector2i(3, 1)), &"enemy_1", "Knockback should set destination occupancy.")
+
+
+func _invalid_attack_events_do_not_mutate() -> void:
+	var damage_board: BoardState = _attack_event_board()
+	var damage_before: Dictionary = damage_board.to_snapshot()
+	var bad_damage: DomainEvent = DomainEvent.damage_applied(
+		damage_board.next_sequence_id(),
+		&"hero",
+		&"enemy_1",
+		4,
+		9,
+		5,
+		10,
+		_damage_payload(4, 0, 0, false)
+	)
+	var damage_result: ActionResult = damage_board.apply_event(bad_damage)
+
+	var knockback_board: BoardState = _knockback_event_board()
+	knockback_board.set_cell_terrain_for_setup(Vector2i(3, 1), BoardCell.Terrain.WALL)
+	var knockback_before: Dictionary = knockback_board.to_snapshot()
+	var bad_knockback: DomainEvent = DomainEvent.entity_knocked_back(
+		knockback_board.next_sequence_id(),
+		&"hero",
+		&"enemy_1",
+		Vector2i(2, 1),
+		Vector2i(3, 1),
+		&"crossbow",
+		{"source_cell": {"x": 0, "y": 1}}
+	)
+	var knockback_result: ActionResult = knockback_board.apply_event(bad_knockback)
+
+	assert_true(damage_result.is_error(), "Damage events should reject mismatched HP preconditions.")
+	assert_equal(damage_result.error_code, &"invalid_damage_event", "Invalid damage events should use a stable board-event code.")
+	assert_equal(damage_result.metadata.get("reason"), "hp_before_mismatch", "Damage HP mismatches should expose a stable reason.")
+	assert_equal(damage_board.to_snapshot(), damage_before, "Rejected damage events must not mutate board state.")
+	assert_true(knockback_result.is_error(), "Knockback events should reject blocked destinations.")
+	assert_equal(knockback_result.error_code, &"invalid_knockback_event", "Invalid knockback events should use a stable board-event code.")
+	assert_equal(knockback_result.metadata.get("reason"), "blocked", "Blocked knockback should expose a stable reason.")
+	assert_equal(knockback_board.to_snapshot(), knockback_before, "Rejected knockback events must not mutate board state.")
 
 
 func _event_batches_are_atomic() -> void:
@@ -781,6 +909,52 @@ func _visibility_event_board() -> BoardState:
 	return board
 
 
+func _attack_event_board(enemy_hp: int = 10) -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	var hero_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(1, 1),
+		18,
+		18
+	))
+	var enemy_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"enemy_1",
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		Vector2i(2, 1),
+		enemy_hp,
+		10
+	))
+	assert_true(hero_result.succeeded, "Attack event test helper should place the hero.")
+	assert_true(enemy_result.succeeded, "Attack event test helper should place the enemy.")
+	return board
+
+
+func _knockback_event_board() -> BoardState:
+	var board: BoardState = _new_board(5, 3)
+	var hero_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"hero",
+		TacticalEntityState.EntityType.PLAYER,
+		&"player",
+		Vector2i(0, 1),
+		18,
+		18
+	))
+	var enemy_result: ActionResult = board.place_entity_for_setup(_entity(
+		&"enemy_1",
+		TacticalEntityState.EntityType.ENEMY,
+		&"enemy",
+		Vector2i(2, 1),
+		10,
+		10
+	))
+	assert_true(hero_result.succeeded, "Knockback test helper should place the hero.")
+	assert_true(enemy_result.succeeded, "Knockback test helper should place the enemy.")
+	return board
+
+
 func _entity(
 	entity_id: StringName,
 	entity_type: int,
@@ -799,6 +973,32 @@ func _entity(
 		max_hp,
 		blocks_movement
 	)
+
+
+func _attack_payload() -> Dictionary:
+	return {
+		"expected_base_damage": 4,
+		"range": 1,
+		"distance": 1,
+		"line_cells": [{"x": 1, "y": 1}, {"x": 2, "y": 1}],
+		"blocker_cells": [],
+		"blocker_ignored": false,
+		"warnings": [],
+		"effects": [],
+		"explanation": "sword previews 4 damage to enemy_1."
+	}
+
+
+func _damage_payload(base_damage: int, support_bonus_damage: int, armor_reduction: int, block_succeeded: bool) -> Dictionary:
+	return {
+		"weapon_id": "sword",
+		"base_damage": base_damage,
+		"support_bonus_damage": support_bonus_damage,
+		"armor_reduction": armor_reduction,
+		"block_succeeded": block_succeeded,
+		"damage_type": "physical",
+		"rng_draws": []
+	}
 
 
 func _cell_snapshot(x: int, y: int) -> Dictionary:

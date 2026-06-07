@@ -347,6 +347,14 @@ func _apply_validated_event(event: DomainEvent) -> void:
 			_apply_entity_moved(event)
 		DomainEvent.Type.VISIBILITY_UPDATED:
 			_apply_visibility_updated(event)
+		DomainEvent.Type.DAMAGE_APPLIED:
+			_apply_damage_applied(event)
+		DomainEvent.Type.ENTITY_KNOCKED_BACK:
+			_apply_entity_knocked_back(event)
+		DomainEvent.Type.ENTITY_ATTACKED:
+			pass
+		DomainEvent.Type.STATUS_EFFECT_APPLIED:
+			pass
 	_next_sequence_id = event.sequence_id + 1
 
 
@@ -378,6 +386,22 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 			var visibility_validation: ActionResult = _validate_visibility_updated_event(event)
 			if visibility_validation.is_error():
 				return visibility_validation
+		DomainEvent.Type.ENTITY_ATTACKED:
+			var attack_validation: ActionResult = _validate_entity_attacked_event(event)
+			if attack_validation.is_error():
+				return attack_validation
+		DomainEvent.Type.DAMAGE_APPLIED:
+			var damage_validation: ActionResult = _validate_damage_applied_event(event)
+			if damage_validation.is_error():
+				return damage_validation
+		DomainEvent.Type.STATUS_EFFECT_APPLIED:
+			var status_validation: ActionResult = _validate_status_effect_applied_event(event)
+			if status_validation.is_error():
+				return status_validation
+		DomainEvent.Type.ENTITY_KNOCKED_BACK:
+			var knockback_validation: ActionResult = _validate_entity_knocked_back_event(event)
+			if knockback_validation.is_error():
+				return knockback_validation
 		_:
 			return ActionResult.error(&"unsupported_board_event", {
 				"event_id": String(DomainEvent.id_for_type(event.event_type))
@@ -412,6 +436,32 @@ func _apply_visibility_updated(event: DomainEvent) -> void:
 		if board_cell != null:
 			board_cell.visible = true
 			board_cell.explored = true
+
+
+func _apply_damage_applied(event: DomainEvent) -> void:
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id", "")))
+	var entity: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if entity != null:
+		entity.current_hp = int(event.payload.get("hp_after", entity.current_hp))
+
+
+func _apply_entity_knocked_back(event: DomainEvent) -> void:
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id", "")))
+	var from_cell: Vector2i = _payload_cell(event.payload.get("from", {}))
+	var to_cell: Vector2i = _payload_cell(event.payload.get("to", {}))
+	var entity: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if entity == null:
+		return
+
+	if entity.blocks_movement:
+		var previous_cell: BoardCell = get_cell(from_cell)
+		if previous_cell != null and previous_cell.occupant_id == target_entity_id:
+			previous_cell.occupant_id = &""
+		var target_cell: BoardCell = get_cell(to_cell)
+		if target_cell != null:
+			target_cell.occupant_id = target_entity_id
+
+	entity.position = to_cell
 
 
 func _validate_entity_moved_event(event: DomainEvent) -> ActionResult:
@@ -576,6 +626,144 @@ func _validate_visibility_updated_event(event: DomainEvent) -> ActionResult:
 	return ActionResult.ok()
 
 
+func _validate_entity_attacked_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_attack_event(&"invalid_actor")
+	var actor: TacticalEntityState = _entities.get(event.actor_id) as TacticalEntityState
+	if actor == null:
+		return _invalid_attack_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_attack_event(&"invalid_payload", {"field": "target_entity_id"})
+	if not _has_event_cell(event.payload, &"target_cell"):
+		return _invalid_attack_event(&"invalid_payload", {"field": "target_cell"})
+
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if target == null:
+		return _invalid_attack_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+	var target_cell: Vector2i = _payload_cell(event.payload.get("target_cell"))
+	if target.position != target_cell:
+		return _invalid_attack_event(&"target_cell_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_x": target.position.x,
+			"expected_y": target.position.y,
+			"actual_x": target_cell.x,
+			"actual_y": target_cell.y
+		})
+	return ActionResult.ok()
+
+
+func _validate_damage_applied_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_damage_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_damage_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_damage_event(&"invalid_payload", {"field": "target_entity_id"})
+	if not _has_nonnegative_integral_payload(event.payload, &"hp_before"):
+		return _invalid_damage_event(&"invalid_payload", {"field": "hp_before"})
+	if not _has_nonnegative_integral_payload(event.payload, &"hp_after"):
+		return _invalid_damage_event(&"invalid_payload", {"field": "hp_after"})
+	if not _has_positive_integral_payload(event.payload, &"amount"):
+		return _invalid_damage_event(&"invalid_payload", {"field": "amount"})
+
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if target == null:
+		return _invalid_damage_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+
+	var hp_before: int = int(event.payload.get("hp_before"))
+	var hp_after: int = int(event.payload.get("hp_after"))
+	var amount: int = int(event.payload.get("amount"))
+	if target.current_hp != hp_before:
+		return _invalid_damage_event(&"hp_before_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_hp": target.current_hp,
+			"actual_hp": hp_before
+		})
+	var expected_hp_after: int = max(0, hp_before - amount)
+	if hp_after != expected_hp_after:
+		return _invalid_damage_event(&"hp_after_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_hp": expected_hp_after,
+			"actual_hp": hp_after
+		})
+	return ActionResult.ok()
+
+
+func _validate_status_effect_applied_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_status_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_status_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_status_event(&"invalid_payload", {"field": "target_entity_id"})
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	if not _entities.has(target_entity_id):
+		return _invalid_status_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+	return ActionResult.ok()
+
+
+func _validate_entity_knocked_back_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_knockback_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_knockback_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"target_entity_id"):
+		return _invalid_knockback_event(&"invalid_payload", {"field": "target_entity_id"})
+	if not _has_event_cell(event.payload, &"from"):
+		return _invalid_knockback_event(&"invalid_payload", {"field": "from"})
+	if not _has_event_cell(event.payload, &"to"):
+		return _invalid_knockback_event(&"invalid_payload", {"field": "to"})
+
+	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id")))
+	var target: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
+	if target == null:
+		return _invalid_knockback_event(&"missing_target", {
+			"target_entity_id": String(target_entity_id)
+		})
+
+	var from_cell: Vector2i = _payload_cell(event.payload.get("from"))
+	var to_cell: Vector2i = _payload_cell(event.payload.get("to"))
+	if target.position != from_cell:
+		return _invalid_knockback_event(&"from_mismatch", {
+			"target_entity_id": String(target_entity_id),
+			"expected_x": target.position.x,
+			"expected_y": target.position.y,
+			"actual_x": from_cell.x,
+			"actual_y": from_cell.y
+		})
+	if not in_bounds(to_cell):
+		return _invalid_knockback_event(&"out_of_bounds", {
+			"x": to_cell.x,
+			"y": to_cell.y
+		})
+
+	var occupancy_result: ActionResult = _validate_cell_for_occupancy(to_cell, target_entity_id)
+	if occupancy_result.is_error():
+		var reason: StringName = &"blocked"
+		if occupancy_result.error_code == &"cell_out_of_bounds":
+			reason = &"out_of_bounds"
+		elif occupancy_result.error_code == &"cell_occupied":
+			reason = &"occupied"
+		return _invalid_knockback_event(reason, occupancy_result.metadata)
+	return ActionResult.ok()
+
+
 func _validate_visibility_cell_array(value: Variant, field_name: StringName, allow_empty: bool) -> ActionResult:
 	if not value is Array:
 		return _invalid_visibility_event(&"invalid_payload", {"field": String(field_name)})
@@ -717,6 +905,20 @@ func _has_positive_integral_payload(payload: Dictionary, field_name: StringName)
 	return _is_integral_number(value) and int(value) > 0
 
 
+func _has_nonnegative_integral_payload(payload: Dictionary, field_name: StringName) -> bool:
+	if not payload.has(String(field_name)):
+		return false
+	var value: Variant = payload.get(String(field_name))
+	return _is_integral_number(value) and int(value) >= 0
+
+
+func _has_nonempty_string_payload(payload: Dictionary, field_name: StringName) -> bool:
+	if not payload.has(String(field_name)):
+		return false
+	var value: Variant = payload.get(String(field_name))
+	return (value is String or value is StringName) and not String(value).is_empty()
+
+
 func _invalid_movement_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
 	var result_metadata: Dictionary = {"reason": String(reason)}
 	for key: Variant in metadata.keys():
@@ -729,6 +931,34 @@ func _invalid_visibility_event(reason: StringName, metadata: Dictionary = {}) ->
 	for key: Variant in metadata.keys():
 		result_metadata[key] = metadata[key]
 	return ActionResult.error(&"invalid_visibility_event", result_metadata)
+
+
+func _invalid_attack_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_attack_event", result_metadata)
+
+
+func _invalid_damage_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_damage_event", result_metadata)
+
+
+func _invalid_status_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_status_event", result_metadata)
+
+
+func _invalid_knockback_event(reason: StringName, metadata: Dictionary = {}) -> ActionResult:
+	var result_metadata: Dictionary = {"reason": String(reason)}
+	for key: Variant in metadata.keys():
+		result_metadata[key] = metadata[key]
+	return ActionResult.error(&"invalid_knockback_event", result_metadata)
 
 
 func _validate_snapshot_occupants(snapshot_occupants: Dictionary) -> ActionResult:

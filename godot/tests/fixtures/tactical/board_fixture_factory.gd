@@ -194,6 +194,55 @@ static func attack_preview_empty_target() -> BoardState:
 	return board
 
 
+static func attack_command_kill_board() -> BoardState:
+	var board: BoardState = _new_board(3, 3)
+	_place_entity(board, _player(&"hero", Vector2i(1, 1)))
+	_place_entity(board, _enemy_with_hp(&"enemy_1", Vector2i(2, 1), 3))
+	_reveal_all(board)
+	return board
+
+
+static func attack_command_survive_board() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
+static func attack_command_knockback_open() -> BoardState:
+	var board: BoardState = _new_board(5, 3)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(2, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_command_knockback_blocked() -> BoardState:
+	var board: BoardState = _new_board(4, 3)
+	_set_terrain(board, Vector2i(3, 1), BoardCell.Terrain.WALL)
+	_place_entity(board, _player(&"hero", Vector2i(0, 1)))
+	_place_entity(board, _enemy(&"enemy_1", Vector2i(2, 1)))
+	_reveal_all(board)
+	return board
+
+
+static func attack_command_shield_block() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
+static func attack_command_shield_no_block() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
+static func attack_command_tome_staff() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
+static func attack_command_tome_wand() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
+static func attack_command_proc() -> BoardState:
+	return attack_preview_adjacent_enemy()
+
+
 static func expected_los_open_radius_cells() -> Array[Vector2i]:
 	return _expected_open_radius_cells(9, 9, Vector2i(4, 4), 4)
 
