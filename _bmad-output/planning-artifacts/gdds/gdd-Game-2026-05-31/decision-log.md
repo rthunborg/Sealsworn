@@ -1,13 +1,13 @@
 # Sealsworn - Decision Log
 
 **Created:** 2026-05-31
-**Updated:** 2026-05-31
+**Updated:** 2026-06-01
 
 ## 2026-05-31
 
 ### Workspace Created
 
-- Created GDD workspace at `C:\Users\user\Documents\Game\_bmad-output\planning-artifacts\gdds\gdd-Game-2026-05-31`.
+- Created GDD workspace at `_bmad-output/planning-artifacts/gdds/gdd-Game-2026-05-31`.
 - Created `gdd.md`, `epics.md`, and `decision-log.md`.
 
 ### Workflow Intent
@@ -29,8 +29,9 @@
 
 ### Source Inputs Registered
 
-- `C:\Users\user\Documents\Game\project-context.md`
-- `C:\Users\user\Documents\Game\_bmad-output\brainstorming-game-brief-handoff-2026-05-29.md`
+- `project-context.md`
+- `_bmad-output/game-brief.md`
+- `_bmad-output/brainstorming-game-brief-handoff-2026-05-29.md`
 
 ### Imported Design Guardrails
 
@@ -186,7 +187,8 @@
 
 ### Technical Experience Baseline v0 Locked
 
-- Decision: Sealsworn is mobile-first and desktop-playable.
+- Decision: Sealsworn targets iOS/Android mobile and tablet plus Windows desktop/laptop, with mobile-first UX and desktop-playable parity.
+- Architecture constraint: First internal playable milestones may prioritize the fastest development build target, but game architecture must preserve a native mobile packaging path from the start.
 - Portrait is likely the main mobile phone play mode because it best supports quick, comfortable, interruption-friendly sessions.
 - Landscape is supported on mobile phones, tablets, and desktop/laptop screens.
 - Landscape is not a separate game mode; it is the same tactical experience with more visible play space where possible and adaptive UI layout.
@@ -227,3 +229,14 @@
 - Decision: MVP assets prioritize tactical readability and reusable production value over content volume.
 - Baseline: 3 playable class portraits/icons, 2 locked class silhouettes/icons, 3 enemy-pattern visuals, 1 boss visual, 4 affinity treatments, Small/Medium Labyrinth tile/prop set, baseline weapon/support icons, 20-30 passive icons or glyphs, tactical/outpost/run UI frames, core SFX, and ambient loops.
 - Note: Placeholder or prototype art is acceptable until the core loop is proven.
+
+## 2026-06-01
+
+### Architecture Freeze Patch v0
+
+- Decision: Freeze `gdd.md` and `epics.md` for game architecture v0.
+- Decision: Normalize `game_type` frontmatter to canonical `roguelike` while keeping Roguelike as the human-readable label.
+- Decision: Clarify MVP platform/package target as iOS/Android mobile and tablet plus Windows desktop/laptop, with mobile-first UX and desktop-playable parity.
+- Architecture handoff: Architecture must preserve a native mobile packaging path from the start even if early internal playable milestones use the fastest development build target.
+- Path hygiene: Replaced machine-specific absolute file paths in planning artifacts with repo-relative paths so the repo can move between computers.
+- Result: No phase-blocking GDD decisions remain before `gds-game-architecture`.

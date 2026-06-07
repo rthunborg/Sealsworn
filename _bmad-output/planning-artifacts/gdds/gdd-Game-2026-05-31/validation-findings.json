@@ -1,0 +1,159 @@
+{
+  "prd_name": "Sealsworn GDD",
+  "prd_path": "_bmad-output/planning-artifacts/gdds/gdd-Game-2026-05-31/gdd.md",
+  "checklist_path": ".agents/skills/gds-gdd/assets/gdd-validation-checklist.md",
+  "timestamp": "2026-06-01T14:21:11+02:00",
+  "overall_synthesis": "The Sealsworn GDD is frozen for game architecture v0. Core fantasy, pillars, loop, mechanics, roguelike sections, MVP scope, platform target, and epic sequence align; remaining warnings are tuning/detail concerns that can be carried into architecture, story breakdown, and playtest planning.",
+  "findings": [
+    {
+      "id": "Q-1",
+      "title": "Information density",
+      "status": "warn",
+      "severity": "low",
+      "location": "gdd.md:50, gdd.md:96, gdd.md:440, gdd.md:660; epics.md:36, epics.md:237",
+      "note": "Most sections carry design weight, but a few freeze-version phrases still use subjective success language such as fun, meaningful, and satisfying without a local observable definition.",
+      "suggested_fix": "Keep the current text for architecture, but convert retained subjective phrases into playtest-observable criteria during tuning and story breakdown."
+    },
+    {
+      "id": "Q-2",
+      "title": "Measurability",
+      "status": "warn",
+      "severity": "medium",
+      "location": "gdd.md:547-555, gdd.md:625-664, gdd.md:698-705",
+      "note": "Combat has useful baseline numbers, but technical targets lack device tiers, memory or battery budget, and measurement method. Several economy, node-weight, passive, boss, and outpost values are explicitly deferred.",
+      "suggested_fix": "Before production planning, add target device classes and measurement methods. Keep deferred economy and boss numbers as story/tuning work unless architecture needs a range now."
+    },
+    {
+      "id": "Q-3",
+      "title": "Traceability",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:24, gdd.md:70-92, gdd.md:117-175, gdd.md:608-619; epics.md:17-30",
+      "note": "The chain from core fantasy to pillars, loop, mechanics, and development epics is intact. Major mechanics map cleanly into at least one epic."
+    },
+    {
+      "id": "Q-4",
+      "title": "Core gameplay concrete",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:70-113",
+      "note": "The GDD has four distinct pillars, a complete repeatable core loop, and testable MVP win/loss conditions."
+    },
+    {
+      "id": "Q-5",
+      "title": "Out of Scope explicit",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:668-685; epics.md:48-53, epics.md:75-80, epics.md:100-104, epics.md:125-129, epics.md:149-153, epics.md:174-178, epics.md:198-202, epics.md:223-227, epics.md:247-252, epics.md:272-276",
+      "note": "MVP non-goals are explicit in the GDD and each epic carries local out-of-scope boundaries."
+    },
+    {
+      "id": "Q-6",
+      "title": "Dual-audience and self-contained",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:20-705; epics.md:1-280",
+      "note": "The documents are readable by design, production, and architecture readers. Sections are extractable via consistent headings and concrete tables/bullets."
+    },
+    {
+      "id": "D-1",
+      "title": "No engine-implementation leakage",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:117-189, gdd.md:545-599",
+      "note": "The GDD specifies player-facing mechanics, platform experience, performance targets, and assets without engine APIs, class/node names, shader internals, or code patterns."
+    },
+    {
+      "id": "D-2",
+      "title": "Input fidelity",
+      "status": "pass",
+      "severity": "low",
+      "location": "project-context.md:1-18; game-brief.md:35, game-brief.md:168-194; gdd.md:559-571, gdd.md:680-681, gdd.md:695-699; decision-log.md:235-243",
+      "note": "Core fantasy, guardrails, pillars, mechanics, scope, and narrative decisions are preserved. Source references now use repo-relative paths, and the MVP target is clarified as iOS/Android mobile and tablet plus Windows desktop/laptop with a native mobile packaging path preserved from architecture."
+    },
+    {
+      "id": "D-3",
+      "title": "Technical Specifications stay GDD-level",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:545-599",
+      "note": "Technical specifications stay at GDD level: performance, platform behavior, accessibility, offline stance, save/resume, and asset budget."
+    },
+    {
+      "id": "D-4",
+      "title": "No innovation theater",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:36-41",
+      "note": "The USPs are concrete design differentiators rather than unsupported novelty claims."
+    },
+    {
+      "id": "G-1",
+      "category": "Genre and game-type",
+      "title": "Genre compliance",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:193-406; genre-complexity.csv:4",
+      "note": "Roguelike is high complexity, and the GDD includes the expected roguelike sections: run structure, procedural generation, permadeath/meta progression, item and upgrade system, character selection, and difficulty modifiers. Numeric balance-band depth is carried by Q-2 as a later tuning warning."
+    },
+    {
+      "id": "G-2",
+      "category": "Genre and game-type",
+      "title": "Game-type cross-reference",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:1-16, gdd.md:193-259; game-types.csv:8",
+      "note": "The content strongly matches the roguelike game type, has an appropriate Roguelike Specific Elements section, and now uses the canonical frontmatter id roguelike."
+    },
+    {
+      "id": "S-1",
+      "title": "Terminology integrity",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:24-705; epics.md:1-280; decision-log.md:1-229",
+      "note": "Game-specific terms are consistent across GDD, epics, and decision log: Oath Shards, Echoes, Seal Fragments, Wardenwork, Consume/Destroy, Larval Avatar, affinities, and class names remain stable."
+    },
+    {
+      "id": "S-2",
+      "title": "Epic continuity",
+      "status": "warn",
+      "severity": "medium",
+      "location": "gdd.md:608-619; epics.md:17-30, epics.md:34-280; decision-log.md:212-216",
+      "note": "Epic titles, sequence, scope, and playable outcomes match between the GDD, epics.md, and decision log. The epics do not yet contain explicit high-level story slices; the current Includes bullets are adequate for architecture but not a final story backlog.",
+      "suggested_fix": "Proceed to architecture with the current epics. Expand each epic into high-level stories during gds-create-epics-and-stories."
+    },
+    {
+      "id": "S-3",
+      "title": "Assumptions Index",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:689-705",
+      "note": "There are no inline [ASSUMPTION] tags, and the Assumptions and Dependencies section clearly lists remaining production design details."
+    },
+    {
+      "id": "S-4",
+      "title": "Template completeness",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:1-705",
+      "note": "No unfilled template variables remain, and all canonical GDD sections are present."
+    },
+    {
+      "id": "S-5",
+      "title": "Open-items density",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:696-705",
+      "note": "No phase-blocking design decisions remain. The remaining production design details are expected follow-on work and do not block architecture."
+    },
+    {
+      "id": "STK-1",
+      "category": "Scope-gated",
+      "title": "Required sections",
+      "status": "pass",
+      "severity": "low",
+      "location": "gdd.md:20-705; epics.md:1-280",
+      "note": "The GDD has enough design detail for game architecture: loop, mechanics, generation constraints, save/resume expectations, platform/package target, asset budget, and epics are present."
+    }
+  ]
+}

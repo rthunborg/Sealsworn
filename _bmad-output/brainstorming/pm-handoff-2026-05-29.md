@@ -1,8 +1,8 @@
 # PM Handoff: Fantasy Turn-Based Roguelite
 
 Date: 2026-05-29
-Source brainstorming artifact: `C:\Users\user\Documents\Game\_bmad-output\brainstorming\brainstorming-session-2026-05-25-173214.md`
-Current prototype: `C:\Users\user\Documents\Game\prototype`
+Source brainstorming artifact: `_bmad-output/brainstorming/brainstorming-session-2026-05-25-173214.md`
+Current prototype: `prototype/`
 
 ## Purpose
 

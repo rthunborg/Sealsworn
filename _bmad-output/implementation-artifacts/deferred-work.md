@@ -1,0 +1,5 @@
+## Deferred from: code review of 1-3-actionresult-and-domain-event-foundation (2026-06-05)
+
+- Board snapshot cell parsing still coerces malformed cell fields and lacks a `cells` container type guard. `BoardState.try_from_snapshot()` assigns `cells` directly to a typed `Array`, while `BoardCell.from_dictionary()` coerces missing or malformed position, terrain, visibility, and explored values before validation can reject the corrupt snapshot.
+- Board entity snapshot restore has unresolved occupant-schema migration and consistency behavior. Cell-only occupant snapshots from the earlier board format now fail without a schema migration, while snapshots with entities but missing matching cell occupants can be accepted and restored into a different shape.
+- Mutable `get_cell()` access can bypass new entity occupancy invariants. External callers can mutate the stored `BoardCell.occupant_id` directly and desynchronize `_cells` from `_entities`; deciding whether to return read-only copies or add setup-only mutators belongs with the board snapshot/domain API cleanup.

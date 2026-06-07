@@ -10,10 +10,10 @@ Prepared from prior brainstorming and narrative-spine sessions.
 
 The next Game Brief agent should treat this file as the compact handoff and use the following source documents for deeper detail if needed:
 
-- Full mechanics brainstorming: `C:\Users\user\Documents\Game\_bmad-output\brainstorming\brainstorming-session-2026-05-25-173214.md`
-- Previous PM handoff: `C:\Users\user\Documents\Game\_bmad-output\brainstorming\pm-handoff-2026-05-29.md`
-- Narrative spine brainstorming: `C:\Users\user\Documents\Game\_bmad-output\brainstorming\brainstorming-session-2026-05-29-105557.md`
-- Current prototype: `C:\Users\user\Documents\Game\prototype`
+- Full mechanics brainstorming: `_bmad-output/brainstorming/brainstorming-session-2026-05-25-173214.md`
+- Previous PM handoff: `_bmad-output/brainstorming/pm-handoff-2026-05-29.md`
+- Narrative spine brainstorming: `_bmad-output/brainstorming/brainstorming-session-2026-05-29-105557.md`
+- Current prototype: `prototype/`
 
 This root-level handoff exists because the Game Brief initializer discovers `*brainstorm*.md` files directly under `_bmad-output`.
 

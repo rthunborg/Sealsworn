@@ -1,8 +1,8 @@
 # Sealsworn - Development Epics
 
-**Status:** Express v0 draft
+**Status:** Frozen for architecture v0
 **Created:** 2026-05-31
-**Updated:** 2026-05-31
+**Updated:** 2026-06-01
 
 This file holds the detailed development-epic breakdown for the Sealsworn MVP. The GDD carries only the summary table and recommended sequence.
 

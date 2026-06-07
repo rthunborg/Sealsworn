@@ -1,19 +1,20 @@
 ---
 title: Sealsworn
-game_type: Roguelike
+game_type: roguelike
 platforms:
-  - Mobile-first
-  - Desktop-playable
+  - iOS/Android mobile and tablet
+  - Windows desktop/laptop
+  - Mobile-first UX with desktop-playable parity
 created: 2026-05-31
-updated: 2026-05-31
-status: Express v0 draft
+updated: 2026-06-01
+status: Frozen for architecture v0
 ---
 
 # Sealsworn - Game Design Document
 
 **Author:** Rasmus
 **Game Type:** Roguelike
-**Target Platform(s):** Mobile-first, desktop-playable
+**Target Platform(s):** iOS/Android mobile and tablet, Windows desktop/laptop, mobile-first UX with desktop-playable parity
 
 ---
 
@@ -556,7 +557,9 @@ These rules are **Technical Experience Baseline v0**.
 
 ### Platform-Specific Details
 
-Sealsworn is mobile-first and desktop-playable.
+Sealsworn's MVP target platforms are iOS/Android mobile and tablet plus Windows desktop/laptop. The design is mobile-first and desktop-playable: input, UI density, readability, save/resume, and performance constraints start from phone-sized play, while desktop builds preserve the same rules with mouse/keyboard support and wider layouts.
+
+First internal playable milestones may prioritize the fastest development build target, but game architecture must preserve a native mobile packaging path from the start.
 
 - Portrait is likely the main mobile phone play mode because it best supports quick, comfortable, interruption-friendly sessions.
 - Landscape is supported on mobile phones, tablets, and desktop/laptop screens.
@@ -674,7 +677,8 @@ MVP non-goals:
 - Deep class talent trees.
 - Hundreds of loot affixes.
 - Full elemental interaction matrix.
-- Native mobile packaging unless architecture makes it cheap.
+- Console and web targets.
+- Mac and Linux targets unless architecture makes them cheap.
 - Final art direction.
 - Full boss roster.
 - Complex AI intent prediction UI.
@@ -690,8 +694,9 @@ MVP non-goals:
 
 Current source inputs:
 
-- `C:\Users\user\Documents\Game\project-context.md`
-- `C:\Users\user\Documents\Game\_bmad-output\brainstorming-game-brief-handoff-2026-05-29.md`
+- `project-context.md`
+- `_bmad-output/game-brief.md`
+- `_bmad-output/brainstorming-game-brief-handoff-2026-05-29.md`
 
 No phase-blocking design decisions remain for GDD v0.
 
