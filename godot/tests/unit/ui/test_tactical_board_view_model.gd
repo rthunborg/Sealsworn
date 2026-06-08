@@ -38,13 +38,15 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 		"commit_flow",
 		"event_log_summary",
 		"height",
+		"inspect",
 		"occupants",
 		"outcome",
 		"preview",
 		"selected_cell",
 		"selected_entity_id",
 		"turn",
-		"width"
+		"width",
+		"zoom"
 	], "Board view-model should expose stable top-level dictionary keys.")
 	assert_equal(data.get("width"), 6, "View model should expose board width.")
 	assert_equal(data.get("height"), 6, "View model should expose board height.")
@@ -72,6 +74,8 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	assert_equal(preview.get("cue_ids"), ["move_preview_valid", "commit_available"], "Preview slot should preserve copied cue ids.")
 	assert_equal(preview.get("metadata"), {"path": [_cell(0, 2), _cell(1, 2)]}, "Preview metadata should be deeply copied.")
 	assert_equal(data.get("commit_flow"), {}, "Commit flow should default to an empty presenter-safe dictionary.")
+	assert_equal(data.get("inspect"), {}, "Inspect should default to an empty presenter-safe dictionary.")
+	assert_equal(data.get("zoom"), {}, "Zoom should default to an empty presenter-safe dictionary.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("enabled"), true, "Move availability should reflect the move preview.")
 	assert_equal((availability.get("attack", {}) as Dictionary).get("enabled"), false, "Attack availability should be stable even without an attack preview.")
 	assert_equal((availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Confirm availability should reflect preview commit availability.")

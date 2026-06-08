@@ -21,6 +21,8 @@ var _selected_cell: Variant = null
 var _selected_entity_id: String = ""
 var _preview: Dictionary = {}
 var _commit_flow: Dictionary = {}
+var _inspect: Dictionary = {}
+var _zoom: Dictionary = {}
 var _action_availability: Dictionary = {}
 var _turn: Dictionary = {}
 var _outcome: Dictionary = {}
@@ -36,6 +38,8 @@ func to_dictionary() -> Dictionary:
 		"selected_entity_id": _selected_entity_id,
 		"preview": _preview.duplicate(true),
 		"commit_flow": _commit_flow.duplicate(true),
+		"inspect": _inspect.duplicate(true),
+		"zoom": _zoom.duplicate(true),
 		"action_availability": _action_availability.duplicate(true),
 		"turn": _turn.duplicate(true),
 		"outcome": _outcome.duplicate(true),
@@ -64,6 +68,8 @@ static func from_domain(
 
 	view_model._preview = _preview_from_options(options)
 	view_model._commit_flow = _commit_flow_from_options(options)
+	view_model._inspect = _dictionary_from_options(options, &"inspect")
+	view_model._zoom = _zoom_from_options(options)
 	view_model._action_availability = _action_availability_from_options(options, view_model._preview, view_model._commit_flow)
 	view_model._turn = turn_state.to_dictionary() if turn_state != null else {}
 	view_model._outcome = _outcome_from_options(options)
@@ -137,6 +143,12 @@ static func _preview_from_options(options: Dictionary) -> Dictionary:
 
 static func _commit_flow_from_options(options: Dictionary) -> Dictionary:
 	return _dictionary_from_options(options, &"commit_flow")
+
+
+static func _zoom_from_options(options: Dictionary) -> Dictionary:
+	if _has_field(options, &"zoom"):
+		return _dictionary_from_options(options, &"zoom")
+	return _dictionary_from_options(options, &"zoom_state")
 
 
 static func _action_availability_from_options(options: Dictionary, preview_data: Dictionary, commit_flow: Dictionary) -> Dictionary:
