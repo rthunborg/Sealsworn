@@ -20,6 +20,7 @@ var _occupants: Array[Dictionary] = []
 var _selected_cell: Variant = null
 var _selected_entity_id: String = ""
 var _preview: Dictionary = {}
+var _commit_flow: Dictionary = {}
 var _action_availability: Dictionary = {}
 var _turn: Dictionary = {}
 var _outcome: Dictionary = {}
@@ -34,6 +35,7 @@ func to_dictionary() -> Dictionary:
 		"selected_cell": null if _selected_cell == null else (_selected_cell as Dictionary).duplicate(true),
 		"selected_entity_id": _selected_entity_id,
 		"preview": _preview.duplicate(true),
+		"commit_flow": _commit_flow.duplicate(true),
 		"action_availability": _action_availability.duplicate(true),
 		"turn": _turn.duplicate(true),
 		"outcome": _outcome.duplicate(true),
@@ -61,7 +63,8 @@ static func from_domain(
 	view_model._selected_entity_id = String(selection_data.get("selected_entity_id", ""))
 
 	view_model._preview = _preview_from_options(options)
-	view_model._action_availability = _action_availability_from_options(options, view_model._preview)
+	view_model._commit_flow = _commit_flow_from_options(options)
+	view_model._action_availability = _action_availability_from_options(options, view_model._preview, view_model._commit_flow)
 	view_model._turn = turn_state.to_dictionary() if turn_state != null else {}
 	view_model._outcome = _outcome_from_options(options)
 	view_model._event_log_summary = _dictionary_array_from_options(options, &"event_log_summary")
@@ -132,8 +135,12 @@ static func _preview_from_options(options: Dictionary) -> Dictionary:
 	return normalized
 
 
-static func _action_availability_from_options(options: Dictionary, preview_data: Dictionary) -> Dictionary:
-	var availability: TacticalActionAvailability = TacticalActionAvailability.from_preview(preview_data)
+static func _commit_flow_from_options(options: Dictionary) -> Dictionary:
+	return _dictionary_from_options(options, &"commit_flow")
+
+
+static func _action_availability_from_options(options: Dictionary, preview_data: Dictionary, commit_flow: Dictionary) -> Dictionary:
+	var availability: TacticalActionAvailability = TacticalActionAvailability.from_preview(preview_data, commit_flow)
 	var normalized: Dictionary = availability.to_dictionary()
 	var availability_value: Variant = _field(options, &"action_availability") if _has_field(options, &"action_availability") else {}
 	if not availability_value is Dictionary:
@@ -145,7 +152,12 @@ static func _action_availability_from_options(options: Dictionary, preview_data:
 			continue
 		var entry_value: Variant = _field(availability_data, action_id)
 		if entry_value is Dictionary:
-			normalized[String(action_id)] = _availability_entry(entry_value, normalized.get(String(action_id), {}))
+			var fallback_entry: Dictionary = normalized.get(String(action_id), {})
+			var override_entry: Dictionary = _availability_entry(entry_value, fallback_entry)
+			if action_id == &"confirm" or action_id == &"cancel":
+				normalized[String(action_id)] = _flow_gated_availability_entry(override_entry, fallback_entry)
+			else:
+				normalized[String(action_id)] = override_entry
 	return normalized
 
 
@@ -183,6 +195,12 @@ static func _availability_entry(value: Dictionary, fallback: Dictionary) -> Dict
 		"enabled": bool(_field(value, &"enabled") if _has_field(value, &"enabled") else fallback.get("enabled", false)),
 		"reason": String(_field(value, &"reason") if _has_field(value, &"reason") else fallback.get("reason", "unavailable"))
 	}
+
+
+static func _flow_gated_availability_entry(value: Dictionary, fallback: Dictionary) -> Dictionary:
+	if not bool(fallback.get("enabled", false)):
+		return fallback.duplicate(true)
+	return value.duplicate(true)
 
 
 static func _safe_dictionary_copy(source: Dictionary) -> Dictionary:

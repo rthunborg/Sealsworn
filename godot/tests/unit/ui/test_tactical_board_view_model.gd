@@ -35,6 +35,7 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	assert_equal(_sorted_keys(data), [
 		"action_availability",
 		"cells",
+		"commit_flow",
 		"event_log_summary",
 		"height",
 		"occupants",
@@ -70,6 +71,7 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	assert_equal(preview.get("commit_reason"), "valid", "Preview slot should preserve commit reason.")
 	assert_equal(preview.get("cue_ids"), ["move_preview_valid", "commit_available"], "Preview slot should preserve copied cue ids.")
 	assert_equal(preview.get("metadata"), {"path": [_cell(0, 2), _cell(1, 2)]}, "Preview metadata should be deeply copied.")
+	assert_equal(data.get("commit_flow"), {}, "Commit flow should default to an empty presenter-safe dictionary.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("enabled"), true, "Move availability should reflect the move preview.")
 	assert_equal((availability.get("attack", {}) as Dictionary).get("enabled"), false, "Attack availability should be stable even without an attack preview.")
 	assert_equal((availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Confirm availability should reflect preview commit availability.")
@@ -157,6 +159,11 @@ func _view_model_sanitizes_options_and_normalizes_availability() -> void:
 				]
 			}
 		},
+		&"commit_flow": {
+			&"mode": &"attack_preview",
+			&"raw_context": TacticalActionContext.new(board, null, null, []),
+			&"target_cell": Vector2i(1, 2)
+		},
 		&"action_availability": {
 			&"move": {
 				&"enabled": false,
@@ -171,6 +178,7 @@ func _view_model_sanitizes_options_and_normalizes_availability() -> void:
 	})
 	var data: Dictionary = view_model.to_dictionary()
 	var preview_metadata: Dictionary = (data.get("preview", {}) as Dictionary).get("metadata", {})
+	var commit_flow: Dictionary = data.get("commit_flow", {})
 	var availability: Dictionary = data.get("action_availability", {})
 	var event_summary: Array = data.get("event_log_summary", [])
 
@@ -178,6 +186,8 @@ func _view_model_sanitizes_options_and_normalizes_availability() -> void:
 	assert_equal(preview_metadata.get("raw_cell"), null, "Preview metadata should not expose raw BoardCell references.")
 	assert_equal(preview_metadata.get("vector_cell"), _cell(1, 2), "Preview metadata should serialize Vector2i values.")
 	assert_equal(((preview_metadata.get("path", []) as Array)[0] as Dictionary), _cell(0, 2), "Nested StringName coordinate keys should serialize.")
+	assert_equal(commit_flow.get("raw_context"), null, "Commit flow metadata should not expose raw TacticalActionContext references.")
+	assert_equal(commit_flow.get("target_cell"), _cell(1, 2), "Commit flow metadata should serialize Vector2i values.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("enabled"), false, "Supplied move availability should be normalized.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("reason"), "presenter_override", "Supplied move availability should preserve stable reason.")
 	assert_true(availability.has("attack"), "Normalized availability should keep attack key.")

@@ -265,7 +265,7 @@ func _board_view_model_preserves_preview_contracts_and_commit_availability() -> 
 	assert_equal((movement_availability.get("confirm", {}) as Dictionary).get("reason"), "valid", "Confirm should preserve preview commit reason.")
 	assert_equal((movement_availability.get("attack", {}) as Dictionary).get("enabled"), false, "Attack should be unavailable for a move preview.")
 	assert_equal((movement_availability.get("inspect", {}) as Dictionary).get("enabled"), true, "Inspect should remain metadata-only available.")
-	assert_equal((movement_availability.get("cancel", {}) as Dictionary).get("enabled"), false, "Cancel remains out of scope until Story 2.3.")
+	assert_equal((movement_availability.get("cancel", {}) as Dictionary).get("enabled"), false, "Cancel should remain unavailable outside attack preview commit flow.")
 
 	var attack_board: BoardState = BoardFixtureFactory.attack_preview_adjacent_enemy()
 	var attack_preview: Dictionary = TacticalAttackPreview.from_query(attack_board, &"hero", Vector2i(2, 1), _weapon(&"bow")).to_dictionary()
@@ -278,8 +278,27 @@ func _board_view_model_preserves_preview_contracts_and_commit_availability() -> 
 	assert_equal(attack_vm_preview.get("target_entity_id"), "enemy_1", "Board VM should preserve attack preview target entity id.")
 	assert_equal(((attack_vm_preview.get("metadata", {}) as Dictionary).get("warnings", []) as Array)[0].get("id"), "adjacent_ranged_penalty", "Board VM should preserve sanitized attack warnings.")
 	assert_equal((attack_availability.get("attack", {}) as Dictionary).get("enabled"), true, "Attack action should use preview commit availability.")
-	assert_equal((attack_availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Confirm should be available for commit-ready attack previews.")
+	assert_equal((attack_availability.get("confirm", {}) as Dictionary).get("enabled"), false, "Bare attack previews should not enable confirm without pending commit-flow state.")
+	assert_equal((attack_availability.get("cancel", {}) as Dictionary).get("enabled"), false, "Bare attack previews should not enable cancel without pending commit-flow state.")
 	assert_equal((attack_availability.get("move", {}) as Dictionary).get("enabled"), false, "Move should be unavailable for an attack preview.")
+
+	var active_attack_flow: Dictionary = {
+		"mode": "attack_preview",
+		"actor_id": "hero",
+		"target_cell": _cell(2, 1),
+		"target_entity_id": "enemy_1",
+		"weapon_id": "bow",
+		"confirm_available": true,
+		"cancel_available": true
+	}
+	var attack_flow_data: Dictionary = TacticalBoardViewModel.from_domain(attack_board, turn_state, {
+		"preview": attack_preview,
+		"commit_flow": active_attack_flow
+	}).to_dictionary()
+	var attack_flow_availability: Dictionary = attack_flow_data.get("action_availability", {})
+
+	assert_equal((attack_flow_availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Active attack commit flow should enable confirm for a commit-ready attack preview.")
+	assert_equal((attack_flow_availability.get("cancel", {}) as Dictionary).get("enabled"), true, "Active attack commit flow should enable cancel.")
 
 	var invalid_preview: Dictionary = TacticalAttackPreview.from_query(attack_board, &"hero", Vector2i(1, 1), _weapon(&"sword")).to_dictionary()
 	var invalid_data: Dictionary = TacticalBoardViewModel.from_domain(attack_board, turn_state, {
