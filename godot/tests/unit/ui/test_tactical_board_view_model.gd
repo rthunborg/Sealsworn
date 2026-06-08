@@ -63,11 +63,17 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	assert_equal(data.get("selected_entity_id"), "hero", "Selection entity id should be copied for UI use.")
 	assert_equal(preview.get("kind"), "move", "Preview slot should preserve copied preview kind.")
 	assert_equal(preview.get("available"), true, "Preview slot should preserve copied availability.")
+	assert_equal(preview.get("actor_id"), "hero", "Preview slot should preserve copied actor id.")
+	assert_equal(preview.get("target_cell"), _cell(1, 2), "Preview slot should preserve copied target cell.")
+	assert_equal(preview.get("target_valid"), true, "Preview slot should preserve target validity.")
+	assert_equal(preview.get("commit_available"), true, "Preview slot should preserve commit availability.")
+	assert_equal(preview.get("commit_reason"), "valid", "Preview slot should preserve commit reason.")
+	assert_equal(preview.get("cue_ids"), ["move_preview_valid", "commit_available"], "Preview slot should preserve copied cue ids.")
 	assert_equal(preview.get("metadata"), {"path": [_cell(0, 2), _cell(1, 2)]}, "Preview metadata should be deeply copied.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("enabled"), true, "Move availability should reflect the move preview.")
 	assert_equal((availability.get("attack", {}) as Dictionary).get("enabled"), false, "Attack availability should be stable even without an attack preview.")
+	assert_equal((availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Confirm availability should reflect preview commit availability.")
 	assert_true(availability.has("inspect"), "Availability should include inspect.")
-	assert_true(availability.has("confirm"), "Availability should include confirm.")
 	assert_true(availability.has("cancel"), "Availability should include cancel.")
 	assert_equal(turn.get("turn_number"), 2, "Turn copy should include turn number.")
 	assert_equal(turn.get("phase"), "player_planning", "Turn copy should include phase id.")
@@ -207,6 +213,12 @@ func _view_options() -> Dictionary:
 			"kind": "move",
 			"available": true,
 			"reason": "valid",
+			"actor_id": "hero",
+			"target_cell": Vector2i(1, 2),
+			"target_valid": true,
+			"commit_available": true,
+			"commit_reason": "valid",
+			"cue_ids": ["move_preview_valid", "commit_available"],
 			"metadata": {
 				"path": [_cell(0, 2), _cell(1, 2)]
 			}

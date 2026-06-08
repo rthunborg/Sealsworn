@@ -106,12 +106,30 @@ static func _build_occupant_views(board: BoardState) -> Array[Dictionary]:
 static func _preview_from_options(options: Dictionary) -> Dictionary:
 	var preview_value: Variant = _field(options, &"preview") if _has_field(options, &"preview") else {}
 	var preview_data: Dictionary = preview_value if preview_value is Dictionary else {}
-	return {
-		"kind": String(_field(preview_data, &"kind") if _has_field(preview_data, &"kind") else ""),
-		"available": bool(_field(preview_data, &"available") if _has_field(preview_data, &"available") else false),
-		"reason": String(_field(preview_data, &"reason") if _has_field(preview_data, &"reason") else "none"),
+	if preview_data.is_empty():
+		return {}
+	var kind: String = String(_field(preview_data, &"kind") if _has_field(preview_data, &"kind") else "")
+	if kind.is_empty():
+		return {}
+	var available: bool = bool(_field(preview_data, &"available") if _has_field(preview_data, &"available") else false)
+	var reason: String = String(_field(preview_data, &"reason") if _has_field(preview_data, &"reason") else "none")
+	var commit_available: bool = bool(_field(preview_data, &"commit_available") if _has_field(preview_data, &"commit_available") else available)
+	var commit_reason: String = String(_field(preview_data, &"commit_reason") if _has_field(preview_data, &"commit_reason") else reason)
+	var normalized: Dictionary = {
+		"kind": kind,
+		"available": available,
+		"reason": reason,
+		"actor_id": String(_field(preview_data, &"actor_id") if _has_field(preview_data, &"actor_id") else ""),
+		"target_cell": _safe_value(_field(preview_data, &"target_cell") if _has_field(preview_data, &"target_cell") else null),
+		"target_valid": bool(_field(preview_data, &"target_valid") if _has_field(preview_data, &"target_valid") else available),
+		"commit_available": commit_available,
+		"commit_reason": commit_reason,
+		"cue_ids": _safe_array_copy(_field(preview_data, &"cue_ids") if _has_field(preview_data, &"cue_ids") else []),
 		"metadata": _dictionary_copy(_field(preview_data, &"metadata") if _has_field(preview_data, &"metadata") else {})
 	}
+	if kind == "attack" or _has_field(preview_data, &"target_entity_id"):
+		normalized["target_entity_id"] = String(_field(preview_data, &"target_entity_id") if _has_field(preview_data, &"target_entity_id") else "")
+	return normalized
 
 
 static func _action_availability_from_options(options: Dictionary, preview_data: Dictionary) -> Dictionary:
