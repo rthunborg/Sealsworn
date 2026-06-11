@@ -11,6 +11,9 @@ build/
 .env.*
 !.env.example
 
+# Personal machine-specific Claude Code settings.
+.claude/settings.local.json
+
 # OS/editor noise.
 .DS_Store
 Thumbs.db
