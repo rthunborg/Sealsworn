@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-08T16:38:37+02:00
+# last_updated: 2026-06-08T16:53:29+02:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -37,7 +37,7 @@
 # - Epic 2 planning is documented in epic-2-sprint-plan-2026-06-07.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-08T16:38:37+02:00
+last_updated: 2026-06-08T16:53:29+02:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -65,7 +65,7 @@ development_status:
   2-2-movement-and-attack-preview-presentation-contracts: done
   2-3-mobile-two-step-commit-and-cancel-flow: done
   2-4-inspect-and-zoom-tactical-information: done
-  2-5-adaptive-layout-profiles: backlog
+  2-5-adaptive-layout-profiles: ready-for-dev
   2-6-accessibility-and-tactical-readability-baseline: backlog
   2-7-between-level-save-snapshot-foundation: backlog
   2-8-resume-flow-and-mid-level-save-feasibility: backlog
