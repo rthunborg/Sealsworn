@@ -3,10 +3,10 @@ epic_num: 2
 story_num: 5
 branch: story/2-5-adaptive-layout-profiles
 status: in-progress
-updated_at: "2026-06-12T15:20:30Z"
+updated_at: "2026-06-13T19:27:30Z"
 started_at: "2026-06-12T15:20:30Z"
 completed_at: null
-active_seconds: 0
+active_seconds: 950
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -22,7 +22,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 9
-completed_phases: [0, 1]
+completed_phases: [0, 1, 5]
 code_review_iterations: 0
 code_review_loop_done: false
 external_review_iterations: 0
@@ -30,7 +30,7 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: []
+commits: ["77b78cd", "3f1de8d"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -41,7 +41,8 @@ merge_method: null
 merge_commit: null
 branch_deleted: false
 open_questions: []
-deferred_work: []
+deferred_work:
+  - "Optional scene/presenter proof (subtask 2.5.7) — layout proven scene-free/headless; logged in deferred-work.md"
 blockers: []
 overrides: {}
 constraints: []
