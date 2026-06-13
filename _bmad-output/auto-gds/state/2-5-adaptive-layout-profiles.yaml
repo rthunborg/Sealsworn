@@ -3,10 +3,10 @@ epic_num: 2
 story_num: 5
 branch: story/2-5-adaptive-layout-profiles
 status: in-progress
-updated_at: "2026-06-13T19:27:30Z"
+updated_at: "2026-06-13T19:40:33Z"
 started_at: "2026-06-12T15:20:30Z"
 completed_at: null
-active_seconds: 950
+active_seconds: 1530
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 9
 completed_phases: [0, 1, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 2
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["77b78cd", "3f1de8d"]
+commits: ["77b78cd", "3f1de8d", "c3b9451"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -40,9 +40,15 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "[Review][Decision] content_scale is sanitized/echoed but not applied to geometry (intended by scope); a one-line 'passthrough, not baked into rects' doc comment would prevent presenter misuse. Non-blocking."
+  - "[Review][Decision] Optional 2.5.7 scene/presenter proof intentionally skipped (already in deferred-work.md). Non-blocking; surfaced for traceability."
+  - "[Review][Decision] Presenter-value sanitization is triplicated across TacticalPreviewView / TacticalBoardViewModel / TacticalLayoutProfile; the new layout slot deepens that reliance. Accept as-is or schedule a small consolidation follow-up. Out of this story's scope."
 deferred_work:
   - "Optional scene/presenter proof (subtask 2.5.7) — layout proven scene-free/headless; logged in deferred-work.md"
+  - "[Review][Defer] Degenerate stacked-layout rebalance branch under extreme safe-area shrink is untested (stays honest/non-crashing; can yield sub-touch-target bands)."
+  - "[Review][Defer] v0 classifier maps large-but-short displays (e.g. 1300x650) to phone_landscape — correct vs documented v0 spec; deferred to device-tier tuning."
+  - "[Review][Defer] Populated log_or_outcome (tablet/desktop) lacks a committed in-content assertion — probe-verified; one short-content + offset-safe-area test covers this and the rebalance-branch defer together."
 blockers: []
 overrides: {}
 constraints: []
