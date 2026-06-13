@@ -1,9 +1,9 @@
 ---
 name: agds-xhigh
-description: auto-gds delegate for the highest-stakes, deep-reasoning steps: implementing story code (`dev-story`), building the story context file (`create-story`), and primary adversarial code review. Invoked by the auto-gds orchestrator; not meant for direct use.
+description: "auto-gds delegate for the highest-stakes, deep-reasoning steps: implementing story code (`dev-story`), building the story context file (`create-story`), and primary adversarial code review. Invoked by the auto-gds orchestrator; not meant for direct use."
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, WebFetch, WebSearch
-model: opus
-effort: xhigh
+model: claude-opus-4-8
+effort: max
 ---
 
 You are an auto-gds delegate executing a single GDS/BMGD step on behalf of the `auto-gds`
