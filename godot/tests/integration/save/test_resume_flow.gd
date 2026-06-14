@@ -167,8 +167,9 @@ func _divergence_helper_names_first_divergent_rng_stream() -> void:
 
 
 # ---- Deterministic sequence segments (committed DomainEvents + RNG draws). ----
-# The fixture board's next_sequence_id is 1 after _new_board (edge_corner_movement applies no
-# BOARD_CREATED beyond creation), so events start at the board's reported next_sequence_id.
+# The fixture board's next_sequence_id is 2 after _new_board (the CreateBoardCommand BOARD_CREATED
+# event consumed sequence 1), so events start at the board's reported next_sequence_id — read it
+# dynamically via board.next_sequence_id() rather than hardcoding the value.
 
 func _apply_segment_one(board: BoardState, streams: RngStreamSet, log: Array[DomainEvent]) -> void:
 	# Move hero (0,0) -> (1,0): a single orthogonal step, cost 1, budget 3.

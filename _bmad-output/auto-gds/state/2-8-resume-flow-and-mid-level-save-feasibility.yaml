@@ -3,10 +3,10 @@ epic_num: 2
 story_num: 8
 branch: story/2-8-resume-flow-and-mid-level-save-feasibility
 status: in-progress
-updated_at: "2026-06-14T18:19:43Z"
+updated_at: "2026-06-14T18:24:00Z"
 started_at: "2026-06-14T17:55:28Z"
 completed_at: null
-active_seconds: 1425
+active_seconds: 1700
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,7 +23,7 @@ git_mode: remote
 base_branch: main
 epic_story_count: 9
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
@@ -33,6 +33,7 @@ testing:
 commits:
   - "976760c chore(story-2-8): start auto-gds pipeline"
   - "bcb3e30 docs(story-2-8): create story context file"
+  - "cf04472 feat(story-2-8): run resume service + mid-level save feasibility"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -43,7 +44,8 @@ merge_method: null
 merge_commit: null
 branch_deleted: false
 open_questions: []
-deferred_work: []
+deferred_work:
+  - "save_open_failed resume path untested (Low) — logged to deferred-work.md under 'code review of 2-8 (2026-06-14)'"
 blockers: []
 overrides: {}
 constraints: []
