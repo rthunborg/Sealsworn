@@ -25,5 +25,9 @@ func rng_snapshot() -> Dictionary:
 func restore_rng_snapshot(snapshot: Dictionary) -> ActionResult:
 	var result: ActionResult = _rng_streams.try_restore(snapshot)
 	if result.succeeded:
-		_root_seed = int(snapshot.get("root_seed", _root_seed))
+		# root_seed is int64-safe and is encoded as a decimal STRING by RngStreamSet.to_snapshot()
+		# (Story 2.7). A raw int(...) cast on a >2^53 seed would silently truncate it; try_restore
+		# has already validated and decoded the seed losslessly, so read the canonical value it
+		# returns rather than re-coercing the raw snapshot field.
+		_root_seed = int(result.metadata.get("root_seed", _root_seed))
 	return result
