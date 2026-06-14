@@ -6,7 +6,7 @@ baseline_commit: 4e501e8c567f1c554e21efdece83665cd923a875
 
 # Story 2.7: Between-Level Save Snapshot Foundation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
