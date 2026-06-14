@@ -19,6 +19,7 @@ func run() -> Dictionary:
 	_cyclic_consumer_context_does_not_mutate_or_emit_draw_audit()
 	_deterministic_gameplay_draw_sequence_replays_from_snapshot()
 	_cosmetic_draws_do_not_change_gameplay_draw_replay()
+	_snapshot_survives_json_round_trip_without_precision_loss()
 	return result()
 
 
@@ -140,7 +141,11 @@ func _snapshot_includes_draw_indexes_for_all_streams() -> void:
 	var snapshot: Dictionary = streams.to_snapshot()
 	var stream_states: Dictionary = snapshot.get("streams")
 
-	assert_equal(snapshot.get("root_seed"), 555, "RNG snapshot should include root seed.")
+	# root_seed and per-stream state are encoded as lossless int64 decimal strings so a JSON
+	# save round-trip cannot truncate full 64-bit RNG state. seed (<= 2^31) and draw_index stay int.
+	assert_equal(int(str(snapshot.get("root_seed"))), 555, "RNG snapshot should include root seed.")
+	assert_true(snapshot.get("root_seed") is String, "RNG snapshot root seed should be int64-safe string data.")
+	assert_true(str(snapshot.get("root_seed")).is_valid_int(), "RNG snapshot root seed string should be a valid integer.")
 	for stream_name: StringName in RngStreamSet.required_streams():
 		var stream_key: String = String(stream_name)
 		assert_true(stream_states.has(stream_key), "RNG snapshot should include %s stream state." % stream_key)
@@ -149,7 +154,8 @@ func _snapshot_includes_draw_indexes_for_all_streams() -> void:
 		assert_true(stream_state.has("state"), "RNG snapshot should include %s state." % stream_key)
 		assert_true(stream_state.has("draw_index"), "RNG snapshot should include %s draw index." % stream_key)
 		assert_true(stream_state.get("seed") is int, "RNG snapshot %s seed should be integer data." % stream_key)
-		assert_true(stream_state.get("state") is int, "RNG snapshot %s state should be integer data." % stream_key)
+		assert_true(stream_state.get("state") is String, "RNG snapshot %s state should be int64-safe string data." % stream_key)
+		assert_true(str(stream_state.get("state")).is_valid_int(), "RNG snapshot %s state string should be a valid integer." % stream_key)
 		assert_true(stream_state.get("draw_index") is int, "RNG snapshot %s draw index should be integer data." % stream_key)
 	assert_equal(stream_states.get("combat").get("draw_index"), 1, "RNG snapshot should count successful combat draws.")
 	assert_equal(stream_states.get("loot").get("draw_index"), 0, "RNG snapshot should keep untouched stream draw index at zero.")
@@ -270,6 +276,33 @@ func _cosmetic_draws_do_not_change_gameplay_draw_replay() -> void:
 	assert_equal(with_cosmetic.get("metadata"), no_cosmetic.get("metadata"), "Cosmetic draws should not change gameplay RNG audit metadata.")
 	assert_equal(with_cosmetic.get("gameplay_snapshot"), no_cosmetic.get("gameplay_snapshot"), "Cosmetic draws should not change gameplay stream snapshots.")
 	assert_equal(with_cosmetic.get("events"), no_cosmetic.get("events"), "Cosmetic draws should not change gameplay RNG event arrays.")
+
+
+func _snapshot_survives_json_round_trip_without_precision_loss() -> void:
+	# RandomNumberGenerator.state is a full 64-bit value. JSON numbers are doubles (52-bit mantissa),
+	# so encoding state as a raw JSON number silently truncates it and breaks resume determinism.
+	# The snapshot must survive JSON.stringify -> JSON.parse_string -> try_restore exactly.
+	var original: RngStreamSet = RngStreamSet.new(9876)
+	for _draw_index: int in range(60):
+		original.rand_int(RngStreamSet.STREAM_COMBAT, 1, 6, {"system": "combat"})
+	original.rand_float(RngStreamSet.STREAM_REWARDS, {"system": "rewards"})
+	var snapshot: Dictionary = original.to_snapshot()
+	var expected_next_roll: int = _roll_int(original, RngStreamSet.STREAM_COMBAT, 1, 1000000)
+
+	var json_snapshot: Variant = JSON.parse_string(JSON.stringify(snapshot))
+	assert_true(json_snapshot is Dictionary, "RNG snapshot should survive JSON stringify/parse as a dictionary.")
+
+	var restored: RngStreamSet = RngStreamSet.new(0)
+	var restore_result: ActionResult = restored.try_restore(json_snapshot)
+	assert_true(restore_result.succeeded, "RNG snapshot should restore after a real JSON save round-trip: %s" % restore_result.metadata)
+	assert_equal(_roll_int(restored, RngStreamSet.STREAM_COMBAT, 1, 1000000), expected_next_roll, "RNG state must survive a JSON round-trip without 64-bit precision loss.")
+	assert_equal(int(str(restored.to_snapshot().get("root_seed"))), 9876, "Restored RNG root seed must survive a JSON round-trip.")
+	# A large manual root seed beyond 2^53 must also survive losslessly.
+	var big_seed_streams: RngStreamSet = RngStreamSet.new(9223372036854775000)
+	var big_seed_json: Variant = JSON.parse_string(JSON.stringify(big_seed_streams.to_snapshot()))
+	var restored_big: RngStreamSet = RngStreamSet.new(0)
+	assert_true(restored_big.try_restore(big_seed_json).succeeded, "A full-range int64 root seed should restore after JSON round-trip.")
+	assert_equal(int(str(restored_big.to_snapshot().get("root_seed"))), 9223372036854775000, "A full-range int64 root seed must not lose precision through JSON.")
 
 
 func _roll_int(streams: RngStreamSet, stream_name: StringName, minimum: int, maximum: int) -> int:
