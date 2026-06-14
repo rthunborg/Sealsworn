@@ -6,7 +6,7 @@ source_story_key: 2-6-accessibility-and-tactical-readability-baseline
 
 # Story 2.6: Accessibility and Tactical Readability Baseline
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -24,48 +24,48 @@ so that combat decisions remain clear on phone-sized screens.
 
 ## Tasks / Subtasks
 
-- [ ] 2.6.1 Confirm the Epic 2 boundary and add failing tests first. (AC: 1-3)
-  - [ ] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.5 `done`, and this story `ready-for-dev` before implementation starts.
-  - [ ] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. (The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is not your change.)
-  - [ ] Add focused failing tests first, recommended `godot/tests/unit/ui/test_tactical_accessibility_cues.gd`, before any production edit.
-  - [ ] Reuse `BoardFixtureFactory.micro_combat_board()` and the existing preview/inspect/commit-flow/zoom/layout helpers and `TacticalSnapshot.from_domain()` for no-mutation assertions. Do not invent a new board fixture or a new test framework.
-  - [ ] Do NOT add final art, final audio assets, production UI frames, a settings UI, a settings persistence subsystem, save/resume UI, or a colorblind-simulation renderer in this story.
-- [ ] 2.6.2 Define a single scene-free accessibility/readability cue contract. (AC: 1, 3)
-  - [ ] Add a typed `RefCounted` helper under `godot/scripts/ui/view_models/`, recommended name `tactical_accessibility_model.gd` (alt. `tactical_cue_catalog.gd` if a pure catalog reads clearer locally).
-  - [ ] Keep output value-only: `String`, `StringName`, `int`, `bool`, `float`, `Array`, and `Dictionary` deep copies. Do NOT expose `BoardState`, command objects, `ActionResult`, `Resource`, `Node`, `Control`, `Theme`, `Font`, callables, or repository internals.
-  - [ ] Define the authoritative non-color channel for every critical tactical meaning. For each cue id, declare the required redundant channels from this set: `shape`, `icon`, `label`, `pattern`, `text`. AC1 requires at least one non-color channel per critical meaning.
-  - [ ] Cover at minimum these critical meanings already emitted as cue ids by Epic 2 (do NOT rename them — map onto them): movement validity (`move_preview_valid` / `move_preview_invalid`), attack legality / range (`attack_preview_valid` / `attack_preview_invalid`), blocked line (`attack_preview_blocked_line`), blocker ignored / override (`attack_preview_blocker_ignored`), adjacency warning (`attack_preview_adjacent_warning`), telegraphed danger (`telegraph_pending`, `telegraph_due`, `danger_damage`), inspect visibility tiers (`inspect_visible`, `inspect_memory`, `inspect_hidden_unexplored`), and commit availability (`commit_available` / `commit_unavailable`).
-  - [ ] Return a stable `kind: "accessibility"` envelope plus a `color_independent: true` assertion field that tests can check, and a stable `reason`/`available` shape consistent with the other view-model helpers.
-- [ ] 2.6.3 Establish the preview-versus-committed distinction without color and without audio. (AC: 3)
-  - [ ] AC3 is the main net-new contract: today the commit flow only appends `cancel_available` to the preview's cue ids, and there is no explicit cue distinguishing a previewed action from a committed/executed action.
-  - [ ] Define explicit stable cue ids for both states, recommended `feedback_preview` (action is previewed/pending) and `feedback_committed` (action was committed/executed), each with a non-color, non-audio channel (e.g. distinct `label`/`text` plus `shape` or `pattern`).
-  - [ ] Define a parallel audio cue id for each (recommended `audio_feedback_preview`, `audio_feedback_committed`) declared as optional, and assert that every audio cue id has a guaranteed visual/textual equivalent so the distinction survives with audio muted or unavailable. Audio cue ids are placeholders/string ids only; do NOT add audio files, an `AudioStreamPlayer`, or `AudioManager` wiring.
-  - [ ] Map `feedback_committed` from a successful `TacticalAttackCommitFlowResult` / committed `ActionResult` and `feedback_preview` from active preview / commit-flow `attack_preview` mode. Do not change commit-flow gating, two-step commit rules (Story 2.3), or command execution.
-- [ ] 2.6.4 Define a scalable-text bounds contract that never changes gameplay rules. (AC: 2)
-  - [ ] Add a scene-free text-scale model (on the accessibility helper or a small sibling, recommended `tactical_text_scale.gd`) that takes an injected requested scale and clamps it to named bounds (recommended `MIN_TEXT_SCALE`, `MAX_TEXT_SCALE`; default `1.0`).
-  - [ ] Return clamped scale, the requested scale, a `clamped: bool` flag, and a stable `reason` for out-of-range/malformed input (NaN/inf/zero/negative -> fallback `1.0`).
-  - [ ] Prove with tests that changing text scale never alters tactical truth: no change to board, RNG streams, turn state, previews' legality, action availability, telegraphs, outcome, or event log. Text scale is presentation/preferences only.
-  - [ ] Provide enough information for a presenter to keep essential labels readable and non-overlapping (e.g. scaled minimum label sizing / spacing hints), but do NOT build the final HUD layout, fonts, or theme. Reuse `TacticalLayoutProfile.minimum_touch_target`/`spacing` for control geometry; do not duplicate layout geometry here.
-- [ ] 2.6.5 Integrate accessibility cue/text data with existing view-model output without creating scene-owned state. (AC: 1-3)
-  - [ ] Prefer adding a sanitized optional `accessibility` slot to `TacticalBoardViewModel.from_domain()` so presenters can consume board, preview, commit-flow, inspect, zoom, layout, and accessibility data together. Default it to `{}` and populate it through the existing `_dictionary_from_options` -> safe-copy path, exactly like `layout` was added in Story 2.5.
-  - [ ] CRITICAL: `TacticalBoardViewModel.to_dictionary()` currently returns exactly 15 stable top-level keys (Story 2.5 added `layout` as the 15th). `godot/tests/unit/ui/test_tactical_board_view_model.gd` asserts the full sorted key list at the top of `_view_model_exposes_stable_read_only_board_data()`. If you add an `accessibility` key, you MUST update that sorted-key assertion intentionally (it becomes 16 keys) and keep all existing keys/behavior backward-compatible. If you keep accessibility separate from the board VM, document that decision here and add tests proving presenters still receive the same state contracts.
-  - [ ] Keep `cells`, `occupants`, `selection`, `preview`, `commit_flow`, `inspect`, `zoom`, `action_availability`, `turn`, `outcome`, `event_log_summary`, and `layout` behavior backward-compatible.
-  - [ ] Accessibility/text-scale recalculation must not call `TacticalCommandBridge.build_command()`/execution, `MoveCommand.execute()`, `AttackCommand.execute()`, `TacticalAttackCommitFlow.confirm_attack()`, enemy turn resolution, level-system advancement, or gameplay RNG.
-- [ ] 2.6.6 Prove the color-independence audit across the critical tactical surface. (AC: 1)
-  - [ ] For every critical meaning in 2.6.2, assert at least one of `shape`/`icon`/`label`/`pattern`/`text` is present and non-empty, so meaning survives if color is stripped.
-  - [ ] Drive the audit from real Epic 2 outputs where practical: build movement previews (valid + invalid), attack previews (valid, blocked-line, adjacency-penalty, blocker-ignored/override), and inspect views (visible, memory, hidden, telegraph pending/due with damage) from `BoardFixtureFactory` and assert each emitted cue id has a registered non-color channel in the accessibility model. This catches a cue that exists in a preview but is missing an accessibility mapping.
-  - [ ] Assert no critical cue relies on a color token alone (the model must not expose a color-only entry for a critical meaning).
-- [ ] 2.6.7 Cover scalable text, preview/commit distinction, sanitation, and no-mutation. (AC: 1-3)
-  - [ ] Text scale clamps to bounds, falls back to `1.0` on malformed input, and never mutates a `TacticalSnapshot.from_domain()` comparison.
-  - [ ] `feedback_preview` and `feedback_committed` are distinct, each has a non-color visual channel, and each audio cue id has a visual/textual equivalent (assert the distinction holds with audio "absent").
-  - [ ] Returned accessibility/text dictionaries are deep copies and contain no forbidden raw domain, resource, command, scene, node, theme, font, or callable references (reuse the existing `TacticalPreviewView.safe_*` / board-VM safe-copy path; do not add a fourth duplicate sanitizer — see Previous Story Intelligence).
-  - [ ] No-mutation: building accessibility/text-scale data does not mutate board, turn state, RNG streams, pending telegraphs, outcome, or event log and does not execute commands.
-- [ ] 2.6.8 Keep records and validation current. (AC: 1-3)
-  - [ ] Run `godot --version` (through PowerShell — see Testing Requirements).
-  - [ ] Run the full headless suite through PowerShell (the bare `godot` is not on the Bash tool PATH; see Testing Requirements).
-  - [ ] Run `git diff --check`.
-  - [ ] Update this story's Dev Agent Record, Completion Notes, File List, and Change Log with actual implementation work.
-  - [ ] Keep `sprint-status.yaml` synchronized with this story status.
+- [x] 2.6.1 Confirm the Epic 2 boundary and add failing tests first. (AC: 1-3)
+  - [x] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.5 `done`, and this story `ready-for-dev` before implementation starts.
+  - [x] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. (The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is not your change.)
+  - [x] Add focused failing tests first, recommended `godot/tests/unit/ui/test_tactical_accessibility_cues.gd`, before any production edit.
+  - [x] Reuse `BoardFixtureFactory.micro_combat_board()` and the existing preview/inspect/commit-flow/zoom/layout helpers and `TacticalSnapshot.from_domain()` for no-mutation assertions. Do not invent a new board fixture or a new test framework.
+  - [x] Do NOT add final art, final audio assets, production UI frames, a settings UI, a settings persistence subsystem, save/resume UI, or a colorblind-simulation renderer in this story.
+- [x] 2.6.2 Define a single scene-free accessibility/readability cue contract. (AC: 1, 3)
+  - [x] Add a typed `RefCounted` helper under `godot/scripts/ui/view_models/`, recommended name `tactical_accessibility_model.gd` (alt. `tactical_cue_catalog.gd` if a pure catalog reads clearer locally).
+  - [x] Keep output value-only: `String`, `StringName`, `int`, `bool`, `float`, `Array`, and `Dictionary` deep copies. Do NOT expose `BoardState`, command objects, `ActionResult`, `Resource`, `Node`, `Control`, `Theme`, `Font`, callables, or repository internals.
+  - [x] Define the authoritative non-color channel for every critical tactical meaning. For each cue id, declare the required redundant channels from this set: `shape`, `icon`, `label`, `pattern`, `text`. AC1 requires at least one non-color channel per critical meaning.
+  - [x] Cover at minimum these critical meanings already emitted as cue ids by Epic 2 (do NOT rename them — map onto them): movement validity (`move_preview_valid` / `move_preview_invalid`), attack legality / range (`attack_preview_valid` / `attack_preview_invalid`), blocked line (`attack_preview_blocked_line`), blocker ignored / override (`attack_preview_blocker_ignored`), adjacency warning (`attack_preview_adjacent_warning`), telegraphed danger (`telegraph_pending`, `telegraph_due`, `danger_damage`), inspect visibility tiers (`inspect_visible`, `inspect_memory`, `inspect_hidden_unexplored`), and commit availability (`commit_available` / `commit_unavailable`).
+  - [x] Return a stable `kind: "accessibility"` envelope plus a `color_independent: true` assertion field that tests can check, and a stable `reason`/`available` shape consistent with the other view-model helpers.
+- [x] 2.6.3 Establish the preview-versus-committed distinction without color and without audio. (AC: 3)
+  - [x] AC3 is the main net-new contract: today the commit flow only appends `cancel_available` to the preview's cue ids, and there is no explicit cue distinguishing a previewed action from a committed/executed action.
+  - [x] Define explicit stable cue ids for both states, recommended `feedback_preview` (action is previewed/pending) and `feedback_committed` (action was committed/executed), each with a non-color, non-audio channel (e.g. distinct `label`/`text` plus `shape` or `pattern`).
+  - [x] Define a parallel audio cue id for each (recommended `audio_feedback_preview`, `audio_feedback_committed`) declared as optional, and assert that every audio cue id has a guaranteed visual/textual equivalent so the distinction survives with audio muted or unavailable. Audio cue ids are placeholders/string ids only; do NOT add audio files, an `AudioStreamPlayer`, or `AudioManager` wiring.
+  - [x] Map `feedback_committed` from a successful `TacticalAttackCommitFlowResult` / committed `ActionResult` and `feedback_preview` from active preview / commit-flow `attack_preview` mode. Do not change commit-flow gating, two-step commit rules (Story 2.3), or command execution.
+- [x] 2.6.4 Define a scalable-text bounds contract that never changes gameplay rules. (AC: 2)
+  - [x] Add a scene-free text-scale model (on the accessibility helper or a small sibling, recommended `tactical_text_scale.gd`) that takes an injected requested scale and clamps it to named bounds (recommended `MIN_TEXT_SCALE`, `MAX_TEXT_SCALE`; default `1.0`).
+  - [x] Return clamped scale, the requested scale, a `clamped: bool` flag, and a stable `reason` for out-of-range/malformed input (NaN/inf/zero/negative -> fallback `1.0`).
+  - [x] Prove with tests that changing text scale never alters tactical truth: no change to board, RNG streams, turn state, previews' legality, action availability, telegraphs, outcome, or event log. Text scale is presentation/preferences only.
+  - [x] Provide enough information for a presenter to keep essential labels readable and non-overlapping (e.g. scaled minimum label sizing / spacing hints), but do NOT build the final HUD layout, fonts, or theme. Reuse `TacticalLayoutProfile.minimum_touch_target`/`spacing` for control geometry; do not duplicate layout geometry here.
+- [x] 2.6.5 Integrate accessibility cue/text data with existing view-model output without creating scene-owned state. (AC: 1-3)
+  - [x] Prefer adding a sanitized optional `accessibility` slot to `TacticalBoardViewModel.from_domain()` so presenters can consume board, preview, commit-flow, inspect, zoom, layout, and accessibility data together. Default it to `{}` and populate it through the existing `_dictionary_from_options` -> safe-copy path, exactly like `layout` was added in Story 2.5.
+  - [x] CRITICAL: `TacticalBoardViewModel.to_dictionary()` currently returns exactly 15 stable top-level keys (Story 2.5 added `layout` as the 15th). `godot/tests/unit/ui/test_tactical_board_view_model.gd` asserts the full sorted key list at the top of `_view_model_exposes_stable_read_only_board_data()`. If you add an `accessibility` key, you MUST update that sorted-key assertion intentionally (it becomes 16 keys) and keep all existing keys/behavior backward-compatible. If you keep accessibility separate from the board VM, document that decision here and add tests proving presenters still receive the same state contracts.
+  - [x] Keep `cells`, `occupants`, `selection`, `preview`, `commit_flow`, `inspect`, `zoom`, `action_availability`, `turn`, `outcome`, `event_log_summary`, and `layout` behavior backward-compatible.
+  - [x] Accessibility/text-scale recalculation must not call `TacticalCommandBridge.build_command()`/execution, `MoveCommand.execute()`, `AttackCommand.execute()`, `TacticalAttackCommitFlow.confirm_attack()`, enemy turn resolution, level-system advancement, or gameplay RNG.
+- [x] 2.6.6 Prove the color-independence audit across the critical tactical surface. (AC: 1)
+  - [x] For every critical meaning in 2.6.2, assert at least one of `shape`/`icon`/`label`/`pattern`/`text` is present and non-empty, so meaning survives if color is stripped.
+  - [x] Drive the audit from real Epic 2 outputs where practical: build movement previews (valid + invalid), attack previews (valid, blocked-line, adjacency-penalty, blocker-ignored/override), and inspect views (visible, memory, hidden, telegraph pending/due with damage) from `BoardFixtureFactory` and assert each emitted cue id has a registered non-color channel in the accessibility model. This catches a cue that exists in a preview but is missing an accessibility mapping.
+  - [x] Assert no critical cue relies on a color token alone (the model must not expose a color-only entry for a critical meaning).
+- [x] 2.6.7 Cover scalable text, preview/commit distinction, sanitation, and no-mutation. (AC: 1-3)
+  - [x] Text scale clamps to bounds, falls back to `1.0` on malformed input, and never mutates a `TacticalSnapshot.from_domain()` comparison.
+  - [x] `feedback_preview` and `feedback_committed` are distinct, each has a non-color visual channel, and each audio cue id has a visual/textual equivalent (assert the distinction holds with audio "absent").
+  - [x] Returned accessibility/text dictionaries are deep copies and contain no forbidden raw domain, resource, command, scene, node, theme, font, or callable references (reuse the existing `TacticalPreviewView.safe_*` / board-VM safe-copy path; do not add a fourth duplicate sanitizer — see Previous Story Intelligence).
+  - [x] No-mutation: building accessibility/text-scale data does not mutate board, turn state, RNG streams, pending telegraphs, outcome, or event log and does not execute commands.
+- [x] 2.6.8 Keep records and validation current. (AC: 1-3)
+  - [x] Run `godot --version` (through PowerShell — see Testing Requirements).
+  - [x] Run the full headless suite through PowerShell (the bare `godot` is not on the Bash tool PATH; see Testing Requirements).
+  - [x] Run `git diff --check`.
+  - [x] Update this story's Dev Agent Record, Completion Notes, File List, and Change Log with actual implementation work.
+  - [x] Keep `sprint-status.yaml` synchronized with this story status.
 
 ## Dev Notes
 
@@ -370,10 +370,31 @@ Story context: Claude Opus 4.8 (1M context).
 
 - 2026-06-14: Created Story 2.6 implementation guide from Epic 2 source requirements, Epic 2 sprint plan (Sprint Slice 5), root project context, game architecture (UI Architecture + Adaptive UI Composition Pattern), GDD accessibility baseline, Stories 2.1-2.5 implementation notes and review findings, the current UI/view-model cue surface, Epic 2 auto-gds retro notes, and the deferred-work ledger.
 - 2026-06-14: Confirmed story-creation baseline: `epic-1: done`, Stories 2.1-2.5 `done`, Story 2.6 `backlog`, baseline commit `16edd3f2ea41ac5ec97ca524a1816a6f9d3d046a`, working tree clean apart from the untracked orchestrator-owned `_bmad-output/auto-gds/` tree. Verified the bare `godot` resolves only as `C:\Users\Rasmus\bin\godot.cmd` through PowerShell (Epic 2 retro), and that `TacticalBoardViewModel.to_dictionary()` returns exactly 15 keys including `layout`, asserted in `test_tactical_board_view_model.gd`.
+- 2026-06-14 (dev-story): Re-confirmed the gate at implementation start — `epic-1: done`, Stories 2.1-2.5 `done`, Story 2.6 `ready-for-dev`, working tree clean (`git status --short` empty), `godot --version` = `4.6.3.stable.official.7d41c59c4`. Baseline headless run: all 36 existing test files PASS, exit 0.
+- 2026-06-14 (dev-story): TDD red-first. Wrote `test_tactical_accessibility_cues.gd` before any production edit (16 cases), then implemented `TacticalAccessibilityModel`, `TacticalTextScale`, and the board-VM `accessibility` slot until green. Final headless run: 37 test files PASS, exit 0. `git diff --check` clean.
 
 ### Completion Notes List
 
 - Story context created and marked ready for development.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented the accessibility/readability baseline as three scene-free presentation contracts under `godot/scripts/ui/view_models/`:
+  - `TacticalAccessibilityModel` (`tactical_accessibility_model.gd`): the authoritative cue catalog mapping every critical Epic 2 cue id (movement, attack, blocked-line, blocker-override, adjacency, telegraph pending/due, danger damage, inspect visibility tiers, commit availability) to required non-color channels (`shape`/`icon`/`label`/`pattern`/`text`) plus a stable `severity`. Returns a value-only envelope `{kind:"accessibility", color_independent:true, available, reason, cues, feedback, text_scale, cue_ids}`. Severity may map to a presenter color but is always additive — every critical cue carries a non-color channel.
+  - The net-new AC3 preview-vs-committed distinction lives here as `feedback_preview` (channels `shape`+`label`) and `feedback_committed` (channels `pattern`+`label`+`text`); the channel sets intentionally differ so preview vs committed is distinguishable with color stripped. Each declares a parallel optional `audio_cue_id` (`audio_feedback_preview`/`audio_feedback_committed`) and a `feedback` slot marks `visual_available`/`audio_available` so the distinction holds with audio absent. `feedback_preview` is sourced from active preview / commit-flow `attack_preview` mode; `feedback_committed` from a successful `TacticalAttackCommitFlowResult` dictionary (reads the result; never executes a command).
+  - `TacticalTextScale` (`tactical_text_scale.gd`): clamps an injected requested scale to named bounds (`MIN_TEXT_SCALE` 0.85, `MAX_TEXT_SCALE` 2.0, default 1.0), falls back to 1.0 on malformed input (NaN/inf/zero/negative/non-numeric) with a stable `invalid_scale` reason, and emits value-only presenter hints (`label_scale_hint`, `spacing_hint`, `minimum_label_height`) derived from `TacticalLayoutProfile`'s named constants — no forked geometry, no fonts/theme.
+- Added the optional sanitized `accessibility` slot to `TacticalBoardViewModel.from_domain()` via the existing `_dictionary_from_options` -> safe-copy path (same pattern as `layout`). It defaults to `{}` and is the 16th stable top-level key; updated the exact sorted-key assertion in `test_tactical_board_view_model.gd` (15 -> 16) and added a default-empty assertion. All 15 prior keys and behaviors remain backward-compatible.
+- Reused `TacticalPreviewView.safe_*` for all sanitization (no fourth duplicate sanitizer, per Story 2.5 Round 2 review note). No new fixture, framework, autoload, audio subsystem, settings store, or color-only entry was added.
+- Tests prove: color-independence across real movement/attack/inspect/telegraph outputs (audit driven from `AttackPreviewContractMatrix` + `BoardFixtureFactory`), no color-only critical cue, distinct preview/committed feedback with audio-absent equivalence, text-scale clamp/fallback, text-scale rule invariance via `TacticalSnapshot.from_domain()` byte-comparison and unchanged preview legality / action availability, deep-copy + no-forbidden-reference sanitation (including callables), and no command execution / no mutation.
 
 ### File List
+
+- `godot/scripts/ui/view_models/tactical_accessibility_model.gd` (new) — scene-free accessibility cue catalog, preview-vs-committed feedback contract, audio-optional equivalence.
+- `godot/scripts/ui/view_models/tactical_text_scale.gd` (new) — scene-free scalable-text bounds clamp with fallback and presenter sizing hints.
+- `godot/scripts/ui/view_models/tactical_board_view_model.gd` (modified) — added the 16th `accessibility` top-level slot via the existing safe-copy path; all prior keys backward-compatible.
+- `godot/tests/unit/ui/test_tactical_accessibility_cues.gd` (new) — full Story 2.6 test surface (16 cases).
+- `godot/tests/unit/ui/test_tactical_board_view_model.gd` (modified) — updated the exact sorted-key assertion to 16 keys and asserted `accessibility` defaults to `{}`.
+
+### Change Log
+
+| Date | Change |
+|---|---|
+| 2026-06-14 | Implemented Story 2.6 accessibility/readability baseline: added `TacticalAccessibilityModel` and `TacticalTextScale` scene-free contracts, the net-new `feedback_preview`/`feedback_committed` color- and audio-independent distinction, and the optional `accessibility` slot (16th key) on `TacticalBoardViewModel`. Added `test_tactical_accessibility_cues.gd` and updated the board-VM key assertion. Full headless suite green (37 files, exit 0); `git diff --check` clean. Status moved ready-for-dev -> review. |
