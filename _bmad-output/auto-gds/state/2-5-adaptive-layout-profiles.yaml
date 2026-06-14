@@ -2,11 +2,11 @@ story_key: 2-5-adaptive-layout-profiles
 epic_num: 2
 story_num: 5
 branch: story/2-5-adaptive-layout-profiles
-status: in-progress
-updated_at: "2026-06-13T19:40:33Z"
+status: done
+updated_at: "2026-06-14T08:53:14Z"
 started_at: "2026-06-12T15:20:30Z"
-completed_at: null
-active_seconds: 1530
+completed_at: "2026-06-14T08:53:14Z"
+active_seconds: 1650
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -22,7 +22,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 9
-completed_phases: [0, 1, 5]
+completed_phases: [0, 1, 5, 9]
 code_review_iterations: 2
 code_review_loop_done: true
 external_review_iterations: 0
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["77b78cd", "3f1de8d", "c3b9451"]
+commits: ["77b78cd", "3f1de8d", "c3b9451", "a7d204a", "70dc8e6"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

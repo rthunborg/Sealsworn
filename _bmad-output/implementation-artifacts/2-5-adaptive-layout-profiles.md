@@ -6,7 +6,7 @@ source_story_key: 2-5-adaptive-layout-profiles
 
 # Story 2.5: Adaptive Layout Profiles
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
