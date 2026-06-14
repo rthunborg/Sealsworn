@@ -3,10 +3,10 @@ epic_num: 2
 story_num: 6
 branch: story/2-6-accessibility-and-tactical-readability-baseline
 status: in-progress
-updated_at: "2026-06-14T11:41:35Z"
+updated_at: "2026-06-14T11:47:28Z"
 started_at: "2026-06-14T11:22:50Z"
 completed_at: null
-active_seconds: 1080
+active_seconds: 1290
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,7 +23,7 @@ git_mode: remote
 base_branch: main
 epic_story_count: 9
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
@@ -33,6 +33,7 @@ testing:
 commits:
   - 16edd3f
   - 746995c
+  - 2dad37e
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -42,8 +43,10 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
-deferred_work: []
+open_questions:
+  - "[Review][Decision] commit_unavailable cue maps to label+text only (no shape/icon); a future polished-HUD disabled-commit affordance may want an explicit non-color shape channel. AC1 holds today — design call deferred to the HUD story, non-blocking."
+deferred_work:
+  - "Add a regression test asserting a valid movement preview does not activate feedback_preview (guard is correct today but untested) — logged to deferred-work.md by code review of 2-6."
 blockers: []
 overrides: {}
 constraints: []
