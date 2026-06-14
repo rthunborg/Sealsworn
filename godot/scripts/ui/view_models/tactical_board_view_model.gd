@@ -27,6 +27,7 @@ var _action_availability: Dictionary = {}
 var _turn: Dictionary = {}
 var _outcome: Dictionary = {}
 var _event_log_summary: Array[Dictionary] = []
+var _layout: Dictionary = {}
 
 func to_dictionary() -> Dictionary:
 	return {
@@ -43,7 +44,8 @@ func to_dictionary() -> Dictionary:
 		"action_availability": _action_availability.duplicate(true),
 		"turn": _turn.duplicate(true),
 		"outcome": _outcome.duplicate(true),
-		"event_log_summary": _event_log_summary.duplicate(true)
+		"event_log_summary": _event_log_summary.duplicate(true),
+		"layout": _layout.duplicate(true)
 	}
 
 
@@ -74,6 +76,7 @@ static func from_domain(
 	view_model._turn = turn_state.to_dictionary() if turn_state != null else {}
 	view_model._outcome = _outcome_from_options(options)
 	view_model._event_log_summary = _dictionary_array_from_options(options, &"event_log_summary")
+	view_model._layout = _dictionary_from_options(options, &"layout")
 	return view_model
 
 

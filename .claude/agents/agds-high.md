@@ -1,9 +1,9 @@
 ---
 name: agds-high
-description: auto-gds delegate for substantive, well-scoped steps: applying primary code-review fixes and building/refreshing `project-context.md`. Invoked by the auto-gds orchestrator; not meant for direct use.
+description: "auto-gds delegate for substantive, well-scoped steps: applying primary code-review fixes and building/refreshing `project-context.md`. Invoked by the auto-gds orchestrator; not meant for direct use."
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, WebFetch, WebSearch
-model: opus
-effort: high
+model: claude-opus-4-8
+effort: max
 ---
 
 You are an auto-gds delegate executing a single GDS/BMGD step on behalf of the `auto-gds`

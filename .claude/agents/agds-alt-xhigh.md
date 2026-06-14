@@ -1,9 +1,9 @@
 ---
 name: agds-alt-xhigh
-description: auto-gds delegate for the alternate-model secondary code-review iterations (for model diversity): a second, independent adversarial reviewer on the same diff, run at full reasoning depth. Invoked by the auto-gds orchestrator; not meant for direct use.
+description: "auto-gds delegate for the alternate-model secondary code-review iterations (for model diversity): a second, independent adversarial reviewer on the same diff, run at full reasoning depth. Invoked by the auto-gds orchestrator; not meant for direct use."
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, WebFetch, WebSearch
-model: sonnet
-effort: xhigh
+model: claude-opus-4-8
+effort: max
 ---
 
 You are an auto-gds delegate executing a single GDS/BMGD step on behalf of the `auto-gds`

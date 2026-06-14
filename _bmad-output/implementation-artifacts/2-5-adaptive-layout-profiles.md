@@ -6,7 +6,7 @@ source_story_key: 2-5-adaptive-layout-profiles
 
 # Story 2.5: Adaptive Layout Profiles
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -24,68 +24,68 @@ so that the same rules remain comfortable across target devices.
 
 ## Tasks / Subtasks
 
-- [ ] 2.5.1 Confirm the Epic 2 boundary and add failing tests first. (AC: 1-3)
-  - [ ] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.4 `done`, and this story `ready-for-dev` before implementation starts.
-  - [ ] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes.
-  - [ ] Add focused failing tests such as `godot/tests/unit/ui/test_tactical_layout_profiles.gd` before production edits.
-  - [ ] Use `BoardFixtureFactory.micro_combat_board()`, current preview/commit-flow/inspect/zoom helpers, and `TacticalSnapshot.from_domain()` for no-mutation assertions.
-  - [ ] Do not add final art, final audio, production UI frames, settings UI, save/resume UI, or accessibility-audit UI in this story.
-- [ ] 2.5.2 Define a scene-free adaptive layout profile contract. (AC: 1, 2)
-  - [ ] Add a typed `RefCounted` helper under `godot/scripts/ui/view_models/`, recommended name `tactical_layout_profile.gd`.
-  - [ ] Add a resolver/helper if useful, recommended name `tactical_layout_profile_resolver.gd`, or keep resolver methods on the main layout helper if that is clearer.
-  - [ ] Keep output value-only: `String`, `StringName`, `int`, `bool`, `float`, `Vector2`, `Vector2i`, `Rect2i`, `Array`, and `Dictionary` copies.
-  - [ ] Presenter-facing dictionaries must normalize coordinates/rects to copied dictionaries; do not expose `BoardState`, command objects, `ActionResult`, `Resource`, `Node`, `Control`, `Window`, `Viewport`, `DisplayServer`, callables, or mutable repository internals.
-  - [ ] Return stable profile ids: `phone_portrait`, `phone_landscape`, `tablet`, and `desktop`.
-  - [ ] Return stable orientation ids: `portrait`, `landscape`, and `square` if width and height are equal.
-- [ ] 2.5.3 Implement deterministic profile selection for v0 target viewports. (AC: 1, 2)
-  - [ ] Accept injected `viewport_size`, optional `safe_area`, optional `content_scale`, and optional `platform_hint`; tests must not depend on an actual rendered window.
-  - [ ] Recommended v0 classification constants:
+- [x] 2.5.1 Confirm the Epic 2 boundary and add failing tests first. (AC: 1-3)
+  - [x] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.4 `done`, and this story `ready-for-dev` before implementation starts.
+  - [x] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes.
+  - [x] Add focused failing tests such as `godot/tests/unit/ui/test_tactical_layout_profiles.gd` before production edits.
+  - [x] Use `BoardFixtureFactory.micro_combat_board()`, current preview/commit-flow/inspect/zoom helpers, and `TacticalSnapshot.from_domain()` for no-mutation assertions.
+  - [x] Do not add final art, final audio, production UI frames, settings UI, save/resume UI, or accessibility-audit UI in this story.
+- [x] 2.5.2 Define a scene-free adaptive layout profile contract. (AC: 1, 2)
+  - [x] Add a typed `RefCounted` helper under `godot/scripts/ui/view_models/`, recommended name `tactical_layout_profile.gd`.
+  - [x] Add a resolver/helper if useful, recommended name `tactical_layout_profile_resolver.gd`, or keep resolver methods on the main layout helper if that is clearer.
+  - [x] Keep output value-only: `String`, `StringName`, `int`, `bool`, `float`, `Vector2`, `Vector2i`, `Rect2i`, `Array`, and `Dictionary` copies.
+  - [x] Presenter-facing dictionaries must normalize coordinates/rects to copied dictionaries; do not expose `BoardState`, command objects, `ActionResult`, `Resource`, `Node`, `Control`, `Window`, `Viewport`, `DisplayServer`, callables, or mutable repository internals.
+  - [x] Return stable profile ids: `phone_portrait`, `phone_landscape`, `tablet`, and `desktop`.
+  - [x] Return stable orientation ids: `portrait`, `landscape`, and `square` if width and height are equal.
+- [x] 2.5.3 Implement deterministic profile selection for v0 target viewports. (AC: 1, 2)
+  - [x] Accept injected `viewport_size`, optional `safe_area`, optional `content_scale`, and optional `platform_hint`; tests must not depend on an actual rendered window.
+  - [x] Recommended v0 classification constants:
     - `phone_portrait`: width < 700 and height >= width.
     - `phone_landscape`: height < 700 and width > height.
     - `desktop`: width >= 1280 and width >= height.
     - `tablet`: all remaining valid tablet-like sizes, especially min dimension >= 700.
-  - [ ] Cover fixtures for at least `390x844`, `844x390`, `834x1194`, `1194x834`, and `1440x900`.
-  - [ ] Return disabled or fallback profile data with stable reasons for zero, negative, NaN, infinity, or malformed viewport/safe-area values.
-  - [ ] Keep thresholds as named constants so later device-tier work can tune them without rewriting tests.
-- [ ] 2.5.4 Produce a semantic tactical HUD layout plan for each profile. (AC: 1, 2)
-  - [ ] Layout output should include copied regions for `board`, `preview`, `confirm_cancel`, `inspect`, `status`, and `log_or_outcome`.
-  - [ ] Phone portrait should prioritize the board as the largest first visual region, with bottom or lower-edge reachable preview/confirm/cancel controls and compact status.
-  - [ ] Phone landscape should keep the board central or left-prioritized and move panels/controls to side regions where possible.
-  - [ ] Tablet should support a larger board plus side or bottom panels without forcing desktop-only density.
-  - [ ] Desktop should use wider space for panels/status/log while reusing the same `TacticalBoardViewModel`, `TacticalCommandBridge`, preview, commit-flow, inspect, and zoom contracts.
-  - [ ] Expose `minimum_touch_target` and `spacing` values for control reachability checks. Use conservative constants, not final accessibility settings; Story 2.6 owns the broader readable-text and colorblind audit.
-  - [ ] Ensure the plan includes cue ids or reason ids such as `layout_profile_phone_portrait`, `layout_safe_area_applied`, and `layout_fallback`.
-- [ ] 2.5.5 Integrate layout data with existing UI view-model output without creating scene-owned gameplay state. (AC: 2, 3)
-  - [ ] Prefer adding a sanitized optional `layout` slot to `TacticalBoardViewModel.from_domain()` so presenters can consume board, preview, commit-flow, inspect, zoom, and layout data together.
-  - [ ] If the implementation keeps layout separate from `TacticalBoardViewModel`, document that decision in this story and add tests proving presenters still receive the same state contracts.
-  - [ ] If top-level board view-model keys change, update `godot/tests/unit/ui/test_tactical_board_view_model.gd` stable-key expectations intentionally.
-  - [ ] Keep `selection`, `preview`, `commit_flow`, `inspect`, `zoom`, `action_availability`, `turn`, `outcome`, and `event_log_summary` behavior backward-compatible.
-  - [ ] Layout recalculation must not call `TacticalCommandBridge.execute_intent()`, `MoveCommand.execute()`, `AttackCommand.execute()`, `TacticalAttackCommitFlow.confirm_attack()`, enemy turn resolution, level-system advancement, or gameplay RNG.
-- [ ] 2.5.6 Preserve current tactical UI state across profile changes. (AC: 3)
-  - [ ] Build tests that start with selected cell/entity, active movement preview, active attack preview/commit flow, active inspect target, and zoom focused cell.
-  - [ ] Rebuild layout from portrait to landscape, portrait to tablet, and desktop to phone-sized values without mutating board, turn state, RNG streams, pending telegraphs, or event log.
-  - [ ] Assert selected cell/entity, preview target, attack commit-flow target, inspect target, zoom focused cell, and action availability remain coherent after layout/profile changes.
-  - [ ] Assert attack confirm/cancel remain gated by active matching commit-flow metadata from Story 2.3, not by layout profile or presenter overrides.
-  - [ ] Assert layout changes never submit commands and never advance enemies or level systems.
-- [ ] 2.5.7 Add minimal scene/presenter hooks only if needed to prove layout profile consumption. (AC: 1, 2)
-  - [ ] If scene-level proof is useful, add a lightweight presenter script under `godot/scripts/ui/presenters/` that binds semantic layout regions to existing `Control` containers without tactical state ownership.
-  - [ ] If layout scenes are added, place them under `godot/scenes/ui/layouts/phone_portrait/`, `phone_landscape/`, `tablet/`, and `desktop/` as architecture-defined profile locations.
-  - [ ] Any scene or presenter added here must consume view-model/layout dictionaries and emit semantic intent only; it must not own board state, selection truth, preview legality, attack commit rules, or command execution.
-  - [ ] Do not build polished HUD art or final visual style. Placeholder controls are acceptable only to prove region reachability and state binding.
-- [ ] 2.5.8 Cover layout profiles, state preservation, and no-mutation behavior. (AC: 1-3)
-  - [ ] Profile resolver returns `phone_portrait` for a `390x844` viewport and keeps board first-priority.
-  - [ ] Profile resolver returns `phone_landscape` for a `844x390` viewport and repositions panels/controls without changing view-model or bridge contracts.
-  - [ ] Profile resolver returns `tablet` for tablet portrait/landscape fixtures and `desktop` for a desktop-style wide fixture.
-  - [ ] Safe-area input shrinks the interactive content area and keeps primary controls inside it.
-  - [ ] Malformed viewport, safe area, or content scale values return stable fallback/disabled reasons rather than throwing.
-  - [ ] Returned layout dictionaries are deep copies and contain no forbidden raw domain, resource, command, scene, window, viewport, or callable references.
-  - [ ] Layout changes preserve active selection, preview, commit flow, inspect, zoom, action availability, and no-mutation snapshots.
-- [ ] 2.5.9 Keep records and validation current. (AC: 1-3)
-  - [ ] Run `godot --version`.
-  - [ ] Run `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
-  - [ ] Run `git diff --check`.
-  - [ ] Update this story's Dev Agent Record, Completion Notes, File List, and Change Log with actual implementation work.
-  - [ ] Keep `sprint-status.yaml` synchronized with this story status.
+  - [x] Cover fixtures for at least `390x844`, `844x390`, `834x1194`, `1194x834`, and `1440x900`.
+  - [x] Return disabled or fallback profile data with stable reasons for zero, negative, NaN, infinity, or malformed viewport/safe-area values.
+  - [x] Keep thresholds as named constants so later device-tier work can tune them without rewriting tests.
+- [x] 2.5.4 Produce a semantic tactical HUD layout plan for each profile. (AC: 1, 2)
+  - [x] Layout output should include copied regions for `board`, `preview`, `confirm_cancel`, `inspect`, `status`, and `log_or_outcome`.
+  - [x] Phone portrait should prioritize the board as the largest first visual region, with bottom or lower-edge reachable preview/confirm/cancel controls and compact status.
+  - [x] Phone landscape should keep the board central or left-prioritized and move panels/controls to side regions where possible.
+  - [x] Tablet should support a larger board plus side or bottom panels without forcing desktop-only density.
+  - [x] Desktop should use wider space for panels/status/log while reusing the same `TacticalBoardViewModel`, `TacticalCommandBridge`, preview, commit-flow, inspect, and zoom contracts.
+  - [x] Expose `minimum_touch_target` and `spacing` values for control reachability checks. Use conservative constants, not final accessibility settings; Story 2.6 owns the broader readable-text and colorblind audit.
+  - [x] Ensure the plan includes cue ids or reason ids such as `layout_profile_phone_portrait`, `layout_safe_area_applied`, and `layout_fallback`.
+- [x] 2.5.5 Integrate layout data with existing UI view-model output without creating scene-owned gameplay state. (AC: 2, 3)
+  - [x] Prefer adding a sanitized optional `layout` slot to `TacticalBoardViewModel.from_domain()` so presenters can consume board, preview, commit-flow, inspect, zoom, and layout data together.
+  - [x] If the implementation keeps layout separate from `TacticalBoardViewModel`, document that decision in this story and add tests proving presenters still receive the same state contracts.
+  - [x] If top-level board view-model keys change, update `godot/tests/unit/ui/test_tactical_board_view_model.gd` stable-key expectations intentionally.
+  - [x] Keep `selection`, `preview`, `commit_flow`, `inspect`, `zoom`, `action_availability`, `turn`, `outcome`, and `event_log_summary` behavior backward-compatible.
+  - [x] Layout recalculation must not call `TacticalCommandBridge.execute_intent()`, `MoveCommand.execute()`, `AttackCommand.execute()`, `TacticalAttackCommitFlow.confirm_attack()`, enemy turn resolution, level-system advancement, or gameplay RNG.
+- [x] 2.5.6 Preserve current tactical UI state across profile changes. (AC: 3)
+  - [x] Build tests that start with selected cell/entity, active movement preview, active attack preview/commit flow, active inspect target, and zoom focused cell.
+  - [x] Rebuild layout from portrait to landscape, portrait to tablet, and desktop to phone-sized values without mutating board, turn state, RNG streams, pending telegraphs, or event log.
+  - [x] Assert selected cell/entity, preview target, attack commit-flow target, inspect target, zoom focused cell, and action availability remain coherent after layout/profile changes.
+  - [x] Assert attack confirm/cancel remain gated by active matching commit-flow metadata from Story 2.3, not by layout profile or presenter overrides.
+  - [x] Assert layout changes never submit commands and never advance enemies or level systems.
+- [x] 2.5.7 Add minimal scene/presenter hooks only if needed to prove layout profile consumption. (AC: 1, 2)
+  - [x] If scene-level proof is useful, add a lightweight presenter script under `godot/scripts/ui/presenters/` that binds semantic layout regions to existing `Control` containers without tactical state ownership. (Intentionally not needed; see Completion Notes and `deferred-work.md`.)
+  - [x] If layout scenes are added, place them under `godot/scenes/ui/layouts/phone_portrait/`, `phone_landscape/`, `tablet/`, and `desktop/` as architecture-defined profile locations. (No scenes added; layout proven scene-free.)
+  - [x] Any scene or presenter added here must consume view-model/layout dictionaries and emit semantic intent only; it must not own board state, selection truth, preview legality, attack commit rules, or command execution. (N/A — no scene/presenter added.)
+  - [x] Do not build polished HUD art or final visual style. Placeholder controls are acceptable only to prove region reachability and state binding. (No HUD art added.)
+- [x] 2.5.8 Cover layout profiles, state preservation, and no-mutation behavior. (AC: 1-3)
+  - [x] Profile resolver returns `phone_portrait` for a `390x844` viewport and keeps board first-priority.
+  - [x] Profile resolver returns `phone_landscape` for a `844x390` viewport and repositions panels/controls without changing view-model or bridge contracts.
+  - [x] Profile resolver returns `tablet` for tablet portrait/landscape fixtures and `desktop` for a desktop-style wide fixture.
+  - [x] Safe-area input shrinks the interactive content area and keeps primary controls inside it.
+  - [x] Malformed viewport, safe area, or content scale values return stable fallback/disabled reasons rather than throwing.
+  - [x] Returned layout dictionaries are deep copies and contain no forbidden raw domain, resource, command, scene, window, viewport, or callable references.
+  - [x] Layout changes preserve active selection, preview, commit flow, inspect, zoom, action availability, and no-mutation snapshots.
+- [x] 2.5.9 Keep records and validation current. (AC: 1-3)
+  - [x] Run `godot --version`.
+  - [x] Run `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
+  - [x] Run `git diff --check`.
+  - [x] Update this story's Dev Agent Record, Completion Notes, File List, and Change Log with actual implementation work.
+  - [x] Keep `sprint-status.yaml` synchronized with this story status.
 
 ## Dev Notes
 
@@ -390,7 +390,7 @@ Expected final result:
 
 ### Agent Model Used
 
-GPT-5 Codex
+Story context: GPT-5 Codex. Implementation: Claude Opus 4.8 (1M context).
 
 ### Implementation Plan
 
@@ -403,17 +403,49 @@ GPT-5 Codex
 
 - 2026-06-08: Created Story 2.5 implementation guide from Epic 2 source requirements, Epic 2 sprint plan, root project context, game architecture, GDD platform-specific requirements, Stories 2.1-2.4 implementation notes, current UI/view-model code, recent commits, and official Godot 4.6 documentation.
 - 2026-06-08: Confirmed story creation baseline: `epic-1: done`, Stories 2.1-2.4 `done`, Story 2.5 `backlog`, and a clean working tree before story artifact edits.
+- 2026-06-13: Confirmed pre-implementation boundary still intact (`epic-1: done`, Stories 2.1-2.4 `done`, Story 2.5 `ready-for-dev`); working tree clean apart from the untracked orchestrator-owned `_bmad-output/auto-gds/reports/` directory. `godot --version` = `4.6.3.stable.official.7d41c59c4`. Baseline headless suite green (35 files) before edits; 36 files green after, including the new layout test.
+- 2026-06-13: Verified red/green discipline by temporarily breaking `DESKTOP_MIN_WIDTH` (desktop classification + desktop state-preservation assertions failed as expected) and the safe-area content-area assignment (safe-area shrink assertions failed as expected), then reverting both. `git diff --check` clean.
 
 ### Completion Notes List
 
 - Story context created and marked ready for development.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented `TacticalLayoutProfile` (`RefCounted`) under `godot/scripts/ui/view_models/`: a scene-free adaptive layout helper with a single `from_viewport(options)` static constructor and `to_dictionary()`. It accepts injected `viewport_size`, optional `safe_area`, optional `content_scale`, and (tolerated/ignored) `platform_hint`, never touching `DisplayServer`/`Window`/`Viewport`. Resolver methods were kept on the main helper rather than a separate `tactical_layout_profile_resolver.gd`, matching the existing single-file `RefCounted` pattern across Epic 2 (the story explicitly allows this).
+- Deterministic v0 classification uses named constants `PHONE_MAX_DIMENSION = 700.0` and `DESKTOP_MIN_WIDTH = 1280.0`, evaluated in order phone_portrait -> phone_landscape -> desktop -> tablet (tablet is the catch-all for remaining valid sizes). Fixtures `390x844` -> `phone_portrait`, `844x390` -> `phone_landscape`, `834x1194` and `1194x834` -> `tablet`, `1440x900` -> `desktop`. Orientation ids `portrait`/`landscape`/`square` are derived independently from the profile id.
+- Semantic HUD plan: stacked layout (portrait phone / tablet / desktop) puts the board on top as the dominant region with stacked lower-edge control bands (`preview`, `confirm_cancel`, `inspect`, `status`) and an optional `log_or_outcome` strip on tablet/desktop; landscape phone uses a board-left + right-rail layout so controls move to a side region rather than spanning full width. Output is value-only deep-copied rect/point dictionaries plus `control_slots`, `minimum_touch_target` (44x44 conservative, NOT final a11y), `spacing`, `density`, `board_priority`, stable `reason`, `available`, and `cue_ids` (`layout_profile_<id>`, `layout_orientation_<id>`, `layout_safe_area_applied`, `layout_fallback`).
+- Safe area: an injected `safe_area` (Rect2/Rect2i/dict) is intersected with the viewport to derive `content_area`; all regions and control slots are laid out inside the content area and asserted to stay inside it. A malformed safe area (non-numeric/non-finite/empty intersection) silently falls back to the full viewport and does NOT emit `layout_safe_area_applied`. A malformed `content_scale` falls back to `1.0`. Invalid viewports (zero/negative/NaN/infinity) return a stable disabled fallback: `profile_id: "phone_portrait"`, `reason: "fallback_invalid_viewport"`, `available: false`, `layout_fallback` cue id, and all required region/control-slot keys still present so presenters never crash.
+- Integration: added a sanitized optional `layout` slot to `TacticalBoardViewModel` (field + `from_domain` population via the existing `_dictionary_from_options` -> safe-copy path + `to_dictionary` emission). It defaults to `{}`, strips raw `BoardState`/entity/`Resource`/`Node`/`Control` references, normalizes `Vector2i`, and drops NaN/inf. All existing top-level keys and behavior remain backward-compatible; the board VM stable-key test was intentionally updated to include `layout` (now 15 keys) per subtask 2.5.5.
+- State preservation + no-mutation: layout/profile changes are pure presentation rebuilds. Tests prove that across portrait->landscape->tablet and desktop->phone changes the `selected_cell`, `selected_entity_id`, movement-preview target, attack `commit_flow` target/weapon, inspect `target_cell`, zoom `focused_cell`, and `action_availability` all persist; that confirm/cancel stay gated by matching commit-flow metadata (a stale-target preview plus a presenter override that tries to force confirm/cancel still resolves to disabled with `stale_commit_flow`, reusing the Story 2.3 gating); and that a `TacticalSnapshot.from_domain()` comparison is byte-identical before/after (no board/turn/RNG/telegraph/event-log mutation, no damage, no command execution).
+- Story 2.5.7 (optional scene/presenter proof) was intentionally not built. The contract is fully proven scene-free and headless, and the architecture guidance is to keep tactical layout decisions in a testable semantic profile before polished HUD scenes grow. Recorded in `_bmad-output/implementation-artifacts/deferred-work.md`. No new dependency, plugin, autoload, save format, theme system, or settings subsystem was added.
+- Validation: `godot --version` = `4.6.3.stable.official.7d41c59c4`; full headless suite green (36 files, exit 0); `git diff --check` clean.
 
 ### File List
 
+- `godot/scripts/ui/view_models/tactical_layout_profile.gd` (new)
+- `godot/scripts/ui/view_models/tactical_board_view_model.gd` (modified — added sanitized `layout` slot)
+- `godot/tests/unit/ui/test_tactical_layout_profiles.gd` (new)
+- `godot/tests/unit/ui/test_tactical_board_view_model.gd` (modified — intentional stable-key + default-layout assertions)
 - `_bmad-output/implementation-artifacts/2-5-adaptive-layout-profiles.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/deferred-work.md` (modified — recorded deferred optional 2.5.7 scene proof)
+
+## Review Findings
+
+**Round 1 of 3** — code review 2026-06-13 (reviewer: Claude Opus 4.8, adversarial primary review). Diff reviewed: branch `story/2-5-adaptive-layout-profiles` vs `main`, scope = the 4 changed files under `godot/` (`tactical_layout_profile.gd` new, `tactical_board_view_model.gd` modified, `test_tactical_layout_profiles.gd` new, `test_tactical_board_view_model.gd` modified). Verdict: **Approve**. Full headless suite green (36 files, exit 0); `git diff --check` clean. AC1/AC2/AC3 all satisfied with strong no-mutation + state-preservation coverage (snapshot byte-equality, target HP unchanged, stale-confirm gating reused from Story 2.3).
+
+- [Review][Decision] `content_scale` is parsed, finiteness-guarded, clamped to `[MIN_CONTENT_SCALE, MAX_CONTENT_SCALE]` and echoed in `to_dictionary()`, but it is never applied to any region/control geometry. This is intentional per the story scope ("Story 2.5 should not create settings or gameplay rule changes from content scale"). Flagged as a human-call decision only because a downstream presenter could reasonably assume the echoed `content_scale` has already been baked into the returned rects. Low severity. Recommended resolution: add a one-line doc comment in `tactical_layout_profile.gd` near the `content_scale` field stating it is a sanitized passthrough not applied to geometry in v0, OR consciously accept as-is. No code behavior change required to approve.
+- [Review][Defer] Degenerate stacked-layout rebalance branch is untested. In `TacticalLayoutProfile._build_stacked_layout()`, when the (safe-area-derived) content height is too short to fit board + four control bands + optional log strip (`board_height < min_board_height`), the recomputed `control_height = (remaining - log_height) / 4` can drop below `DEFAULT_MINIMUM_TOUCH_TARGET.y` (44). Behavior stays self-consistent and honest — `_region_is_reachable()` then correctly reports `reachable: false` for those control slots, and no crash occurs — but no test exercises this path (all reachability assertions use full-size fixtures plus one tall safe-area fixture `390x763`). Medium. Defer: add a regression fixture with an extreme content-area shrink asserting either (a) controls remain ≥ touch target and inside content, or (b) slots honestly report `reachable: false`. Not blocking for v0 because real target viewports never hit this branch.
+- [Review][Defer] v0 classifier maps large-but-short displays to `phone_landscape` with no guard or distinguishing cue. `_profile_id_for()` returns `phone_landscape` for any `height < 700 and width > height` regardless of width, so e.g. a `1300x650` ultrawide-short window classifies as `phone_landscape` and gets the compact phone side-rail layout. This matches the documented v0 thresholds exactly and none of the five required AC fixtures regress, so it is correct against spec — but it is a latent surprise for unusual desktop window sizes. Medium. Defer to the later device-tier tuning work the story explicitly anticipates ("Keep thresholds as named constants so later device-tier work can tune them"); consider an additional width ceiling on `phone_landscape` or a `layout_low_height_desktop` cue then.
+- [Review][Decision] Optional scene/presenter proof (Story 2.5.7) intentionally not built; contract proven scene-free and headless. Already recorded in `deferred-work.md` under this story. Low/informational — surfaced here for review traceability; no action required for approval.
+
+**Round 2 of 3** — code review 2026-06-13 (reviewer: Claude Opus 4.8 (1M context), independent adversarial second pass; deliberately re-derived, not deferring to Round 1's Approve). Same diff/scope as Round 1 (4 files under `godot/`: `tactical_layout_profile.gd` new, `tactical_board_view_model.gd` modified, `test_tactical_layout_profiles.gd` new, `test_tactical_board_view_model.gd` modified). Verdict: **Approve**. Independently re-ran the full headless suite (36 files, exit 0, Godot 4.6.3.stable.official.7d41c59c4) rather than trusting the recorded result. Additionally wrote throwaway adversarial probe tests (since removed) exercising offset/non-zero-origin safe areas in the landscape side-rail and short-portrait rebalance paths, extreme aspect ratios (`3000x200`, `120x3000`), clamped-extreme `content_scale`, negative-origin `Rect2` safe areas, and populated `log_or_outcome` strips on tablet+desktop under offset safe areas — every probe passed: regions stayed inside the content area, the board stayed the largest region after rebalance, geometry stayed non-negative, and `content_scale` was confirmed NOT baked into rects. The `_build_stacked_layout` rebalance math was traced symbolically across content heights down to 10px and always satisfies `sum(region heights) <= content height` with board largest. AC1/AC2/AC3 confirmed: portrait board-first priority, view-model/command-bridge reuse, and no-mutation/no-command state preservation (snapshot byte-equality + target HP unchanged + stale-confirm gating reused from Story 2.3) all hold. Concur with Round 1's Approve and all four Round 1 findings (re-verified the rebalance branch is genuinely uncovered by the committed suite and that `3000x200` reproduces the wide-short→`phone_landscape` classification).
+
+- [Review][Defer] NEW (not raised in Round 1): the populated `log_or_outcome` region (only non-empty on `tablet`/`desktop` profiles) is never asserted to stay inside `content_area` by any committed test. The committed safe-area test loops `REQUIRED_REGIONS` (which includes `log_or_outcome`) but only on the `390x844` phone fixture, where that region is empty and skipped — and `log_or_outcome` is not a primary control, so `_assert_primary_controls_reachable_inside_content` never covers it. Behavior is correct by construction (in `_build_stacked_layout` all regions accumulate from `content_area.position.y` and sum to exactly `content_area.size.y`) and I verified it directly with a throwaway tablet+desktop offset-safe-area probe (passed), but the persisted suite leaves it unverified. Low. Defer: add a tablet (and/or desktop) fixture with an offset safe area asserting the populated `log_or_outcome` strip stays inside the content area. Pairs naturally with the Round 1 rebalance-branch coverage defer — a single short-content-area + offset-safe-area regression test could cover both. Not blocking for v0.
+- [Review][Decision] NEW (not raised in Round 1): presenter-facing value sanitization is now triplicated. `TacticalPreviewView.safe_value`/`safe_dictionary_copy`, `TacticalBoardViewModel._safe_value`/`_safe_dictionary_copy`, and `TacticalLayoutProfile`'s own `_is_numeric`/`_is_finite`/`_rect_is_finite` guards are byte-for-byte equivalent logic maintained in three places. This story's new `layout` slot routes sanitization through the board VM's private copy, deepening reliance on the duplicated pattern. The board VM duplication predates this story and the new layout code reuses `TacticalPreviewView.field`/`has_field` correctly, so this is a maintainability smell rather than a defect, and consolidating shared sanitization helpers is out of this story's scope. Low. Human call: either accept the triplication as-is or schedule a small follow-up to fold these into a single shared `TacticalPreviewView` (or equivalent) sanitization surface. No code change required to approve Story 2.5.
 
 ## Change Log
 
+- 2026-06-13: Round 2 code review (independent adversarial second pass, Claude Opus 4.8 (1M context)). Verdict Approve, 0 Critical / 0 High / 0 Med / 2 Low (1 new [Review][Defer], 1 new [Review][Decision]). Re-ran full headless suite (36 files, exit 0) and adversarial throwaway probes (offset safe areas, extreme aspect ratios, content-scale passthrough, populated log strips) — all green; probes removed afterward, working tree left clean. Copied the new [Review][Defer] to deferred-work.md under the existing Round-1 code-review heading. No blocking changes required.
+- 2026-06-13: Round 1 code review (adversarial primary). Verdict Approve, 0 Critical / 0 High / 2 Med / 2 Low. Recorded findings in Review Findings; copied the two [Review][Defer] items to deferred-work.md. No blocking changes required.
 - 2026-06-08: Created Story 2.5 implementation guide and marked it ready for development.
+- 2026-06-13: Implemented adaptive layout profiles. Added scene-free `TacticalLayoutProfile` (deterministic v0 profile/orientation classification, safe-area-aware semantic HUD region plan, conservative touch-target/spacing constants, stable cue/reason ids, malformed-input fallbacks). Added sanitized optional `layout` slot to `TacticalBoardViewModel`. Added `test_tactical_layout_profiles.gd` covering classification, safe area, fallbacks, deep-copy/no-forbidden-reference sanitation, state preservation, and no-mutation; updated `test_tactical_board_view_model.gd` stable keys intentionally. Recorded deferred optional scene proof. Full headless suite green; `git diff --check` clean. Story moved to review.

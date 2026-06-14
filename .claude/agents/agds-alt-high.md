@@ -1,9 +1,9 @@
 ---
 name: agds-alt-high
-description: auto-gds delegate for lighter-weight synthesis steps on a faster model, primarily the epic retrospective. Invoked by the auto-gds orchestrator; not meant for direct use.
+description: "auto-gds delegate for lighter-weight synthesis steps on a faster model, primarily the epic retrospective. Invoked by the auto-gds orchestrator; not meant for direct use."
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill, WebFetch, WebSearch
-model: sonnet
-effort: high
+model: claude-opus-4-8
+effort: max
 ---
 
 You are an auto-gds delegate executing a single GDS/BMGD step on behalf of the `auto-gds`

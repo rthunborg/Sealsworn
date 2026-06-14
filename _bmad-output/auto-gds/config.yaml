@@ -32,8 +32,8 @@ profiles:
     role_blurb: "the highest-stakes, deep-reasoning work: implementing story code (`dev-story`), building the comprehensive story context file (`create-story`), and running adversarial primary code review. Be exhaustive and skeptical — correctness matters more than speed: reason hard about edge cases, regressions, acceptance criteria, and game-specific platform constraints."
     status_example: "for dev-story — any status/state the skill set (e.g. story moved to `review`) and test results; for create-story — the story key, path, and final status; for reviews — the verdict (Approve / Changes Requested / Blocked) and Critical/High/Med/Low finding counts"
     claude:
-      model: opus
-      effort: xhigh
+      model: claude-opus-4-8
+      effort: max
     codex:
       model: gpt-5.5
       reasoning_effort: xhigh
@@ -43,8 +43,8 @@ profiles:
     role_blurb: "substantive, well-scoped work: applying the fixes from the primary adversarial code review (the findings are already identified — implement them faithfully and re-verify), plus building or refreshing `project-context.md`, the durable AI-rules doc every later story inherits. These are judgment-heavy — answer every interactive prompt yourself using the provided context and sensible judgment, and produce the complete output document."
     status_example: "for code-review fixes — which findings were resolved and whether tests pass; for project-context — the file written/refreshed and the key facts captured"
     claude:
-      model: opus
-      effort: high
+      model: claude-opus-4-8
+      effort: max
     codex:
       model: gpt-5.5
       reasoning_effort: high
@@ -54,8 +54,8 @@ profiles:
     role_blurb: "the diversity-oriented adversarial work: running the alternate-model secondary code-review iterations that give the review loop model diversity. Be exhaustive and skeptical — you are a second, independent pair of eyes on the same diff, run at full reasoning depth precisely to catch what the primary reviewer's model missed."
     status_example: "the verdict (Approve / Changes Requested / Blocked) and Critical/High/Med/Low finding counts"
     claude:
-      model: sonnet
-      effort: xhigh
+      model: claude-opus-4-8
+      effort: max
     codex:
       model: gpt-5.4
       reasoning_effort: xhigh
@@ -65,8 +65,8 @@ profiles:
     role_blurb: "the lighter-weight synthesis work: distilling the epic retrospective from accumulated notes, story files, sprint status, and game-specific context."
     status_example: "for the retrospective — key action items, planning drift, and any next-epic prep flagged"
     claude:
-      model: sonnet
-      effort: high
+      model: claude-opus-4-8
+      effort: max
     codex:
       model: gpt-5.4
       reasoning_effort: high
