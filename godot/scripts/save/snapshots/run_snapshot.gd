@@ -2,8 +2,17 @@ class_name RunSnapshot
 extends RefCounted
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
+const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
 
 const SCHEMA_VERSION: int = 1
+
+# Stable key under which the composed Epic 1 tactical snapshot lives inside level_state.
+# AC3: the between-level save composes TacticalSnapshot here rather than forking a parallel
+# scene-owned tactical save format.
+const TACTICAL_SNAPSHOT_KEY: String = "tactical_snapshot"
 
 var schema_version: int = SCHEMA_VERSION
 var content_version: String = "mvp-0"
@@ -35,7 +44,7 @@ func to_dictionary() -> Dictionary:
 		"content_version": content_version,
 		"profile_id": profile_id,
 		"run_id": run_id,
-		"root_seed": root_seed,
+		"root_seed": str(root_seed),
 		"is_manual_seed": is_manual_seed,
 		"meta_progression_eligible": meta_progression_eligible,
 		"route_state": route_state.duplicate(true),
@@ -70,7 +79,7 @@ static func parse(data: Dictionary) -> ActionResult:
 	snapshot.content_version = str(data.get("content_version", "mvp-0"))
 	snapshot.profile_id = str(data.get("profile_id", "default"))
 	snapshot.run_id = str(data.get("run_id", ""))
-	snapshot.root_seed = int(data.get("root_seed", 0))
+	snapshot.root_seed = _int64_or_zero(data.get("root_seed", 0))
 	snapshot.is_manual_seed = bool(data.get("is_manual_seed", false))
 	snapshot.meta_progression_eligible = bool(data.get("meta_progression_eligible", true))
 	snapshot.route_state = _dictionary_or_empty(data.get("route_state", {}))
@@ -125,3 +134,109 @@ static func _string_array(value: Variant) -> Array[String]:
 	for item: Variant in value:
 		result.append(str(item))
 	return result
+
+
+# Compose a between-level run save from existing domain state. AC1/AC3: the authoritative
+# tactical/level payload is the Epic 1 TacticalSnapshot, embedded under TACTICAL_SNAPSHOT_KEY in
+# level_state; tactical board/turn/telegraph/event fields are NOT flattened onto the run save.
+# This is a pure read of domain state: it consumes no RNG draws and mutates nothing.
+#
+# options (all optional):
+#   is_manual_seed: bool           - manual-seed runs grant no meta progression
+#   current_route_node_id: String  - between-level boundary node, when available
+#   profile_id / run_id: String
+#   turn_state: Dictionary         - tactical turn state at the boundary
+#   pending_telegraphs: Array[Dictionary]
+#   event_log: Array[DomainEvent]
+static func from_between_level(
+	board_state: BoardState,
+	streams: RngStreamSet,
+	options: Dictionary = {}
+) -> ActionResult:
+	if board_state == null:
+		return ActionResult.error(&"missing_board_state", {"field": "board_state"})
+	if streams == null:
+		return ActionResult.error(&"missing_rng_streams", {"field": "rng_streams"})
+
+	var turn_state_value: Dictionary = _dictionary_or_empty(options.get("turn_state", {}))
+	var pending_telegraphs: Array[Dictionary] = _dictionary_array(options.get("pending_telegraphs", []))
+	var event_log: Array[DomainEvent] = _domain_event_array(options.get("event_log", []))
+
+	# Build the authoritative tactical snapshot through the strict Epic 1 boundary. If the source
+	# domain state is inconsistent, fail here and expose no partial run snapshot.
+	var tactical_result: ActionResult = TacticalSnapshot.from_domain(
+		board_state,
+		streams,
+		turn_state_value,
+		pending_telegraphs,
+		event_log
+	)
+	if tactical_result.is_error():
+		return tactical_result
+	var tactical: TacticalSnapshot = tactical_result.metadata.get("snapshot") as TacticalSnapshot
+
+	# Single pure read of the RNG snapshot at the boundary (consumes no draws, mutates nothing).
+	# The run-level rng_streams is the between-level authority; it coincides with the embedded
+	# tactical rng_streams because the save is taken at the level boundary.
+	var rng_snapshot: Dictionary = streams.to_snapshot()
+
+	var snapshot: RunSnapshot = load("res://scripts/save/snapshots/run_snapshot.gd").new()
+	snapshot.root_seed = _int64_or_zero(rng_snapshot.get("root_seed", 0))
+	snapshot.rng_streams = rng_snapshot
+	snapshot.is_manual_seed = bool(options.get("is_manual_seed", false))
+	# Manual-seed runs are allowed for replay/practice/share but grant no meta progression.
+	snapshot.meta_progression_eligible = not snapshot.is_manual_seed
+	snapshot.current_route_node_id = str(options.get("current_route_node_id", ""))
+	snapshot.profile_id = str(options.get("profile_id", "default"))
+	snapshot.run_id = str(options.get("run_id", ""))
+	# Embed (do not flatten) the tactical snapshot as the between-level level payload.
+	snapshot.level_state = {TACTICAL_SNAPSHOT_KEY: tactical.to_dictionary()}
+	return ActionResult.ok([], {"snapshot": snapshot})
+
+
+# Strictly extract and validate the embedded tactical snapshot. The run-save parse() is lenient
+# for run-level forward-compat, but the embedded tactical payload must always pass the strict
+# Epic 1 TacticalSnapshot.parse() (AC3) so corrupt tactical data is rejected with structure and
+# never activated as partial state.
+func try_tactical_snapshot() -> ActionResult:
+	if not level_state.has(TACTICAL_SNAPSHOT_KEY):
+		return ActionResult.error(&"missing_tactical_snapshot", {"key": TACTICAL_SNAPSHOT_KEY})
+	var embedded_value: Variant = level_state.get(TACTICAL_SNAPSHOT_KEY)
+	if not embedded_value is Dictionary:
+		return ActionResult.error(&"missing_tactical_snapshot", {
+			"key": TACTICAL_SNAPSHOT_KEY,
+			"reason": "embedded_tactical_snapshot_not_a_dictionary"
+		})
+	return TacticalSnapshot.parse(embedded_value)
+
+
+func has_tactical_snapshot() -> bool:
+	return level_state.has(TACTICAL_SNAPSHOT_KEY) and level_state.get(TACTICAL_SNAPSHOT_KEY) is Dictionary
+
+
+static func _domain_event_array(value: Variant) -> Array[DomainEvent]:
+	var result: Array[DomainEvent] = []
+	if not value is Array:
+		return result
+	for item: Variant in value:
+		if item is DomainEvent:
+			result.append(item)
+	return result
+
+
+static func _int64_or_zero(value: Variant) -> int:
+	match typeof(value):
+		TYPE_INT:
+			return int(value)
+		TYPE_FLOAT:
+			var numeric_value: float = float(value)
+			if is_nan(numeric_value) or is_inf(numeric_value):
+				return 0
+			return int(numeric_value)
+		TYPE_STRING, TYPE_STRING_NAME:
+			var text: String = String(value)
+			if text.is_valid_int():
+				return text.to_int()
+			return 0
+		_:
+			return 0

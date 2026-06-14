@@ -1,11 +1,12 @@
 ---
 created: 2026-06-14
 source_story_key: 2-7-between-level-save-snapshot-foundation
+baseline_commit: 4e501e8c567f1c554e21efdece83665cd923a875
 ---
 
 # Story 2.7: Between-Level Save Snapshot Foundation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -24,47 +25,47 @@ so that interruption-friendly sessions do not lose progress.
 
 ## Tasks / Subtasks
 
-- [ ] 2.7.1 Confirm the Epic 2 save-slice boundary and write failing tests first. (AC: 1-4)
-  - [ ] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.6 `done`, and this story `ready-for-dev` before implementation starts. If any earlier status regressed, stop and restore the boundary first.
-  - [ ] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is not your change.
-  - [ ] Add focused failing tests FIRST, before any production edit. Recommended: extend `godot/tests/unit/save/test_run_snapshot.gd` and `godot/tests/unit/save/test_save_repository.gd`, and add `godot/tests/integration/save/test_between_level_save.gd` (create the `tests/integration/save/` folder if it does not exist).
-  - [ ] Reuse `BoardFixtureFactory` (e.g. `deterministic_actor_placement()` / `micro_combat_board()`), `RngStreamSet`, `TacticalSnapshot.from_domain()`, `RunSnapshot`, and `SaveRepository`. Do NOT invent a new board fixture, a new snapshot DTO family, or a new test framework.
-  - [ ] Do NOT build a resume/load UI, a save-slot menu UI, mid-level autosave, settings persistence, profile/meta save files, or `MoveCommand`/`AttackCommand`/level/route gameplay systems in this story. (Resume FLOW and mid-level feasibility are Story 2.8; settings persistence is Story 2.9; route/level systems are Epics 3-4.)
-- [ ] 2.7.2 Compose the existing tactical snapshot into the between-level run save instead of inventing a parallel format. (AC: 1, 3)
-  - [ ] Reuse `TacticalSnapshot` (`godot/scripts/save/snapshots/tactical_snapshot.gd`, schema 1, `content_version "mvp-0"`) as the authoritative tactical/level payload. It already serializes `board`, `turn_state`, `pending_telegraphs`, `rng_streams`, and `event_log` and strictly validates board + RNG on parse.
-  - [ ] Carry the tactical snapshot inside `RunSnapshot.level_state` (recommended: `level_state = {"tactical_snapshot": tactical_snapshot.to_dictionary()}` under a stable key such as `tactical_snapshot`), or document and test an equivalent composition. Do NOT duplicate the tactical board/turn/telegraph/event fields as new ad hoc top-level run-save keys.
-  - [ ] If you add a between-level assembly helper, put it in the save layer (recommended: a `RunSnapshot.from_between_level(...)` static helper or a small `BetweenLevelSave` composer under `godot/scripts/save/`). Keep it data-only `RefCounted`; do not move tactical truth, turn decisions, or command validation into the save layer, autoloads, scenes, or UI.
-  - [ ] When the run-save is loaded, the embedded tactical snapshot must still pass `TacticalSnapshot.parse()` strict validation (board occupant consistency, RNG validity, finite floats, no forbidden references). Add a test proving a corrupt embedded tactical snapshot is rejected with a structured error and no partial state activation.
-- [ ] 2.7.3 Confirm and test the AC2 between-level field contract on `RunSnapshot`. (AC: 2)
-  - [ ] `RunSnapshot` already exposes the AC2-required fields. Map AC2 terms to the EXISTING fields (do NOT rename or re-add removed fields):
+- [x] 2.7.1 Confirm the Epic 2 save-slice boundary and write failing tests first. (AC: 1-4)
+  - [x] Verify `sprint-status.yaml` has `epic-1: done`, Stories 2.1-2.6 `done`, and this story `ready-for-dev` before implementation starts. If any earlier status regressed, stop and restore the boundary first.
+  - [x] Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is not your change.
+  - [x] Add focused failing tests FIRST, before any production edit. Recommended: extend `godot/tests/unit/save/test_run_snapshot.gd` and `godot/tests/unit/save/test_save_repository.gd`, and add `godot/tests/integration/save/test_between_level_save.gd` (create the `tests/integration/save/` folder if it does not exist).
+  - [x] Reuse `BoardFixtureFactory` (e.g. `deterministic_actor_placement()` / `micro_combat_board()`), `RngStreamSet`, `TacticalSnapshot.from_domain()`, `RunSnapshot`, and `SaveRepository`. Do NOT invent a new board fixture, a new snapshot DTO family, or a new test framework.
+  - [x] Do NOT build a resume/load UI, a save-slot menu UI, mid-level autosave, settings persistence, profile/meta save files, or `MoveCommand`/`AttackCommand`/level/route gameplay systems in this story. (Resume FLOW and mid-level feasibility are Story 2.8; settings persistence is Story 2.9; route/level systems are Epics 3-4.)
+- [x] 2.7.2 Compose the existing tactical snapshot into the between-level run save instead of inventing a parallel format. (AC: 1, 3)
+  - [x] Reuse `TacticalSnapshot` (`godot/scripts/save/snapshots/tactical_snapshot.gd`, schema 1, `content_version "mvp-0"`) as the authoritative tactical/level payload. It already serializes `board`, `turn_state`, `pending_telegraphs`, `rng_streams`, and `event_log` and strictly validates board + RNG on parse.
+  - [x] Carry the tactical snapshot inside `RunSnapshot.level_state` (`level_state = {"tactical_snapshot": tactical_snapshot.to_dictionary()}` under the stable key `RunSnapshot.TACTICAL_SNAPSHOT_KEY`). Do NOT duplicate the tactical board/turn/telegraph/event fields as new ad hoc top-level run-save keys. (Tested: `_between_level_composes_tactical_snapshot_into_level_state` asserts board/level_state are NOT flattened.)
+  - [x] Added the between-level assembly helper `RunSnapshot.from_between_level(board_state, streams, options)` static composer in the save layer. Kept it data-only `RefCounted`/static; tactical truth, turn decisions, and command validation stay outside the save layer.
+  - [x] When the run-save is loaded, the embedded tactical snapshot must still pass `TacticalSnapshot.parse()` strict validation. Added `RunSnapshot.try_tactical_snapshot()` and `_between_level_rejects_corrupt_embedded_tactical_snapshot` proving a corrupt embedded tactical snapshot is rejected with `invalid_tactical_snapshot` and exposes no partial state.
+- [x] 2.7.3 Confirm and test the AC2 between-level field contract on `RunSnapshot`. (AC: 2)
+  - [x] Mapped AC2 terms to the EXISTING fields (no rename, no removed-field reintroduction):
     - schema version -> `schema_version` (`SCHEMA_VERSION = 1`); content version -> `content_version` (`"mvp-0"`).
     - root seed -> `root_seed`; RNG stream states -> `rng_streams` (a `RngStreamSet.to_snapshot()` dictionary).
-    - route / current-node state where available -> `route_state`, `current_route_node_id`, `revealed_route_node_ids` (default empty `{}`/`""`/`[]` at this point in the project; route systems arrive in Epic 4).
+    - route / current-node state where available -> `route_state`, `current_route_node_id`, `revealed_route_node_ids` (default empty `{}`/`""`/`[]`).
     - player state + level state -> `level_state` (now composing the tactical snapshot per 2.7.2), `turn_state`, `board`.
-    - inventory placeholder fields -> `inventory` (default empty `[]`); also `equipment`/`passives`/`curses`/`gold`/`oath_shards`/`corruption`/`affinities`/`meta_progression` already exist as nullable/empty defaults.
-    - manual-seed eligibility -> the EXISTING split fields `is_manual_seed: bool` and `meta_progression_eligible: bool`. (See "Manual-Seed Eligibility Contract" — Story 1.5/RunSnapshot deliberately replaced the ambiguous `manual_seed_eligible_for_progression` field with this two-field split; `test_run_snapshot.gd` asserts the old field MUST NOT reappear.)
-  - [ ] Add a test asserting a freshly built between-level `RunSnapshot` round-trips all AC2 fields through `to_dictionary()` -> `parse()` and that unsupported future fields are absent or explicitly empty/nullable (no surprise keys, no non-nullable placeholders that lie about data the MVP does not have yet).
-  - [ ] Do NOT add new gameplay fields (real inventory items, route graphs, affinity rules, etc.). They are owned by later epics; keep them as the existing empty defaults.
-- [ ] 2.7.4 Add an explicit between-level autosave entry point that writes through `SaveRepository`. (AC: 1, 4)
-  - [ ] `SaveRepository.write_run_snapshot()` already performs the atomic temp -> backup -> replace write and returns structured `ActionResult` errors (`save_open_failed`, `save_backup_remove_failed`, `save_backup_failed`, `save_replace_failed`). Reuse it; do NOT add a second write path or a non-atomic writer.
-  - [ ] Add a thin between-level autosave entry point. Recommended: a `SaveManager.autosave_between_level(snapshot: RunSnapshot) -> ActionResult` method delegating to `repository.write_run_snapshot(snapshot)`. Keep `SaveManager` a thin autoload that delegates to `SaveRepository`; it must not own snapshot schema policy, tactical truth, or composition logic.
-  - [ ] The entry point must return the repository's structured `ActionResult` unchanged (or a thin wrapper preserving `error_code` + metadata). Do not swallow the error or convert it to a bool.
-  - [ ] Do NOT call command execution, enemy turn resolution, level-system advancement, or gameplay RNG draws from the autosave path. Saving is a read-only snapshot of existing domain state.
-- [ ] 2.7.5 Prove the AC4 save-failure contract: structured error, no domain corruption, original file preserved. (AC: 4)
-  - [ ] Add a test that forces a write failure and asserts a structured `ActionResult.is_error()` with a stable `error_code` and diagnostic metadata (e.g. write to an unwritable/`res://` path, or a `.tmp`/`.bak` path that cannot be created/removed). Use a temp `user://` test path and clean it up.
-  - [ ] Assert the in-memory `RunSnapshot` (and any source `BoardState`/`RngStreamSet`) is unchanged after a failed write — saving must never mutate domain state.
-  - [ ] Assert that when a prior valid save file exists and a new write fails mid-way, the original save file is preserved (the temp/backup dance must not leave the canonical `save_path` destroyed or truncated). This is the architecture "Save Failure -> Preserve original file" requirement.
-  - [ ] Keep these tests headless and domain/save-only; do not instantiate scenes, UI, audio, or animation nodes.
-- [ ] 2.7.6 Prove AC1/AC3 no-scene-truth and reuse guarantees with tests. (AC: 1, 3)
-  - [ ] Assert the written run-save JSON contains only serializable domain data: primitives, arrays, dictionaries — no `Object`/`Node`/`Callable`/`RID`, no `res://` scene/resource paths, no `.tscn`/`.scn`/`.anim`/audio strings, and nothing matching the `TacticalSnapshot` forbidden-reference filter. Reuse the existing `TacticalSnapshot` serializable filtering for the tactical payload rather than writing a parallel sanitizer.
-  - [ ] Assert the between-level save reuses `TacticalSnapshot` (the embedded payload parses via `TacticalSnapshot.parse()`), demonstrating no parallel scene-owned save format was invented (AC3).
-  - [ ] Assert a full assemble -> write -> read -> reparse round-trip preserves root seed, RNG stream states (seed/state/draw_index per stream), the embedded tactical board, turn state, and manual-seed eligibility flags.
-- [ ] 2.7.7 Run required validation and update story records. (AC: 1-4)
-  - [ ] Run `godot --version` (through PowerShell — see Testing Requirements).
-  - [ ] Run the full headless suite through PowerShell (the bare `godot` is not on the Bash tool PATH; see Testing Requirements).
-  - [ ] Run `git diff --check`.
-  - [ ] Update this story's Dev Agent Record, Implementation Plan, Completion Notes, File List, and Change Log with the actual implementation work.
-  - [ ] Keep `sprint-status.yaml` synchronized with this story status.
+    - inventory placeholder fields -> `inventory` (default empty `[]`); also `equipment`/`passives`/`curses`/`gold`/`oath_shards`/`corruption`/`affinities`/`meta_progression` stay at empty/nullable defaults.
+    - manual-seed eligibility -> the EXISTING split fields `is_manual_seed: bool` and `meta_progression_eligible: bool`.
+  - [x] `_between_level_field_contract_round_trips_with_no_surprise_fields` asserts a freshly built between-level `RunSnapshot` round-trips all AC2 fields through `to_dictionary()` -> `parse()`, that future fields stay empty/nullable, that no surprise top-level key appears, and that `manual_seed_eligible_for_progression` stays absent.
+  - [x] Did NOT add new gameplay fields; all gameplay fields remain at their existing empty defaults.
+- [x] 2.7.4 Add an explicit between-level autosave entry point that writes through `SaveRepository`. (AC: 1, 4)
+  - [x] Reused `SaveRepository.write_run_snapshot()` (atomic temp -> backup -> replace + structured errors). No second write path added.
+  - [x] Added the thin `SaveManager.autosave_between_level(snapshot: RunSnapshot, save_path := SaveRepository.DEFAULT_RUN_PATH) -> ActionResult` delegating to `repository.write_run_snapshot(snapshot, save_path)`. `SaveManager` stays thin (no schema policy, no tactical truth, no composition).
+  - [x] The entry point returns the repository's structured `ActionResult` unchanged (verified by `_save_manager_autosave_between_level_delegates_to_repository`: error_code + metadata preserved, not collapsed to a bool).
+  - [x] No command execution, enemy turn resolution, level-system advancement, or gameplay RNG draws on the autosave path (proven by no-mutation assertions in the integration test).
+- [x] 2.7.5 Prove the AC4 save-failure contract: structured error, no domain corruption, original file preserved. (AC: 4)
+  - [x] `_write_failure_returns_structured_error_without_mutation` forces a temp-open failure (write into a non-existent `user://` directory) and asserts `ActionResult.is_error()` with stable `save_open_failed` + `path`/`open_error` metadata. Temp test paths are cleaned up.
+  - [x] Asserted the in-memory `RunSnapshot`, source `BoardState`, and source `RngStreamSet` are unchanged after a failed write (snapshot equality before/after).
+  - [x] `_write_failure_preserves_existing_valid_save` writes a valid save, then blocks the temp path with a directory so the next write fails AFTER a canonical valid save exists; asserts the original save file is preserved and reads back the ORIGINAL data (not the failed write). Same proven end-to-end via `SaveManager` in the integration test.
+  - [x] Kept all AC4 tests headless and domain/save-only; no scenes/UI/audio/animation nodes.
+- [x] 2.7.6 Prove AC1/AC3 no-scene-truth and reuse guarantees with tests. (AC: 1, 3)
+  - [x] `_written_save_contains_only_serializable_domain_data` reads the persisted JSON back and asserts only primitives/arrays/dictionaries, no `Object`/`Node`/`Callable`/`RID`, no `res://`/`.tscn`/`.scn`/`.anim`/audio strings, and nothing containing `presentation`. The tactical payload reuses `TacticalSnapshot`'s own serializable filtering.
+  - [x] Asserted the between-level save reuses `TacticalSnapshot` (embedded payload parses via `TacticalSnapshot.parse()` after a real write -> read), demonstrating no parallel scene-owned save format (AC3).
+  - [x] `_assemble_write_read_reparse_round_trip_preserves_fidelity` proves the full assemble -> write -> read -> reparse round-trip preserves root seed, RNG stream states (seed/state/draw_index per stream, restored losslessly and reproducing the exact next draw), the embedded tactical board, turn state, pending telegraphs, and manual-seed eligibility flags.
+- [x] 2.7.7 Run required validation and update story records. (AC: 1-4)
+  - [x] Ran `godot --version` through PowerShell -> `4.6.3.stable.official.7d41c59c4`.
+  - [x] Ran the full headless suite through PowerShell: 38/38 test scripts PASS, "Headless tests passed.", process exit code 0, no SCRIPT ERROR noise.
+  - [x] Ran `git diff --check` -> exit 0 (only informational LF->CRLF line-ending warnings; no whitespace errors).
+  - [x] Updated this story's Dev Agent Record, Implementation Plan, Completion Notes, File List, and Change Log with the actual implementation work.
+  - [x] Kept `sprint-status.yaml` synchronized with this story status.
 
 ## Dev Notes
 
@@ -335,6 +336,7 @@ Expected final result:
 ### Agent Model Used
 
 Story context: Claude Opus 4.8 (1M context).
+Implementation: Claude Opus 4.8 (1M context).
 
 ### Implementation Plan
 
@@ -347,16 +349,41 @@ Story context: Claude Opus 4.8 (1M context).
 
 - 2026-06-14: Created Story 2.7 implementation guide from Epic 2 source requirements, the Epic 2 sprint plan (Sprint Slice 6), root project context, game architecture (Data Persistence, Error Levels, Data Access Pattern), the GDD save/resume requirements, Story 1.5 (the `TacticalSnapshot` reuse target and "between-level save belongs to Epic 2" deferral), the Epic 2 auto-gds retro notes, the deferred-work ledger, and direct inspection of the existing save layer on disk (`save_repository.gd`, `run_snapshot.gd`, `tactical_snapshot.gd`, `save_manager.gd`, `game_session.gd`, and the current save tests).
 - 2026-06-14: Confirmed story-creation baseline: `epic-1: done`, Stories 2.1-2.6 `done`, Story 2.7 `backlog` before this file was created. Confirmed via code read that `SaveRepository`, `RunSnapshot` (with all AC2 fields + `is_manual_seed`/`meta_progression_eligible` split), `SaveManager`, and `TacticalSnapshot` already exist — so this story is composition + a between-level entry point + AC4/AC3 test hardening, not a greenfield save format.
+- 2026-06-14 (implementation): Re-verified the boundary before editing (`epic-1: done`, 2.1-2.6 `done`, 2.7 `ready-for-dev`, clean tree) and `godot --version` = `4.6.3.stable.official.7d41c59c4`.
+- 2026-06-14 (implementation): DISCOVERED a determinism-breaking save bug via a focused probe BEFORE writing the composition. `RandomNumberGenerator.state` is a full 64-bit signed integer (e.g. `-2661981755910080605`), but Godot `JSON.stringify`/`JSON.parse_string` round-trips numbers as IEEE-754 doubles (52-bit mantissa), truncating `state` (observed `-2661981755910080605` -> `-2661981755910080512`) AND returning all integers as `float`. Because `RngStreamSet.try_restore()` strictly required `is int` for `seed`/`state`/`draw_index`/`root_seed`, the JSON-round-tripped tactical RNG snapshot would have been REJECTED outright by `TacticalSnapshot.parse()` — so AC6 (assemble->write->read->reparse preserving RNG state) was impossible with the pre-existing format. Probed and confirmed: per-stream `seed` is always <= 2^31 (masked by `_derive_seed`'s `& 0x7fffffff`) so it survives JSON; only `state` and `root_seed` (player-supplied) are int64-at-risk.
+- 2026-06-14 (implementation): Fix = encode the genuinely-64-bit fields (`RngStreamSet` `root_seed` + per-stream `state`, and `RunSnapshot.root_seed`) as lossless decimal STRINGS in their snapshot output; `try_restore`/`parse` accept int, integral-float (JSON), or valid int-string and reject `"bad"`/arrays/non-integral floats. This keeps `RngStreamSet` the sole owner of its serialization (no parallel save-layer sanitizer) and makes both native-dict and JSON round-trips restore the exact next draw. Verified the malformed-snapshot rejection contract still holds.
+- 2026-06-14 (implementation): Followed red-green-refactor: added failing tests first (suite failed to compile on the missing `from_between_level`/`TACTICAL_SNAPSHOT_KEY`/`autosave_between_level` API), then implemented the production helpers to green. Final full headless run: 38/38 PASS, "Headless tests passed.", exit code 0, `git diff --check` exit 0.
 
 ### Completion Notes List
 
 - Story context created and marked ready for development.
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Implemented the between-level save foundation by COMPOSITION: added `RunSnapshot.from_between_level(board_state, streams, options)` (static, data-only) which builds the authoritative Epic 1 `TacticalSnapshot` via `TacticalSnapshot.from_domain()` and embeds it under `RunSnapshot.level_state["tactical_snapshot"]` (stable `RunSnapshot.TACTICAL_SNAPSHOT_KEY`). No tactical board/turn/telegraph/event fields are flattened onto the run save; no parallel scene-owned format was invented (AC1/AC3).
+- Added `RunSnapshot.try_tactical_snapshot()` (+ `has_tactical_snapshot()`): the run-save `parse()` stays lenient for run-level forward-compat, but the embedded tactical payload is re-validated strictly via `TacticalSnapshot.parse()`, so corrupt/missing tactical data is rejected with a structured error (`invalid_tactical_snapshot` / `missing_tactical_snapshot`) and never activated as partial state (AC3).
+- Added the thin `SaveManager.autosave_between_level(snapshot, save_path := SaveRepository.DEFAULT_RUN_PATH)` entry point delegating to the existing atomic `SaveRepository.write_run_snapshot()`; it returns the repository's structured `ActionResult` unchanged (AC1/AC4). `SaveManager`/`GameSession` stay thin; `SaveRepository`, `TacticalSnapshot`, `BoardState`, `GameSession` were reused unchanged.
+- Mapped every AC2 field onto the EXISTING `RunSnapshot` fields including the `is_manual_seed` + `meta_progression_eligible` manual-seed split (manual seed -> `meta_progression_eligible = false`); the removed `manual_seed_eligible_for_progression` field stays absent (AC2).
+- BREAKING (save serialization, pre-1.0, no released saves): made full-64-bit fields int64-lossless across JSON by encoding `RngStreamSet.to_snapshot()` `root_seed` + per-stream `state`, and `RunSnapshot.to_dictionary()` `root_seed`, as decimal STRINGS. `RngStreamSet.try_restore()` and `RunSnapshot.parse()` accept int, integral-float (JSON), or valid int-string. This was REQUIRED: `RandomNumberGenerator.state` is 64-bit and `JSON.stringify`/`parse_string` truncates it (doubles), which silently broke resume determinism and made AC6's reparse impossible (the old strict `is int` check rejected JSON-parsed floats outright). Per-stream `seed` stays an integer (always <= 2^31). Two existing assertions in `test_rng_stream_set.gd`/`test_run_snapshot.gd` were updated to the int64-safe encoding; all malformed-input rejection contracts are preserved.
+- Save assembly is a pure read of domain state: it consumes no RNG draws and mutates nothing (no command execution, enemy-turn resolution, or level/route advancement). Proven by before/after no-mutation assertions on `RunSnapshot`/`BoardState`/`RngStreamSet` for both successful and failed writes.
+- AC4 proven: a forced write failure returns a structured `ActionResult.is_error()` (`save_open_failed` + `path`/`open_error`), leaves domain state unchanged, and preserves a pre-existing valid save file intact (verified the original data — not the failed write — reads back). No-scene-truth serialization verified by reading the persisted JSON and asserting primitives/arrays/dictionaries only with no `Object`/`Node`/`Callable`/`RID`/`res://`/scene/audio/animation/presentation references.
+- Validation: full headless suite 38/38 PASS, exit code 0; `git diff --check` exit 0. All existing Epic 1 + Story 2.1-2.6 tests remain green (including the "ambiguous manual-seed field absent" assertion and the existing repository round-trip + schema-reject tests).
 
 ### File List
+
+- `godot/scripts/save/snapshots/run_snapshot.gd` (modified) — added `TACTICAL_SNAPSHOT_KEY`, `from_between_level()`, `try_tactical_snapshot()`, `has_tactical_snapshot()`, `_domain_event_array()`, `_int64_or_zero()`; encoded `root_seed` as an int64-safe decimal string in `to_dictionary()`/`parse()`; added `BoardState`/`DomainEvent`/`RngStreamSet`/`TacticalSnapshot` preloads.
+- `godot/scripts/core/state/rng_stream_set.gd` (modified) — `to_snapshot()` now encodes `root_seed` + per-stream `state` as int64-safe decimal strings; `try_restore()` accepts int/integral-float/int-string for `root_seed`/`state` (and int/integral-float for `seed`/`draw_index`) via new `_int64_from_value()`/`_is_integral_value()` helpers; preserves no-mutation-on-malformed and existing error codes.
+- `godot/scripts/autoloads/save_manager.gd` (modified) — added the thin `autosave_between_level(snapshot, save_path)` between-level entry point delegating to `SaveRepository.write_run_snapshot()`.
+- `godot/tests/unit/save/test_run_snapshot.gd` (modified) — added between-level composition, AC2 field-contract round-trip, corrupt/missing embedded-tactical reject, manual-seed-no-progression, and full-int64 root-seed round-trip tests; updated the nested RNG `root_seed` assertion to the int64-safe encoding.
+- `godot/tests/unit/save/test_save_repository.gd` (modified) — added AC4 forced-write-failure + no-mutation, original-file-preserved, and `SaveManager.autosave_between_level` delegation tests; hardened cleanup to remove a leftover tmp directory.
+- `godot/tests/unit/core/test_rng_stream_set.gd` (modified) — added a JSON-round-trip-without-precision-loss regression test; updated the snapshot-format assertions to the int64-safe `state`/`root_seed` string encoding.
+- `godot/tests/integration/save/test_between_level_save.gd` (new) — end-to-end assemble -> compose -> write -> read -> reparse round-trip preserving seed/RNG/board/turn fidelity, no-scene-truth serialization inspection, and the AC4 failure-preserves-domain-and-file contract via `SaveManager`.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified) — Story 2.7 status in-progress -> review; `last_updated` refreshed.
+- `_bmad-output/implementation-artifacts/2-7-between-level-save-snapshot-foundation.md` (modified) — task checkboxes, Dev Agent Record, File List, Change Log, Status.
 
 ### Change Log
 
 | Date | Change |
 |---|---|
 | 2026-06-14 | Created Story 2.7 implementation guide (between-level save snapshot foundation) and marked it ready for development. |
+| 2026-06-14 | Implemented between-level save foundation: `RunSnapshot.from_between_level()` composing the Epic 1 `TacticalSnapshot` into `level_state["tactical_snapshot"]`, `RunSnapshot.try_tactical_snapshot()` strict extraction, and the thin `SaveManager.autosave_between_level()` entry point delegating to the existing atomic `SaveRepository`. |
+| 2026-06-14 | Made RNG/run snapshots int64-lossless across JSON (`root_seed` + per-stream `state` encoded as decimal strings; tolerant `try_restore`/`parse`) to fix a determinism-breaking 64-bit precision loss in the save transport that otherwise blocked AC6 reparse. |
+| 2026-06-14 | Added AC1-AC4 + AC6 test coverage (composition/reuse, AC2 field contract, corrupt-embedded reject, structured write-failure + no-mutation + original-file-preserved, no-scene-truth serialization, full round-trip) across `test_run_snapshot.gd`, `test_save_repository.gd`, `test_rng_stream_set.gd`, and the new `tests/integration/save/test_between_level_save.gd`. Full headless suite 38/38 PASS, exit 0. Status -> review. |
