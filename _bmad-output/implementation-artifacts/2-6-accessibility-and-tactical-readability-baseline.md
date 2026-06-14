@@ -6,7 +6,7 @@ source_story_key: 2-6-accessibility-and-tactical-readability-baseline
 
 # Story 2.6: Accessibility and Tactical Readability Baseline
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
