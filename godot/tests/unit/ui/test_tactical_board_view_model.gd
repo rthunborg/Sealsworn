@@ -33,6 +33,7 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	var turn: Dictionary = data.get("turn", {})
 
 	assert_equal(_sorted_keys(data), [
+		"accessibility",
 		"action_availability",
 		"cells",
 		"commit_flow",
@@ -78,6 +79,7 @@ func _view_model_exposes_stable_read_only_board_data() -> void:
 	assert_equal(data.get("inspect"), {}, "Inspect should default to an empty presenter-safe dictionary.")
 	assert_equal(data.get("zoom"), {}, "Zoom should default to an empty presenter-safe dictionary.")
 	assert_equal(data.get("layout"), {}, "Layout should default to an empty presenter-safe dictionary.")
+	assert_equal(data.get("accessibility"), {}, "Accessibility should default to an empty presenter-safe dictionary.")
 	assert_equal((availability.get("move", {}) as Dictionary).get("enabled"), true, "Move availability should reflect the move preview.")
 	assert_equal((availability.get("attack", {}) as Dictionary).get("enabled"), false, "Attack availability should be stable even without an attack preview.")
 	assert_equal((availability.get("confirm", {}) as Dictionary).get("enabled"), true, "Confirm availability should reflect preview commit availability.")
