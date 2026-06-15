@@ -6,7 +6,7 @@ baseline_commit: a0d2b1230063540c583e1376dc8b4d7853e1c1cf
 
 # Story 2.9: Settings and Difficulty Non-Goal Guardrails
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
