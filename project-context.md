@@ -1,7 +1,7 @@
 ---
 project_name: 'Sealsworn'
 user_name: 'Rasmus'
-date: '2026-06-02'
+date: '2026-06-15'
 sections_completed:
   - technology_stack
   - engine_rules
@@ -10,10 +10,14 @@ sections_completed:
   - testing_rules
   - platform_rules
   - anti_patterns
+  - save_serialization_rules
+  - presentation_view_model_rules
+  - settings_rules
 status: 'complete'
-rule_count: 118
+rule_count: 140
 optimized_for_llm: true
 architecture: '_bmad-output/game-architecture.md'
+refreshed_after: 'epic-2'
 ---
 
 # Project Context for AI Agents
@@ -54,6 +58,9 @@ Design guardrails:
 - Prototype: `prototype/` is React/Vite/TypeScript validation evidence only. Production Godot code must not depend on prototype source.
 - AI tooling: GoPeak Godot MCP and Context7 are selected once the Godot project exists; Rasmus also has premium access to Codex, Claude, Claude Design, Google Stitch, Google Gemini, and related tools.
 - Do not use Godot .NET/C# for MVP. Use the standard GDScript build unless architecture is explicitly revised.
+- Project shape (post-Epic 2): main scene is `res://scenes/app/boot.tscn`; viewport is 1080x1920 portrait; renderer is Mobile; `stretch/mode=canvas_items`, `aspect=expand`.
+- Registered autoloads (as of Epic 2): `GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `SettingsManager`, `Diagnostics`. Keep them thin; they delegate gameplay decisions to domain services.
+- `godot` is NOT on the Bash/`where` PATH on this machine; it resolves only as `C:\Users\Rasmus\bin\godot.cmd` via PowerShell. Run the headless test command through PowerShell (`powershell.exe -NoProfile -Command ...`), not the Bash tool's PATH lookup.
 
 ## Critical Implementation Rules
 
@@ -64,7 +71,7 @@ Design guardrails:
 - The scene-independent domain model owns tactical truth: board state, entities, turns, RNG, rules, saves, and run progression.
 - Presentation observes domain state/events and submits commands through a command bridge.
 - Use Godot signals for presentation/UI feedback, not for hidden domain control flow.
-- Keep autoloads thin. Acceptable autoloads: `GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `Diagnostics`. They delegate gameplay decisions to domain services.
+- Keep autoloads thin. Acceptable autoloads: `GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `SettingsManager`, `Diagnostics`. They delegate gameplay decisions to domain services (e.g. `SaveManager.resume_run()` delegates to `RunResumeService`; `SettingsManager` delegates to `SettingsRepository`/`SettingsApplyService`).
 - Do not serialize scene nodes as save-game truth. Save versioned domain snapshots only.
 - Use custom Godot `Resource` assets for typed editor/runtime definitions, mirrored from JSON/CSV source data when useful.
 - Use the Mobile renderer first; keep Compatibility as fallback if low-end device testing demands it.
@@ -90,6 +97,35 @@ Design guardrails:
 - Every AI decision must be explainable with top score, chosen action, and major reasons.
 - Shared tactical query services handle pathfinding, line of sight, threat maps, valid moves, attack previews, and tile scoring.
 
+### Save, Snapshot & Serialization Rules (hardened in Epic 2)
+
+- Snapshots are pure reads. Composing or restoring a snapshot (`RunSnapshot.from_between_level`, `RunResumeService.resume`, `*.to_snapshot`, `try_restore`) must consume NO RNG draws, execute NO commands, advance NO turns, and mutate neither the source domain state nor the save file.
+- JSON numbers are IEEE-754 doubles (52-bit mantissa). Any save field that can exceed 2^53 — notably the RNG `root_seed` and each per-stream `state` — MUST be string-encoded (decimal string) in `to_snapshot()`, or `JSON.stringify`/`parse_string` silently truncates it and breaks resume determinism. Restore must read-tolerate the legacy numeric form (int or integral float) AND the string form. Small bounded fields (per-stream `seed` <= 2^31, `draw_index`) may stay numeric.
+- ALWAYS JSON-round-trip snapshots in tests (`JSON.stringify` then `parse_string`), never assert only on native dictionaries. A latent int64 precision/resume bug survived Epic 1 precisely because tests round-tripped native dicts instead of real JSON.
+- Restore exposes NO partial corrupt state. Each restore step propagates the FIRST validator's structured error verbatim and returns ZERO restored domain objects on failure (the "no partial corrupt state becomes active" guarantee). Restore order for a run: read repository -> strict embedded `TacticalSnapshot.parse` -> `BoardState.try_from_snapshot` -> `RngStreamSet.try_restore`.
+- Route an embedded tactical payload through the STRICT `TacticalSnapshot.parse`, never the lenient run-level `RunSnapshot.parse`. Run-level parse is intentionally forward-compatible for run fields; trusting it for the tactical payload could "restore" a corrupt board into a broken shape.
+- Compose, do not fork. The between-level save embeds the Epic 1 `TacticalSnapshot` under `level_state["tactical_snapshot"]` (`RunSnapshot.TACTICAL_SNAPSHOT_KEY`). Do NOT flatten tactical board/turn/telegraph/event fields onto the run save or invent a parallel scene-owned tactical save format.
+- RNG authority on resume is the run-level `RunSnapshot.rng_streams`. At a between-level boundary it equals the embedded tactical `rng_streams` by construction (both written from one `streams.to_snapshot()` read); a test asserts that equality. Restore the run-level streams as the live gameplay streams.
+- Repositories own atomic writes: write to `<path>.tmp`, then backup/replace via `DirAccess.rename_absolute` with `<path>.bak` rollback. Run autosave is `user://run_autosave.json` (`SaveRepository`); settings are `user://settings.json` (`SettingsRepository`). The two files and their repositories are strictly independent — neither reads, writes, truncates, or renames the other.
+- Read errors are structured `ActionResult` codes (`save_not_found`, `save_open_failed`, `save_parse_failed`, `unsupported_save_schema`, `invalid_tactical_snapshot`, `invalid_rng_snapshot`), not exceptions. Schema-version changes need migration tests.
+- Exercising the real parse-failure path emits one expected `ERROR: Parse JSON failed` line to stderr (Godot's `JSON.parse_string` on deliberate non-JSON bytes). The test still passes and the runner exits 0 — do NOT read that stderr diagnostic as a suite failure.
+
+### Presentation, View-Model & Accessibility Rules (Epic 2)
+
+- Presentation reads domain via semantic view models and submits commands through the command bridge (`scripts/ui/command_bridge/`). View models never own domain truth; they project it.
+- `TacticalBoardViewModel.to_dictionary()` has an EXACT sorted-key contract pinned by `test_tactical_board_view_model.gd` (16 keys post-Epic-2, including `layout` and `accessibility`, each defaulting to `{}`). Adding a slot must intentionally bump that assertion — never let a key appear or vanish silently.
+- Adaptive layout is a testable SEMANTIC profile first: `TacticalLayoutProfile` plus the sanitized `TacticalBoardViewModel.layout` slot prove the contract scene-free. Build the `Control`/scene presenter (`scripts/ui/presenters/`, `scenes/ui/layouts/<profile>/`) only in a later HUD story. Touch targets stay >= 44px; slots that cannot fit honestly report `reachable: false` rather than overflowing.
+- Accessibility is color-INDEPENDENT and audio-absent-equivalent: every committed-action cue must have a visual + textual equivalent that holds with audio off. Preserve the `feedback_preview` (pre-commit, attack-only) vs `feedback_committed` (post-result) distinction; do not collapse them. `AttackPreviewContractMatrix` (`tests/fixtures/tactical/`) is the canonical driver for the color-independence / cue audit — extend it when adding cue vocabulary so no preview ships without an accessibility mapping.
+- `TacticalAccessibilityModel` is NOT a settings store; it derives cues from tactical state. Settings holds only the boolean preference (`colorblind_safe`, `high_contrast`) and hands it to this layer at the presenter boundary.
+
+### Settings & Preferences Rules (Epic 2)
+
+- Settings are SAFE preferences only: text scale, master volume / mute, an input-scheme preference, and presentation-hint accessibility toggles. They persist to their own `user://settings.json` via `SettingsRepository` and are NEVER folded into the run autosave or any tactical/RNG/progression state. Future preference work belongs in `scripts/settings/`.
+- Loading settings must NEVER hard-block the player at boot. Read policy: missing file (first launch) -> `defaults()` as SUCCESS; unreadable/malformed JSON -> `defaults()` as SUCCESS with a `recovered` diagnostic; schema-version mismatch -> structured `unsupported_settings_schema` error (incompatible build, surfaced not silently overwritten). `SettingsManager._ready()` catches errors and keeps in-memory defaults.
+- `SettingsSnapshot.parse` is strict-on-schema, lenient-on-fields: every field is coerced/clamped to named bounds/defaulted; each field's sanitization lives in exactly one helper. Reuse the canonical `TacticalTextScale` clamp rather than writing a second one. Small bounded floats (volume dB) round-trip exactly through JSON; no int64-string encoding needed there.
+- Immediate-apply is presentation-only (`SettingsApplyService`): it drives the audio Master bus and surfaces a clamped text-scale presenter hint. Applying ANY preference must leave board/RNG snapshots byte-identical — no command, no RNG draw, no tactical/reward/progression mutation. Guard a missing audio Master bus so headless apply never crashes.
+- DIFFICULTY IS A HARD NON-GOAL. Sealsworn has NO player-selectable difficulty tiers. No setting (and nothing in `PREFERENCE_KEYS`) may scale enemy stats, HP, damage, reward rates, RNG, or run length. MVP difficulty comes from run depth, enemy patterns, affinity pressure, elite nodes, risk rewards, attrition, and boss prep; post-MVP challenge is explicit variant/trial/oath content, never a generic difficulty ladder. A regression test enforces the absence of difficulty keys — do not add one.
+
 ### Performance Rules
 
 - Generated level load target: under 3 seconds for MVP.
@@ -106,9 +142,10 @@ Design guardrails:
 
 - Production Godot files live under `godot/`. Do not mix production implementation into `prototype/`.
 - Use the architecture-defined roots: `scripts/`, `scenes/`, `assets/`, `data/`, `tests/`, `tools/`.
-- Organize scripts by domain: `core`, `tactical`, `rules`, `generation`, `ai`, `content`, `save`, `ui`, `platform`, `diagnostics`, `utils`.
-- Keep `scripts/tactical/`, `scripts/rules/`, `scripts/generation/`, `scripts/ai/`, and `scripts/save/` independent of scene nodes for authoritative logic.
-- UI logic lives in `scripts/ui/view_models/` and `scripts/ui/presenters/`; layout scenes live in `scenes/ui/layouts/`.
+- Organize scripts by domain: `core`, `tactical`, `rules`, `generation`, `ai`, `content`, `save`, `settings`, `ui`, `platform`, `diagnostics`, `utils`. Autoload scripts live in `scripts/autoloads/`.
+- Keep `scripts/tactical/`, `scripts/rules/`, `scripts/generation/`, `scripts/ai/`, `scripts/save/`, and `scripts/settings/` independent of scene nodes for authoritative/data logic (they are `RefCounted` services + DTOs, not Nodes).
+- UI logic lives in `scripts/ui/view_models/` (semantic view models like `TacticalBoardViewModel`, `TacticalLayoutProfile`, `TacticalAccessibilityModel`), `scripts/ui/command_bridge/`, and `scripts/ui/presenters/`; layout scenes live in `scenes/ui/layouts/`.
+- Player-preference code lives in `scripts/settings/` (`SettingsSnapshot`, `SettingsRepository`, `SettingsApplyService`). NEVER fold preferences into the run snapshot or any tactical/save state.
 - Static content source lives in `data/source/`; typed Godot resource mirrors live in `data/resources/`.
 - Editable asset source files, prompts, provenance, and reviews live in `asset_sources/`, not `godot/assets/`.
 - Runtime-ready art/audio/fonts/shaders live in `godot/assets/`.
@@ -139,6 +176,8 @@ Design guardrails:
 - Repository layers need tests or checks preventing direct gameplay file access.
 - UI command integration tests should verify view models and command bridge behavior without making UI own domain truth.
 - Headless simulation tests must run without rendering, audio, UI scenes, or presentation nodes.
+- The headless runner (`tests/headless/test_runner.gd`) auto-discovers and sorts `test_*.gd` under `res://tests/unit` and `res://tests/integration` only; it exits with the failure count. Put new tests there (mirroring the domain), not under `tests/headless` or `tests/fixtures`. Run the full suite via PowerShell: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`.
+- Save/snapshot tests MUST exercise a real JSON round-trip (`JSON.stringify` -> `parse_string`), not just native-dict equality; assert that restored RNG streams reproduce the exact next draw. Cover malformed-input rejection paths and assert no partial state is exposed on failure.
 - Human playtests remain required for feel, readability, frustration, and excitement.
 
 ### Platform & Build Rules
@@ -177,6 +216,12 @@ Design guardrails:
 - Do not accept generated/AI-assisted content into production without validation and human approval.
 - Do not let debug/manual-seed actions grant progression unless explicitly approved by release policy.
 - Do not start implementation with UI-heavy scenes before the domain model, commands/events, RNG streams, and tactical board tests exist.
+- Do not persist a full-64-bit save field (RNG `root_seed`/`state`) as a raw JSON number; string-encode it or lose precision beyond 2^53.
+- Do not fold player preferences into the run save, and do not let `SettingsRepository` touch the run autosave (or vice versa).
+- Do not add any player-selectable difficulty tier or any setting that scales enemy stats/HP/damage/rewards/RNG/run length (hard non-goal).
+- Do not let a snapshot compose/restore consume RNG draws or mutate source state; keep it a pure read.
+- Do not activate partial restored state on a validation failure; propagate the first error and return nothing.
+- Do not change `TacticalBoardViewModel.to_dictionary()`'s key set without intentionally updating its exact sorted-key assertion.
 
 ---
 
@@ -198,4 +243,4 @@ For humans:
 - Remove rules that become obvious or obsolete.
 - Treat `_bmad-output/game-architecture.md` as the full source of truth and this file as the compact agent handoff.
 
-Last Updated: 2026-06-02
+Last Updated: 2026-06-15 (refreshed after Epic 2: presentation/view-model contracts, between-level save + resume serialization hardening, settings/preferences isolation, difficulty non-goal)
