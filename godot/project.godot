@@ -16,6 +16,7 @@ GameSession="*res://scripts/autoloads/game_session.gd"
 SceneManager="*res://scripts/autoloads/scene_manager.gd"
 SaveManager="*res://scripts/autoloads/save_manager.gd"
 AudioManager="*res://scripts/autoloads/audio_manager.gd"
+SettingsManager="*res://scripts/autoloads/settings_manager.gd"
 Diagnostics="*res://scripts/autoloads/diagnostics.gd"
 
 [display]
