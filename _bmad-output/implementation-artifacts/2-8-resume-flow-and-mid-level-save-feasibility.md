@@ -6,7 +6,7 @@ baseline_commit: 976760c1e960dc8c57b679106b5ceb882585be50
 
 # Story 2.8: Resume Flow and Mid-Level Save Feasibility
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
