@@ -138,6 +138,11 @@ func _between_level_composes_tactical_snapshot_into_level_state() -> void:
 	var extracted_snapshot: TacticalSnapshot = extracted.metadata.get("snapshot")
 	assert_equal(extracted_snapshot.turn_state.get("turn_number"), 3, "Extracted tactical snapshot should preserve embedded turn state.")
 
+	# RNG authority (Story 2.7 defer, closed in Story 2.8): the run-level rng_streams must equal the
+	# embedded tactical rng_streams for a between-level save (both are one streams.to_snapshot() read
+	# at the boundary). Guard the equality so a future refactor cannot let them silently diverge.
+	assert_equal(snapshot.rng_streams, extracted_snapshot.rng_streams, "Run-level rng_streams must equal embedded tactical rng_streams at the between-level boundary.")
+
 
 # AC2: every AC2-required field round-trips, future fields stay empty/nullable, no surprise keys.
 func _between_level_field_contract_round_trips_with_no_surprise_fields() -> void:
