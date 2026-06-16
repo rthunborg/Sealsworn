@@ -33,6 +33,7 @@ func run() -> Dictionary:
 	_entrance_and_exit_are_distinct_and_never_walls()
 	_blockers_never_land_on_entrance_or_exit()
 	_central_corridor_is_blocker_free_and_walkable()
+	_layout_now_places_required_wrinkles()
 	_non_medium_recipe_is_rejected_structurally()
 	_null_inputs_are_rejected_structurally()
 	_approved_layout_passes_readability_validation()
@@ -40,6 +41,7 @@ func run() -> Dictionary:
 	_unreachable_exit_candidate_is_rejected_with_diagnostics()
 	_unreadable_first_reveal_candidate_is_rejected_with_diagnostics()
 	_validate_readability_rejects_malformed_shape()
+	_validate_readability_rejects_short_row()
 	_build_board_snapshot_rejects_malformed_shape()
 	_board_round_trip_matches_acceptance_criteria()
 	_payload_survives_real_json_transport()
@@ -248,6 +250,27 @@ func _central_corridor_is_blocker_free_and_walkable() -> void:
 			assert_false(int(row[x]) == BoardCell.Terrain.WALL, "The central corridor (row %d, x=%d) must be free of walls so entrance can reach exit (seed %d)." % [corridor_row, x, seed_value])
 
 
+func _layout_now_places_required_wrinkles() -> void:
+	# Story 3.4: the Medium layout now PLACES at least min_tactical_wrinkles readable wrinkles (3.3
+	# placed NONE). Each placed kind is recorded and is a subset of the recipe allowlist; the
+	# reward_behind_danger kind (in the allowlist but entity-backed) is NEVER realized this story.
+	# (Exhaustive AC1/AC2/AC3 wrinkle coverage lives in test_tactical_wrinkle_placement.gd.)
+	var recipe: LevelRecipeDefinition = _medium_recipe()
+	var allowed: Dictionary = {}
+	for kind: StringName in recipe.allowed_wrinkle_kinds:
+		allowed[String(kind)] = true
+	for seed_value: int in [1, 2, 3, 1001, 4004, 5005]:
+		var layout: Dictionary = _generate(seed_value, recipe)
+		var wrinkles: Array = layout.get("wrinkle_kinds")
+		assert_true(
+			wrinkles.size() >= recipe.min_tactical_wrinkles,
+			"Story 3.4: a Medium combat layout must now place at least min_tactical_wrinkles (%d) wrinkles (seed %d placed %d)." % [recipe.min_tactical_wrinkles, seed_value, wrinkles.size()]
+		)
+		for kind_value: Variant in wrinkles:
+			assert_true(allowed.has(String(kind_value)), "Story 3.4: a placed wrinkle kind '%s' must be in the recipe allowlist (seed %d)." % [String(kind_value), seed_value])
+			assert_false(String(kind_value) == "reward_behind_danger", "Story 3.4: reward_behind_danger is not realized this story (Story 3.5 owns reward entities) (seed %d)." % seed_value)
+
+
 func _non_medium_recipe_is_rejected_structurally() -> void:
 	var small_recipe: LevelRecipeDefinition = LevelRecipeRepository.create_baseline_repository().get_recipe(&"small_combat_basic")
 	var request: GenerationRequest = _request(1)
@@ -269,6 +292,9 @@ func _null_inputs_are_rejected_structurally() -> void:
 func _approved_layout_passes_readability_validation() -> void:
 	# AC2: a generated (approved-seed) Medium layout PASSES all three readability checks — the
 	# rejection paths are exercised by deliberately-malformed candidates below, not by approved seeds.
+	# Story 3.4 note: these generated layouts now carry placed wrinkle cells (WALL structure + HAZARD),
+	# so this also confirms wrinkles do NOT push an approved layout over the 0.35 interior-WALL bound or
+	# break entrance->exit reachability.
 	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
 	for seed_value: int in [1001, 2002, 3003, 4004, 5005, 12345]:
 		var layout: Dictionary = _generate(seed_value)
@@ -359,6 +385,29 @@ func _validate_readability_rejects_malformed_shape() -> void:
 	var validation: ActionResult = generator.validate_readability(malformed)
 	assert_true(validation.is_error(), "A malformed-shape layout must be rejected by validate_readability, not crash.")
 	assert_equal(validation.error_code, &"invalid_layout_shape", "A malformed-shape layout must use the invalid_layout_shape code.")
+
+
+func _validate_readability_rejects_short_row() -> void:
+	# Story 3.4 (closes the 3-3-deferred Low): validate_readability now guards each inner row's width,
+	# symmetric to build_board_snapshot. A hand-built candidate with the right row COUNT but one short
+	# row is rejected with a structured invalid_layout_shape rather than indexing out of bounds.
+	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
+	var terrain_grid: Array = _open_terrain_grid()
+	# Truncate the last interior row so its width != MEDIUM_WIDTH (right row count, short row).
+	var short_row: Array = (terrain_grid[MEDIUM_HEIGHT - 2] as Array).slice(0, MEDIUM_WIDTH - 1)
+	terrain_grid[MEDIUM_HEIGHT - 2] = short_row
+	var layout: Dictionary = {
+		"width": MEDIUM_WIDTH,
+		"height": MEDIUM_HEIGHT,
+		"entrance": {"x": 1, "y": MEDIUM_HEIGHT / 2},
+		"exit": {"x": MEDIUM_WIDTH - 2, "y": MEDIUM_HEIGHT / 2},
+		"blockers": [],
+		"terrain": terrain_grid
+	}
+	var validation: ActionResult = generator.validate_readability(layout)
+	assert_true(validation.is_error(), "A short-row candidate must be rejected by validate_readability, not crash.")
+	assert_equal(validation.error_code, &"invalid_layout_shape", "A short-row candidate must use the invalid_layout_shape code.")
+	assert_true(validation.metadata.has("row_index"), "The short-row rejection should report the offending row index.")
 
 
 func _build_board_snapshot_rejects_malformed_shape() -> void:

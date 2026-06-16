@@ -30,11 +30,21 @@ extends RefCounted
 #   2. blocker_position: blocker_count draws, each a draw_layout_int over the *current* candidate
 #                        list index (rejection-free shrinking pool). Each picked cell is removed
 #                        from the candidate pool before the next draw so positions never collide.
+#   3. wrinkle_kind    : (Story 3.4) min_tactical_wrinkles draws selecting a wrinkle kind from the
+#                        recipe allowlist filtered to the v0-realizable subset (see
+#                        TacticalWrinklePlacer). APPENDED after the blocker draws so existing blocker
+#                        behaviour is preserved.
+#   4. wrinkle_position: (Story 3.4) one draw per required wrinkle over the *remaining* candidate pool
+#                        (the blocker pool after blockers were removed), so a wrinkle cell never
+#                        collides with a blocker or another wrinkle cell.
 #
-# SCOPE (Story 3.2 ONLY): floor + wall(blocker) + entrance + exit on a Small board. NO Medium
-# layouts (3.3), NO HAZARD terrain / doors / wrinkles (3.4), NO enemies/rewards (3.5 — entities[]
-# stays EMPTY), NO formal reachability validator + retry (3.6 — only the minimal fairness guardrail
-# below), NO manual-seed/batch CLI (3.7). difficulty_band is NOT a layout input (hard non-goal).
+# SCOPE (Stories 3.2 + 3.4): floor + wall(blocker) + entrance + exit on a Small board, PLUS
+# deterministic tactical-wrinkle placement (Story 3.4): choke_point / blocker_cluster realized as
+# interior WALL structure (small_combat_basic's allowed kinds). NO Medium layouts (3.3), NO
+# enemies/rewards (3.5 — entities[] stays EMPTY), NO formal reachability validator + retry (3.6 —
+# only the minimal fairness guardrail below), NO manual-seed/batch CLI (3.7). hazard / flank_route are
+# realizable kinds but are NOT in the Small recipe's allowlist, so Small never emits HAZARD this story.
+# difficulty_band is NOT a layout input (hard non-goal).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
@@ -42,6 +52,7 @@ const GenerationRequest = preload("res://scripts/generation/level/generation_req
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const TacticalWrinklePlacer = preload("res://scripts/generation/level/tactical_wrinkle_placer.gd")
 
 # Small v0 dimensions. The recipe size class is the source of size; a fixed 8x8 is acceptable for
 # Small v0 (story 3.2.2). The size is NOT jittered this story: a fixed footprint keeps the entrance
@@ -100,8 +111,24 @@ func generate_layout(request: GenerationRequest, recipe: LevelRecipeDefinition, 
 	if blockers_result.is_error():
 		return blockers_result
 	var blocker_cells: Array[Vector2i] = blockers_result.metadata.get("blocker_cells")
+	# The candidate pool AFTER the blockers were removed — wrinkle cells draw from this remaining pool
+	# so a wrinkle never collides with a blocker (and the corridor/entrance/exit are already excluded).
+	var remaining_pool: Array[Vector2i] = blockers_result.metadata.get("remaining_pool")
 
-	var layout: Dictionary = _build_layout(width, height, entrance, exit_cell, blocker_cells)
+	# FIXED DRAW #3..#4: tactical-wrinkle placement (Story 3.4). Appended after the blocker draws via
+	# the shared TacticalWrinklePlacer so both generators stay siblings. For small_combat_basic this
+	# places min_tactical_wrinkles (1) WALL-structure wrinkles (choke_point / blocker_cluster).
+	var wrinkles_result: ActionResult = TacticalWrinklePlacer.place_wrinkles(
+		request, streams, recipe, remaining_pool, "small_layout"
+	)
+	if wrinkles_result.is_error():
+		return wrinkles_result
+	# Untyped Array (not Array[Dictionary]): metadata is deep-copied through ActionResult.ok, which
+	# returns a plain Array; re-narrowing to Array[Dictionary] would fail the strict assignment. Each
+	# element is still a Dictionary (the placer guarantees that) and is iterated as one in _build_layout.
+	var wrinkles: Array = wrinkles_result.metadata.get("wrinkles")
+
+	var layout: Dictionary = _build_layout(width, height, entrance, exit_cell, blocker_cells, wrinkles)
 	return ActionResult.ok([], {"layout": layout})
 
 
@@ -229,33 +256,55 @@ func _draw_blocker_cells(request: GenerationRequest, streams: RngStreamSet, cand
 		var picked_index: int = int(draw.metadata.get("value"))
 		chosen.append(pool[picked_index])
 		pool.remove_at(picked_index)
-	return ActionResult.ok([], {"blocker_cells": chosen})
+	# Return the remaining pool so the wrinkle placer can draw from the SAME shrinking candidate set
+	# (corridor/entrance/exit already excluded), guaranteeing wrinkles never overlap blockers.
+	return ActionResult.ok([], {"blocker_cells": chosen, "remaining_pool": pool})
 
 
-func _build_layout(width: int, height: int, entrance: Vector2i, exit_cell: Vector2i, blocker_cells: Array[Vector2i]) -> Dictionary:
+func _build_layout(width: int, height: int, entrance: Vector2i, exit_cell: Vector2i, blocker_cells: Array[Vector2i], wrinkles: Array) -> Dictionary:
 	var blocker_lookup: Dictionary = {}
 	for cell: Vector2i in blocker_cells:
 		blocker_lookup[cell] = true
 
-	# Row-major terrain grid. Border ring = WALL; interior = FLOOR except entrance/exit/blockers.
-	# Interior blockers are WALL terrain (BoardCell treats WALL as both movement- and LoS-blocking,
-	# so an interior WALL IS the AC1 "blocker" — no new terrain value is introduced; HAZARD is 3.4).
+	# Wrinkle terrain overlay (Story 3.4): cell -> terrain value. Wrinkle cells come from the
+	# blocker-free remaining pool (corridor/entrance/exit already excluded), so they never overwrite
+	# the entrance/exit/blockers/corridor. WALL-structure wrinkles add interior WALL; a hazard wrinkle
+	# (not used by the Small recipe) would add HAZARD terrain.
+	var wrinkle_terrain: Dictionary = {}
+	for wrinkle: Dictionary in wrinkles:
+		wrinkle_terrain[wrinkle.get("cell")] = int(wrinkle.get("terrain"))
+
+	# Row-major terrain grid. Border ring = WALL; interior = FLOOR except entrance/exit/blockers and
+	# wrinkle cells. Interior blockers are WALL terrain (BoardCell treats WALL as both movement- and
+	# LoS-blocking). Structural wrinkles are also WALL; a hazard wrinkle is HAZARD (walkable).
 	var terrain_grid: Array = []
 	for y: int in range(height):
 		var row: Array = []
 		for x: int in range(width):
 			var cell: Vector2i = Vector2i(x, y)
-			row.append(_terrain_for_cell(cell, width, height, entrance, exit_cell, blocker_lookup))
+			row.append(_terrain_for_cell(cell, width, height, entrance, exit_cell, blocker_lookup, wrinkle_terrain))
 		terrain_grid.append(row)
 
 	var blocker_list: Array = []
 	# Emit blockers in a stable row-major order (NOT draw order) so the serialized payload is
 	# canonical and diff-friendly; the layout itself is already fully determined by draw order.
+	# Wrinkle cells are NOT blockers — they are tracked separately (see wrinkle_records) so the
+	# blocker budget diagnostic stays meaningful.
 	for y: int in range(height):
 		for x: int in range(width):
 			var cell: Vector2i = Vector2i(x, y)
 			if blocker_lookup.has(cell):
 				blocker_list.append({"x": x, "y": y})
+
+	# Compact wrinkle record (in placement / draw order): kind + cell. AC1 requires the placed wrinkle
+	# KINDS to be recorded in diagnostics; the layout carries the record and the LevelGenerator lifts
+	# the kinds + count into the success diagnostics.
+	var wrinkle_records: Array = []
+	var wrinkle_kinds: Array = []
+	for wrinkle: Dictionary in wrinkles:
+		var cell: Vector2i = wrinkle.get("cell")
+		wrinkle_records.append({"kind": String(wrinkle.get("kind")), "x": cell.x, "y": cell.y})
+		wrinkle_kinds.append(String(wrinkle.get("kind")))
 
 	return {
 		"width": width,
@@ -263,11 +312,13 @@ func _build_layout(width: int, height: int, entrance: Vector2i, exit_cell: Vecto
 		"entrance": {"x": entrance.x, "y": entrance.y},
 		"exit": {"x": exit_cell.x, "y": exit_cell.y},
 		"blockers": blocker_list,
+		"wrinkles": wrinkle_records,
+		"wrinkle_kinds": wrinkle_kinds,
 		"terrain": terrain_grid
 	}
 
 
-func _terrain_for_cell(cell: Vector2i, width: int, height: int, entrance: Vector2i, exit_cell: Vector2i, blocker_lookup: Dictionary) -> int:
+func _terrain_for_cell(cell: Vector2i, width: int, height: int, entrance: Vector2i, exit_cell: Vector2i, blocker_lookup: Dictionary, wrinkle_terrain: Dictionary) -> int:
 	if cell == entrance:
 		return BoardCell.Terrain.ENTRANCE
 	if cell == exit_cell:
@@ -276,4 +327,6 @@ func _terrain_for_cell(cell: Vector2i, width: int, height: int, entrance: Vector
 		return BoardCell.Terrain.WALL
 	if blocker_lookup.has(cell):
 		return BoardCell.Terrain.WALL
+	if wrinkle_terrain.has(cell):
+		return int(wrinkle_terrain[cell])
 	return BoardCell.Terrain.FLOOR

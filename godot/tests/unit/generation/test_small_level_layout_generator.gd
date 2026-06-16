@@ -26,6 +26,7 @@ func run() -> Dictionary:
 	_entrance_and_exit_are_distinct_and_never_walls()
 	_blockers_never_land_on_entrance_or_exit()
 	_central_corridor_is_blocker_free_and_walkable()
+	_layout_now_places_required_wrinkles()
 	_non_small_recipe_is_rejected_structurally()
 	_null_inputs_are_rejected_structurally()
 	_board_round_trip_matches_acceptance_criteria_2()
@@ -233,6 +234,27 @@ func _central_corridor_is_blocker_free_and_walkable() -> void:
 		var row: Array = terrain_grid[corridor_row]
 		for x: int in range(int(entrance.get("x")), int(exit_cell.get("x")) + 1):
 			assert_false(int(row[x]) == BoardCell.Terrain.WALL, "The central corridor (row %d, x=%d) must be free of walls so entrance can reach exit (seed %d)." % [corridor_row, x, seed_value])
+
+
+func _layout_now_places_required_wrinkles() -> void:
+	# Story 3.4: the Small layout now PLACES at least min_tactical_wrinkles readable wrinkles (3.2 placed
+	# NONE). Each placed kind is recorded in the layout and is a subset of the recipe allowlist; for
+	# small_combat_basic (allowlist choke_point + blocker_cluster, both WALL-realized) the wrinkles are
+	# never HAZARD. (Exhaustive AC1/AC2/AC3 wrinkle coverage lives in test_tactical_wrinkle_placement.gd.)
+	var recipe: LevelRecipeDefinition = _small_recipe()
+	var allowed: Dictionary = {}
+	for kind: StringName in recipe.allowed_wrinkle_kinds:
+		allowed[String(kind)] = true
+	for seed_value: int in [1, 2, 3, 1001, 5005]:
+		var layout: Dictionary = _generate(seed_value, recipe)
+		var wrinkles: Array = layout.get("wrinkle_kinds")
+		assert_true(
+			wrinkles.size() >= recipe.min_tactical_wrinkles,
+			"Story 3.4: a Small combat layout must now place at least min_tactical_wrinkles (%d) wrinkles (seed %d placed %d)." % [recipe.min_tactical_wrinkles, seed_value, wrinkles.size()]
+		)
+		for kind_value: Variant in wrinkles:
+			assert_true(allowed.has(String(kind_value)), "Story 3.4: a placed wrinkle kind '%s' must be in the recipe allowlist (seed %d)." % [String(kind_value), seed_value])
+			assert_false(String(kind_value) == "hazard", "Story 3.4: small_combat_basic does not allow hazard, so the Small layout must never place one (seed %d)." % seed_value)
 
 
 func _non_small_recipe_is_rejected_structurally() -> void:

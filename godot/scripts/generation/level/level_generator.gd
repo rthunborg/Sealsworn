@@ -117,11 +117,15 @@ static func _run_small_layout_phase(request: GenerationRequest, recipe: LevelRec
 		"recipe_id": String(recipe.recipe_id),
 		"level_seed": seed_text
 	}
+	# AC1 (Story 3.4): the placed tactical-wrinkle kinds + count ride the success diagnostics alongside
+	# the existing keys (the layout records them during construction). Compact: kinds + count only.
 	return GenerationResult.ok(payload, {
 		"phase": String(GenerationResult.PHASE_LAYOUT),
 		"recipe_id": String(recipe.recipe_id),
 		"size_class": String(recipe.size_class),
-		"blocker_count": layout.get("blockers").size()
+		"blocker_count": layout.get("blockers").size(),
+		"wrinkles": (layout.get("wrinkle_kinds", []) as Array).duplicate(),
+		"wrinkle_count": (layout.get("wrinkle_kinds", []) as Array).size()
 	})
 
 
@@ -184,11 +188,15 @@ static func _run_medium_layout_phase(request: GenerationRequest, recipe: LevelRe
 	}
 	# A successful Medium generation passed both the layout phase and the AC2 readability pass; report
 	# the validation phase as the best descriptor of a fully-checked Medium level.
+	# AC1 (Story 3.4): the placed tactical-wrinkle kinds + count ride the success diagnostics alongside
+	# the existing keys (the layout records them during construction). Compact: kinds + count only.
 	return GenerationResult.ok(payload, {
 		"phase": String(GenerationResult.PHASE_VALIDATION),
 		"recipe_id": String(recipe.recipe_id),
 		"size_class": String(recipe.size_class),
-		"blocker_count": layout.get("blockers").size()
+		"blocker_count": layout.get("blockers").size(),
+		"wrinkles": (layout.get("wrinkle_kinds", []) as Array).duplicate(),
+		"wrinkle_count": (layout.get("wrinkle_kinds", []) as Array).size()
 	})
 
 
