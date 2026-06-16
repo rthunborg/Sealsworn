@@ -5,10 +5,12 @@ const GenerationResult = preload("res://scripts/generation/level/generation_resu
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 
 func run() -> Dictionary:
-	_known_recipe_resolves_to_success_placeholder()
-	_success_payload_is_clearly_marked_placeholder()
+	_known_small_recipe_returns_real_layout_payload()
+	_small_payload_carries_validated_board_not_placeholder()
+	_medium_recipe_resolves_without_layout_marked_pending()
 	_unknown_recipe_returns_structured_recipe_phase_error()
 	_invalid_request_returns_structured_recipe_phase_error()
 	_null_repository_returns_structured_error_without_crash()
@@ -33,20 +35,50 @@ func _valid_request(recipe_id: StringName = &"small_combat_basic", size_class: S
 	)
 
 
-func _known_recipe_resolves_to_success_placeholder() -> void:
+func _known_small_recipe_returns_real_layout_payload() -> void:
+	# Story 3.2 fills the GenerationResult.payload slot that 3.1 left empty: a Small recipe now
+	# returns a REAL generated layout payload (board snapshot + entrance/exit/size_class/recipe_id),
+	# fired against the layout phase — not the obsolete 3.1 {placeholder: true} payload.
 	var result_value: GenerationResult = LevelGenerator.generate(_valid_request(), _repository())
 
-	assert_true(result_value.succeeded, "A known recipe should resolve to a successful generation result. Error: %s" % result_value.diagnostics)
-	assert_true(result_value.has_payload(), "A successful recipe selection should return a placeholder payload.")
-	assert_equal(result_value.payload.get("recipe_id"), "small_combat_basic", "Placeholder payload should echo the resolved recipe id.")
-	assert_equal(result_value.payload.get("size_class"), "small", "Placeholder payload should echo the resolved size class.")
+	assert_true(result_value.succeeded, "A known Small recipe should resolve to a successful generation result. Error: %s" % result_value.diagnostics)
+	assert_true(result_value.has_payload(), "A successful Small generation should return a real layout payload.")
+	assert_false(result_value.payload.get("placeholder", false), "The 3.2 Small payload must NOT be a placeholder.")
+	assert_equal(result_value.payload.get("recipe_id"), "small_combat_basic", "Layout payload should echo the resolved recipe id.")
+	assert_equal(result_value.payload.get("size_class"), "small", "Layout payload should echo the resolved size class.")
+	assert_equal(result_value.payload.get("level_seed"), "1234", "Layout payload should carry the level seed string for traceability.")
+	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_LAYOUT), "A Small generation should report the layout phase.")
 
 
-func _success_payload_is_clearly_marked_placeholder() -> void:
+func _small_payload_carries_validated_board_not_placeholder() -> void:
 	var result_value: GenerationResult = LevelGenerator.generate(_valid_request(), _repository())
-	# 3.1 returns a placeholder ONLY; layout/snapshot conversion belongs to 3.2+.
-	assert_true(result_value.payload.get("placeholder", false), "The 3.1 payload must be clearly marked as a placeholder (no real layout yet).")
-	assert_false(result_value.payload.has("board"), "The 3.1 placeholder payload must not contain a generated board.")
+	# The payload board converts through the STRICT BoardState.try_from_snapshot path.
+	assert_true(result_value.payload.has("board"), "The Small layout payload must contain a generated board snapshot.")
+	var board_snapshot: Dictionary = result_value.payload.get("board")
+	var restore_result = BoardState.try_from_snapshot(board_snapshot)
+	assert_true(restore_result.succeeded, "The payload board must restore through the strict BoardState validator. Error: %s" % restore_result.metadata)
+	var board = restore_result.metadata.get("board")
+	assert_equal(board.width, 8, "Small layout board should be 8 wide (Small v0).")
+	assert_equal(board.height, 8, "Small layout board should be 8 tall (Small v0).")
+	assert_equal(board.entity_count(), 0, "Story 3.2 generated boards carry no entities (enemy/reward placement is Story 3.5).")
+	# Payload must survive the REAL JSON transport, not just native dicts (Epic 3 retro / 1.x lesson).
+	var json_payload = JSON.parse_string(JSON.stringify(result_value.payload))
+	assert_true(json_payload is Dictionary, "The layout payload must survive a JSON stringify/parse round-trip.")
+	var json_restore = BoardState.try_from_snapshot(json_payload.get("board"))
+	assert_true(json_restore.succeeded, "The JSON-round-tripped payload board must still restore through the strict validator.")
+
+
+func _medium_recipe_resolves_without_layout_marked_pending() -> void:
+	# Story 3.2 is Small-ONLY. A Medium recipe resolves successfully but carries NO layout yet
+	# (Story 3.3 owns Medium) and is marked layout_pending so it is not mistaken for a finished level.
+	var result_value: GenerationResult = LevelGenerator.generate(
+		_valid_request(&"medium_combat_basic", GenerationRequest.SIZE_MEDIUM),
+		_repository()
+	)
+	assert_true(result_value.succeeded, "A Medium recipe should still resolve successfully (no crash).")
+	assert_true(result_value.payload.get("layout_pending", false), "A Medium recipe payload must be marked layout_pending this story.")
+	assert_false(result_value.payload.has("board"), "A Medium recipe must NOT produce a generated board this story.")
+	assert_equal(result_value.payload.get("size_class"), "medium", "A Medium recipe payload should echo the medium size class.")
 
 
 func _unknown_recipe_returns_structured_recipe_phase_error() -> void:

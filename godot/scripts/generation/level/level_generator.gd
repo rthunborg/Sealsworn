@@ -2,17 +2,22 @@ class_name LevelGenerator
 extends RefCounted
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const GenerationRequest = preload("res://scripts/generation/level/generation_request.gd")
 const GenerationResult = preload("res://scripts/generation/level/generation_result.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_level_layout_generator.gd")
 
-# Minimal recipe-selection seam for Epic 3. This is the entry point Stories 3.2-3.6 extend into
-# the full phased generator (layout -> pathing -> blockers -> hazards -> enemies -> rewards ->
-# affinity -> validation -> final snapshot). This story only fires the `recipe` phase: it
-# validates the request, resolves the recipe THROUGH the repository boundary (AC3 — no raw file
-# read, no hardcoded source), and returns a clearly-marked placeholder payload or a structured
-# GenerationResult.error. NO real layout/snapshot is produced here.
+# Phased generation entry point for Epic 3. Stories 3.2-3.6 extend it into the full pipeline
+# (route -> recipe -> layout -> pathing -> blockers -> hazards -> enemies -> rewards -> affinity ->
+# validation -> final snapshot). It currently fires two phases:
+#   - recipe (Story 3.1): validate the request, resolve the recipe THROUGH the repository boundary
+#     (AC3 — no raw file read, no hardcoded source), structured error on failure.
+#   - layout (Story 3.2): for a Small recipe, run the deterministic Small layout phase and return a
+#     REAL board payload (board snapshot validated through the strict BoardState.try_from_snapshot
+#     path). A non-Small (Medium) recipe resolves successfully WITHOUT a layout (Story 3.3 owns
+#     Medium) and is clearly marked `layout_pending` so no caller mistakes it for a finished level.
 static func generate(request: GenerationRequest, recipe_repository: LevelRecipeRepository) -> GenerationResult:
 	var seed_text: String = _seed_text(request)
 
@@ -49,15 +54,71 @@ static func generate(request: GenerationRequest, recipe_repository: LevelRecipeR
 			{"recipe_id": String(request.recipe_id)}
 		)
 
-	# Placeholder success payload ONLY. Story 3.2 replaces this with a generated/converted level.
+	# Layout phase (Story 3.2): only Small recipes produce a generated layout here. A non-Small
+	# recipe resolves successfully but carries NO layout yet (Story 3.3 implements Medium) — marked
+	# `layout_pending` so it is never mistaken for a finished level.
+	if recipe.size_class != LevelRecipeDefinition.SIZE_SMALL:
+		return GenerationResult.ok({
+			"layout_pending": true,
+			"recipe_id": String(recipe.recipe_id),
+			"size_class": String(recipe.size_class)
+		}, {
+			"phase": String(GenerationResult.PHASE_RECIPE),
+			"recipe_id": String(recipe.recipe_id),
+			"note": "layout_unsupported_for_size_class"
+		})
+
+	return _run_small_layout_phase(request, recipe, seed_text)
+
+
+# Run the deterministic Small layout phase and assemble the real GenerationResult payload. The
+# layout RNG is derived from request.level_seed() via a fresh RngStreamSet — every layout-affecting
+# draw routes through the named `level` stream (GenerationRequest.draw_layout_int/float). Any failure
+# in the layout or board-conversion phase returns a structured GenerationResult.error against
+# PHASE_LAYOUT (AC4 discipline carried from Story 3.1).
+static func _run_small_layout_phase(request: GenerationRequest, recipe: LevelRecipeDefinition, seed_text: String) -> GenerationResult:
+	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
+	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
+
+	var layout_result: ActionResult = generator.generate_layout(request, recipe, streams)
+	if layout_result.is_error():
+		return GenerationResult.error(
+			GenerationResult.PHASE_LAYOUT,
+			layout_result.error_code,
+			&"layout_generation_failed",
+			seed_text,
+			layout_result.metadata.duplicate(true)
+		)
+	var layout: Dictionary = layout_result.metadata.get("layout")
+
+	var board_result: ActionResult = generator.build_board_snapshot(layout)
+	if board_result.is_error():
+		return GenerationResult.error(
+			GenerationResult.PHASE_LAYOUT,
+			board_result.error_code,
+			&"board_conversion_failed",
+			seed_text,
+			board_result.metadata.duplicate(true)
+		)
+	var board_snapshot: Dictionary = board_result.metadata.get("board_snapshot")
+
+	# Pure serializable payload (no BoardState/RefCounted/scene refs): the converted board snapshot
+	# plus entrance/exit/size_class/recipe_id and the `level`-seed string for traceability. Survives
+	# a JSON.stringify/parse_string round-trip and re-converts via BoardState.try_from_snapshot.
 	var payload: Dictionary = {
-		"placeholder": true,
+		"board": board_snapshot,
+		"entrance": layout.get("entrance").duplicate(true),
+		"exit": layout.get("exit").duplicate(true),
+		"blockers": layout.get("blockers").duplicate(true),
+		"size_class": String(recipe.size_class),
 		"recipe_id": String(recipe.recipe_id),
-		"size_class": String(recipe.size_class)
+		"level_seed": seed_text
 	}
 	return GenerationResult.ok(payload, {
-		"phase": String(GenerationResult.PHASE_RECIPE),
-		"recipe_id": String(recipe.recipe_id)
+		"phase": String(GenerationResult.PHASE_LAYOUT),
+		"recipe_id": String(recipe.recipe_id),
+		"size_class": String(recipe.size_class),
+		"blocker_count": layout.get("blockers").size()
 	})
 
 
