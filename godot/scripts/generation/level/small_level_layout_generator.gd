@@ -189,6 +189,11 @@ func _blocker_candidate_cells(width: int, height: int, corridor_row: int, entran
 
 
 func _draw_blocker_count(request: GenerationRequest, recipe: LevelRecipeDefinition, streams: RngStreamSet, candidate_count: int) -> ActionResult:
+	# WALL_DENSITY DECISION (Story 3.3.4, shared across both generators): recipe.wall_density is
+	# INTENTIONALLY UNUSED for blocker-count derivation in v0. The blocker_budget_min..max band is the
+	# authoritative count bound; honoring density would clamp to a constant count and collapse seed
+	# divergence (see the WALL_DENSITY DECISION block in medium_level_layout_generator.gd). Small carries
+	# no AC2 validator; Medium's AC2 excessive-blockage bound is the readability backstop.
 	# A recipe with allow_blockers == false (or a zero budget) places NO interior blockers, and the
 	# count draw is skipped so the stream is not advanced for a no-blocker recipe.
 	if not recipe.allow_blockers or recipe.blocker_budget_max <= 0 or candidate_count <= 0:
