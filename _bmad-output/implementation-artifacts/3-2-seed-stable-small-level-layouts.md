@@ -6,7 +6,7 @@ baseline_commit: 5bba2a9
 
 # Story 3.2: Seed-Stable Small Level Layouts
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
