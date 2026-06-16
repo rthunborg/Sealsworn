@@ -10,6 +10,7 @@ const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const GenerationRequest = preload("res://scripts/generation/level/generation_request.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_level_layout_generator.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
@@ -39,6 +40,10 @@ func _small_recipe() -> LevelRecipeDefinition:
 	return LevelRecipeRepository.create_baseline_repository().get_recipe(&"small_combat_basic")
 
 
+func _enemy_repository() -> EnemyRepository:
+	return EnemyRepository.create_baseline_repository()
+
+
 func _request(root_seed: int = 1234) -> GenerationRequest:
 	return GenerationRequest.new(
 		root_seed,
@@ -59,7 +64,7 @@ func _generate(root_seed: int, recipe: LevelRecipeDefinition = null) -> Dictiona
 		resolved_recipe = _small_recipe()
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, resolved_recipe, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, resolved_recipe, streams, _enemy_repository())
 	assert_true(layout_result.succeeded, "Layout generation should succeed for a Small recipe. Error: %s" % layout_result.metadata)
 	return layout_result.metadata.get("layout")
 
@@ -91,7 +96,7 @@ func _layout_draws_only_from_level_stream() -> void:
 	var request: GenerationRequest = _request(31337)
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, _small_recipe(), streams)
+	var layout_result: ActionResult = generator.generate_layout(request, _small_recipe(), streams, _enemy_repository())
 	assert_true(layout_result.succeeded, "Layout generation should succeed for the level-stream contract probe.")
 
 	var snapshot: Dictionary = streams.to_snapshot()
@@ -121,8 +126,8 @@ func _cosmetic_and_combat_noise_do_not_perturb_layout() -> void:
 		noisy_streams.rand_int(RngStreamSet.STREAM_COMBAT, 1, 6, {"consumer": "combat_noise", "step": noise_index})
 
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var clean_layout: Dictionary = generator.generate_layout(clean_request, _small_recipe(), clean_streams).metadata.get("layout")
-	var noisy_layout: Dictionary = generator.generate_layout(noisy_request, _small_recipe(), noisy_streams).metadata.get("layout")
+	var clean_layout: Dictionary = generator.generate_layout(clean_request, _small_recipe(), clean_streams, _enemy_repository()).metadata.get("layout")
+	var noisy_layout: Dictionary = generator.generate_layout(noisy_request, _small_recipe(), noisy_streams, _enemy_repository()).metadata.get("layout")
 	assert_equal(
 		SmallLevelLayoutGenerator.fingerprint(noisy_layout),
 		SmallLevelLayoutGenerator.fingerprint(clean_layout),
@@ -262,7 +267,7 @@ func _non_small_recipe_is_rejected_structurally() -> void:
 	var request: GenerationRequest = _request(1)
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, medium_recipe, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, medium_recipe, streams, _enemy_repository())
 	assert_true(layout_result.is_error(), "The Small layout generator must reject a non-Small recipe (Medium is Story 3.3).")
 	assert_equal(layout_result.error_code, &"unsupported_size_class_for_layout", "A non-Small recipe should use the stable structured error code.")
 
@@ -270,16 +275,18 @@ func _non_small_recipe_is_rejected_structurally() -> void:
 func _null_inputs_are_rejected_structurally() -> void:
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
 	var streams: RngStreamSet = RngStreamSet.new(1)
-	assert_true(generator.generate_layout(null, _small_recipe(), streams).is_error(), "A null request must be rejected structurally, not crash.")
-	assert_true(generator.generate_layout(_request(1), null, streams).is_error(), "A null recipe must be rejected structurally, not crash.")
-	assert_true(generator.generate_layout(_request(1), _small_recipe(), null).is_error(), "A null stream set must be rejected structurally, not crash.")
+	assert_true(generator.generate_layout(null, _small_recipe(), streams, _enemy_repository()).is_error(), "A null request must be rejected structurally, not crash.")
+	assert_true(generator.generate_layout(_request(1), null, streams, _enemy_repository()).is_error(), "A null recipe must be rejected structurally, not crash.")
+	assert_true(generator.generate_layout(_request(1), _small_recipe(), null, _enemy_repository()).is_error(), "A null stream set must be rejected structurally, not crash.")
 
 
 func _board_round_trip_matches_acceptance_criteria_2() -> void:
-	# AC2: a generated Small payload converts to a board via BoardState.try_from_snapshot; bounds
-	# match the Small size; entrance/exit terrains are correct; blockers are WALL; entity_count == 0;
-	# board is RefCounted, not a Node.
-	var layout: Dictionary = _generate(2024)
+	# AC2 (Story 3.2) + Story 3.5: a generated Small payload converts to a board via
+	# BoardState.try_from_snapshot; bounds match the Small size; entrance/exit terrains are correct;
+	# blockers are WALL; the board now carries placed enemies (within the recipe budget); board is
+	# RefCounted, not a Node. (Exhaustive enemy/reward AC coverage lives in test_enemy_reward_placement.gd.)
+	var recipe: LevelRecipeDefinition = _small_recipe()
+	var layout: Dictionary = _generate(2024, recipe)
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
 	var board_result: ActionResult = generator.build_board_snapshot(layout)
 	assert_true(board_result.succeeded, "AC2: the generated layout must convert to a board through the strict validator. Error: %s" % board_result.metadata)
@@ -289,7 +296,13 @@ func _board_round_trip_matches_acceptance_criteria_2() -> void:
 	var board: BoardState = board_variant
 	assert_equal(board.width, 8, "AC2: board width should match the Small size (8).")
 	assert_equal(board.height, 8, "AC2: board height should match the Small size (8).")
-	assert_equal(board.entity_count(), 0, "AC2: the generated board must carry no entities this story.")
+	assert_true(
+		board.entity_count() >= recipe.enemy_budget_min and board.entity_count() <= recipe.enemy_budget_max,
+		"Story 3.5: the generated Small board must carry enemies within the recipe budget [%d..%d] (got %d)." % [recipe.enemy_budget_min, recipe.enemy_budget_max, board.entity_count()]
+	)
+	# Story 3.5: the layout now carries a `rewards` payload marker list (may be empty for Small — its
+	# reward_count band is 0..1 — but the key must be present).
+	assert_true(layout.has("rewards"), "Story 3.5: the Small layout must carry a `rewards` payload marker list.")
 
 	var entrance: Dictionary = layout.get("entrance")
 	var exit_cell: Dictionary = layout.get("exit")

@@ -19,6 +19,7 @@ const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const GenerationRequest = preload("res://scripts/generation/level/generation_request.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_level_layout_generator.gd")
 
 # Approved seed -> expected layout fingerprint for small_combat_basic. RE-PINNED 2026-06-16 for
@@ -27,6 +28,11 @@ const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_
 # re-pinned in the same PR via tools/dump_small_layout_fingerprints.gd (see the Change Log). Small's
 # recipe (small_combat_basic) allows only choke_point + blocker_cluster, both realized as interior
 # WALL structure, so the Small fingerprints gain extra WALL (`1`) cells but NEVER a HAZARD (`2`) cell.
+#
+# Story 3.5 (enemy + reward placement) does NOT re-pin these: enemies are board ENTITIES and rewards
+# are payload MARKERS — neither touches the terrain grid the fingerprint serializes. The fingerprints
+# staying GREEN with NO change is itself the regression tripwire that placement did not perturb terrain
+# or the blocker/wrinkle draw order (the placement draws are APPENDED after the wrinkle draws).
 const APPROVED_FINGERPRINTS: Dictionary = {
 	1001: "8x8|e1,4|x6,4|11111111/10000001/11000001/10000001/13000041/10010001/11000001/11111111",
 	2002: "8x8|e1,4|x6,4|11111111/10010001/10000001/10000001/13000041/11010001/10000001/11111111",
@@ -54,7 +60,7 @@ func _layout_for_seed(root_seed: int, recipe: LevelRecipeDefinition) -> Dictiona
 	)
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, recipe, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, recipe, streams, EnemyRepository.create_baseline_repository())
 	assert_true(layout_result.succeeded, "Approved-seed %d should generate a Small layout. Error: %s" % [root_seed, layout_result.metadata])
 	return layout_result.metadata.get("layout")
 
