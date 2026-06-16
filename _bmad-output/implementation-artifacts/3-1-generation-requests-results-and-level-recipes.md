@@ -6,7 +6,7 @@ baseline_commit: 3af842e
 
 # Story 3.1: Generation Requests, Results, and Level Recipes
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
