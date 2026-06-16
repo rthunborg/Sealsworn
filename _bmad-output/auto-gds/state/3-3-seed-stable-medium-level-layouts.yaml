@@ -2,11 +2,11 @@ story_key: 3-3-seed-stable-medium-level-layouts
 epic_num: 3
 story_num: 3
 branch: story/3-3-seed-stable-medium-level-layouts
-status: in-progress
-updated_at: "2026-06-16T11:20:54Z"
+status: done
+updated_at: "2026-06-16T11:36:39Z"
 started_at: "2026-06-16T10:42:57Z"
-completed_at: null
-active_seconds: 0
+completed_at: "2026-06-16T11:36:39Z"
+active_seconds: 2350
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -22,9 +22,9 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 7
-completed_phases: [0, 1, 3, 5]
+completed_phases: [0, 1, 3, 5, 7, 9]
 code_review_iterations: 1
-code_review_loop_done: false
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
@@ -34,11 +34,12 @@ commits:
   - "30a8e8f chore(story-3-3): start auto-gds pipeline"
   - "6fb8ede docs(story-3-3): create story context file"
   - "63cb9c1 feat(story-3-3): seed-stable medium 14x12 level layouts"
+  - "9051c92 chore(story-3-3): code review passed"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
