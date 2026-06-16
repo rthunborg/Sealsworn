@@ -10,7 +10,7 @@ const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 func run() -> Dictionary:
 	_known_small_recipe_returns_real_layout_payload()
 	_small_payload_carries_validated_board_not_placeholder()
-	_medium_recipe_resolves_without_layout_marked_pending()
+	_medium_recipe_returns_real_validated_layout_payload()
 	_unknown_recipe_returns_structured_recipe_phase_error()
 	_invalid_request_returns_structured_recipe_phase_error()
 	_null_repository_returns_structured_error_without_crash()
@@ -68,17 +68,39 @@ func _small_payload_carries_validated_board_not_placeholder() -> void:
 	assert_true(json_restore.succeeded, "The JSON-round-tripped payload board must still restore through the strict validator.")
 
 
-func _medium_recipe_resolves_without_layout_marked_pending() -> void:
-	# Story 3.2 is Small-ONLY. A Medium recipe resolves successfully but carries NO layout yet
-	# (Story 3.3 owns Medium) and is marked layout_pending so it is not mistaken for a finished level.
+func _medium_recipe_returns_real_validated_layout_payload() -> void:
+	# Story 3.3 REPLACES the 3.2 {layout_pending: true} Medium payload: a Medium recipe now returns a
+	# REAL generated layout payload (validated board snapshot + entrance/exit/size_class/recipe_id),
+	# having passed the layout phase AND the AC2 readability validation. The successful Medium result
+	# reports the validation phase (it cleared both layout construction and the AC2 readability pass).
 	var result_value: GenerationResult = LevelGenerator.generate(
 		_valid_request(&"medium_combat_basic", GenerationRequest.SIZE_MEDIUM),
 		_repository()
 	)
-	assert_true(result_value.succeeded, "A Medium recipe should still resolve successfully (no crash).")
-	assert_true(result_value.payload.get("layout_pending", false), "A Medium recipe payload must be marked layout_pending this story.")
-	assert_false(result_value.payload.has("board"), "A Medium recipe must NOT produce a generated board this story.")
+	assert_true(result_value.succeeded, "A Medium recipe should resolve to a successful generation result. Error: %s" % result_value.diagnostics)
+	assert_true(result_value.has_payload(), "A successful Medium generation should return a real layout payload.")
+	assert_false(result_value.payload.get("layout_pending", false), "The 3.3 Medium payload must NOT be marked layout_pending.")
+	assert_false(result_value.payload.get("placeholder", false), "The 3.3 Medium payload must NOT be a placeholder.")
+	assert_true(result_value.payload.has("board"), "A Medium recipe must now produce a generated board (Story 3.3).")
+	assert_equal(result_value.payload.get("recipe_id"), "medium_combat_basic", "Medium layout payload should echo the resolved recipe id.")
 	assert_equal(result_value.payload.get("size_class"), "medium", "A Medium recipe payload should echo the medium size class.")
+	assert_equal(result_value.payload.get("level_seed"), "1234", "Medium layout payload should carry the level seed string for traceability.")
+	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_VALIDATION), "A successful Medium generation should report the validation phase (layout + AC2 readability cleared).")
+
+	# The payload board converts through the STRICT BoardState.try_from_snapshot path, at 14x12.
+	var board_snapshot: Dictionary = result_value.payload.get("board")
+	var restore_result = BoardState.try_from_snapshot(board_snapshot)
+	assert_true(restore_result.succeeded, "The Medium payload board must restore through the strict BoardState validator. Error: %s" % restore_result.metadata)
+	var board = restore_result.metadata.get("board")
+	assert_equal(board.width, 14, "Medium layout board should be 14 wide (Medium v0).")
+	assert_equal(board.height, 12, "Medium layout board should be 12 tall (Medium v0).")
+	assert_equal(board.entity_count(), 0, "Story 3.3 generated boards carry no entities (enemy/reward placement is Story 3.5).")
+
+	# Payload must survive the REAL JSON transport, not just native dicts (Epic 3 retro / 1.x lesson).
+	var json_payload = JSON.parse_string(JSON.stringify(result_value.payload))
+	assert_true(json_payload is Dictionary, "The Medium layout payload must survive a JSON stringify/parse round-trip.")
+	var json_restore = BoardState.try_from_snapshot(json_payload.get("board"))
+	assert_true(json_restore.succeeded, "The JSON-round-tripped Medium payload board must still restore through the strict validator.")
 
 
 func _unknown_recipe_returns_structured_recipe_phase_error() -> void:
