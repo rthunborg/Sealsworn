@@ -5,7 +5,7 @@ source_story_key: 3-5-enemy-and-reward-placement
 
 # Story 3.5: Enemy and Reward Placement
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
