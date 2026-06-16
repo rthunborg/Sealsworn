@@ -3,10 +3,10 @@ epic_num: 3
 story_num: 6
 branch: story/3-6-generator-validation-and-bounded-retry
 status: in-progress
-updated_at: "2026-06-16T19:42:22Z"
+updated_at: "2026-06-16T19:54:20Z"
 started_at: "2026-06-16T19:08:58Z"
 completed_at: null
-active_seconds: 2010
+active_seconds: 2640
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -25,7 +25,7 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
@@ -35,6 +35,7 @@ testing:
 commits:
   - "0c98244"
   - "59f15f0"
+  - "45f216c"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -46,7 +47,8 @@ merge_commit: null
 branch_deleted: false
 open_questions:
   - "AC4 failure-phase mapping: story leaves it to dev to pick PHASE_VALIDATION (consistent with existing Medium readability mapping) vs the unused PHASE_PATHING constant for reachability/no-soft-lock failures, and document the choice. Either is architecturally valid; reviewer should confirm the chosen reading."
-deferred_work: []
+deferred_work:
+  - "[Low, code review R1] No broad-seed sweep proves attempt-0 is never validator-rejected: seed-regression tests call generate_layout directly (bypassing the validator), so a hypothetical un-pinned self-soft-locking seed could silently retry and drift with no fingerprint tripwire. Structurally near-impossible on sparse baseline boards; same class as existing construction-guarantee Lows. Logged to deferred-work.md."
 blockers: []
 overrides: {}
 constraints: []

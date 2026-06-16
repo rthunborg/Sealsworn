@@ -261,7 +261,8 @@ func validate(candidate: Dictionary) -> ActionResult:
 	if readability.is_error():
 		return readability
 
-	# CHECK (h) unsafe_first_reveal — STATIC v0 fairness: entrance not on HAZARD; no enemy Chebyshev <= 1.
+	# CHECK (h) unsafe_first_reveal — STATIC v0 fairness: entrance cell not on HAZARD and no entity occupies
+	# the entrance cell (an adjacent threat is PERMITTED — seen on first reveal; see the header semantic).
 	var first_reveal_check: ActionResult = _check_safe_first_reveal(terrain_grid, board, entrance)
 	if first_reveal_check.is_error():
 		return first_reveal_check
@@ -280,7 +281,7 @@ func validate(candidate: Dictionary) -> ActionResult:
 	})
 
 
-# CHECK (c): the candidate must contain no gate marker requiring a class/weapon/item to progress on the
+# CHECK (d): the candidate must contain no gate marker requiring a class/weapon/item to progress on the
 # MANDATORY path. v0 generation realizes NO gates, so the only source of a gate today is a synthetic
 # marker a test injects under layout["gates"] (a list of {x, y} cells). A gate that sits on an
 # entrance-reachable (entity-aware) cell would block the mandatory path -> FAIL. A gate off the reachable
@@ -301,7 +302,7 @@ func _check_no_required_gate(layout: Dictionary, entity_reachable: Dictionary) -
 	return ActionResult.ok()
 
 
-# CHECK (d): every board entity must sit on a legal occupiable cell (not WALL, not the entrance, not the
+# CHECK (b): every board entity must sit on a legal occupiable cell (not WALL, not the entrance, not the
 # exit), no two blocking entities may share a cell, and every enemy cell must be entrance-reachable
 # (entity-aware). BoardState.try_from_snapshot ALREADY enforces occupancy legality + dup-id + occupant
 # cross-consistency at BUILD time, so this RE-ASSERTS placement legality at the validation layer
