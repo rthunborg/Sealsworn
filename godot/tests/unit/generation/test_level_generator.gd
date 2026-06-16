@@ -48,6 +48,11 @@ func _known_small_recipe_returns_real_layout_payload() -> void:
 	assert_equal(result_value.payload.get("size_class"), "small", "Layout payload should echo the resolved size class.")
 	assert_equal(result_value.payload.get("level_seed"), "1234", "Layout payload should carry the level seed string for traceability.")
 	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_LAYOUT), "A Small generation should report the layout phase.")
+	# Story 3.4: the success diagnostics now record the placed tactical-wrinkle kinds + count (AC1).
+	assert_true(result_value.diagnostics.has("wrinkles"), "Story 3.4: Small success diagnostics must record the placed wrinkle kinds.")
+	assert_true(result_value.diagnostics.has("wrinkle_count"), "Story 3.4: Small success diagnostics must record the wrinkle count.")
+	assert_true(int(result_value.diagnostics.get("wrinkle_count")) >= 1, "Story 3.4: a Small combat recipe must place at least one wrinkle (min_tactical_wrinkles = 1).")
+	assert_equal(int(result_value.diagnostics.get("wrinkle_count")), (result_value.diagnostics.get("wrinkles") as Array).size(), "Story 3.4: wrinkle_count must match the recorded kinds length.")
 
 
 func _small_payload_carries_validated_board_not_placeholder() -> void:
@@ -86,6 +91,11 @@ func _medium_recipe_returns_real_validated_layout_payload() -> void:
 	assert_equal(result_value.payload.get("size_class"), "medium", "A Medium recipe payload should echo the medium size class.")
 	assert_equal(result_value.payload.get("level_seed"), "1234", "Medium layout payload should carry the level seed string for traceability.")
 	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_VALIDATION), "A successful Medium generation should report the validation phase (layout + AC2 readability cleared).")
+	# Story 3.4: the success diagnostics now record the placed tactical-wrinkle kinds + count (AC1).
+	assert_true(result_value.diagnostics.has("wrinkles"), "Story 3.4: Medium success diagnostics must record the placed wrinkle kinds.")
+	assert_true(result_value.diagnostics.has("wrinkle_count"), "Story 3.4: Medium success diagnostics must record the wrinkle count.")
+	assert_true(int(result_value.diagnostics.get("wrinkle_count")) >= 2, "Story 3.4: a Medium combat recipe must place at least two wrinkles (min_tactical_wrinkles = 2).")
+	assert_equal(int(result_value.diagnostics.get("wrinkle_count")), (result_value.diagnostics.get("wrinkles") as Array).size(), "Story 3.4: wrinkle_count must match the recorded kinds length.")
 
 	# The payload board converts through the STRICT BoardState.try_from_snapshot path, at 14x12.
 	var board_snapshot: Dictionary = result_value.payload.get("board")

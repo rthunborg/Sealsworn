@@ -37,7 +37,7 @@
 # - Epic 3 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-16T11:36:39+00:00
+last_updated: 2026-06-16T12:49:26+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -75,7 +75,7 @@ development_status:
   3-1-generation-requests-results-and-level-recipes: done
   3-2-seed-stable-small-level-layouts: done
   3-3-seed-stable-medium-level-layouts: done
-  3-4-tactical-wrinkles-blockers-and-hazards: backlog
+  3-4-tactical-wrinkles-blockers-and-hazards: done
   3-5-enemy-and-reward-placement: backlog
   3-6-generator-validation-and-bounded-retry: backlog
   3-7-manual-seed-level-loader-and-regression-tests: backlog
