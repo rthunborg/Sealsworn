@@ -3,7 +3,7 @@ epic_num: 3
 story_num: 5
 branch: story/3-5-enemy-and-reward-placement
 status: in-progress
-updated_at: "2026-06-16T15:08:53Z"
+updated_at: "2026-06-16T15:18:35Z"
 started_at: "2026-06-16T15:08:53Z"
 completed_at: null
 active_seconds: 0
@@ -24,7 +24,7 @@ delegation_mode: custom-subagents
 git_mode: remote
 base_branch: main
 epic_story_count: 7
-completed_phases: [0, 1]
+completed_phases: [0, 1, 3]
 code_review_iterations: 0
 code_review_loop_done: false
 external_review_iterations: 0
@@ -32,7 +32,8 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: []
+commits:
+  - "8cc867f"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -42,7 +43,8 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "AC3 'assigned generation stream': create-story resolved placement to STREAM_LEVEL (convention-consistent with 3.1-3.4, regression-safe); dedicated rewards/loot RngStreamSet streams reserved for Epic 6. Reviewer should confirm this reading is intended."
 deferred_work: []
 blockers: []
 overrides: {}
