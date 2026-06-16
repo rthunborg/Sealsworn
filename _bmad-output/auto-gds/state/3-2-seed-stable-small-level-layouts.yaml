@@ -3,7 +3,7 @@ epic_num: 3
 story_num: 2
 branch: story/3-2-seed-stable-small-level-layouts
 status: in-progress
-updated_at: "2026-06-16T09:06:41Z"
+updated_at: "2026-06-16T09:12:29Z"
 started_at: "2026-06-16T08:45:19Z"
 completed_at: null
 active_seconds: 0
@@ -23,7 +23,7 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
@@ -33,6 +33,7 @@ testing:
 commits:
   - "5bba2a9 chore(story-3-2): start auto-gds pipeline"
   - "cac2dfc docs(story-3-2): create story context file"
+  - "ca90526 feat(story-3-2): seed-stable small 8x8 level layouts"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -43,7 +44,11 @@ merge_method: null
 merge_commit: null
 branch_deleted: false
 open_questions: []
-deferred_work: []
+deferred_work:
+  - "(Med) wall_density recipe field silently ignored by generator (blocker count driven by blocker_budget band); defensible v0 simplification, undocumented."
+  - "(Low) build_board_snapshot() indexes layout grid without a shape guard."
+  - "(Low) Entrance-to-exit reachability guarantee coupled to fixed 8x8 + even height."
+  - "(Low) Blocker-count clamp-to-candidate-count branch unexercised by tests."
 blockers: []
 overrides: {}
 constraints: []
