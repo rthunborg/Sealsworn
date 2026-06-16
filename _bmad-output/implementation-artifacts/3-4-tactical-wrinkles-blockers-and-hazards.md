@@ -6,7 +6,7 @@ baseline_commit: 50f2341
 
 # Story 3.4: Tactical Wrinkles, Blockers, and Hazards
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
