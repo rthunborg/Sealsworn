@@ -22,6 +22,7 @@ const GenerationResult = preload("res://scripts/generation/level/generation_resu
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_level_layout_generator.gd")
 const MediumLevelLayoutGenerator = preload("res://scripts/generation/level/medium_level_layout_generator.gd")
 const TacticalWrinklePlacer = preload("res://scripts/generation/level/tactical_wrinkle_placer.gd")
@@ -99,12 +100,16 @@ func _medium_request(root_seed: int) -> GenerationRequest:
 	)
 
 
+func _enemy_repository() -> EnemyRepository:
+	return EnemyRepository.create_baseline_repository()
+
+
 func _small_layout(root_seed: int, recipe: LevelRecipeDefinition = null) -> Dictionary:
 	var request: GenerationRequest = _small_request(root_seed)
 	var resolved: LevelRecipeDefinition = recipe if recipe != null else _small_recipe()
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, resolved, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, resolved, streams, _enemy_repository())
 	assert_true(layout_result.succeeded, "Small layout generation should succeed. Error: %s" % layout_result.metadata)
 	return layout_result.metadata.get("layout")
 
@@ -114,7 +119,7 @@ func _medium_layout(root_seed: int, recipe: LevelRecipeDefinition = null) -> Dic
 	var resolved: LevelRecipeDefinition = recipe if recipe != null else _medium_recipe()
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, resolved, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, resolved, streams, _enemy_repository())
 	assert_true(layout_result.succeeded, "Medium layout generation should succeed. Error: %s" % layout_result.metadata)
 	return layout_result.metadata.get("layout")
 
@@ -223,7 +228,7 @@ func _allowed_lookup(recipe: LevelRecipeDefinition) -> Dictionary:
 func _diagnostics_record_wrinkle_kinds_and_count_small() -> void:
 	# AC1 verbatim: "the wrinkle type is recorded in generation diagnostics." Assert the success
 	# diagnostics carry `wrinkles` (list of kinds) + `wrinkle_count`, alongside the existing keys.
-	var result_value: GenerationResult = LevelGenerator.generate(_small_request(2024), LevelRecipeRepository.create_baseline_repository())
+	var result_value: GenerationResult = LevelGenerator.generate(_small_request(2024), LevelRecipeRepository.create_baseline_repository(), _enemy_repository())
 	assert_true(result_value.succeeded, "Small generation should succeed. Error: %s" % result_value.diagnostics)
 	assert_true(result_value.diagnostics.has("wrinkles"), "AC1: Small success diagnostics must record the placed wrinkle kinds.")
 	assert_true(result_value.diagnostics.has("wrinkle_count"), "AC1: Small success diagnostics must record the wrinkle count.")
@@ -236,7 +241,7 @@ func _diagnostics_record_wrinkle_kinds_and_count_small() -> void:
 
 
 func _diagnostics_record_wrinkle_kinds_and_count_medium() -> void:
-	var result_value: GenerationResult = LevelGenerator.generate(_medium_request(2024), LevelRecipeRepository.create_baseline_repository())
+	var result_value: GenerationResult = LevelGenerator.generate(_medium_request(2024), LevelRecipeRepository.create_baseline_repository(), _enemy_repository())
 	assert_true(result_value.succeeded, "Medium generation should succeed. Error: %s" % result_value.diagnostics)
 	assert_true(result_value.diagnostics.has("wrinkles"), "AC1: Medium success diagnostics must record the placed wrinkle kinds.")
 	assert_true(result_value.diagnostics.has("wrinkle_count"), "AC1: Medium success diagnostics must record the wrinkle count.")
@@ -297,7 +302,7 @@ func _wrinkle_draws_only_from_level_stream() -> void:
 	var request: GenerationRequest = _medium_request(31337)
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, _medium_recipe(), streams)
+	var layout_result: ActionResult = generator.generate_layout(request, _medium_recipe(), streams, _enemy_repository())
 	assert_true(layout_result.succeeded, "Medium generation should succeed for the stream-isolation probe.")
 	assert_true((layout_result.metadata.get("layout").get("wrinkle_kinds") as Array).size() >= 2, "The probe layout should have placed wrinkles (so wrinkle draws ran).")
 
@@ -324,8 +329,8 @@ func _cosmetic_combat_noise_does_not_perturb_wrinkles() -> void:
 		noisy_streams.rand_int(RngStreamSet.STREAM_COMBAT, 1, 6, {"consumer": "combat_noise", "step": noise_index})
 
 	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
-	var clean_layout: Dictionary = generator.generate_layout(clean_request, _medium_recipe(), clean_streams).metadata.get("layout")
-	var noisy_layout: Dictionary = generator.generate_layout(noisy_request, _medium_recipe(), noisy_streams).metadata.get("layout")
+	var clean_layout: Dictionary = generator.generate_layout(clean_request, _medium_recipe(), clean_streams, _enemy_repository()).metadata.get("layout")
+	var noisy_layout: Dictionary = generator.generate_layout(noisy_request, _medium_recipe(), noisy_streams, _enemy_repository()).metadata.get("layout")
 	assert_equal(
 		MediumLevelLayoutGenerator.fingerprint(noisy_layout),
 		MediumLevelLayoutGenerator.fingerprint(clean_layout),
@@ -356,7 +361,7 @@ func _non_realizable_allowlist_fails_loud() -> void:
 	var request: GenerationRequest = _small_request(123)
 	var streams: RngStreamSet = RngStreamSet.new(request.level_seed())
 	var generator: SmallLevelLayoutGenerator = SmallLevelLayoutGenerator.new()
-	var layout_result: ActionResult = generator.generate_layout(request, door_only_recipe, streams)
+	var layout_result: ActionResult = generator.generate_layout(request, door_only_recipe, streams, _enemy_repository())
 	assert_true(layout_result.is_error(), "A recipe allowing only non-realizable wrinkle kinds must fail loud, not silently under-place.")
 	assert_equal(layout_result.error_code, &"no_realizable_wrinkle_kind", "The non-realizable allowlist must surface the stable structured code.")
 
@@ -499,7 +504,7 @@ func _approved_medium_layouts_still_pass_readability_with_wrinkles() -> void:
 func _hazard_board_rides_strict_try_from_snapshot() -> void:
 	# AC3 part 1: a hazard-bearing layout converts to a board snapshot in the EXACT to_snapshot() shape
 	# and passes the STRICT BoardState.try_from_snapshot with the hazard cell present (HAZARD is a valid
-	# terrain). entities stays EMPTY.
+	# terrain). Story 3.5: the Medium board now carries placed enemies (entities no longer empty).
 	var layout: Dictionary = _medium_layout_with_hazard()
 	var generator: MediumLevelLayoutGenerator = MediumLevelLayoutGenerator.new()
 	var board_result: ActionResult = generator.build_board_snapshot(layout)
@@ -507,7 +512,7 @@ func _hazard_board_rides_strict_try_from_snapshot() -> void:
 	var board_variant: Variant = board_result.metadata.get("board")
 	assert_false(board_variant is Node, "AC3: the generated board must be scene-independent domain state, not a Node.")
 	var board: BoardState = board_variant
-	assert_equal(board.entity_count(), 0, "AC3: the generated board must carry no entities this story.")
+	assert_true(board.entity_count() > 0, "Story 3.5: the generated Medium board must now carry placed enemies.")
 	var hazard_cell: Vector2i = _first_hazard_cell(layout)
 	assert_equal(board.get_cell(hazard_cell).terrain, BoardCell.Terrain.HAZARD, "AC3: the hazard cell must read HAZARD terrain on the strictly-validated board.")
 

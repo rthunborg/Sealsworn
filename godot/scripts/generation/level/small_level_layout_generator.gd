@@ -37,22 +37,33 @@ extends RefCounted
 #   4. wrinkle_position: (Story 3.4) one draw per required wrinkle over the *remaining* candidate pool
 #                        (the blocker pool after blockers were removed), so a wrinkle cell never
 #                        collides with a blocker or another wrinkle cell.
+#   5..9. enemy/reward  : (Story 3.5) enemy count -> enemy positions -> enemy kinds -> reward count ->
+#                        reward positions, APPENDED after the wrinkle draws via the shared
+#                        EntityRewardPlacer. Drawn from the residual candidate pool (the wrinkle pool
+#                        after wrinkle cells are removed), so enemies/rewards never collide with a
+#                        blocker, wrinkle, entrance, exit, corridor, or each other. ENEMIES become board
+#                        entities; REWARDS become payload markers. See EntityRewardPlacer for the full
+#                        placement draw order. Enemies/rewards do NOT change terrain, so the seed-
+#                        regression terrain fingerprints stay stable (no re-pin).
 #
-# SCOPE (Stories 3.2 + 3.4): floor + wall(blocker) + entrance + exit on a Small board, PLUS
+# SCOPE (Stories 3.2 + 3.4 + 3.5): floor + wall(blocker) + entrance + exit on a Small board, PLUS
 # deterministic tactical-wrinkle placement (Story 3.4): choke_point / blocker_cluster realized as
-# interior WALL structure (small_combat_basic's allowed kinds). NO Medium layouts (3.3), NO
-# enemies/rewards (3.5 — entities[] stays EMPTY), NO formal reachability validator + retry (3.6 —
-# only the minimal fairness guardrail below), NO manual-seed/batch CLI (3.7). hazard / flank_route are
-# realizable kinds but are NOT in the Small recipe's allowlist, so Small never emits HAZARD this story.
-# difficulty_band is NOT a layout input (hard non-goal).
+# interior WALL structure (small_combat_basic's allowed kinds), PLUS deterministic enemy + reward
+# placement (Story 3.5): enemies as board entities, intended rewards as payload markers. NO Medium
+# layouts (3.3), NO formal reachability validator + retry (3.6 — only the minimal fairness guardrail
+# below + the focused reward-reachability check), NO manual-seed/batch CLI (3.7). hazard / flank_route
+# are realizable kinds but are NOT in the Small recipe's allowlist, so Small never emits HAZARD this
+# story. difficulty_band is NOT a layout input (hard non-goal).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const GenerationRequest = preload("res://scripts/generation/level/generation_request.gd")
 const LevelRecipeDefinition = preload("res://scripts/content/definitions/level_recipe_definition.gd")
+const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const TacticalWrinklePlacer = preload("res://scripts/generation/level/tactical_wrinkle_placer.gd")
+const EntityRewardPlacer = preload("res://scripts/generation/level/entity_reward_placer.gd")
 
 # Small v0 dimensions. The recipe size class is the source of size; a fixed 8x8 is acceptable for
 # Small v0 (story 3.2.2). The size is NOT jittered this story: a fixed footprint keeps the entrance
@@ -69,7 +80,7 @@ const INITIAL_SEQUENCE_ID: int = 1
 # On success: ActionResult.ok([], {"layout": <layout dict>}) where the layout dict is pure
 # serializable data (see _build_layout). On failure: a structured ActionResult.error with a stable
 # lower-snake code (the caller maps it onto a GenerationResult.error against PHASE_LAYOUT).
-func generate_layout(request: GenerationRequest, recipe: LevelRecipeDefinition, streams: RngStreamSet) -> ActionResult:
+func generate_layout(request: GenerationRequest, recipe: LevelRecipeDefinition, streams: RngStreamSet, enemy_repository: EnemyRepository) -> ActionResult:
 	if request == null:
 		return ActionResult.error(&"invalid_layout_request", {"reason": "missing_request"})
 	if recipe == null:
@@ -128,7 +139,32 @@ func generate_layout(request: GenerationRequest, recipe: LevelRecipeDefinition, 
 	# element is still a Dictionary (the placer guarantees that) and is iterated as one in _build_layout.
 	var wrinkles: Array = wrinkles_result.metadata.get("wrinkles")
 
+	# Build the terrain layout from blockers + wrinkles BEFORE placement so the reward behind-danger
+	# check + reachability validation read the final terrain grid. Enemies + rewards do NOT change
+	# terrain (they ride the board snapshot / payload), so building the layout first is correct and
+	# keeps the fingerprint (terrain-only) stable.
 	var layout: Dictionary = _build_layout(width, height, entrance, exit_cell, blocker_cells, wrinkles)
+
+	# The candidate pool the placement step draws from: the wrinkle pool (= blocker pool after blockers)
+	# with the placed wrinkle cells removed. Recomputed here (TacticalWrinklePlacer returns only its
+	# wrinkles, not its residual pool) so enemies/rewards never collide with a blocker or wrinkle.
+	var placement_pool: Array[Vector2i] = _remaining_after_wrinkles(remaining_pool, wrinkles)
+
+	# FIXED PLACEMENT DRAW #5..#9: enemy + reward placement (Story 3.5). Appended after the wrinkle draws
+	# via the shared EntityRewardPlacer so both generators stay siblings. Enemies are resolved through
+	# the repository boundary (AC3) and emitted as board entities; rewards are payload markers.
+	var placement_result: ActionResult = _place_entities_and_rewards(request, streams, recipe, enemy_repository, placement_pool, layout)
+	if placement_result.is_error():
+		return placement_result
+	# Untyped Array per the Story 3.4 deep-copy trap (Array[Dictionary] does not survive ActionResult
+	# metadata deep-copy; it returns a plain Array and crashes a strict re-typed receiver).
+	var enemies: Array = placement_result.metadata.get("enemies")
+	var rewards: Array = placement_result.metadata.get("rewards")
+	var optional_reward_count: int = int(placement_result.metadata.get("optional_reward_count"))
+	layout["enemies"] = enemies
+	layout["rewards"] = rewards
+	layout["optional_reward_count"] = optional_reward_count
+
 	return ActionResult.ok([], {"layout": layout})
 
 
@@ -143,6 +179,19 @@ func build_board_snapshot(layout: Dictionary) -> ActionResult:
 	var height: int = int(layout.get("height", 0))
 	var terrain_grid: Array = layout.get("terrain", [])
 
+	# Story 3.5: the placed enemies (board entities) ride the snapshot's entities array. BoardState's
+	# OCCUPANT INVARIANT (matching to_snapshot()): a blocking entity's CELL must declare the matching
+	# occupant_id AND the entity must appear in the entities array; try_from_snapshot records the cell
+	# occupant, strips the cell to "", and cross-checks it against the blocking entities (a missing or
+	# mismatched cell occupant is REJECTED). So we set occupant_id on each blocking enemy's cell here.
+	var entities: Array = layout.get("enemies", [])
+	var occupant_by_cell: Dictionary = {}
+	for entity_value: Variant in entities:
+		var entity: Dictionary = entity_value
+		if bool(entity.get("blocks_movement", true)):
+			var entity_position: Dictionary = entity.get("position")
+			occupant_by_cell[Vector2i(int(entity_position.get("x")), int(entity_position.get("y")))] = String(entity.get("entity_id"))
+
 	var cells: Array[Dictionary] = []
 	for y: int in range(height):
 		var row: Array = terrain_grid[y]
@@ -150,7 +199,7 @@ func build_board_snapshot(layout: Dictionary) -> ActionResult:
 			cells.append({
 				"position": {"x": x, "y": y},
 				"terrain": int(row[x]),
-				"occupant_id": "",
+				"occupant_id": occupant_by_cell.get(Vector2i(x, y), ""),
 				"explored": false,
 				"visible": false
 			})
@@ -160,7 +209,7 @@ func build_board_snapshot(layout: Dictionary) -> ActionResult:
 		"height": height,
 		"next_sequence_id": INITIAL_SEQUENCE_ID,
 		"cells": cells,
-		"entities": []
+		"entities": entities.duplicate(true)
 	}
 
 	# VALIDATE-then-reject through the strict path (Story 1.3 precedent). A failure here is a
@@ -259,6 +308,75 @@ func _draw_blocker_cells(request: GenerationRequest, streams: RngStreamSet, cand
 	# Return the remaining pool so the wrinkle placer can draw from the SAME shrinking candidate set
 	# (corridor/entrance/exit already excluded), guaranteeing wrinkles never overlap blockers.
 	return ActionResult.ok([], {"blocker_cells": chosen, "remaining_pool": pool})
+
+
+# Recompute the candidate pool the enemy/reward placement step draws from: the wrinkle pool (= blocker
+# pool after blockers were removed) minus the cells the wrinkles consumed. The wrinkle placer takes a
+# copy and returns only its placed wrinkles (not its residual pool), so the generator removes the
+# wrinkle cells here. Order is preserved (row-major, blocker draws removed), so placement draws over a
+# stable shrinking pool exactly like the blocker + wrinkle draws.
+func _remaining_after_wrinkles(blocker_remaining_pool: Array[Vector2i], wrinkles: Array) -> Array[Vector2i]:
+	var wrinkle_cells: Dictionary = {}
+	for wrinkle: Dictionary in wrinkles:
+		wrinkle_cells[wrinkle.get("cell")] = true
+	var pool: Array[Vector2i] = []
+	for cell: Vector2i in blocker_remaining_pool:
+		if not wrinkle_cells.has(cell):
+			pool.append(cell)
+	return pool
+
+
+# Place enemies + rewards via the shared EntityRewardPlacer (Story 3.5). Resolves the enemy definitions
+# through the repository boundary (AC3 — a null/empty repository is a structured error, not a crash or a
+# silent no-placement), draws enemies from the residual pool, then draws rewards from the pool the
+# enemies left, then runs the focused AC2 reward-reachability validation. Returns the enemy entity
+# dicts + reward markers + optional-reward count for the layout/payload.
+func _place_entities_and_rewards(
+	request: GenerationRequest,
+	streams: RngStreamSet,
+	recipe: LevelRecipeDefinition,
+	enemy_repository: EnemyRepository,
+	placement_pool: Array[Vector2i],
+	layout: Dictionary
+) -> ActionResult:
+	var definitions: Array = []
+	# Only the repository boundary is required when the recipe actually wants enemies; a zero enemy
+	# budget places nothing and tolerates a null repository (but the baseline combat recipes all want
+	# enemies, so the repository must be threaded — LevelGenerator enforces this).
+	if recipe.enemy_budget_max > 0:
+		var resolve_result: ActionResult = EntityRewardPlacer.resolve_placement_definitions(enemy_repository)
+		if resolve_result.is_error():
+			return resolve_result
+		definitions = resolve_result.metadata.get("definitions")
+
+	var enemies_result: ActionResult = EntityRewardPlacer.place_enemies(
+		request, streams, recipe, definitions, placement_pool, "small_layout"
+	)
+	if enemies_result.is_error():
+		return enemies_result
+	var enemies: Array = enemies_result.metadata.get("enemies")
+	var reward_pool: Array[Vector2i] = enemies_result.metadata.get("remaining_pool")
+
+	var rewards_result: ActionResult = EntityRewardPlacer.place_rewards(
+		request, streams, recipe, reward_pool, layout.get("terrain", []), "small_layout"
+	)
+	if rewards_result.is_error():
+		return rewards_result
+	var rewards: Array = rewards_result.metadata.get("rewards")
+	var optional_reward_count: int = int(rewards_result.metadata.get("optional_count"))
+
+	# AC2: every placed reward must be reachable from the entrance (reachable by construction here since
+	# rewards draw from the corridor-respecting pool, but asserted so a future change cannot silently
+	# strand a reward). A failure surfaces a structured error the caller maps onto PHASE_VALIDATION.
+	var reachability: ActionResult = EntityRewardPlacer.validate_reward_reachability(layout, rewards)
+	if reachability.is_error():
+		return reachability
+
+	return ActionResult.ok([], {
+		"enemies": enemies,
+		"rewards": rewards,
+		"optional_reward_count": optional_reward_count
+	})
 
 
 func _build_layout(width: int, height: int, entrance: Vector2i, exit_cell: Vector2i, blocker_cells: Array[Vector2i], wrinkles: Array) -> Dictionary:
