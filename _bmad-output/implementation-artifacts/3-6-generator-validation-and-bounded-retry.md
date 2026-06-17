@@ -6,7 +6,7 @@ baseline_commit: 59f15f088318fa2ae32b3beabe8b0e870b397634
 
 # Story 3.6: Generator Validation and Bounded Retry
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
