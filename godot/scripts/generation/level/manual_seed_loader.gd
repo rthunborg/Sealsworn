@@ -67,8 +67,12 @@ const MANUAL_SEED_NODE_TYPE: StringName = &"combat"
 # honoring the int64-string lossless rule via is_valid_int + to_int). Rejected with a stable code:
 #   empty_seed          - an empty or whitespace-only String.
 #   non_integer_seed    - a String that is not a valid decimal integer (e.g. "abc", "12x", "1.5",
-#                         embedded/leading/trailing whitespace, hex, scientific notation), OR a float
-#                         (ambiguous numeric form — a seed is an int or a decimal string, never a float).
+#                         embedded/leading/trailing whitespace, hex, scientific notation), a decimal
+#                         string OUTSIDE the signed-int64 range (e.g. "99999999999999999999" or
+#                         "9223372036854775808" — String.to_int() saturates/wraps these rather than
+#                         round-tripping, so we reject them loudly instead of silently mapping to
+#                         max int64), OR a float (ambiguous numeric form — a seed is an int or a
+#                         decimal string, never a float).
 #   unsupported_seed_type - any other type (bool, Array, Dictionary, null, object).
 func parse_seed(raw: Variant) -> ActionResult:
 	match typeof(raw):
@@ -83,7 +87,15 @@ func parse_seed(raw: Variant) -> ActionResult:
 			# notation, so an ambiguous string never starts a generation.
 			if not text.is_valid_int():
 				return ActionResult.error(&"non_integer_seed", {"reason": "seed_not_a_decimal_integer", "raw_text": text})
-			return _ok_seed(_normalize(text.to_int()), "string")
+			# is_valid_int() also returns true for a magnitude BEYOND the signed-int64 range (the digits are
+			# all valid), where String.to_int() saturates to max int64 or wraps — so the parsed value does
+			# NOT round-trip the input. Enforce the int64-string lossless rule: re-stringify to_int() and
+			# compare to the (canonicalized) input; on mismatch the seed is out of range -> reject as
+			# non_integer_seed rather than silently saturating to max int64.
+			var parsed_value: int = text.to_int()
+			if not _decimal_string_round_trips_losslessly(text, parsed_value):
+				return ActionResult.error(&"non_integer_seed", {"reason": "seed_out_of_int64_range", "raw_text": text})
+			return _ok_seed(_normalize(parsed_value), "string")
 		TYPE_FLOAT:
 			# A float seed is ambiguous (precision / non-integer form). The share format is a decimal
 			# String or a plain int — never a float. Reject loudly rather than silently truncating.
@@ -170,6 +182,35 @@ func _normalize(seed_value: int) -> int:
 	# Seed-sign provenance: map any signed int64 into the non-negative range GenerationRequest.validate()
 	# accepts. Idempotent for an already-non-negative seed.
 	return seed_value & NON_NEGATIVE_MASK
+
+
+# Int64-string lossless check: did String.to_int() (-> parsed_value) preserve the full magnitude of the
+# is_valid_int-accepted decimal string `text`? to_int() saturates an over-max-int64 string to max int64
+# and WRAPS a max-int64+1 string into the negative range, so an out-of-range seed would otherwise silently
+# map to a wrong value. We compare a canonicalized form of the input to str(parsed_value): a mismatch means
+# the value did not round-trip (out of int64 range) and must be rejected. The canonicalization tolerates
+# the BENIGN representational differences is_valid_int() accepts (a leading "+", surplus leading zeros, and
+# a signed zero like "-0"/"+0") so those still parse — only a genuine magnitude/sign loss fails.
+func _decimal_string_round_trips_losslessly(text: String, parsed_value: int) -> bool:
+	return _canonical_decimal_string(text) == str(parsed_value)
+
+
+# Canonicalize an is_valid_int-accepted decimal string to the same form str(int) produces: drop a single
+# leading "+"/"-" sign, strip surplus leading zeros (keep one digit), and treat "-0"/"+0"/"0" as "0".
+func _canonical_decimal_string(text: String) -> String:
+	var sign_prefix: String = ""
+	var body: String = text
+	if body.begins_with("+"):
+		body = body.substr(1)
+	elif body.begins_with("-"):
+		sign_prefix = "-"
+		body = body.substr(1)
+	while body.length() > 1 and body.begins_with("0"):
+		body = body.substr(1)
+	if body == "0":
+		# A signed zero ("-0"/"+0") and "0" all canonicalize to the unsigned "0" str(0) produces.
+		sign_prefix = ""
+	return sign_prefix + body
 
 
 func _ok_seed(root_seed: int, raw_type: String) -> ActionResult:

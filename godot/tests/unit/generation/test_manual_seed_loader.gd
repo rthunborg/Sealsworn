@@ -17,9 +17,11 @@ extends "res://tests/unit/test_case.gd"
 #
 #   AC2 — "Given a seed is invalid or malformed, when the loader parses it, then it returns a clear
 #          validation error, and no generation starts from ambiguous seed input."
-#     * parse_seed rejects empty/blank, non-integer text ("abc", "12x", "1.5", embedded whitespace), and
-#       unsupported types with a STABLE lower-snake code; mirrors RngStreamSet._int64_from_value's
-#       String/int discipline (is_valid_int + to_int).
+#     * parse_seed rejects empty/blank, non-integer text ("abc", "12x", "1.5", embedded whitespace),
+#       out-of-int64-range decimal strings (which is_valid_int() accepts but to_int() saturates/wraps —
+#       enforced by an int64-string lossless round-trip check), and unsupported types, each with a STABLE
+#       lower-snake code; mirrors RngStreamSet._int64_from_value's String/int discipline (is_valid_int +
+#       to_int) and additionally enforces the int64-string lossless rule on the String path.
 #     * load_level SHORT-CIRCUITS on a parse error: it returns the parse error verbatim and NEVER calls
 #       generate (no GenerationResult, no payload).
 #     * SEED-SIGN PROVENANCE (carried from the 3.1 review Decision): a legitimate full-64-bit shared seed
@@ -42,6 +44,8 @@ const NON_NEGATIVE_MASK: int = 0x7fffffffffffffff
 func run() -> Dictionary:
 	_parse_accepts_decimal_string_and_int()
 	_parse_rejects_malformed_and_ambiguous_input()
+	_parse_rejects_out_of_int64_range_decimal_string()
+	_parse_accepts_benign_decimal_string_forms()
 	_parse_normalizes_negative_decoding_seed_to_non_negative()
 	_load_short_circuits_on_parse_error_without_generating()
 	_load_reports_manual_seed_meta_ineligibility()
@@ -121,6 +125,65 @@ func _parse_rejects_malformed_and_ambiguous_input() -> void:
 	var as_nil: ActionResult = loader.parse_seed(null)
 	assert_true(as_nil.is_error(), "parse_seed(null) should be an error.")
 	assert_equal(as_nil.error_code, &"unsupported_seed_type", "A null seed should report unsupported_seed_type.")
+
+
+# AC2 (Round 1 [Review][Patch]): a decimal string OUTSIDE the signed-int64 range must be REJECTED as
+# non_integer_seed, NOT silently saturated/wrapped by String.to_int(). is_valid_int() accepts these
+# (all digits), and to_int() either saturates an over-max value to max int64 or wraps a max+1 value into
+# the negative range — so without the round-trip guard an over-range share string would map to the wrong
+# seed (e.g. max int64) instead of failing loudly. The loader re-stringifies to_int() and compares to the
+# input to enforce the int64-string lossless rule.
+func _parse_rejects_out_of_int64_range_decimal_string() -> void:
+	var loader: ManualSeedLoader = _loader()
+
+	# max int64 + 1 wraps to a negative value (does NOT round-trip).
+	var over_max_by_one: ActionResult = loader.parse_seed("9223372036854775808")
+	assert_true(over_max_by_one.is_error(), "parse_seed(max-int64 + 1) should be an error (out of range, not silently wrapped).")
+	assert_equal(over_max_by_one.error_code, &"non_integer_seed", "An over-int64 seed should report non_integer_seed.")
+
+	# min int64 - 1 saturates to max int64 (does NOT round-trip).
+	var under_min_by_one: ActionResult = loader.parse_seed("-9223372036854775809")
+	assert_true(under_min_by_one.is_error(), "parse_seed(min-int64 - 1) should be an error (out of range, not silently saturated).")
+	assert_equal(under_min_by_one.error_code, &"non_integer_seed", "An under-int64 seed should report non_integer_seed.")
+
+	# Far over the int64 range (20+ digits) — to_int() saturates to max int64; must be rejected, not
+	# silently mapped to 9223372036854775807. (String.to_int() emits a benign engine-level "too large"
+	# stderr line for this input — like the documented save/settings parse-failure fixtures — but the
+	# loader correctly REJECTS it rather than returning the saturated value.)
+	var far_over: ActionResult = loader.parse_seed("99999999999999999999")
+	assert_true(far_over.is_error(), "parse_seed(far-over-int64 string) should be an error (not saturated to max int64).")
+	assert_equal(far_over.error_code, &"non_integer_seed", "A far-over-int64 seed should report non_integer_seed.")
+
+	# The exact boundary values DO round-trip and must still be ACCEPTED (regression guard against an
+	# over-strict round-trip check that would falsely reject the legitimate full-64-bit edges).
+	var max_int64: ActionResult = loader.parse_seed("9223372036854775807")
+	assert_true(max_int64.succeeded, "parse_seed(max int64) must still succeed (in range, round-trips).")
+	var min_int64: ActionResult = loader.parse_seed("-9223372036854775808")
+	assert_true(min_int64.succeeded, "parse_seed(min int64) must still succeed (in range, round-trips; normalized non-negative).")
+
+
+# AC2: the round-trip lossless guard must NOT false-reject the benign representational forms is_valid_int()
+# accepts — a leading "+", surplus leading zeros, and a signed zero — since str(int) drops all of these.
+# These parse to the SAME seed as their canonical form.
+func _parse_accepts_benign_decimal_string_forms() -> void:
+	var loader: ManualSeedLoader = _loader()
+
+	var leading_plus: ActionResult = loader.parse_seed("+1001")
+	assert_true(leading_plus.succeeded, "parse_seed(\"+1001\") should succeed (leading + is a benign form).")
+	assert_equal(int(leading_plus.metadata.get("root_seed")), 1001, "\"+1001\" should parse to 1001.")
+
+	var leading_zeros: ActionResult = loader.parse_seed("007")
+	assert_true(leading_zeros.succeeded, "parse_seed(\"007\") should succeed (surplus leading zeros are benign).")
+	assert_equal(int(leading_zeros.metadata.get("root_seed")), 7, "\"007\" should parse to 7.")
+
+	var signed_zero: ActionResult = loader.parse_seed("-0")
+	assert_true(signed_zero.succeeded, "parse_seed(\"-0\") should succeed (signed zero is benign).")
+	assert_equal(int(signed_zero.metadata.get("root_seed")), 0, "\"-0\" should parse to 0.")
+
+	# A leading-zero negative full-width seed still round-trips (zeros stripped, sign + magnitude kept).
+	var leading_zero_negative: ActionResult = loader.parse_seed("-04523566890123456789")
+	assert_true(leading_zero_negative.succeeded, "parse_seed(leading-zero negative) should succeed.")
+	assert_equal(int(leading_zero_negative.metadata.get("root_seed")), (-4523566890123456789) & NON_NEGATIVE_MASK, "A leading-zero negative seed should parse + normalize like its canonical form.")
 
 
 # AC2 seed-sign provenance: a negative-decoding seed (int or string) parses to a NON-NEGATIVE root_seed
