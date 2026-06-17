@@ -5,7 +5,7 @@ source_story_key: 3-7-manual-seed-level-loader-and-regression-tests
 
 # Story 3.7: Manual Seed Level Loader and Regression Tests
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
