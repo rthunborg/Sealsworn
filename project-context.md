@@ -1,7 +1,7 @@
 ---
 project_name: 'Sealsworn'
 user_name: 'Rasmus'
-date: '2026-06-15'
+date: '2026-06-17'
 sections_completed:
   - technology_stack
   - engine_rules
@@ -13,11 +13,12 @@ sections_completed:
   - save_serialization_rules
   - presentation_view_model_rules
   - settings_rules
+  - generation_rules
 status: 'complete'
-rule_count: 140
+rule_count: 162
 optimized_for_llm: true
 architecture: '_bmad-output/game-architecture.md'
-refreshed_after: 'epic-2'
+refreshed_after: 'epic-3'
 ---
 
 # Project Context for AI Agents
@@ -59,7 +60,8 @@ Design guardrails:
 - AI tooling: GoPeak Godot MCP and Context7 are selected once the Godot project exists; Rasmus also has premium access to Codex, Claude, Claude Design, Google Stitch, Google Gemini, and related tools.
 - Do not use Godot .NET/C# for MVP. Use the standard GDScript build unless architecture is explicitly revised.
 - Project shape (post-Epic 2): main scene is `res://scenes/app/boot.tscn`; viewport is 1080x1920 portrait; renderer is Mobile; `stretch/mode=canvas_items`, `aspect=expand`.
-- Registered autoloads (as of Epic 2): `GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `SettingsManager`, `Diagnostics`. Keep them thin; they delegate gameplay decisions to domain services.
+- Registered autoloads (unchanged through Epic 3): `GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `SettingsManager`, `Diagnostics`. Keep them thin; they delegate gameplay decisions to domain services. Generation added NO new autoload — `LevelGenerator`/`ManualSeedLoader` are pure `RefCounted` services called directly.
+- Static-content storage (through Epic 3): `godot/data/source/` and `godot/data/resources/` are STILL EMPTY. Every definition (enemies, weapons, supports, level recipes) is a code constant authored as a baseline `_baseline_definitions()` array on its repository, registered through the `ContentRepository` boundary — there is NO `.tres`/JSON content pipeline yet. The JSON-source -> typed-Resource mirror is a later (Epic 6) decision; do not introduce it early. The `data/` roots are still asserted as required structure by `test_project_structure.gd`.
 - `godot` is NOT on the Bash/`where` PATH on this machine; it resolves only as `C:\Users\Rasmus\bin\godot.cmd` via PowerShell. Run the headless test command through PowerShell (`powershell.exe -NoProfile -Command ...`), not the Bash tool's PATH lookup.
 
 ## Critical Implementation Rules
@@ -91,8 +93,8 @@ Design guardrails:
 - Use the Sealsworn rules kernel for passives, items, affinities, curses, classes, bosses, Consume/Destroy choices, and tactical rule-benders.
 - Rules use explicit trigger windows, conditions, targets, operations, durations, stacking, conflict handling, and stable resolver ordering.
 - Rule-driven outcomes must be explainable in player/debug language.
-- Procedural generation runs in phases: route, recipe, layout, pathing, blockers, hazards, enemies, rewards, affinity rules, validation, final snapshot.
-- Generator validation failures must report seed, phase, reason, and compact diagnostics.
+- Procedural generation runs in phases: route, recipe, layout, pathing, blockers, hazards, enemies, rewards, affinity rules, validation, final snapshot. The phase vocabulary is fixed in `GenerationResult.PHASE_*`; a failure reports the failing phase.
+- Generator validation failures must report seed, phase, reason, and compact diagnostics (counts/coords/ratios) — NEVER a full terrain-grid dump. See the dedicated Procedural Generation section below for the full Epic-3 contract.
 - Enemy AI uses state/phase-constrained utility scoring over valid tactical actions.
 - Every AI decision must be explainable with top score, chosen action, and major reasons.
 - Shared tactical query services handle pathfinding, line of sight, threat maps, valid moves, attack previews, and tile scoring.
@@ -109,6 +111,27 @@ Design guardrails:
 - Repositories own atomic writes: write to `<path>.tmp`, then backup/replace via `DirAccess.rename_absolute` with `<path>.bak` rollback. Run autosave is `user://run_autosave.json` (`SaveRepository`); settings are `user://settings.json` (`SettingsRepository`). The two files and their repositories are strictly independent — neither reads, writes, truncates, or renames the other.
 - Read errors are structured `ActionResult` codes (`save_not_found`, `save_open_failed`, `save_parse_failed`, `unsupported_save_schema`, `invalid_tactical_snapshot`, `invalid_rng_snapshot`), not exceptions. Schema-version changes need migration tests.
 - Exercising the real parse-failure path emits one expected `ERROR: Parse JSON failed` line to stderr (Godot's `JSON.parse_string` on deliberate non-JSON bytes). The test still passes and the runner exits 0 — do NOT read that stderr diagnostic as a suite failure.
+
+### Procedural Level Generation Rules (Epic 3)
+
+The level generator (`scripts/generation/level/`) is a scene-free, deterministic, repository-fed pipeline. v0 ships Small (fixed 8x8, `small_combat_basic`) and Medium (fixed 14x12, `medium_combat_basic`) recipes only; Large/Huge are deferred (FR39).
+
+- LEVEL = PURE FUNCTION OF `(root_seed, recipe)`. A generated candidate is fully determined by the seed, the resolved recipe, and the `level`-stream start state. Same `(seed, recipe)` -> byte-identical layout AND identical final `GenerationResult` (same attempt count, same payload or same error). This invariant is non-negotiable and is the foundation of seed regression, manual-seed replay, and bounded retry.
+- ALL layout-affecting randomness draws through `GenerationRequest.draw_layout_int` / `draw_layout_float`, which route EXCLUSIVELY through `RngStreamSet.STREAM_LEVEL`. Generators and placers NEVER call `randi()`/`randf()`, NEVER construct a `RandomNumberGenerator`, and NEVER touch another stream. The `rewards`/`loot` streams are RESERVED for runtime reward/loot resolution (Epic 6), NOT generation placement.
+- The seed is `GenerationRequest.root_seed`, surfaced via `request.level_seed()` (v0: identity). There is no bare `request.seed`. On a SUCCESS `GenerationResult` the seed lives in `payload.level_seed` (a String) and `result.seed` is `""`; `result.seed` is populated only on the ERROR path. Read `payload.level_seed` on success — this split is a known wart (deferred) that has cost real test bugs.
+- FIXED DRAW ORDER (both generators are siblings; reordering or inserting a draw silently changes every pinned fixture): (1) blocker count, (2) blocker positions, (3) wrinkle kinds, (4) wrinkle positions, (5) enemy count, (6/7) enemy position+kind interleaved per enemy, (8) reward count, (9) reward positions. Every count draw fires even when its band collapses to one value, so the stream advances identically across recipes. Positions use a rejection-free SHRINKING CANDIDATE POOL (row-major order, picked cell removed) shared across blockers/wrinkles/enemies/rewards, so nothing ever collides and the reserved central corridor + entrance + exit + WALL cells are pre-excluded.
+- Entrance/exit are deterministic (NOT seed-randomized) cells on a reserved blocker-free central corridor row; seed-to-seed divergence comes from interior blockers/wrinkles/placement. This fairness-by-construction is coupled to the fixed even-height footprint; a future jittered size must re-establish the reserved-corridor invariant and re-pin fingerprints.
+- BOUNDED DETERMINISTIC RETRY (`LevelGenerator`): a rejected candidate is re-attempted up to `MAX_GENERATION_ATTEMPTS` (8) with a per-attempt seed mix. ATTEMPT 0 USES THE UNPERTURBED `level_seed()` EXACTLY (`_attempt_seed(seed, 0) == seed`) — this preserves the pinned terrain fingerprints and all 3.2-3.5 layout/placement tests with NO re-pin. This is the hard invariant. The cap keeps the worst case inside the NFR4 < 3s budget. Unrecoverable errors (missing/empty enemy repo, structural input/recipe error) short-circuit to attempts=1 instead of burning all 8.
+- `LevelValidator` is the COMPREHENSIVE, SIZE-AGNOSTIC, PURE-QUERY validator run on every built candidate. It draws NO RNG, runs NO commands, mutates nothing (same purity contract as snapshots) — wiring it in must keep the `level`-stream draw-count assertions green. It reuses the Medium generator's `validate_readability` (one canonical readability bound) and the placer's reward check, strengthening reward reachability to be ENTITY-AWARE for mandatory rewards. Checks run in the FIXED `check_order()`; the first failure short-circuits with a stable lower-snake code mapped to a phase via `LevelValidator.phase_for_code()`. Diagnostics are compact counts/coords, never a grid dump.
+- SAFE-FIRST-REVEAL v0 SEMANTIC (ratified, NOT a silent weakening): the check rejects only the entrance cell being HAZARD or occupied by an entity. A threat merely ADJACENT to the entrance is PERMITTED (seen on spawn within LoS radius 4, FR5; engaged by choice). A `Chebyshev<=1` enemy guard was deliberately REJECTED — it would fail fair baseline candidates and force attempt-0 re-rolls that drift the pinned fingerprints.
+- ENTITY OCCUPANCY on built board snapshots (CORRECTED contract — the opposite of an earlier note): `build_board_snapshot` MUST set the matching `occupant_id` on each blocking entity's cell, mirroring `BoardState.to_snapshot()`. `try_from_snapshot` records the cell occupant, strips the cell to `""`, then cross-checks it against blocking entities and REJECTS a blocking entity whose cell carried `""` (`invalid_cell_occupant`). Entity-aware reachability reads occupancy from the ENTITY list (`board.entities()`), never the stripped cell field.
+- Built board snapshots are validated through the STRICT `BoardState.try_from_snapshot` (validate-then-reject, never coerce; the Story 1.3 precedent). A malformed cell is a generator bug — surface the validator error, don't fix the snapshot. The emitted payload is PURE serializable data (board snapshot dict + entrance/exit/blockers + `rewards` markers + size_class/recipe_id/level_seed) that survives a JSON round-trip; never put the live `BoardState`/`RefCounted` in the payload.
+- `recipe.wall_density` is INTENTIONALLY INERT in v0 for BOTH generators — the `blocker_budget_min..max` band is the authoritative count bound (honoring density would clamp to a constant count and kill AC1 divergence). The Medium AC2 `excessive_blockage` ratio (`MAX_INTERIOR_WALL_RATIO = 0.35`) is the independent readability backstop, not derived from `wall_density`. Touching this field's effect requires widening the band AND re-pinning Small + Medium fingerprints deliberately.
+- Tactical wrinkles (`TacticalWrinklePlacer`, shared) draw kinds from the recipe allowlist filtered to the v0-realizable subset (`choke_point`/`blocker_cluster`/`flank_route`/`hazard`) realized as WALL/HAZARD terrain. HAZARD is board-valid, WALKABLE, and sight-TRANSPARENT (only WALL blocks occupancy/LOS) — never make HAZARD block movement; its danger is the rules kernel's job. `door`/`affinity_placeholder`/`enemy_formation`/`reward_behind_danger`/`risky_side_branch` are NOT realized as terrain in v0.
+- Enemies + rewards (`EntityRewardPlacer`, shared) are placed deterministically from the residual pool. ENEMIES become board entities (`TacticalEntityState`, `entity_type = ENEMY`) resolved THROUGH `EnemyRepository` (a null/empty repo with a positive enemy budget is a structured error, never a silent no-placement); the enemy kind set is the canonical `PLACEMENT_ENEMY_ORDER`, independent of registration order. REWARDS are abstract payload markers (`{x, y, optional}`), NOT board entities — there is no reward entity type and v0 adds none. There is NO `RewardTableDefinition` in v0; reward-placement rules live on `LevelRecipeDefinition`; concrete loot tables/repository are Epic 6.
+- `Array[Dictionary]` does NOT survive `ActionResult` metadata deep-copy — it returns as a plain `Array` and crashes a strict re-typed receiver. Receive metadata-carried dictionary lists (enemies, rewards, wrinkles) as untyped `Array`.
+- `ManualSeedLoader` (Story 3.7) is a THIN pure-domain parse+orchestration service over the COMPLETE `LevelGenerator.generate(...)` pipeline — it re-authors NO generation/validation/retry and persists nothing. `parse_seed` accepts a plain int or a decimal String/StringName, normalizes a negative-decoding signed-int64 seed to non-negative via `NON_NEGATIVE_MASK` (`& 0x7fffffffffffffff`) at the loader boundary (do NOT relax `GenerationRequest.validate()`'s `root_seed >= 0` rule), and REJECTS empty / non-decimal / out-of-int64-range / float seeds with stable codes (`empty_seed`/`non_integer_seed`/`unsupported_seed_type`). A float is rejected even if integral. Manual-seed results ALWAYS carry `is_manual_seed: true` + `meta_progression_eligible: false` (the existing `RunSnapshot` vocabulary); never re-introduce the dropped `manual_seed_eligible_for_progression` key (test-pinned absent). The actual meta gate is Epic 8.
+- SEED REGRESSION is the tripwire. `*_seed_regression.gd` tests pin a compact TERRAIN fingerprint (dimensions + row-major terrain + entrance + exit) per approved seed; `test_seed_batch_regression.gd` is the `generate`-level harness driving the approved-seed catalog (inline in that test — bland/unfair seeds are KEPT + annotated, not deleted) and cross-checks that the full-`generate` terrain agrees with the `generate_layout` fingerprint (the two pinning paths can never silently diverge). Fingerprints change ONLY via an intentional generator/recipe change re-pinned in the SAME PR — regenerate with `tools/dump_small_layout_fingerprints.gd` / `dump_medium_layout_fingerprints.gd` / `dump_seed_batch_report.gd`, never edit a value to make a drifting test pass.
 
 ### Presentation, View-Model & Accessibility Rules (Epic 2)
 
@@ -222,6 +245,15 @@ Design guardrails:
 - Do not let a snapshot compose/restore consume RNG draws or mutate source state; keep it a pure read.
 - Do not activate partial restored state on a validation failure; propagate the first error and return nothing.
 - Do not change `TacticalBoardViewModel.to_dictionary()`'s key set without intentionally updating its exact sorted-key assertion.
+- Do not draw generation randomness from anything but the `level` stream via `GenerationRequest.draw_layout_int/float`, and do not reorder or insert layout draws — the fixed draw order is pinned by seed-regression fingerprints.
+- Do not perturb attempt 0 of the bounded retry; it must reproduce the unperturbed `level_seed()` layout (the no-re-pin fingerprint invariant).
+- Do not let a generator/validator draw RNG, run commands, or mutate state during validation — `LevelValidator` is a pure read like a snapshot.
+- Do not make HAZARD terrain block movement or LOS, and do not model reward/hazard danger in generation (only WALL blocks; danger is the rules kernel's job).
+- Do not read `result.seed` on a successful `GenerationResult` (it is `""`); read `payload.level_seed`.
+- Do not emit a blocking entity whose board-snapshot cell lacks the matching `occupant_id`, and do not read occupancy from the stripped cell field — use `board.entities()`.
+- Do not re-type a metadata-carried list as `Array[Dictionary]` (it survives deep-copy only as a plain `Array`).
+- Do not add a `RewardTableDefinition`, a reward/player entity type, or a JSON-source content pipeline in the generation layer (all deferred); do not let a manual-seed load report meta-progression eligibility or relax the non-negative seed rule.
+- Do not silently edit a pinned seed-regression fingerprint to make a test pass; re-pin intentionally via the dump tools in the same change.
 
 ---
 
@@ -243,4 +275,4 @@ For humans:
 - Remove rules that become obvious or obsolete.
 - Treat `_bmad-output/game-architecture.md` as the full source of truth and this file as the compact agent handoff.
 
-Last Updated: 2026-06-15 (refreshed after Epic 2: presentation/view-model contracts, between-level save + resume serialization hardening, settings/preferences isolation, difficulty non-goal)
+Last Updated: 2026-06-17 (refreshed after Epic 3: procedural level generation — `level`-stream-only determinism + fixed draw order, "level = pure function of (seed, recipe)", bounded deterministic retry with attempt-0 unperturbed, comprehensive pure-query `LevelValidator`, repository-fed enemy/marker placement, rewards-as-markers + no `RewardTableDefinition` in v0, inert `wall_density`, `ManualSeedLoader` + meta-ineligibility, seed-regression fingerprint/catalog discipline)
