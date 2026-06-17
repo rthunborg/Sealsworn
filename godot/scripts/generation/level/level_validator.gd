@@ -383,6 +383,13 @@ func _check_safe_first_reveal(terrain_grid: Array, board: BoardState, entrance: 
 			"reason": "entrance_on_hazard",
 			"entrance": {"x": entrance.x, "y": entrance.y}
 		})
+	# DEFENSE-IN-DEPTH (intentionally retained — NOT dead code): through validate() this entity-on-entrance
+	# branch is UNREACHABLE, because check (b) _check_legal_enemy_placement runs earlier in check_order() and
+	# already rejects ANY entity on the entrance (code illegal_enemy_placement / reason entity_on_entrance).
+	# It is kept deliberately so _check_safe_first_reveal stays correct for DIRECT callers (it does not assume
+	# the caller already ran check (b)), so the full FR36 "safe first reveal" intent is expressed in one place,
+	# and as a guard if check_order() is ever reorganized — mirroring the file's "re-assert what an earlier
+	# layer enforces" discipline (the same way check (b) re-asserts try_from_snapshot's build-time legality).
 	for entity: TacticalEntityState in board.entities():
 		if entity.position == entrance:
 			return ActionResult.error(CODE_UNSAFE_FIRST_REVEAL, {
