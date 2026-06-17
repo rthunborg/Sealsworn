@@ -55,6 +55,10 @@ func _known_small_recipe_returns_real_layout_payload() -> void:
 	assert_equal(result_value.payload.get("size_class"), "small", "Layout payload should echo the resolved size class.")
 	assert_equal(result_value.payload.get("level_seed"), "1234", "Layout payload should carry the level seed string for traceability.")
 	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_LAYOUT), "A Small generation should report the layout phase.")
+	# Story 3.6: the success diagnostics now record validated: true + the attempt count (a baseline Small
+	# candidate passes the comprehensive validator on attempt 0, so attempts == 1).
+	assert_true(bool(result_value.diagnostics.get("validated")), "Story 3.6: Small success diagnostics must record validated: true.")
+	assert_equal(int(result_value.diagnostics.get("attempts")), 1, "Story 3.6: a baseline Small candidate must pass on attempt 0 (attempts == 1).")
 	# Story 3.4: the success diagnostics now record the placed tactical-wrinkle kinds + count (AC1).
 	assert_true(result_value.diagnostics.has("wrinkles"), "Story 3.4: Small success diagnostics must record the placed wrinkle kinds.")
 	assert_true(result_value.diagnostics.has("wrinkle_count"), "Story 3.4: Small success diagnostics must record the wrinkle count.")
@@ -104,6 +108,10 @@ func _medium_recipe_returns_real_validated_layout_payload() -> void:
 	assert_equal(result_value.payload.get("size_class"), "medium", "A Medium recipe payload should echo the medium size class.")
 	assert_equal(result_value.payload.get("level_seed"), "1234", "Medium layout payload should carry the level seed string for traceability.")
 	assert_equal(result_value.diagnostics.get("phase"), String(GenerationResult.PHASE_VALIDATION), "A successful Medium generation should report the validation phase (layout + AC2 readability cleared).")
+	# Story 3.6: the success diagnostics now record validated: true + the attempt count (a baseline Medium
+	# candidate passes the comprehensive validator on attempt 0, so attempts == 1).
+	assert_true(bool(result_value.diagnostics.get("validated")), "Story 3.6: Medium success diagnostics must record validated: true.")
+	assert_equal(int(result_value.diagnostics.get("attempts")), 1, "Story 3.6: a baseline Medium candidate must pass on attempt 0 (attempts == 1).")
 	# Story 3.4: the success diagnostics now record the placed tactical-wrinkle kinds + count (AC1).
 	assert_true(result_value.diagnostics.has("wrinkles"), "Story 3.4: Medium success diagnostics must record the placed wrinkle kinds.")
 	assert_true(result_value.diagnostics.has("wrinkle_count"), "Story 3.4: Medium success diagnostics must record the wrinkle count.")
