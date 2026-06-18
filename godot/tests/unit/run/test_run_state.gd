@@ -18,6 +18,7 @@ func run() -> Dictionary:
 	_root_seed_survives_full_int64_round_trip()
 	_run_state_round_trips_through_real_json()
 	_bridges_into_existing_run_snapshot_fields()
+	_top_level_current_node_pointer_is_honored_on_resume()
 	_run_snapshot_no_surprise_key_gate_stays_green()
 	return result()
 
@@ -225,6 +226,63 @@ func _bridges_into_existing_run_snapshot_fields() -> void:
 	var rebuilt_run: RunState = rebuilt.metadata.get("run_state") as RunState
 	assert_equal(rebuilt_run.phase, RunState.PHASE_ACTIVE_ROUTE, "Reconstructed run phase must match.")
 	assert_equal(rebuilt_run.route.node_count(), 2, "Reconstructed route must carry the nodes.")
+
+
+func _top_level_current_node_pointer_is_honored_on_resume() -> void:
+	# [Review][Patch] guard: the CANONICAL top-level RunSnapshot.current_route_node_id field must not
+	# be silently ignored by try_from_run_snapshot_fields (which previously read the pointer ONLY from
+	# the nested route_state payload). A future writer / save migration may set only the top-level
+	# field; it must survive resume.
+
+	# Path 1 — top-level pointer is the SOURCE OF TRUTH: the nested route payload carries an EMPTY
+	# pointer, the top-level field names a real node. Reconstruction must adopt the top-level value.
+	var route_payload_empty_pointer: Dictionary = RouteState.new([
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["boss"]),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_HIDDEN, [])
+	], "", []).to_dictionary()
+	route_payload_empty_pointer[String(RunState.RUN_PHASE_KEY)] = String(RunState.PHASE_NODE_RESOLUTION)
+	assert_equal(route_payload_empty_pointer.get("current_node_id"), "", "Setup: nested pointer is empty (top-level is the only source).")
+
+	var from_top_level: ActionResult = RunState.try_from_run_snapshot_fields({
+		"root_seed": 11,
+		"is_manual_seed": false,
+		"meta_progression_eligible": true,
+		"route_state": route_payload_empty_pointer,
+		"current_route_node_id": "start"
+	})
+	assert_true(from_top_level.succeeded, "Top-level current_route_node_id should reconstruct: %s" % from_top_level.metadata)
+	var top_level_run: RunState = from_top_level.metadata.get("run_state") as RunState
+	assert_equal(top_level_run.route.current_node_id, "start", "The canonical top-level pointer must NOT be silently dropped on resume.")
+
+	# Path 2 — AGREE: top-level and nested both name the same node. Succeeds, pointer preserved.
+	var route_payload_pointed: Dictionary = RouteState.new([
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["boss"]),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_HIDDEN, [])
+	], "start", []).to_dictionary()
+	route_payload_pointed[String(RunState.RUN_PHASE_KEY)] = String(RunState.PHASE_NODE_RESOLUTION)
+
+	var agree: ActionResult = RunState.try_from_run_snapshot_fields({
+		"root_seed": 12,
+		"is_manual_seed": false,
+		"meta_progression_eligible": true,
+		"route_state": route_payload_pointed,
+		"current_route_node_id": "start"
+	})
+	assert_true(agree.succeeded, "An agreeing top-level/nested pointer should reconstruct: %s" % agree.metadata)
+	var agree_run: RunState = agree.metadata.get("run_state") as RunState
+	assert_equal(agree_run.route.current_node_id, "start", "An agreeing pointer must be preserved.")
+
+	# Path 3 — DISAGREE: top-level and a non-empty nested pointer name DIFFERENT nodes. This is a
+	# corrupt save and must be rejected fail-loud (never silently resolved to one or the other).
+	var disagree: ActionResult = RunState.try_from_run_snapshot_fields({
+		"root_seed": 13,
+		"is_manual_seed": false,
+		"meta_progression_eligible": true,
+		"route_state": route_payload_pointed,
+		"current_route_node_id": "boss"
+	})
+	assert_true(disagree.is_error(), "A top-level/nested pointer conflict must be rejected.")
+	assert_equal(disagree.error_code, &"route_node_pointer_conflict", "A pointer conflict should use a stable code.")
 
 
 func _run_snapshot_no_surprise_key_gate_stays_green() -> void:

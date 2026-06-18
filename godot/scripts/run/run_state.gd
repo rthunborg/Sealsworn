@@ -225,6 +225,29 @@ static func try_from_run_snapshot_fields(fields: Dictionary) -> ActionResult:
 		return route_result
 	var parsed_route: RouteState = route_result.metadata.get("route") as RouteState
 
+	# The current-node pointer is written in TWO places by to_run_snapshot_fields(): the canonical
+	# top-level RunSnapshot.current_route_node_id field AND (mirrored) inside the route_state payload.
+	# RouteState.try_from_dictionary read it from the nested payload only. Cross-check the canonical
+	# top-level field so it cannot be silently ignored: if it is present and non-empty, it is the
+	# source of truth (a future writer / save migration may set ONLY the top-level field), so prefer
+	# it over the nested value. A disagreement with a non-empty nested pointer is a corrupt save and
+	# is rejected fail-loud rather than silently resolved. The resulting pointer is still subject to
+	# the structural known-node check below via validate() (delegates to RouteState.validate()).
+	var top_level_node_id: Variant = fields.get("current_route_node_id", "")
+	if top_level_node_id is String or top_level_node_id is StringName:
+		var top_level_current: String = String(top_level_node_id)
+		if not top_level_current.is_empty():
+			if not parsed_route.current_node_id.is_empty() \
+					and parsed_route.current_node_id != top_level_current:
+				return ActionResult.error(&"route_node_pointer_conflict", {
+					"field": "current_route_node_id",
+					"top_level": top_level_current,
+					"nested": parsed_route.current_node_id
+				})
+			parsed_route.current_node_id = top_level_current
+	elif top_level_node_id != null:
+		return ActionResult.error(&"invalid_run_state", {"field": "current_route_node_id"})
+
 	var run_state: RunState = load("res://scripts/run/run_state.gd").new(
 		StringName(String(phase_value)),
 		_int64_or_zero(fields.get("root_seed", 0)),
