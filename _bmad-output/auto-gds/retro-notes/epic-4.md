@@ -1,0 +1,10 @@
+# Epic 4 — Auto-GDS Retro Notes
+
+Signal-only scratchpad for later Epic 4 stories and the epic retrospective. Each bullet is a
+constraint, gotcha, or ratified convention surfaced by an earlier story in this epic.
+
+## Story 4-1-run-state-and-route-node-model
+- [Phase 3 — create-story] Story directs a NEW `scripts/run/` domain folder for the run-progression model (`RunState`/`RouteState`/`RouteNode`) and adding `run` to the project-context.md code-organization domain list. Architecture specifies the `RunState` machine but maps no directory for the run model (route *generation* → `scripts/generation/route/`, saves → `scripts/save/`). Defensible (mirrors how `settings` was added in Epic 2) but is a genuine convention extension later stories inherit — flag if a different placement is preferred.
+- [Phase 5 — dev-story] Run phase is serialized as `run_phase` NESTED inside the existing `route_state` payload, deliberately NOT a new top-level `RunSnapshot` key — keeps the pinned 23-key no-surprise gate green untouched. Later route stories must keep run-progression fields under `route_state`, not flatten new top-level run keys onto `RunSnapshot`.
+- [Phase 5 — dev-story] `run_started` `DomainEvent` is now fully wired (factory + payload validator, system event, no actor) and tested, but has NO emission site yet — no run-start command exists in 4.1. A later Epic 4 story (run-start command) must actually emit it, or the validator is dead weight.
+- [Phase 7 — code review] `DomainEvent._has_decimal_string_payload` (the new `run_started` `root_seed` validator) uses loose `is_valid_int()` only — it accepts out-of-int64 strings that `to_int()` saturates/wraps, weaker than the strict lossless-decimal-string check Story 3.7 added to `ManualSeedLoader.parse_seed`. It is the project's first seed-string validator added AFTER 3.7 set the lossless idiom and it diverged. Deferred to the first `run_started` emitter (folds with the `node_count` defer). Epic-retro lesson: any new seed-string validator must adopt the 3.7 lossless/canonicalize idiom, not bare `is_valid_int()`.

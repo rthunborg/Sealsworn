@@ -4,6 +4,7 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 
 func run() -> Dictionary:
+	_run_started_serializes_and_parses_stable_payload()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -23,6 +24,62 @@ func run() -> Dictionary:
 	_from_dictionary_keeps_unknown_compatibility_wrapper()
 	_event_identifiers_are_stable_machine_ids()
 	return result()
+
+
+func _run_started_serializes_and_parses_stable_payload() -> void:
+	# AC1: a run-started system event (no actor). Factory output must round-trip through
+	# to_dictionary -> try_from_dictionary; an empty actor_id is accepted; a malformed payload is
+	# rejected with the stable invalid_event_payload code.
+	var event: DomainEvent = DomainEvent.run_started(1, {
+		"root_seed": "9223372036854775000",
+		"is_manual_seed": true,
+		"node_count": 9
+	})
+	var serialized: Dictionary = event.to_dictionary()
+
+	assert_equal(serialized.get("event_id"), "run_started", "Run-started events should serialize stable string ids.")
+	assert_equal(serialized.get("actor_id"), "", "Run-started is a system event with an empty actor id.")
+	assert_equal(serialized.get("payload", {}).get("root_seed"), "9223372036854775000", "Run-started should string-encode root_seed (int64-safe).")
+	assert_equal(serialized.get("payload", {}).get("is_manual_seed"), true, "Run-started should serialize manual-seed flag.")
+	assert_equal(serialized.get("payload", {}).get("node_count"), 9, "Run-started should serialize node count.")
+
+	# Real JSON round-trip so the int64-string seed is exercised through stringify/parse.
+	var json_data: Variant = JSON.parse_string(JSON.stringify(serialized))
+	assert_true(json_data is Dictionary, "Run-started event should survive JSON stringify/parse.")
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(json_data)
+	assert_true(parse_result.succeeded, "Run-started event should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.RUN_STARTED, "Run-started should parse back to RUN_STARTED.")
+	assert_equal(restored.actor_id, &"", "Run-started restored actor id should stay empty.")
+	assert_equal(String(restored.payload.get("root_seed")), "9223372036854775000", "Run-started seed must not lose precision through a JSON round-trip.")
+
+	# A malformed payload (node_count missing) is rejected with the stable code.
+	var malformed: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"root_seed": "42",
+			"is_manual_seed": false
+		}
+	})
+	assert_true(malformed.is_error(), "Malformed run-started payload should be rejected.")
+	assert_equal(malformed.error_code, &"invalid_event_payload", "Malformed run-started payload should use the stable invalid_event_payload code.")
+	assert_equal(malformed.metadata.get("field"), "node_count", "Malformed run-started payload should name the missing field.")
+
+	# A non-string root_seed (raw int) is rejected — the seed must be the int64-safe string form.
+	var numeric_seed: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"root_seed": 42,
+			"is_manual_seed": false,
+			"node_count": 3
+		}
+	})
+	assert_true(numeric_seed.is_error(), "Run-started with a raw-int root_seed should be rejected.")
+	assert_equal(numeric_seed.metadata.get("field"), "root_seed", "Run-started should require the decimal-string root_seed form.")
 
 
 func _board_created_serializes_stable_event_id() -> void:
