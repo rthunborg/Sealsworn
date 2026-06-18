@@ -56,6 +56,16 @@ func _init(
 	payload = new_payload.duplicate(true)
 
 
+static func run_started(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor). root_seed is decimal-string encoded (full int64-safe, mirroring
+	# RunSnapshot/RunState); is_manual_seed is a bool; node_count is a non-negative integer.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["root_seed"] = str(payload.get("root_seed", "0"))
+	payload_value["is_manual_seed"] = bool(payload.get("is_manual_seed", false))
+	payload_value["node_count"] = int(payload.get("node_count", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_STARTED, sequence_id, &"", payload_value)
+
+
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
 	return load("res://scripts/core/events/domain_event.gd").new(Type.BOARD_CREATED, sequence_id, &"", {
 		"width": width,
@@ -376,6 +386,8 @@ static func _is_integral_number(value: Variant) -> bool:
 
 static func _validate_payload_for_event(event_type_value: int, payload_value: Dictionary) -> ActionResult:
 	match event_type_value:
+		Type.RUN_STARTED:
+			return _validate_run_started_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -400,6 +412,18 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_level_defeat_reached_payload(payload_value)
 		_:
 			return _ok_result()
+
+
+static func _validate_run_started_payload(payload_value: Dictionary) -> ActionResult:
+	# root_seed is a full int64 carried as a decimal string (JSON-double-safe, mirroring
+	# RunSnapshot/RunState encoding) — not a bounded integral payload.
+	if not _has_decimal_string_payload(payload_value, &"root_seed"):
+		return _error_result(&"invalid_event_payload", {"field": "root_seed"})
+	if not _has_bool_payload(payload_value, &"is_manual_seed"):
+		return _error_result(&"invalid_event_payload", {"field": "is_manual_seed"})
+	if not _has_nonnegative_integral_payload(payload_value, &"node_count"):
+		return _error_result(&"invalid_event_payload", {"field": "node_count"})
+	return _ok_result()
 
 
 static func _validate_entity_moved_payload(payload_value: Dictionary) -> ActionResult:
@@ -726,6 +750,16 @@ static func _has_lower_snake_payload(payload_value: Dictionary, field_name: Stri
 
 static func _has_bool_payload(payload_value: Dictionary, field_name: StringName) -> bool:
 	return payload_value.has(String(field_name)) and typeof(payload_value.get(String(field_name))) == TYPE_BOOL
+
+
+# A field carried as a decimal-string-encoded integer (the int64-safe wire form for seeds).
+static func _has_decimal_string_payload(payload_value: Dictionary, field_name: StringName) -> bool:
+	if not payload_value.has(String(field_name)):
+		return false
+	var value: Variant = payload_value.get(String(field_name))
+	if not (value is String or value is StringName):
+		return false
+	return String(value).is_valid_int()
 
 
 static func _has_positive_integral_payload(payload_value: Dictionary, field_name: StringName) -> bool:

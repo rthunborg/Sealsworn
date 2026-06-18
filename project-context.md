@@ -165,8 +165,8 @@ The level generator (`scripts/generation/level/`) is a scene-free, deterministic
 
 - Production Godot files live under `godot/`. Do not mix production implementation into `prototype/`.
 - Use the architecture-defined roots: `scripts/`, `scenes/`, `assets/`, `data/`, `tests/`, `tools/`.
-- Organize scripts by domain: `core`, `tactical`, `rules`, `generation`, `ai`, `content`, `save`, `settings`, `ui`, `platform`, `diagnostics`, `utils`. Autoload scripts live in `scripts/autoloads/`.
-- Keep `scripts/tactical/`, `scripts/rules/`, `scripts/generation/`, `scripts/ai/`, `scripts/save/`, and `scripts/settings/` independent of scene nodes for authoritative/data logic (they are `RefCounted` services + DTOs, not Nodes).
+- Organize scripts by domain: `core`, `tactical`, `rules`, `generation`, `ai`, `content`, `save`, `settings`, `run`, `ui`, `platform`, `diagnostics`, `utils`. Autoload scripts live in `scripts/autoloads/`.
+- Keep `scripts/tactical/`, `scripts/rules/`, `scripts/generation/`, `scripts/ai/`, `scripts/save/`, `scripts/settings/`, and `scripts/run/` independent of scene nodes for authoritative/data logic (they are `RefCounted` services + DTOs, not Nodes). The `run` domain holds the run-progression model (`RunState` phase machine, `RouteState` graph, `RouteNode`); route *generation* lives separately under `scripts/generation/route/` (Epic 4 Story 4.2).
 - UI logic lives in `scripts/ui/view_models/` (semantic view models like `TacticalBoardViewModel`, `TacticalLayoutProfile`, `TacticalAccessibilityModel`), `scripts/ui/command_bridge/`, and `scripts/ui/presenters/`; layout scenes live in `scenes/ui/layouts/`.
 - Player-preference code lives in `scripts/settings/` (`SettingsSnapshot`, `SettingsRepository`, `SettingsApplyService`). NEVER fold preferences into the run snapshot or any tactical/save state.
 - Static content source lives in `data/source/`; typed Godot resource mirrors live in `data/resources/`.
