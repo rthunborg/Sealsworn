@@ -1,6 +1,6 @@
 # Story 4.2: Seeded 8-12 Node Route Generation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
