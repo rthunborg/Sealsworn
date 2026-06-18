@@ -3,7 +3,7 @@ epic_num: 4
 story_num: 2
 branch: story/4-2-seeded-8-12-node-route-generation
 status: in-progress
-updated_at: "2026-06-18T16:36:09Z"
+updated_at: "2026-06-18T16:48:47Z"
 started_at: "2026-06-18T16:14:24Z"
 completed_at: null
 active_seconds: 0
@@ -19,14 +19,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 6
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["0c53d38", "3c67dc8"]
+commits: ["0c53d38", "3c67dc8", "c8d87d5"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -36,7 +36,8 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "[Review][Decision, Low] Route depth is constant (8 tiers) for every seed; the [8,12] variation is all column WIDTH, not route length. Reviewer: defensible v0, no 4.2 change required — forward design note for the Epic-10 pacing pass / Story 4.6. Left unresolved (no direction invented)."
 deferred_work: []
 blockers: []
 overrides: {}

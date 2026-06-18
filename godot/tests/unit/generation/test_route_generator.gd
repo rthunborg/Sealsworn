@@ -192,9 +192,12 @@ func _generated_route_has_a_branch_point_and_revealed_clue() -> void:
 	for root_seed: int in SAMPLE_SEEDS:
 		var route: RouteState = _route_for_seed(root_seed)
 		var branch_points: int = 0
+		var first_branch: RouteNode = null
 		for node: RouteNode in route.nodes():
 			if node.outgoing_link_ids.size() >= 2:
 				branch_points += 1
+				if first_branch == null:
+					first_branch = node
 		assert_true(branch_points >= 1, "Seed %d must contain >= 1 branch point (a node with >= 2 outgoing links) so route choice isn't a decorative level-select list (AC4)." % root_seed)
 
 		var revealed_clue_nodes: int = 0
@@ -205,6 +208,22 @@ func _generated_route_has_a_branch_point_and_revealed_clue() -> void:
 				for clue: String in node.clues:
 					assert_true(_is_canonical_clue(clue), "Seed %d node %s has a non-canonical clue '%s'." % [root_seed, node.id, clue])
 		assert_true(revealed_clue_nodes >= 1, "Seed %d must expose >= 1 revealed node carrying a tradeoff clue (AC4)." % root_seed)
+
+		# AC4 (literal): clues must be carried by a BRANCH's targets, not merely by "some revealed node
+		# somewhere". Inspect the FIRST branch point and assert that EACH of its REVEALED targets carries
+		# a canonical CLUE_* tag directly (the by-construction guarantee: every non-boss node is clued, so
+		# any revealed target of a branch is a clued, player-facing choice). When the start (depth 0) is
+		# itself the branch, this verifies its two revealed depth-1 targets are clued — AC4's "clues AT the
+		# branch". (A first branch sitting deeper has hidden targets, so it has no revealed target to assert
+		# over; the depth-0/1 revealed-clue guarantee above still covers the player-facing tier.)
+		assert_true(first_branch != null, "Seed %d must have a first branch point to inspect (AC4)." % root_seed)
+		for link_id: String in first_branch.outgoing_link_ids:
+			var target: RouteNode = route.node_by_id(link_id)
+			assert_true(target != null, "Seed %d: first branch %s links to a resolvable target %s." % [root_seed, first_branch.id, link_id])
+			if target.reveal_state == RouteNode.REVEAL_REVEALED:
+				assert_true(target.clues.size() >= 1, "Seed %d: revealed branch target %s must carry a tradeoff clue directly (AC4 — clues AT the branch)." % [root_seed, target.id])
+				for clue: String in target.clues:
+					assert_true(_is_canonical_clue(clue), "Seed %d branch target %s has a non-canonical clue '%s'." % [root_seed, target.id, clue])
 
 
 func _clue_assignment_is_seed_stable() -> void:

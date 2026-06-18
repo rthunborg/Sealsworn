@@ -29,7 +29,9 @@ extends RefCounted
 #         (2a) the column width in [1, 2] (clamped so the remaining columns can still reach the exact
 #              non-boss target; the draw STILL FIRES even when the clamp forces a single legal value).
 #   (3) per non-boss node, in ascending (depth, index) order:
-#         (3a) a node-type selector draw (depth-banded weighting; see _draw_node_type).
+#         (3a) a node-type selector draw (depth-banded weighting; see _draw_node_type) -- fires for
+#              EVERY non-boss node EXCEPT the depth-0 start, which is always `combat` and draws NO type
+#              selector (so the start node consumes only the (3b) clue draw, a single `map` draw).
 #         (3b) a clue selector draw (deterministic clue tags; see _assign_clues).
 #   (4) per node in column c (c in 0..boss_depth-1), in ascending (depth, index) order:
 #         (4a) a forward fan-out selector draw choosing which next-column node(s) it links to.
@@ -342,7 +344,8 @@ static func _wire_forward_edges(streams: RngStreamSet, column_nodes: Array) -> A
 # Deterministic depth-banded node-type weighting (v0). The pacing bias from the GDD (early = combat-heavy;
 # mid = shops/reforge/gambling/first elites; late = elite/boss prep) informs a SIMPLE depth-banded weight
 # table — exact node frequency is explicitly deferred (GDD line 708, Epic 10 tuning). Boss is NEVER drawn
-# here (only the terminal node is boss). The draw fires once per non-boss node (fixed draw order step 3a).
+# here (only the terminal node is boss). The draw fires once per non-boss node EXCEPT the depth-0 start
+# (always `combat`, short-circuited below with NO draw), so step 3a is skipped for depth 0.
 static func _draw_node_type(streams: RngStreamSet, depth: int, boss_depth: int) -> ActionResult:
 	# The start node (depth 0) is always a plain combat node (a fair, legible run opener).
 	if depth == 0:
