@@ -1,0 +1,222 @@
+# Story 4.2: Seeded 8-12 Node Route Generation
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want each run to generate a reproducible forward route,
+so that route choice creates fair commitment and replayable structure.
+
+## Acceptance Criteria
+
+Source: `_bmad-output/planning-artifacts/epics.md` → Epic 4 → Story 4.2 (verbatim, with the implementation-grounded detail this story adds).
+
+1. **Seeded 8-12 node route from the `map` stream.**
+   **Given** a non-manual root seed
+   **When** route generation runs
+   **Then** it creates an 8-12 node route before the boss placeholder (the boss is the terminal node and is NOT counted in the 8-12; "8-12 nodes before the boss" + 1 boss node, per FR30 / GDD line 203)
+   **And** generation uses the named `map` RNG stream EXCLUSIVELY (never `level`/`combat`/`loot`/`rewards`/`events`/`cosmetic`, never global `randi()`/`randf()`, never a bare `RandomNumberGenerator`).
+
+2. **Deterministic + fingerprint-stable.**
+   **Given** the same seed is used
+   **When** route generation runs again
+   **Then** node count, node ids, node types, links, and boss placeholder position match byte-for-byte
+   **And** route fingerprints are stable in tests (a pinned per-seed route fingerprint that changes ONLY via an intentional generator change re-pinned in the same PR — same discipline as the Epic 3 level seed-regression fingerprints).
+
+3. **Forward-only graph; no backtracking edge.**
+   **Given** route generation creates branches
+   **When** validation runs
+   **Then** every visible choice leads forward (every `outgoing_link` points to a STRICTLY GREATER depth — monotonic forward edges only)
+   **And** no route edge allows backtracking to a cleared node (no edge targets an equal-or-lower depth; the structural `RouteState.validate()` from 4.1 plus this story's NEW forward-only edge check together guarantee it).
+
+4. **Player-facing tradeoff clues.**
+   **Given** route generation creates a player-facing choice
+   **When** available nodes are revealed
+   **Then** at least some choices expose tradeoff clues such as `safer_combat`, `stronger_reward`, `unknown_risk`, `recovery`, `elite_pressure`, or `mystery` (the `RouteNode.CLUE_*` vocabulary already defined in Story 4.1)
+   **And** route choice is not reduced to a purely decorative level-select list (a generated route must contain at least one real branch point — a node with >= 2 outgoing links — and clued choices at that branch).
+
+### Acceptance-criteria interpretation notes (read before coding)
+
+- **"8-12 nodes before the boss" = the route node count, boss excluded.** The generated `RouteState` contains `node_count_in_8_12 + 1` nodes total, where the final node is `RouteNode.TYPE_BOSS` (the boss placeholder; real Larval Avatar content is Epic 9). The 8-12 count is the non-boss nodes. Draw the count from the `map` stream so it varies per seed within `[8, 12]`. **The count draw MUST fire first and unconditionally** (mirror the Epic-3 fixed-draw-order discipline: every count draw fires even when its band could collapse, so the stream advances identically across seeds).
+- **"route fingerprints are stable" = a NEW route seed-regression test** mirroring `test_small_level_layout_seed_regression.gd` / `test_medium_level_layout_seed_regression.gd`: pin a compact route fingerprint (e.g. `count|node_ids|types|edges|boss_depth`) per approved `map`-seed, generate twice and assert byte-identical (determinism), assert the pinned fingerprint matches, and assert the approved seeds collectively produce >= 2 distinct routes (meaningful divergence). Put the FAILING seed in the assert message (AC verbatim style: "route fingerprints are stable in tests"). Provide a `tools/` dump generator so re-pinning is mechanical, never hand-edited.
+- **"every visible choice leads forward" = a monotonic-depth edge invariant.** Assign each node a non-negative `depth` (4.1 field). An edge is forward iff `target.depth > source.depth`. The generator must ONLY emit forward edges, and a NEW validation pass (this story) must REJECT any non-forward edge (a generator bug → structured error, never a silently-shipped backtrack). This is the forward-only edge validation that Story 4.1 explicitly deferred to 4.2 (4.1 validated structural integrity only).
+- **"no route edge allows backtracking to a cleared node"** is the same monotonic-depth invariant from the no-backtracking direction: because every edge strictly increases depth and `cleared_node_ids` are necessarily at lower depths than the current node once progress is made, a forward-only graph can never link back to a cleared node. 4.2 must prove the EDGE-LEVEL guarantee (no equal/lower-depth edge exists); the run-time choice-eligibility filtering (reveal gating + excluding already-cleared ids at selection time) is layered later in the choose-and-commit command (Story 4.3) — do NOT build choice filtering here.
+- **"tradeoff clues" = populate `RouteNode.clues` during generation.** Use the canonical `RouteNode.CLUE_*` tags (4.1 defined them as constants). Clue assignment is DETERMINISTIC from the `map` stream + node type (e.g. an `elite_combat` node carries `elite_pressure` + maybe `stronger_reward`; a `shop`/`reforge` carries `recovery`; an unrevealed branch carries `unknown_risk`/`mystery`). AC4 requires only that SOME revealed choices carry clues and at least one real branch exists — keep it deterministic and seed-stable; do NOT over-engineer a clue economy (exact clue weighting is a later tuning concern, GDD line 708).
+- **Node TYPE assignment is v0, deterministic, and bounded by the MVP vocabulary** (`RouteNode.supported_types()` from 4.1: combat, elite_combat, shop, reforge, gambling, event, secret, boss). The pacing bias from the GDD (early = combat-heavy/Small; mid = shops/reforge/gambling/first elites; late = elite/boss prep — GDD lines 214-216) MAY inform a simple depth-banded type weighting, but EXACT node weighting/frequency is explicitly deferred (GDD line 708, Epic 10 tuning). Ship a defensible deterministic v0 distribution that (a) always ends in exactly one `boss`, (b) includes at least one `elite_combat` and the combat types, and (c) is seed-stable. Per-type RESOLUTION behavior is Story 4.5 — 4.2 only ASSIGNS the type.
+- **Node ids are MINTED here (the opposite of 4.1).** 4.1 accepted caller-supplied literal ids and explicitly deferred seeded id-generation to 4.2. 4.2 mints stable ids deterministically (e.g. `node_<depth>_<index>` or a seed-stable scheme) — they must satisfy `RouteNode._is_valid_node_id` (non-empty, NO whitespace; hyphens allowed) and be stable across regenerations of the same seed (so the fingerprint and save/resume references hold). Do NOT mint ids with `randf()`-style noise; derive them from deterministic structure (depth/index), not from a `map` draw, so they are reproducible and human-debuggable.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1 — Create the route-generation domain folder + the route generator skeleton (AC: #1)**
+  - [ ] 1.1 Create `godot/scripts/generation/route/` (NEW folder — the architecture's mapped home for route generation: `game-architecture.md` line 819 source tree + line 915 System Location Mapping "Procedural route generation → `scripts/generation/route/`"; project-context.md §Code Organization already states route *generation* lives here, separate from `scripts/run/`). Create `godot/tests/unit/generation/` already exists — put the new route tests there alongside the level seed-regression tests.
+  - [ ] 1.2 Implement `godot/scripts/generation/route/route_generator.gd` (`class_name RouteGenerator`, `extends RefCounted`) — a SCENE-FREE, PURE, deterministic generator like `LevelGenerator`. Public entry: `static func generate(root_seed: int, ...) -> ActionResult` (or a `GenerationResult`; see Task 5 decision) returning a built `RouteState` (4.1 type) in metadata. NO `Node`/`Control`/`get_tree`/`get_node`. NO autoload. It is a `RefCounted` service called directly (mirroring how `LevelGenerator`/`ManualSeedLoader` are NOT autoloads — project-context.md §Technology Stack).
+  - [ ] 1.3 Draw ALL route-affecting randomness through `RngStreamSet.STREAM_MAP` ONLY. Construct `RngStreamSet.new(root_seed)` and draw via `streams.rand_int(RngStreamSet.STREAM_MAP, min, max, context)` — NEVER `STREAM_LEVEL` (reserved for tactical layout, Epic 3) or any other stream, NEVER global `randi()`/`randf()`, NEVER `RandomNumberGenerator.new()` directly. Consider a thin `route_draw_int(...)` helper that funnels every draw through `STREAM_MAP` in ONE place (mirroring `GenerationRequest.draw_layout_int` funneling every layout draw through `STREAM_LEVEL`) so the single-stream contract is enforced structurally and is unit-testable.
+- [ ] **Task 2 — Deterministic route topology: count, node minting, types, forward edges (AC: #1, #2, #3)**
+  - [ ] 2.1 FIXED DRAW ORDER (establish it from story one — it becomes pinned by the fingerprints; reordering/inserting a draw silently drifts every approved route fingerprint, exactly like the Epic-3 layout draw order): (1) non-boss node count in `[8, 12]` — fired FIRST and unconditionally; (2) per-depth branch/type structure draws in a fixed, documented order. Document the order in the generator header as the canonical contract.
+  - [ ] 2.2 Build the route as a forward-only DAG with monotonic `depth`: depth 0 = the run start, increasing to the boss at the max depth. Mint stable node ids deterministically from `(depth, index)` (NOT from a `map` draw). Assign each node a `type` from `RouteNode.supported_types()` per the v0 deterministic depth-banded weighting (see AC interpretation); the FINAL node is exactly one `RouteNode.TYPE_BOSS`. Set each node's `outgoing_link_ids` to nodes at STRICTLY GREATER depth only (forward edges). Ensure at least one branch point (a node with >= 2 outgoing links) exists so AC4's "not a decorative level-select list" holds.
+  - [ ] 2.3 Set `reveal_state` deterministically: the start/first-choice nodes are `RouteNode.REVEAL_REVEALED`; deeper not-yet-reachable nodes default `RouteNode.REVEAL_HIDDEN` (4.1 default). Do NOT mark anything `cleared` at generation time (nothing is cleared on a fresh route). Keep reveal-state orthogonal to type/depth (4.1 rule).
+  - [ ] 2.4 Assemble a `RouteState` (4.1) from the minted nodes with `current_node_id` set to the start node (depth 0) and `cleared_node_ids = []`. The node list MUST be in stable order (4.1 `RouteState` serializes nodes as an ordered `Array[Dictionary]` — keep insertion order deterministic, e.g. by ascending `(depth, index)`).
+- [ ] **Task 3 — Tradeoff clue assignment (AC: #4)**
+  - [ ] 3.1 Deterministically populate each node's `clues: Array[String]` from `(type, depth, map-stream draw)` using the canonical `RouteNode.CLUE_*` tags. Guarantee AC4: at least some REVEALED choices at the first branch carry clues, and the clue set is seed-stable. Keep clue VALUES inside the `RouteNode` clue vocabulary (4.1 validates clues are non-empty strings; the canonical tags are the intended set). Do not invent a parallel clue field — reuse `RouteNode.clues`.
+  - [ ] 3.2 If clue assignment consumes `map` draws, those draws are part of the FIXED DRAW ORDER (Task 2.1) and the fingerprint — keep them in a documented, stable position so the route fingerprint stays reproducible.
+- [ ] **Task 4 — Forward-only edge validation (AC: #3) — the validation 4.1 deferred to this story**
+  - [ ] 4.1 Add a route-validation pass that REJECTS any non-forward edge: for every node, every `outgoing_link_id` must resolve to a node of STRICTLY GREATER `depth`. On violation, return a structured `ActionResult.error` with a stable lower_snake code (e.g. `non_forward_route_edge` or `backtracking_route_edge`) + compact diagnostics (`{node_id, link, source_depth, target_depth}` — counts/coords/ids only, NEVER a full graph dump, mirroring the generator-diagnostics rule). This is the EDGE-shape guarantee that `RouteState.validate()` (structural only) does not provide.
+  - [ ] 4.2 Run BOTH the existing structural `RouteState.validate()` (4.1: dangling links, unknown current node, duplicate/unknown cleared ids, per-node validity) AND this new forward-only edge pass on every built route before returning success. A generated route that fails EITHER is a generator bug surfaced as a structured error, not a shipped route. (Decide: fold the forward-only check into a route validator helper in `scripts/generation/route/`, or call it from the generator after assembly — either is fine, but keep it OUT of `RouteState.validate()` so 4.1's structural contract stays unchanged and the 23-key/no-surprise discipline is untouched.)
+- [ ] **Task 5 — Result shape + (optional) bounded determinism (AC: #1, #2)**
+  - [ ] 5.1 DECISION (record in Completion Notes): return either a plain `ActionResult` carrying the `RouteState` in metadata, OR a `GenerationResult` using the EXISTING `GenerationResult.PHASE_ROUTE` (already defined: `generation_result.gd` line 11 — the route phase is reserved in the architecture phase vocabulary). PREFER `GenerationResult` if you want phase/seed/diagnostics symmetry with `LevelGenerator` (route is generation-pipeline phase 1, architecture line 391). Whichever you choose, on FAILURE report seed + phase (`route`) + reason + compact diagnostics (project-context.md §Determinism: "generator validation failures must report seed, phase, reason, and compact diagnostics — NEVER a full grid/graph dump").
+  - [ ] 5.2 v0 generation is expected to succeed by construction for any non-negative seed (a forward-only DAG with a bounded node count is always buildable) — a bounded deterministic RETRY loop like `LevelGenerator.MAX_GENERATION_ATTEMPTS` is likely UNNECESSARY for 4.2 (there is no fail-prone placement step). If you DO add a retry, attempt 0 MUST use the unperturbed seed exactly (the Epic-3 no-re-pin fingerprint invariant) and the cap must be small. Default: NO retry; document the by-construction-valid reasoning in Completion Notes. Do NOT copy retry machinery you do not need.
+  - [ ] 5.3 The generator draws the `map` stream; it does NOT persist anything and does NOT compose a `RunSnapshot` (composition/persistence is a later story). It returns the in-memory `RouteState`. Keep it a pure read-of-seed → build, mutating no external state.
+- [ ] **Task 6 — `map`-seed route regression fingerprints + dump tool (AC: #2)**
+  - [ ] 6.1 Add `godot/tests/unit/generation/test_route_generation_seed_regression.gd` (`extends "res://tests/unit/test_case.gd"`): an `APPROVED_FINGERPRINTS` dict mapping approved `map`-seed → expected compact route fingerprint. For each seed: generate twice + assert byte-identical (determinism); assert fingerprint matches the pinned value with the FAILING seed in the message; assert >= 2 distinct fingerprints across the approved set (divergence). Mirror the structure + DELIBERATE-UPDATE-CONTRACT header comment of `test_small_level_layout_seed_regression.gd`.
+  - [ ] 6.2 Add a fingerprint helper (`RouteGenerator.fingerprint(route_state) -> String` or a test-local helper) producing a compact deterministic string: node count + ordered node ids + types + edges + boss depth. It must be a PURE function of the `RouteState` (no RNG, no mutation). Assert it agrees with the live built route (no silently-diverging second pinning path — the Epic-3 cross-check discipline).
+  - [ ] 6.3 Add `godot/tools/dump_route_fingerprints.gd` (mirror `tools/dump_small_layout_fingerprints.gd`) so an intentional generator change re-pins the fixtures mechanically. NEVER hand-edit a fingerprint to make a drifting test pass — regenerate via the tool in the SAME PR and note it in a change log comment.
+- [ ] **Task 7 — Tests (AC: #1, #2, #3, #4)** — under `godot/tests/unit/generation/`, `test_*.gd`, `extends "res://tests/unit/test_case.gd"`.
+  - [ ] 7.1 `test_route_generator.gd`: AC1 — a generated route has `[8, 12]` non-boss nodes + exactly one terminal `boss` node; the count varies across seeds within the band (sample several seeds). AC1 stream isolation — assert generation draws ONLY the `map` stream: build the `RngStreamSet`, run generation, and assert every OTHER stream's `draw_index` is still 0 (mirror the Epic-3 `level`-stream-only assertion); only `map` advanced.
+  - [ ] 7.2 AC3 — every edge in a generated route is forward (`target.depth > source.depth`) for many seeds; and the NEW forward-only validation REJECTS a hand-built route with a non-forward/backtracking edge (construct a `RouteState` with an equal-or-lower-depth edge and assert the structured rejection code + diagnostics). Also assert a generated route passes BOTH `RouteState.validate()` and the forward-only pass.
+  - [ ] 7.3 AC4 — a generated route contains >= 1 branch point (a node with >= 2 outgoing links) and >= 1 revealed node carrying a `RouteNode.CLUE_*` clue; clue assignment is seed-stable (regenerate same seed → identical clues).
+  - [ ] 7.4 AC2 — the route seed-regression fingerprints (Task 6) are GREEN; determinism + divergence asserted. Cross-check the fingerprint helper against the live route.
+  - [ ] 7.5 The built `RouteState` round-trips through a REAL JSON cycle: `route.to_dictionary()` → `JSON.stringify` → `JSON.parse_string` → `RouteState.try_from_dictionary` → re-`to_dictionary()` equality (the mandatory real-JSON round-trip rule — node order, ids, types, edges, clues all survive). This reuses 4.1's serialization; assert nothing is lost.
+- [ ] **Task 8 — Run the full headless suite + diff check (gate before review)**
+  - [ ] 8.1 Run the full suite via PowerShell (see Testing) and confirm runner exit 0 + "Headless tests passed.".
+  - [ ] 8.2 Run `git diff --check` (clean) before marking the story for review. Confirm the Epic-3 LEVEL seed-regression fingerprints are UNTOUCHED (4.2 touches the `map` stream and the route layer ONLY — it must NOT perturb the `level` stream or any level fingerprint).
+
+## Dev Notes
+
+### What this story IS (and is NOT)
+
+- **IS:** the seeded, deterministic, scene-free **route GENERATOR** — a `RouteGenerator` under `scripts/generation/route/` that, from a root seed, draws the `map` RNG stream to build an 8-12-non-boss-node forward-only DAG (+ one terminal boss placeholder) of `RouteNode`s (4.1 type) inside a `RouteState` (4.1 type), with deterministic node ids/types/edges/reveal-state/clues, plus a NEW forward-only edge validation and a `map`-seed route-regression fingerprint suite.
+- **IS NOT:** the run-progression MODEL. `RunState`/`RouteState`/`RouteNode` already exist (Story 4.1, DONE). 4.2 FILLS those structures via generation; it does NOT redefine them, does NOT change their serialization contract, and does NOT touch `RunSnapshot`.
+- **IS NOT:** route CHOICE / forward commitment. The `RouteAdvanceCommand` (choose a node, emit a route-advanced event, mark previous nodes unavailable, apply reveal-gating + no-backtracking AT SELECTION TIME) is **Story 4.3**. 4.2 builds the graph and proves the forward-only EDGE shape; it does NOT build the commit command or the choice-eligibility FILTER. (See the deferred-work note below: 4.1's `RouteState.available_choice_ids()` has no reveal gating — that filter is 4.3's, NOT 4.2's. Do not add reveal-gating to `available_choice_ids()` here.)
+- **IS NOT:** node ENTRY/EXIT, level-request creation, door-sealed events, or `GenerationResult` (level) consumption — that is **Story 4.4**. 4.2 must NOT call `LevelGenerator`/`ManualSeedLoader`, must NOT create a level `GenerationRequest`, and must NOT read a level `GenerationResult`.
+- **IS NOT:** per-node-type RESOLUTION behavior or the boss placeholder run-end semantics (**Story 4.5**), nor the start-to-end playable shell + pacing (**Story 4.6**). 4.2 ASSIGNS node types from the MVP vocabulary; 4.5 implements what each type DOES.
+- **IS NOT:** the run-start COMMAND or the `run_started` DomainEvent emission. 4.2 is a generator, not a command. The `run_started` event (already fully wired in 4.1 with a `{root_seed, is_manual_seed, node_count}` payload, but with NO emission site) is emitted by a later run-start command/flow (4.3/4.6), NOT here. Do NOT emit `run_started` from the generator. (See the retro/deferred-work notes on the two `run_started`-emitter deferrals — they are NOT 4.2's to fix.)
+
+Keeping these boundaries tight is the single biggest risk for this story, exactly as it was for 4.1. The epics Story 4.2 AC is "generate a reproducible forward route" — a generator. The temptation is to pull the commit command (4.3) or node entry (4.4) forward. Resist it.
+
+### Architecture patterns and constraints
+
+- **Route generation is procedural-generation phase 1.** The architecture's generation pipeline is `1. Route node generation → 2. Level recipe selection → …` ([Source: `game-architecture.md` §Procedural Generation, lines 389-398]). The phase vocabulary `GenerationResult.PHASE_ROUTE` is already reserved ([Source: `godot/scripts/generation/level/generation_result.gd` line 11]). The `map` RNG stream is, by the architecture's own definition, "forward-only route structure" ([Source: `game-architecture.md` §RNG And Determinism, line 343]) — this story is its FIRST consumer (4.1 drew zero RNG).
+- **Determinism is non-negotiable and is the foundation of replay + fingerprints.** Route = pure function of `(root_seed)` (+ any fixed generator config). Same seed → byte-identical route AND identical result. This mirrors the Epic-3 "LEVEL = pure function of (seed, recipe)" law ([Source: `project-context.md` §Procedural Level Generation Rules]). Establish the FIXED DRAW ORDER from story one; the fingerprints pin it.
+- **Single-stream discipline, enforced in one place.** Every route-affecting draw routes through `RngStreamSet.STREAM_MAP` via one funnel helper — the same pattern as `GenerationRequest.draw_layout_int/float` funneling every layout draw through `STREAM_LEVEL` ([Source: `godot/scripts/generation/level/generation_request.gd` lines 77-93]). Never reach for another stream or global RNG. A test asserts only `map` advanced.
+- **Scene-independent, autoload-free domain ownership.** `RouteGenerator` is a plain typed `RefCounted` service (like `LevelGenerator`/`ManualSeedLoader`), NOT a `Node`, NOT an autoload. The autoload set is unchanged through Epic 3 and 4.1 (`GameSession`, `SceneManager`, `SaveManager`, `AudioManager`, `SettingsManager`, `Diagnostics`) — do NOT register a route-generation autoload ([Source: `project-context.md` §Technology Stack & §Code Organization]).
+- **Validate-then-reject, no coercion.** A generated route that violates the forward-only edge invariant (or any structural rule) surfaces a structured `ActionResult`/`GenerationResult` error with stable lower_snake code + compact diagnostics — a generator bug is surfaced, never silently "fixed" (the Epic-3 strict-validator precedent: a malformed candidate is a generator bug, surface the validator error) ([Source: `project-context.md` §Procedural Level Generation Rules]).
+- **Compact diagnostics only.** On any validation failure, diagnostics carry seed/phase/reason + counts/coords/ids — NEVER a full graph or grid dump ([Source: `project-context.md` §Determinism & Simulation Rules; §Procedural Level Generation Rules]).
+- **Fingerprint discipline (the tripwire).** A route fingerprint is a compact deterministic string; the regression test pins approved-seed fingerprints; they change ONLY via an intentional generator change re-pinned in the SAME PR via a dump tool — NEVER hand-edited to silence a drift ([Source: `project-context.md` §Procedural Level Generation Rules, "SEED REGRESSION is the tripwire"]).
+
+### Source tree components to touch
+
+NEW (this story creates them):
+- `godot/scripts/generation/route/route_generator.gd` — `RouteGenerator` (the seeded route generator + `map`-stream draws + forward edge assembly + result).
+- `godot/scripts/generation/route/` may also hold a small route-validation helper if you choose to factor the forward-only edge check out of the generator (optional; keep it OUT of `RouteState`).
+- `godot/tests/unit/generation/test_route_generator.gd` — AC1/AC3/AC4 behavior + stream-isolation + real-JSON round-trip.
+- `godot/tests/unit/generation/test_route_generation_seed_regression.gd` — pinned `map`-seed route fingerprints (determinism + divergence + cross-check).
+- `godot/tools/dump_route_fingerprints.gd` — mechanical re-pin tool.
+
+REUSE (read; do NOT modify their contracts):
+- `godot/scripts/run/route_node.gd` — `RouteNode` (id/type/depth/reveal_state/outgoing_link_ids/clues + `validate()` + serialization + the `TYPE_*`/`REVEAL_*`/`CLUE_*` constants + `supported_types()`). 4.2 MINTS nodes via this type; it does not change it.
+- `godot/scripts/run/route_state.gd` — `RouteState` (ordered node container + `available_choice_ids()` + structural `validate()` + ordered serialization). 4.2 BUILDS a `RouteState`; it does not change it (and does NOT add reveal-gating to `available_choice_ids()` — that is 4.3).
+- `godot/scripts/core/state/rng_stream_set.gd` — `RngStreamSet` (`STREAM_MAP`, `rand_int(...)` returning an `ActionResult` whose metadata carries `value`). The draw API + int64 snapshot encoding precedent.
+- `godot/scripts/generation/level/generation_request.gd` — the `draw_layout_*` single-stream FUNNEL pattern to mirror for `map`.
+- `godot/scripts/generation/level/level_generator.gd` — the deterministic-generator + (optional, probably unneeded) bounded-retry + structured-result orchestration shape to mirror.
+- `godot/scripts/generation/level/generation_result.gd` — `GenerationResult` (`PHASE_ROUTE` reserved; `ok`/`error` factories) if you return a `GenerationResult`.
+- `godot/tests/unit/generation/test_small_level_layout_seed_regression.gd` — the seed-regression test STRUCTURE + DELIBERATE-UPDATE-CONTRACT header to mirror for routes.
+- `godot/tools/dump_small_layout_fingerprints.gd` — the dump-tool shape to mirror.
+
+DO NOT TOUCH:
+- The Epic-3 level seed-regression fixtures (`test_small_level_layout_seed_regression.gd`, `test_medium_level_layout_seed_regression.gd`, `test_seed_batch_regression.gd`) — 4.2 must not perturb the `level` stream or any level fingerprint.
+- `RunSnapshot` (`godot/scripts/save/snapshots/run_snapshot.gd`) and its pinned 23-key no-surprise-key gate — 4.2 does not persist or compose a snapshot.
+- `DomainEvent` (`godot/scripts/core/events/domain_event.gd`) — 4.2 emits no event; do NOT add/emit `run_started`.
+
+### Files being modified — current state and what to preserve
+
+This story is almost entirely ADDITIVE (new files). It REUSES the 4.1 run-domain types and the Epic-3 generation infrastructure without modifying their contracts.
+
+- **`godot/scripts/run/route_node.gd` / `route_state.gd` (REUSE, do not modify):** 4.1 shipped these as the route MODEL. `RouteNode` already has `depth` (use it for the forward-edge invariant), the `TYPE_*` vocabulary + `supported_types()`, the `REVEAL_*` constants, and the `CLUE_*` tags. `RouteState` already serializes nodes as an ORDERED `Array[Dictionary]` (so a route fingerprint over the ordered list is deterministic) and validates structural integrity (dangling links, unknown current node, duplicate/unknown cleared ids) but NOT forward-edge shape (explicitly deferred to 4.2). Preserve: their public APIs, serialization shape, and the fact that `available_choice_ids()` has no reveal/forward filtering (that is 4.3's to add, NOT 4.2's).
+- **`godot/scripts/core/state/rng_stream_set.gd` (REUSE, do not modify):** `STREAM_MAP` exists; `configure(root_seed)` derives a per-stream seed; `rand_int(stream, min, max, ctx)` returns an `ActionResult` whose `metadata.value` is the int and which advances that stream's `draw_index`. To assert single-stream isolation, read each stream's `draw_index` (exposed via the draw metadata; or build a fresh `RngStreamSet` and only call `map` draws). Preserve: never call another stream; never construct a bare `RandomNumberGenerator`.
+- **`project.godot` / autoloads (DO NOT change):** no new autoload. `RouteGenerator` is called directly as a `RefCounted` service.
+
+If you decide to surface route generation through a `GenerationResult` (Task 5.1), you are READING `GenerationResult`'s existing `ok`/`error`/`PHASE_ROUTE` API, not modifying it — `PHASE_ROUTE` is already a known phase, so no phase-vocabulary change is needed.
+
+### Testing standards summary
+
+- Headless only, no rendering/audio/UI/scene-tree dependency ([Source: `project-context.md` §Testing Rules]). Tests live under `godot/tests/unit/generation/` as `test_*.gd` extending `res://tests/unit/test_case.gd` (the runner auto-discovers `tests/unit` + `tests/integration` only).
+- **Run the full suite via PowerShell** (`godot` is NOT on the Bash PATH on this machine — it resolves only as `C:\Users\Rasmus\bin\godot.cmd`):
+  `powershell.exe -NoProfile -Command "godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10"`
+  Expect runner exit 0 and "Headless tests passed." The suite is ~67 `test_*.gd` files (63 unit + 4 integration) and green (incl. the three `tests/unit/run/` files from 4.1); keep it green.
+- **Determinism + fingerprint is the tripwire.** Generate twice → byte-identical; pin per-seed fingerprints; assert >= 2 distinct across the approved set; FAILING seed in the assert message; cross-check the fingerprint helper against the live route (no second pinning path that can silently diverge). Re-pin ONLY via the dump tool in the same PR.
+- **Single-stream isolation test (AC1):** after generation, assert every NON-`map` stream's `draw_index == 0` and only `map` advanced — the route analogue of the Epic-3 `level`-stream-only assertion.
+- **Real JSON round-trip is mandatory** for the built `RouteState` (`route.to_dictionary()` → `JSON.stringify` → `parse_string` → `RouteState.try_from_dictionary`), not native-dict equality — a latent int64/serialization bug survived Epic 1 precisely because tests round-tripped native dicts ([Source: `project-context.md` §Save Rules]). (The route carries no full-int64 field itself, but the round-trip proves node order/ids/types/edges/clues survive 4.1's serialization.)
+- **Validation/no-mutation discipline:** the forward-only edge validator is a pure read — feed it a hand-built bad route and assert the structured rejection; feed it a generated route and assert acceptance. It mutates nothing.
+- `git diff --check` must be clean, and the Epic-3 level fingerprints must be untouched, before review.
+
+### Epic-4 retro-notes constraints folded in (Story 4.1 surfaced these for later Epic-4 stories)
+
+[Source: `_bmad-output/auto-gds/retro-notes/epic-4.md` → `## Story 4-1-run-state-and-route-node-model`]
+
+1. **`scripts/run/` vs `scripts/generation/route/` split is RATIFIED — honor it.** The run-progression MODEL (`RunState`/`RouteState`/`RouteNode`) lives in `scripts/run/`; route GENERATION lives in `scripts/generation/route/`. 4.1's create-story flagged this as a convention later stories inherit; 4.2 is the story that creates `scripts/generation/route/`. Put the generator there, NOT in `scripts/run/`. (Also matches `game-architecture.md` line 915 + project-context.md §Code Organization.)
+2. **Run-progression fields stay NESTED under `route_state`; do NOT flatten new top-level run keys onto `RunSnapshot`.** 4.1 nested `run_phase` inside the `route_state` payload to keep the pinned 23-key no-surprise gate green. 4.2 does not persist anything, but if any future-facing thought tempts you to add a top-level `RunSnapshot` route key, DON'T — the route payload's home is `RunSnapshot.route_state` (nested). For 4.2 the practical takeaway: do not touch `RunSnapshot` or its key gate at all.
+3. **`run_started` has a factory + validator but NO emission site — and 4.2 is NOT its emitter.** 4.1 fully wired `DomainEvent.run_started(sequence_id, {root_seed, is_manual_seed, node_count})` but left it unemitted; the retro says "a later Epic 4 story (run-start command) must actually emit it." 4.2 is a GENERATOR, not the run-start command, so it does NOT emit `run_started`. Do not half-wire or emit it here. (The run-start command is 4.3/4.6.)
+4. **The `node_count` in the `run_started` payload is the 8-12 value THIS story bounds.** The retro/deferred-work flags `node_count` as an unbounded raw-JSON-number `int` (not decimal-string encoded) whose int64/real-JSON defer is benign "for the MVP route (8-12 nodes)". 4.2 is the story that GUARANTEES that bound: the generated route count is always `[8, 12]`. Recording this linkage so the eventual `run_started` emitter (4.3/4.6) can re-confirm `node_count` stays small and the defer stays permanently benign. 4.2 does NOT fix the defer (no emission here) but it makes it structurally safe.
+5. **Any NEW seed-string validator must adopt the Story 3.7 lossless/canonicalize idiom, not bare `is_valid_int()`.** The epic-retro lesson from 4.1's `_has_decimal_string_payload` (`root_seed` validator using loose `is_valid_int()`, weaker than 3.7's `ManualSeedLoader.parse_seed` lossless check). 4.2 introduces NO new seed-STRING validator (it takes an `int` root seed and draws the `map` stream — no decimal-string seed parsing). If you find yourself adding one, use `str(value.to_int()) == <canonicalized>` lossless validation, not bare `is_valid_int()`. (Most likely N/A for 4.2 — flagged so you don't accidentally regress the idiom.)
+
+### Deferred-work ledger overlap (only the items touching this story's surface)
+
+[Source: `_bmad-output/implementation-artifacts/deferred-work.md`]
+
+- **`RouteState.available_choice_ids()` has NO reveal gating / NO forward-only/no-backtracking enforcement (4.1 Round-1 defer, owner Story 4.3).** Subject DIRECTLY overlaps 4.2's area, so read it carefully and work around it precisely: 4.2 proves the forward-only EDGE shape of the GRAPH (Task 4 — no equal/lower-depth edges exist), but it must NOT add reveal-gating or no-backtracking FILTERING to `available_choice_ids()`. That selection-time filter is explicitly Story 4.3's (the choose-and-commit `RouteAdvanceCommand`). So: 4.2 guarantees the graph CAN'T contain a backtracking edge; 4.3 guarantees a hidden/cleared node isn't OFFERED as a choice. Do not pull 4.3's filter forward, and do not weaken `available_choice_ids()`.
+- **`run_started` payload `node_count` raw-JSON-number defer + `_has_decimal_string_payload` loose-`is_valid_int()` defer (4.1 Round-1/Round-2 defers, owner = "whatever story first EMITS `run_started`").** Subject is the `run_started` event payload. 4.2 does NOT emit `run_started` (it is a generator, not the run-start command), so 4.2 is NOT the owner and must NOT fix or reopen these. The ONLY linkage 4.2 has: it bounds `node_count` to `[8, 12]` (see retro item #4), which is exactly why the `node_count` defer is and stays benign. Leave both defers for the run-start-command story (4.3/4.6).
+- **`GenerationResult.seed` success-path split (3.7 defer, owner Story 4.4).** Subject is the LEVEL `GenerationResult` (seed `""` on success; real seed in `payload.level_seed`). If 4.2 returns a `GenerationResult` for the ROUTE (Task 5.1), note that this wart lives on the same class — but 4.2's route result is a SEPARATE use of `GenerationResult` and does not consume a level result, so 4.2 neither inherits nor fixes the level-success-path split (that is Story 4.4, the first level-`GenerationResult` consumer). If you populate a route-result seed field, populate it consistently on success (don't replicate the level wart in the route path) — but this is optional and minor.
+- All other open deferrals (3.1-3.6 generator-internal Lows on the LEVEL placers/validator; 2.5/2.6 presentation; 2.7 RNG numeric-`state` tolerance; 2.8 `save_open_failed`; 2.9 schemaless settings; 1.3 board-snapshot coercion) are OUT OF SCOPE for 4.2 — they touch the level-generation internals, presentation/settings, or save read paths, none of which this story implements. Do not reopen or re-defer them.
+
+### Latest technical information
+
+No external library or version research applies. The stack is fixed and stable: **Godot 4.6.3 stable standard build, typed GDScript** ([Source: `project-context.md` §Technology Stack]). No new dependency, no Godot .NET/C#, no cloud/telemetry/multiplayer. This story is pure in-engine typed-GDScript generation code on settled foundations (`ActionResult`, `GenerationResult`, `RngStreamSet`/`STREAM_MAP`, `RouteState`/`RouteNode` all exist and are stable; `scripts/generation/route/` is the one new directory). The seed-regression fingerprint discipline, the single-stream funnel, and the validate-then-reject pattern are all already established in Epic 3 — mirror them, do not reinvent.
+
+### Project Structure Notes
+
+- **`scripts/generation/route/` is the architecture-mapped home and does NOT need a project-context.md change.** Unlike 4.1 (which had to ADD `run` to the domain list), `generation` is already a listed domain and `game-architecture.md` already maps "Procedural route generation → `scripts/generation/route/`" (line 915) and shows `generation/route/` in the source tree (line 819). project-context.md §Code Organization ALREADY says route *generation* lives under `scripts/generation/route/` (Epic 4 Story 4.2). So: create the folder, put the generator + (optional) route validator there; NO project-context.md edit is required for placement. `godot/tests/unit/core/test_project_structure.gd` is a REQUIRED-ROOTS presence check (`REQUIRED_DOMAIN_ROOTS`/`REQUIRED_PROJECT_ROOTS`), not an allow-list, and it only requires `res://scripts/generation` (not the `route/` subfolder) — so adding `scripts/generation/route/` will NOT break it and no test change is needed for the new folder.
+- Tests go under the EXISTING `godot/tests/unit/generation/` (alongside the level seed-regression tests), NOT a new test root. The dump tool goes under the existing `godot/tools/`.
+- Naming: class `RouteGenerator` (PascalCase); file `route_generator.gd` (snake_case.gd); constants `UPPER_SNAKE_CASE`; node type/reveal/clue ids are lower_snake `StringName` (already defined on `RouteNode`); minted node ids are lower_snake-ish with NO whitespace (hyphens allowed per `RouteNode._is_valid_node_id`); error codes lower_snake, no dashes/dots/spaces (enforced by `ActionResult._is_valid_error_code` / `GenerationResult._is_valid_code`). Draw context keys are plain strings.
+
+### Project Context Rules
+
+Extracted from `project-context.md` — the rules that bind THIS story's implementation:
+
+- **Named RNG streams only, via the ASSIGNED stream.** Route structure is the `map` stream's job ("`map`: forward-only route structure"). Draw EXCLUSIVELY through `RngStreamSet.STREAM_MAP` via one funnel helper; never `level`/`combat`/`loot`/`rewards`/`events`/`cosmetic`, never global `randi()`/`randf()`, never a bare `RandomNumberGenerator`. The `level` stream is RESERVED for tactical layout (Epic 3) — do not touch it.
+- **Determinism is the foundation.** Route = pure function of `(root_seed)`. Same seed → byte-identical route + identical result. Establish the FIXED DRAW ORDER from story one (the fingerprints pin it); never reorder/insert a draw without re-pinning the route fingerprints in the same PR via the dump tool. NEVER hand-edit a fingerprint to silence a drift.
+- **Scene-independent, autoload-free generation.** `RouteGenerator` is a `RefCounted` service (like `LevelGenerator`/`ManualSeedLoader`), not a `Node`, not an autoload. It draws the seed and builds a `RouteState`; it persists nothing and owns no scene/UI state. Headless tests run with no rendering/audio/UI/scene-tree dependency.
+- **Validate-then-reject with compact diagnostics.** A generated route that breaks the forward-only edge invariant (or any structural rule) surfaces a structured error (lower_snake code + seed/phase/reason + counts/coords/ids) — NEVER a full graph dump, never a silently-"fixed" graph. Run BOTH `RouteState.validate()` (4.1 structural) AND the new forward-only edge pass on every built route.
+- **Compose, do not fork; do not touch save/event contracts.** 4.2 builds the in-memory `RouteState` only. It does NOT compose/persist a `RunSnapshot`, does NOT add a top-level `RunSnapshot` key (the route payload's home is the nested `route_state`), and does NOT emit `run_started` (that is the later run-start command). Keep run-progression fields nested under `route_state`.
+- **Headless tests with determinism + real-JSON round-trip; every path gets coverage.** Keep the full suite green; the Epic-3 LEVEL fingerprints stay untouched; `git diff --check` clean before review.
+- **Do not draw generation randomness from anything but the assigned stream; do not perturb attempt 0 if you add retry; do not put generation flow logic in an autoload; do not add cloud/telemetry/multiplayer/.NET; do not let a manual-seed/debug action grant progression** (no progression logic here at all — meta gate is Epic 8).
+
+### References
+
+- [Source: `_bmad-output/planning-artifacts/epics.md` → Epic 4 → Story 4.2 (AC) and Stories 4.1/4.3/4.4/4.5/4.6 (scope boundaries), Story 4.5 (MVP node-type set)]
+- [Source: `_bmad-output/planning-artifacts/gdds/gdd-Game-2026-05-31/gdd.md` lines 203 (8-12 nodes before boss), 208-216 (node-map descent + early/mid/late pacing), 225 (seeds reproduce run map/node structure), 249 ("locked once visible" determinism), 481-492 (MVP node/level types), 616 (Epic 4 run-shell summary), 708 (exact node weighting/frequency deferred to tuning)]
+- [Source: `_bmad-output/game-architecture.md` §RNG And Determinism line 343 (`map` = forward-only route structure), §Procedural Generation lines 389-410 (phase 1 = route node generation; validation + seed/phase/reason/compact-diagnostics), §State Management line 330 (`RunState` phases), source tree line 819 (`generation/route/`), System Location Mapping line 915 (`scripts/generation/route/`)]
+- [Source: `project-context.md` §Determinism & Simulation Rules, §Procedural Level Generation Rules (level=pure-function-of-(seed,recipe), fixed draw order, single-stream, seed-regression-is-the-tripwire, validate-then-reject, compact diagnostics — the patterns to MIRROR for routes), §Code Organization Rules (`run` vs `generation/route` split), §Naming Rules, §Testing Rules, §Critical Don't-Miss Rules]
+- [Source: `_bmad-output/auto-gds/retro-notes/epic-4.md` → Story 4-1 (the 5 epic-wide constraints folded in above)]
+- [Source: `_bmad-output/implementation-artifacts/deferred-work.md` → 4.1 `available_choice_ids()` reveal-gating defer (owner 4.3), `run_started` `node_count`/`_has_decimal_string_payload` defers (owner = run-start emitter), 3.7 `GenerationResult.seed` defer (owner 4.4)]
+- [Source: `godot/scripts/run/route_node.gd` — `RouteNode` model (id/type/depth/reveal_state/outgoing_link_ids/clues), `TYPE_*`/`REVEAL_*`/`CLUE_*` constants, `supported_types()`, `validate()`, serialization]
+- [Source: `godot/scripts/run/route_state.gd` — `RouteState` ordered container + structural `validate()` (no forward-edge check) + ordered serialization + `available_choice_ids()` (no reveal gating)]
+- [Source: `godot/scripts/core/state/rng_stream_set.gd` — `STREAM_MAP`, `rand_int(...)` draw API + `draw_index`, int64 snapshot encoding]
+- [Source: `godot/scripts/generation/level/generation_request.gd` — `draw_layout_int/float` single-stream FUNNEL pattern to mirror for `map`]
+- [Source: `godot/scripts/generation/level/level_generator.gd` — deterministic-generator + (optional) bounded-retry + structured-result orchestration to mirror]
+- [Source: `godot/scripts/generation/level/generation_result.gd` — `PHASE_ROUTE` (already reserved) + `ok`/`error` factories]
+- [Source: `godot/tests/unit/generation/test_small_level_layout_seed_regression.gd` — seed-regression test STRUCTURE + deliberate-update contract to mirror]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+{{agent_model_name_version}}
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
