@@ -202,6 +202,25 @@ func _route_advanced_rejects_malformed_payloads() -> void:
 	assert_true(bad_revealed.is_error(), "Route-advanced with a non-string revealed id should be rejected.")
 	assert_equal(bad_revealed.metadata.get("field"), "revealed_node_ids", "Route-advanced should reject a malformed revealed list.")
 
+	# A revealed_node_ids list containing a duplicate id is rejected (de-dup guarantee #1: the
+	# validator itself rejects duplicates, mirroring the defeated_enemy_ids duplicate guard).
+	var duplicate_revealed: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "route_advanced",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"from_node_id": "node-0-0",
+			"to_node_id": "node-1-0",
+			"to_node_type": "combat",
+			"to_node_depth": 1,
+			"cleared_node_id": "node-0-0",
+			"revealed_node_ids": ["node-2-0", "node-2-0"]
+		}
+	})
+	assert_true(duplicate_revealed.is_error(), "Route-advanced with a duplicate revealed id should be rejected.")
+	assert_equal(duplicate_revealed.error_code, &"invalid_event_payload", "Duplicate revealed ids should use the stable invalid_event_payload code.")
+	assert_equal(duplicate_revealed.metadata.get("field"), "revealed_node_ids", "Route-advanced should reject a duplicate revealed list.")
+
 
 func _route_advanced_tolerates_hyphenated_node_ids() -> void:
 	# Regression for the "ids aren't lower_snake" trap: hyphenated node ids (node-1-0) MUST survive
