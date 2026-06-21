@@ -23,7 +23,9 @@ enum Type {
 	ROUTE_ADVANCED,
 	NODE_ENTERED,
 	NODE_EXITED,
-	ROUTE_SEALED
+	ROUTE_SEALED,
+	NODE_PLACEHOLDER_RESOLVED,
+	RUN_COMPLETED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -46,6 +48,17 @@ const EVENT_ID_ROUTE_ADVANCED := &"route_advanced"
 const EVENT_ID_NODE_ENTERED := &"node_entered"
 const EVENT_ID_NODE_EXITED := &"node_exited"
 const EVENT_ID_ROUTE_SEALED := &"route_sealed"
+const EVENT_ID_NODE_PLACEHOLDER_RESOLVED := &"node_placeholder_resolved"
+const EVENT_ID_RUN_COMPLETED := &"run_completed"
+
+# The stable placeholder markers carried by the two Story 4.5 events (lower_snake). RESOLUTION_PLACEHOLDER
+# is the node_placeholder_resolved.resolution value for EVERY placeholder node (the five non-combat types
+# AND the boss); RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER is the run_completed.outcome value for the boss
+# placeholder run-end. The validators assert these EXACT values (mirroring level_victory_reached's
+# outcome == "victory" value-equality). NodeResolvePlaceholderCommand references these so the command and
+# the validator stay in lockstep on the marker vocabulary.
+const RESOLUTION_PLACEHOLDER := &"placeholder_completed"
+const RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER := &"boss_placeholder"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -136,6 +149,41 @@ static func route_sealed(sequence_id: int, payload: Dictionary = {}) -> DomainEv
 	payload_value["node_id"] = String(payload.get("node_id", ""))
 	payload_value["cue_id"] = String(payload.get("cue_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.ROUTE_SEALED, sequence_id, &"", payload_value)
+
+
+static func node_placeholder_resolved(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 4.5): a run-level NON-combat / boss placeholder node RESOLUTION that
+	# transitions ACTIVE_ROUTE -> NODE_RESOLUTION with NO tactical level (no GenerationRequest). It is the
+	# "placeholder completion in domain/debug terms" record for the five non-combat MVP node types
+	# (shop/reforge/gambling/event/secret) AND the boss placeholder — a deterministic marker a later real
+	# system (shop = Epic 6/7, event/risk = Epic 7, boss = Epic 9) hooks the SAME node boundary. NOT an
+	# entity action, so it is NOT in _event_requires_actor (actor_id stays empty). node_id carries hyphens
+	# (RouteGenerator mints "node-<depth>-<index>") -> PLAIN non-empty string, NOT lower_snake. node_type
+	# (the actual placeholder node type) + resolution (the stable placeholder marker) are lower_snake;
+	# node_depth is a non-negative integral. Normalize/duplicate defensively (mirroring node_entered).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["node_id"] = String(payload.get("node_id", ""))
+	payload_value["node_type"] = String(payload.get("node_type", ""))
+	payload_value["node_depth"] = int(payload.get("node_depth", 0))
+	payload_value["resolution"] = String(payload.get("resolution", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.NODE_PLACEHOLDER_RESOLVED, sequence_id, &"", payload_value)
+
+
+static func run_completed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 4.5): the run-END boundary emitted when the BOSS placeholder resolves
+	# before Epic 9 content exists (transition NODE_RESOLUTION -> COMPLETED). This is the node-boundary
+	# record AC3 demands; Epic 9 reuses THIS boundary, swapping only the boss's pre-completion behavior (a
+	# real boss level + a real victory) — NOT the run_completed event itself. It is NOT a sealed mid-run
+	# node (no node_exited / route_sealed return-to-route): the boss ENDS the run. NOT an entity action, so
+	# it is NOT in _event_requires_actor (actor_id stays empty). outcome is a lower_snake placeholder
+	# marker (the validator additionally asserts the exact value, mirroring level_victory_reached's
+	# outcome == "victory"); boss_node_id carries hyphens -> PLAIN non-empty string; cleared_node_count is
+	# a non-negative integral. Normalize/duplicate defensively.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["outcome"] = String(payload.get("outcome", ""))
+	payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))
+	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_COMPLETED, sequence_id, &"", payload_value)
 
 
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
@@ -468,6 +516,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_node_exited_payload(payload_value)
 		Type.ROUTE_SEALED:
 			return _validate_route_sealed_payload(payload_value)
+		Type.NODE_PLACEHOLDER_RESOLVED:
+			return _validate_node_placeholder_resolved_payload(payload_value)
+		Type.RUN_COMPLETED:
+			return _validate_run_completed_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -571,6 +623,40 @@ static func _validate_route_sealed_payload(payload_value: Dictionary) -> ActionR
 		return _error_result(&"invalid_event_payload", {"field": "node_id"})
 	if not _has_lower_snake_payload(payload_value, &"cue_id"):
 		return _error_result(&"invalid_event_payload", {"field": "cue_id"})
+	return _ok_result()
+
+
+static func _validate_node_placeholder_resolved_payload(payload_value: Dictionary) -> ActionResult:
+	# Placeholder resolution is a run-level SYSTEM transition (Story 4.5). node_id is the ORIGINAL route
+	# node id, which carries hyphens (RouteGenerator mints "node-<depth>-<index>") -> validated as a PLAIN
+	# non-empty string, NEVER via _has_lower_snake_payload (it rejects hyphens). node_type (the actual
+	# placeholder node type) is lower_snake; node_depth is non-negative integral; resolution is lower_snake
+	# AND value-equal to the stable placeholder marker (mirroring level_victory_reached's outcome equality).
+	if not _has_nonempty_string_payload(payload_value, &"node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "node_id"})
+	if not _has_lower_snake_payload(payload_value, &"node_type"):
+		return _error_result(&"invalid_event_payload", {"field": "node_type"})
+	if not _has_nonnegative_integral_payload(payload_value, &"node_depth"):
+		return _error_result(&"invalid_event_payload", {"field": "node_depth"})
+	if not _has_lower_snake_payload(payload_value, &"resolution") \
+			or String(payload_value.get("resolution")) != String(RESOLUTION_PLACEHOLDER):
+		return _error_result(&"invalid_event_payload", {"field": "resolution"})
+	return _ok_result()
+
+
+static func _validate_run_completed_payload(payload_value: Dictionary) -> ActionResult:
+	# The boss-placeholder run-END boundary (Story 4.5). outcome is lower_snake AND value-equal to the
+	# stable boss-placeholder marker (mirroring _validate_level_victory_reached_payload's outcome ==
+	# "victory" assertion). boss_node_id (the boss node) carries hyphens -> PLAIN non-empty string.
+	# cleared_node_count is a non-negative integral (route.cleared_node_ids.size() AFTER the boss is cleared
+	# — for the MVP route this is the full path length, bounded 8-13, so a raw JSON number is safe).
+	if not _has_lower_snake_payload(payload_value, &"outcome") \
+			or String(payload_value.get("outcome")) != String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER):
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	if not _has_nonempty_string_payload(payload_value, &"boss_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"cleared_node_count"):
+		return _error_result(&"invalid_event_payload", {"field": "cleared_node_count"})
 	return _ok_result()
 
 
@@ -1079,6 +1165,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_NODE_EXITED
 		Type.ROUTE_SEALED:
 			return EVENT_ID_ROUTE_SEALED
+		Type.NODE_PLACEHOLDER_RESOLVED:
+			return EVENT_ID_NODE_PLACEHOLDER_RESOLVED
+		Type.RUN_COMPLETED:
+			return EVENT_ID_RUN_COMPLETED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1123,6 +1213,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.NODE_EXITED
 		EVENT_ID_ROUTE_SEALED:
 			return Type.ROUTE_SEALED
+		EVENT_ID_NODE_PLACEHOLDER_RESOLVED:
+			return Type.NODE_PLACEHOLDER_RESOLVED
+		EVENT_ID_RUN_COMPLETED:
+			return Type.RUN_COMPLETED
 		_:
 			return Type.UNKNOWN
 

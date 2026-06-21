@@ -96,8 +96,12 @@ func validate(state: Variant) -> ActionResult:
 			"command": String(command_id)
 		})
 
-	# The current node must be a COMBAT/ELITE_COMBAT type for this story's scope. Non-combat-node entry
-	# / resolution is Story 4.5 — reject it with a stable code carrying the offending type in metadata
+	# The current node must be a COMBAT/ELITE_COMBAT type for this command — it is the COMBAT LEVEL ENTRY.
+	# A non-combat / boss node is NOT a dead end: as of Story 4.5 it resolves through the sibling
+	# NodeResolvePlaceholderCommand (the placeholder/boss resolution path), which accepts exactly the types
+	# this branch rejects. So unsupported_node_entry now means "the COMBAT entry was used on a non-combat
+	# node" (a caller dispatch error) — the caller dispatches combat/elite here and everything else to
+	# NodeResolvePlaceholderCommand. Reject with a stable code carrying the offending type in metadata
 	# (hyphenated node ids / types go in metadata, never in the code).
 	var current: RouteNode = route.node_by_id(route.current_node_id)
 	if not NODE_TYPE_RECIPE.has(current.type):

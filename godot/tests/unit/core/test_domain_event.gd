@@ -14,6 +14,10 @@ func run() -> Dictionary:
 	_node_exited_rejects_malformed_payloads()
 	_route_sealed_serializes_and_parses_stable_payload()
 	_route_sealed_rejects_malformed_payloads()
+	_node_placeholder_resolved_serializes_and_parses_stable_payload()
+	_node_placeholder_resolved_rejects_malformed_payloads()
+	_run_completed_serializes_and_parses_stable_payload()
+	_run_completed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -475,6 +479,195 @@ func _route_sealed_rejects_malformed_payloads() -> void:
 	assert_equal(bad_cue.metadata.get("field"), "cue_id", "route_sealed should require a lower_snake cue_id.")
 
 
+func _node_placeholder_resolved_serializes_and_parses_stable_payload() -> void:
+	# Story 4.5: a node_placeholder_resolved SYSTEM event (no actor). node_id carries hyphens (plain
+	# non-empty string, NOT lower_snake); node_type + resolution are lower_snake; node_depth is non-negative
+	# integral. The resolution value must equal the stable placeholder_completed marker.
+	var event: DomainEvent = DomainEvent.node_placeholder_resolved(7, {
+		"node_id": "node-3-1",
+		"node_type": "shop",
+		"node_depth": 3,
+		"resolution": "placeholder_completed"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "node_placeholder_resolved", "node_placeholder_resolved should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "node_placeholder_resolved is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "node_placeholder_resolved should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.NODE_PLACEHOLDER_RESOLVED, "node_placeholder_resolved should parse back to NODE_PLACEHOLDER_RESOLVED.")
+	assert_equal(restored.payload.get("node_id"), "node-3-1", "The hyphenated node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("node_type"), "shop", "The node type must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("resolution"), "placeholder_completed", "The resolution marker must survive a JSON round-trip.")
+
+	# The boss is a placeholder node too (boss node_type round-trips through the same event).
+	var boss_placeholder: DomainEvent = DomainEvent.node_placeholder_resolved(3, {
+		"node_id": "node-7-0",
+		"node_type": "boss",
+		"node_depth": 7,
+		"resolution": "placeholder_completed"
+	})
+	var boss_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(boss_placeholder.to_dictionary())))
+	assert_true(boss_parse.succeeded, "node_placeholder_resolved for the boss should parse: %s" % boss_parse.metadata)
+
+
+func _node_placeholder_resolved_rejects_malformed_payloads() -> void:
+	# Missing node_id is rejected.
+	var missing_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_placeholder_resolved",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_type": "shop",
+			"node_depth": 1,
+			"resolution": "placeholder_completed"
+		}
+	})
+	assert_true(missing_node.is_error(), "node_placeholder_resolved missing node_id should be rejected.")
+	assert_equal(missing_node.error_code, &"invalid_event_payload", "Malformed node_placeholder_resolved should use the stable code.")
+	assert_equal(missing_node.metadata.get("field"), "node_id", "Malformed node_placeholder_resolved should name the missing field.")
+
+	# A non-lower_snake node_type is rejected.
+	var bad_type: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_placeholder_resolved",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "Shop",
+			"node_depth": 1,
+			"resolution": "placeholder_completed"
+		}
+	})
+	assert_true(bad_type.is_error(), "node_placeholder_resolved with a non-lower_snake node_type should be rejected.")
+	assert_equal(bad_type.metadata.get("field"), "node_type", "node_placeholder_resolved should require a lower_snake node_type.")
+
+	# A missing resolution is rejected.
+	var missing_resolution: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_placeholder_resolved",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "shop",
+			"node_depth": 1
+		}
+	})
+	assert_true(missing_resolution.is_error(), "node_placeholder_resolved missing resolution should be rejected.")
+	assert_equal(missing_resolution.metadata.get("field"), "resolution", "node_placeholder_resolved should name the missing resolution field.")
+
+	# A WRONG resolution value (lower_snake but not the pinned marker) is rejected (value-equality).
+	var wrong_resolution: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_placeholder_resolved",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "shop",
+			"node_depth": 1,
+			"resolution": "something_else"
+		}
+	})
+	assert_true(wrong_resolution.is_error(), "node_placeholder_resolved with a non-marker resolution value should be rejected.")
+	assert_equal(wrong_resolution.metadata.get("field"), "resolution", "node_placeholder_resolved should pin the exact resolution marker.")
+
+	# A negative node_depth is rejected.
+	var bad_depth: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_placeholder_resolved",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "shop",
+			"node_depth": -1,
+			"resolution": "placeholder_completed"
+		}
+	})
+	assert_true(bad_depth.is_error(), "node_placeholder_resolved with a negative depth should be rejected.")
+	assert_equal(bad_depth.metadata.get("field"), "node_depth", "node_placeholder_resolved should require a non-negative depth.")
+
+
+func _run_completed_serializes_and_parses_stable_payload() -> void:
+	# Story 4.5 (AC3): a run_completed SYSTEM event (no actor) — the boss-placeholder run-END boundary.
+	# outcome is lower_snake AND value-equal to the boss_placeholder marker; boss_node_id carries hyphens
+	# (plain non-empty string); cleared_node_count is non-negative integral.
+	var event: DomainEvent = DomainEvent.run_completed(11, {
+		"outcome": "boss_placeholder",
+		"boss_node_id": "node-7-0",
+		"cleared_node_count": 9
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "run_completed", "run_completed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "run_completed is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "run_completed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.RUN_COMPLETED, "run_completed should parse back to RUN_COMPLETED.")
+	assert_equal(restored.payload.get("outcome"), "boss_placeholder", "The boss_placeholder outcome must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("boss_node_id"), "node-7-0", "The hyphenated boss node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("cleared_node_count"), 9, "The cleared_node_count must survive a JSON round-trip.")
+
+
+func _run_completed_rejects_malformed_payloads() -> void:
+	# A missing outcome is rejected.
+	var missing_outcome: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"boss_node_id": "node-7-0",
+			"cleared_node_count": 9
+		}
+	})
+	assert_true(missing_outcome.is_error(), "run_completed missing outcome should be rejected.")
+	assert_equal(missing_outcome.error_code, &"invalid_event_payload", "Malformed run_completed should use the stable code.")
+	assert_equal(missing_outcome.metadata.get("field"), "outcome", "run_completed should name the missing outcome field.")
+
+	# A WRONG outcome value (lower_snake but not the pinned marker) is rejected (value-equality, mirroring
+	# level_victory_reached's outcome == "victory").
+	var wrong_outcome: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "victory",
+			"boss_node_id": "node-7-0",
+			"cleared_node_count": 9
+		}
+	})
+	assert_true(wrong_outcome.is_error(), "run_completed with a non-marker outcome value should be rejected.")
+	assert_equal(wrong_outcome.metadata.get("field"), "outcome", "run_completed should pin the exact boss_placeholder outcome marker.")
+
+	# A missing boss_node_id is rejected.
+	var missing_boss: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "boss_placeholder",
+			"cleared_node_count": 9
+		}
+	})
+	assert_true(missing_boss.is_error(), "run_completed missing boss_node_id should be rejected.")
+	assert_equal(missing_boss.metadata.get("field"), "boss_node_id", "run_completed should name the missing boss_node_id field.")
+
+	# A negative cleared_node_count is rejected.
+	var bad_count: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"outcome": "boss_placeholder",
+			"boss_node_id": "node-7-0",
+			"cleared_node_count": -1
+		}
+	})
+	assert_true(bad_count.is_error(), "run_completed with a negative cleared_node_count should be rejected.")
+	assert_equal(bad_count.metadata.get("field"), "cleared_node_count", "run_completed should require a non-negative cleared_node_count.")
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -872,7 +1065,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.ROUTE_ADVANCED: &"route_advanced",
 		DomainEvent.Type.NODE_ENTERED: &"node_entered",
 		DomainEvent.Type.NODE_EXITED: &"node_exited",
-		DomainEvent.Type.ROUTE_SEALED: &"route_sealed"
+		DomainEvent.Type.ROUTE_SEALED: &"route_sealed",
+		DomainEvent.Type.NODE_PLACEHOLDER_RESOLVED: &"node_placeholder_resolved",
+		DomainEvent.Type.RUN_COMPLETED: &"run_completed"
 	}
 
 	for event_type: int in expected_ids.keys():
