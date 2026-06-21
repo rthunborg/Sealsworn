@@ -13,6 +13,9 @@ func run() -> Dictionary:
 	_duplicate_cleared_node_is_rejected()
 	_available_choices_exclude_cleared_nodes()
 	_available_choices_empty_when_not_on_a_node()
+	_eligible_choices_are_reveal_gated_and_cleared_excluded()
+	_eligible_choices_empty_when_not_on_a_node()
+	_is_eligible_choice_membership_matches_the_set()
 	_node_lookup_helpers_work()
 	return result()
 
@@ -104,6 +107,38 @@ func _available_choices_empty_when_not_on_a_node() -> void:
 	var route: RouteState = _build_linear_route()
 	route.current_node_id = ""
 	assert_equal(route.available_choice_ids(), [], "With no current node, there are no derived choices.")
+
+
+func _eligible_choices_are_reveal_gated_and_cleared_excluded() -> void:
+	# Story 4.3 filter: hub links to a REVEALED node, a HIDDEN node, and a CLEARED node. Only the
+	# revealed, non-cleared link is ELIGIBLE — proving eligible_choice_ids() applies the reveal gate
+	# that available_choice_ids() (4.1) deliberately lacks (it still surfaces the hidden node).
+	var hub: RouteNode = RouteNode.new("hub", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["revealed", "hidden", "gone"])
+	var revealed: RouteNode = RouteNode.new("revealed", RouteNode.TYPE_SHOP, 1, RouteNode.REVEAL_REVEALED, [])
+	var hidden: RouteNode = RouteNode.new("hidden", RouteNode.TYPE_EVENT, 1, RouteNode.REVEAL_HIDDEN, [])
+	var gone: RouteNode = RouteNode.new("gone", RouteNode.TYPE_REFORGE, 1, RouteNode.REVEAL_CLEARED, [])
+	var route: RouteState = RouteState.new([hub, revealed, hidden, gone], "hub", ["gone"])
+	assert_true(route.validate().succeeded, "Route with hidden/cleared branches should validate.")
+
+	assert_equal(route.eligible_choice_ids(), ["revealed"], "eligible_choice_ids must keep only the revealed, non-cleared link.")
+	# The 4.1 sibling is UNCHANGED: it excludes only the cleared id, so it still surfaces the hidden node.
+	assert_equal(route.available_choice_ids(), ["revealed", "hidden"], "available_choice_ids must keep its 4.1 behavior (hidden node still surfaced).")
+
+
+func _eligible_choices_empty_when_not_on_a_node() -> void:
+	var route: RouteState = _build_linear_route()
+	route.current_node_id = ""
+	assert_equal(route.eligible_choice_ids(), [], "With no current node, there are no eligible choices.")
+
+
+func _is_eligible_choice_membership_matches_the_set() -> void:
+	# choice-a is REVEALED + linked + non-cleared (eligible); boss is HIDDEN and not a current link
+	# (ineligible); start is the current node (ineligible).
+	var route: RouteState = _build_linear_route()
+	assert_true(route.is_eligible_choice("choice-a"), "A revealed, linked, non-cleared node is an eligible choice.")
+	assert_false(route.is_eligible_choice("boss"), "A hidden, non-linked node is not an eligible choice.")
+	assert_false(route.is_eligible_choice("start"), "The current node itself is not an eligible choice.")
+	assert_false(route.is_eligible_choice("ghost"), "An unknown id is not an eligible choice.")
 
 
 func _node_lookup_helpers_work() -> void:

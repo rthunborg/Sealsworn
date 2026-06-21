@@ -84,7 +84,7 @@ development_status:
   epic-4: in-progress
   4-1-run-state-and-route-node-model: done
   4-2-seeded-8-12-node-route-generation: done
-  4-3-route-choice-and-forward-commitment: ready-for-dev
+  4-3-route-choice-and-forward-commitment: review
   4-4-node-entry-and-exit-resolution: backlog
   4-5-mvp-node-types-and-boss-placeholder: backlog
   4-6-playable-run-shell-from-start-to-end: backlog
