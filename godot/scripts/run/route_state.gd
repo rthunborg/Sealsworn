@@ -76,6 +76,40 @@ func available_choice_ids() -> Array[String]:
 	return choices
 
 
+# The choice-eligibility FILTER that Story 4.1's available_choice_ids() deliberately lacks (its
+# reveal-gating + no-backtracking deferral, OWNER = Story 4.3). An ELIGIBLE choice is a current-node
+# outgoing link that is (a) a KNOWN node, (b) REVEAL_REVEALED, and (c) NOT in cleared_node_ids. This
+# is the SELECTION filter RouteAdvanceCommand validates a chosen id against; available_choice_ids()
+# is left byte-identical (it is pinned by 4.1 tests and surfaces hidden linked nodes by design).
+# Pure query: no mutation, no RNG. Preserves the current node's link order.
+func eligible_choice_ids() -> Array[String]:
+	var eligible: Array[String] = []
+	if current_node_id.is_empty():
+		return eligible
+	var current: RouteNode = node_by_id(current_node_id)
+	if current == null:
+		return eligible
+	var cleared_lookup: Dictionary = {}
+	for cleared_id: String in cleared_node_ids:
+		cleared_lookup[cleared_id] = true
+	for link_id: String in current.outgoing_link_ids:
+		if cleared_lookup.has(link_id):
+			continue
+		var linked: RouteNode = node_by_id(link_id)
+		if linked == null:
+			continue
+		if linked.reveal_state != RouteNode.REVEAL_REVEALED:
+			continue
+		eligible.append(link_id)
+	return eligible
+
+
+# Convenience membership check for the eligible-choice set so the command can validate a chosen id
+# with a single call. Pure query.
+func is_eligible_choice(node_id: String) -> bool:
+	return eligible_choice_ids().has(node_id)
+
+
 func validate() -> ActionResult:
 	# Reject duplicate node ids and validate each node individually.
 	var seen_nodes: Dictionary = {}

@@ -19,7 +19,8 @@ enum Type {
 	MARKED_TILE_DETONATED,
 	ENEMY_WAITED,
 	LEVEL_VICTORY_REACHED,
-	LEVEL_DEFEAT_REACHED
+	LEVEL_DEFEAT_REACHED,
+	ROUTE_ADVANCED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -38,6 +39,7 @@ const EVENT_ID_MARKED_TILE_DETONATED := &"marked_tile_detonated"
 const EVENT_ID_ENEMY_WAITED := &"enemy_waited"
 const EVENT_ID_LEVEL_VICTORY_REACHED := &"level_victory_reached"
 const EVENT_ID_LEVEL_DEFEAT_REACHED := &"level_defeat_reached"
+const EVENT_ID_ROUTE_ADVANCED := &"route_advanced"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -64,6 +66,28 @@ static func run_started(sequence_id: int, payload: Dictionary = {}) -> DomainEve
 	payload_value["is_manual_seed"] = bool(payload.get("is_manual_seed", false))
 	payload_value["node_count"] = int(payload.get("node_count", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_STARTED, sequence_id, &"", payload_value)
+
+
+static func route_advanced(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor): a run-level route POINTER advance (Story 4.3). It is NOT an entity
+	# action, so it is NOT in _event_requires_actor (actor_id stays empty). Node ids carry hyphens
+	# (e.g. "node-1-0" from RouteGenerator._mint_node_id) so they are plain non-empty strings, NOT
+	# lower_snake ids. to_node_type is a lower_snake RouteNode.TYPE_* id. Normalize/duplicate the
+	# payload defensively (mirroring run_started); revealed_node_ids defaults to an empty Array.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["from_node_id"] = String(payload.get("from_node_id", ""))
+	payload_value["to_node_id"] = String(payload.get("to_node_id", ""))
+	payload_value["to_node_type"] = String(payload.get("to_node_type", ""))
+	payload_value["to_node_depth"] = int(payload.get("to_node_depth", 0))
+	payload_value["cleared_node_id"] = String(payload.get("cleared_node_id", ""))
+	var revealed_value: Variant = payload.get("revealed_node_ids", [])
+	var revealed_ids: Array[String] = []
+	if revealed_value is Array:
+		for revealed_id: Variant in revealed_value:
+			if revealed_id is String or revealed_id is StringName:
+				revealed_ids.append(String(revealed_id))
+	payload_value["revealed_node_ids"] = revealed_ids
+	return load("res://scripts/core/events/domain_event.gd").new(Type.ROUTE_ADVANCED, sequence_id, &"", payload_value)
 
 
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
@@ -388,6 +412,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 	match event_type_value:
 		Type.RUN_STARTED:
 			return _validate_run_started_payload(payload_value)
+		Type.ROUTE_ADVANCED:
+			return _validate_route_advanced_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -423,6 +449,29 @@ static func _validate_run_started_payload(payload_value: Dictionary) -> ActionRe
 		return _error_result(&"invalid_event_payload", {"field": "is_manual_seed"})
 	if not _has_nonnegative_integral_payload(payload_value, &"node_count"):
 		return _error_result(&"invalid_event_payload", {"field": "node_count"})
+	return _ok_result()
+
+
+static func _validate_route_advanced_payload(payload_value: Dictionary) -> ActionResult:
+	# Route advance is a run-level SYSTEM transition. Node ids carry hyphens (RouteGenerator mints
+	# "node-<depth>-<index>"), so id fields are validated as PLAIN non-empty strings / a plain
+	# non-empty-string Array — NEVER via _is_lower_snake_id / _has_string_array_payload (both reject
+	# hyphens). Only to_node_type is a lower_snake RouteNode.TYPE_* id.
+	if not _has_nonempty_string_payload(payload_value, &"from_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "from_node_id"})
+	if not _has_nonempty_string_payload(payload_value, &"to_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "to_node_id"})
+	if not _has_lower_snake_payload(payload_value, &"to_node_type"):
+		return _error_result(&"invalid_event_payload", {"field": "to_node_type"})
+	if not _has_nonnegative_integral_payload(payload_value, &"to_node_depth"):
+		return _error_result(&"invalid_event_payload", {"field": "to_node_depth"})
+	if not _has_nonempty_string_payload(payload_value, &"cleared_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "cleared_node_id"})
+	# revealed_node_ids: a (possibly empty) Array of plain non-empty hyphen-tolerant node-id strings.
+	if not _has_plain_string_array_payload(payload_value, &"revealed_node_ids", true):
+		return _error_result(&"invalid_event_payload", {"field": "revealed_node_ids"})
+	if _string_array_has_duplicates(payload_value.get("revealed_node_ids", [])):
+		return _error_result(&"invalid_event_payload", {"field": "revealed_node_ids"})
 	return _ok_result()
 
 
@@ -794,6 +843,26 @@ static func _has_string_array_payload(payload_value: Dictionary, field_name: Str
 	return true
 
 
+# A (possibly empty) Array of plain NON-EMPTY strings WITHOUT the lower_snake constraint — for
+# node-id lists that carry hyphens (e.g. "node-1-0"). Sibling of _has_string_array_payload, which
+# enforces lower_snake and therefore rejects hyphenated ids.
+static func _has_plain_string_array_payload(payload_value: Dictionary, field_name: StringName, allow_empty: bool) -> bool:
+	if not payload_value.has(String(field_name)):
+		return false
+	var values: Variant = payload_value.get(String(field_name))
+	if not values is Array:
+		return false
+	var string_values: Array = values
+	if string_values.is_empty() and not allow_empty:
+		return false
+	for value: Variant in string_values:
+		if not (value is String or value is StringName):
+			return false
+		if String(value).is_empty():
+			return false
+	return true
+
+
 static func _string_array_has_duplicates(values: Variant) -> bool:
 	if not values is Array:
 		return true
@@ -903,6 +972,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_LEVEL_VICTORY_REACHED
 		Type.LEVEL_DEFEAT_REACHED:
 			return EVENT_ID_LEVEL_DEFEAT_REACHED
+		Type.ROUTE_ADVANCED:
+			return EVENT_ID_ROUTE_ADVANCED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -939,6 +1010,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.LEVEL_VICTORY_REACHED
 		EVENT_ID_LEVEL_DEFEAT_REACHED:
 			return Type.LEVEL_DEFEAT_REACHED
+		EVENT_ID_ROUTE_ADVANCED:
+			return Type.ROUTE_ADVANCED
 		_:
 			return Type.UNKNOWN
 
