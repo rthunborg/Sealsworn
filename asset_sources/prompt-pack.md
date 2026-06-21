@@ -93,22 +93,20 @@ The treatment is now baked into a **saved custom style**, so per-asset prompts a
 | `icon.currency.echo` | a small floating ghostly wisp mote, faint eldritch teal glow, centered, single object | BASE |
 | `icon.currency.seal_fragment` | a broken carved stone seal fragment, relic rune, faint eldritch teal glow, centered, single object | BASE |
 
-### Passive glyphs (20–30) — via **Image set** mode
-Placeholder archetype symbols; map to specific passives when Epic 6 designs them. All render through `Sealsworn Icons` as metal emblems, so prompts are just the symbol.
+### Passive glyphs (20–30) — use a DEDICATED glyph style, NOT `Sealsworn Icons`
 
-**How to run Image set:**
-1. In the generation-mode dropdown (Image / Video / Mockup / **Image set** / Exploration) choose **Image set**.
-2. Keep the `Sealsworn Icons` style + the settings above selected — those are the "shared settings."
-3. You get a multi-row list: **paste one symbol prompt per row** (do ~8–10 per run).
-4. Generate — it produces all rows together in one batch, same style/negative.
-5. Pick the readable ones; re-roll misses individually at Count 4.
+⚠️ **Lesson learned:** `Sealsworn Icons` is trained on a steel sword, so it forces abstract symbols into blades (lightning bolt → a blade, claw marks → three daggers, blood drop → a sword on drips). **Do not use the weapon style for glyphs.** Two fixes, both keeping the dark-steel-emblem family:
 
-**GLYPH NEGATIVE** (note: drops "multiple/crossed" since some glyphs are composite symbols):
-> orange-dominant, glowing edges, hollow outline, ornate frame, border, plaque, picture frame, background panel, decorative background, vignette, busy background, photorealistic, text, watermark, sci-fi, neon
+- **Option A — neutral preset + treatment prompt (quick):** turn the custom style OFF, pick base **V4.1 Vector** (or V3 Vector), and prepend this treatment to every symbol:
+  > dark fantasy game UI rune emblem, single centered flat engraved symbol, bold thick dark outline, polished steel and dark iron with a faint amber edge, dark slate background, high contrast, distinct silhouette, even padding
+- **Option B — dedicated `Sealsworn Glyphs` style (recommended):** generate ONE clean *non-weapon* emblem with Option A (e.g. a shield or an eye), pick the cleanest, build a new style `Sealsworn Glyphs` from it, then Image-set all 28 through it. Same anchor→style→batch pattern as the weapons, without the sword bias.
 
-**Prompts** — `icon.passive.001`–`028` (each line = one emblem):
+**GLYPH NEGATIVE** — add `sword, blade, dagger, spear, weapon` to every NON-weapon symbol; omit those words only for `crossed swords`:
+> sword, blade, dagger, spear, weapon, realistic scene, ornate frame, border, plaque, background panel, vignette, multiple unrelated objects, busy, photorealistic, text, watermark, sci-fi, neon
 
-*Offense:* `crossed swords` · `a flaming skull` · `a dripping blood drop` · `a jagged lightning bolt` · `a clenched spiked gauntlet fist` · `three slashing claw marks` · `a serrated fang`
+**Run via Image set** (8–10 rows per batch; mode dropdown → Image set; keep style + settings as the shared config; one symbol per row). A few symbols were simplified after the first batch came out busy (flaming skull → horned skull; spiked gauntlet → gauntlet). Prompts `icon.passive.001`–`028`:
+
+*Offense:* `crossed swords` *(weapon — drop the anti-weapon negative for this one)* · `a horned skull` · `a single dripping blood drop` · `a jagged lightning bolt` · `a clenched gauntlet fist` · `three slashing claw marks` · `a serrated fang`
 
 *Defense:* `a tower shield` · `a stone fortress wall` · `a layered aegis ward` · `a knight's helm` · `interlocked chain links` · `a thorned barrier ring` · `a closed fortress gate`
 
@@ -116,12 +114,27 @@ Placeholder archetype symbols; map to specific passives when Epic 6 designs them
 
 *Rule-bender (add `faint eldritch teal accent` to each):* `an upside-down inverted hourglass` · `a cracked broken rune` · `a two-faced mask` · `an ouroboros looping serpent` · `a die showing impossible faces` · `a tangled knot` · `a coin frozen mid-flip`
 
-### UI frames / overlays
-- `ui.*` frames — ornate dark-stone panel frame, iron corners, candle-warm trim. **Recommend:** generate decorative corner/border pieces and assemble as 9-slice in Godot rather than fixed-size full panels.
-- `overlay.move_range` / `overlay.attack_range` / `overlay.blocked_line` — flat tile-highlight markers, distinct by shape+pattern (not color alone)
-- `overlay.fog_hidden` / `overlay.fog_memory` — fog states: hidden (opaque) vs memory (desaturated/dimmed)
-- `overlay.seer_mark` — telegraph marker, **eldritch teal**, clearly "danger here next turn"
-- `banner.victory` / `banner.defeat` — outcome banner treatments
+### UI frames & panels (Recraft → 9-slice in Godot)
+
+Make ONE coherent chrome kit and **reuse it across all screens** — don't generate 9 separate screen frames. Models fill the middle, so prompt for an **empty/hollow center** and slice in Godot. Use base **V4.1 Vector**, not the icon style.
+
+| Element → IDs | Prompt | Negative |
+|---|---|---|
+| panel frame (9-slice) → all `ui.*` | an ornate dark fantasy UI panel border frame, carved dark stone with iron corner brackets and faint candle-warm trim, empty hollow center, square, symmetrical | filled center, content inside, text, character, weapon, busy, photorealistic, sci-fi |
+| `ui.passive_modal` frame | an ornate dark fantasy modal window frame, iron filigree corners, dark stone, empty hollow center, portrait orientation | filled center, text, character, busy, photorealistic |
+| UI button plate | a dark fantasy UI button plate, iron-bound dark stone, slight bevel, empty label area, horizontal | text, icon inside, busy, photorealistic |
+
+The nine `ui.*` rows (hero_select, tactical_hud, preview, passive_modal, run_map, outpost, run_summary, settings, save_resume) are assembled in-engine from this kit — they are **not** nine separate generations.
+
+### Tactical overlays — mostly ENGINE-drawn, not AI
+
+`overlay.move_range`, `overlay.attack_range`, `overlay.blocked_line`, `overlay.fog_hidden`, `overlay.fog_memory` must tile, be semi-transparent, and align exactly to the grid — build them as **flat color fills + distinct patterns in Godot** (per NFR9), not Recraft art. Only these three are worth AI-generating:
+
+| ID | Prompt | Negative |
+|---|---|---|
+| `overlay.seer_mark` | a glowing eldritch teal targeting rune, concentric circle telegraph mark, flat top-down view, transparent background | weapon, character, busy, photorealistic, warm colors |
+| `banner.victory` | an ornate dark fantasy victory banner ribbon, iron-trimmed dark cloth with a faint warm glow, empty center | text, character, busy, photorealistic |
+| `banner.defeat` | a tattered dark fantasy defeat banner ribbon, muted desaturated cloth, empty center | text, character, bright colors, busy |
 
 ---
 

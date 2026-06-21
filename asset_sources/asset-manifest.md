@@ -75,21 +75,21 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 ## Item icons — support (Recraft) — Epic 6
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| icon.support.tome | Tome | asset_sources/icons/support/ | godot/assets/icons/support/ | planned | ☐ |
-| icon.support.shield | Shield | asset_sources/icons/support/ | godot/assets/icons/support/ | planned | ☐ |
+| icon.support.tome | Tome | asset_sources/icons/support/ | godot/assets/icons/support/ | generated | ☐ |
+| icon.support.shield | Shield | asset_sources/icons/support/ | godot/assets/icons/support/ | generated | ☐ |
 
 ## Passive glyphs (Recraft) — Epic 6 — `icon.passive.001`–`030`
 | ID range | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| icon.passive.001–030 | 20–30 passive glyphs (4 archetypes; exact map awaits Epic 6 design) | asset_sources/icons/passives/ | godot/assets/icons/passives/ | planned | ☐ |
+| icon.passive.001–028 | 28 placeholder glyphs (4 archetypes). Needs a DEDICATED glyph style — the weapon style forces blades; see prompt-pack §B. | asset_sources/icons/passives/ | godot/assets/icons/passives/ | planned | ☐ |
 
 ## Currency icons (Recraft) — Epic 8
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| icon.currency.gold | Gold | asset_sources/icons/currency/ | godot/assets/icons/currency/ | planned | ☐ |
-| icon.currency.oath_shard | Oath Shard | asset_sources/icons/currency/ | godot/assets/icons/currency/ | planned | ☐ |
-| icon.currency.echo | Echo | asset_sources/icons/currency/ | godot/assets/icons/currency/ | planned | ☐ |
-| icon.currency.seal_fragment | Seal Fragment | asset_sources/icons/currency/ | godot/assets/icons/currency/ | planned | ☐ |
+| icon.currency.gold | Gold | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
+| icon.currency.oath_shard | Oath Shard | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
+| icon.currency.echo | Echo | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
+| icon.currency.seal_fragment | Seal Fragment | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
 
 ## UI frames (Recraft + Godot 9-slice) — Epic 2 / 5 / 8
 | ID | Asset | Source dir | Runtime path | Status | Approved |
