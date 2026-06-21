@@ -30,6 +30,7 @@ const NON_BOSS_PLACEHOLDER_TYPES: Array[StringName] = [
 func run() -> Dictionary:
 	_resolves_each_non_boss_placeholder_then_exits_round_trips()
 	_resolves_boss_to_completed_and_emits_run_completed()
+	_boss_resolve_idempotent_when_boss_already_cleared()
 	_boss_run_rejects_node_exit_after_completion()
 	_rejects_wrong_phase_with_no_mutation()
 	_rejects_no_current_node()
@@ -177,6 +178,47 @@ func _resolves_boss_to_completed_and_emits_run_completed() -> void:
 	assert_true(bool(resolved.metadata.get("run_completed")), "Boss metadata should flag run_completed.")
 	assert_equal(resolved.metadata.get("outcome"), "boss_placeholder", "Boss metadata should carry the outcome.")
 	assert_equal(resolved.metadata.get("cleared_node_count"), 3, "Boss metadata should carry the cleared node count.")
+
+
+func _boss_resolve_idempotent_when_boss_already_cleared() -> void:
+	# Exercises the boss-clear idempotency guard's "already present" branch
+	# (node_resolve_placeholder_command.gd `if not route.cleared_node_ids.has(boss_id)`): if the boss id is
+	# somehow ALREADY in cleared_node_ids on an otherwise-valid ACTIVE_ROUTE boss run, the resolve must still
+	# succeed, must NOT append a duplicate (cleared_node_count == the post-resolve cleared set size), and must
+	# leave the cleared set duplicate-free. A run parked on the boss with the boss already cleared is
+	# STRUCTURALLY valid — RouteState.validate() only requires cleared ids to be known + unique, not absent
+	# from the current pointer.
+	var run: RunState = _active_run_on_boss_node()
+	# Pre-seed the boss id into the cleared set (still structurally valid).
+	var pre_cleared: Array[String] = run.route.cleared_node_ids.duplicate()
+	pre_cleared.append("node-2-0")
+	run.route.cleared_node_ids = pre_cleared
+	assert_true(run.route.cleared_node_ids.has("node-2-0"), "Setup: the boss id should already be in cleared_node_ids.")
+	assert_equal(run.route.cleared_node_ids.size(), 3, "Setup: the pre-seeded cleared set is start + mid + boss = 3.")
+	assert_true(run.validate().succeeded, "Setup: a boss run with the boss already cleared is still structurally valid.")
+
+	var resolved: ActionResult = NodeResolvePlaceholderCommand.new().execute(run)
+	assert_true(resolved.succeeded, "Resolving a boss whose id is already cleared should still succeed: %s" % resolved.metadata)
+
+	# The run completes terminally exactly as normal.
+	assert_equal(run.phase, RunState.PHASE_COMPLETED, "An already-cleared-boss resolve should still transition the run to COMPLETED.")
+	assert_true(run.is_terminal(), "An already-cleared-boss resolve should still be terminal.")
+	assert_true(run.route.cleared_node_ids.has("node-2-0"), "The boss id should remain in cleared_node_ids.")
+	# The guard prevented a duplicate append: the cleared set is unchanged (still 3, NOT 4) + duplicate-free.
+	assert_equal(run.route.cleared_node_ids.size(), 3, "The idempotency guard must NOT append a duplicate boss id (cleared set stays 3).")
+	_assert_no_duplicate_cleared(run, "boss-already-cleared")
+	assert_true(run.validate().succeeded, "A boss resolve over an already-cleared boss must leave the run structurally valid (no duplicate_cleared_node).")
+
+	# run_completed still emits with cleared_node_count == the (deduplicated) cleared set size.
+	assert_equal(resolved.events.size(), 2, "An already-cleared-boss resolve still emits both events (node_placeholder_resolved + run_completed).")
+	var run_completed_event: DomainEvent = resolved.events[1]
+	assert_equal(run_completed_event.event_type, DomainEvent.Type.RUN_COMPLETED, "The second emitted event should be run_completed.")
+	assert_equal(run_completed_event.payload.get("outcome"), "boss_placeholder", "run_completed must still carry the stable boss_placeholder outcome.")
+	assert_equal(run_completed_event.payload.get("cleared_node_count"), 3, "cleared_node_count must reflect the deduplicated cleared set (3, no duplicate).")
+	assert_equal(run_completed_event.payload.get("cleared_node_count"), run.route.cleared_node_ids.size(), "run_completed cleared_node_count should equal the post-resolve cleared set size (no duplicate).")
+	# The run_completed payload still passes validation through real JSON.
+	var run_completed_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(run_completed_event.to_dictionary())))
+	assert_true(run_completed_parse.succeeded, "The emitted run_completed event should still pass payload validation: %s" % run_completed_parse.metadata)
 
 
 func _boss_run_rejects_node_exit_after_completion() -> void:

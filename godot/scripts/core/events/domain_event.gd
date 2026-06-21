@@ -648,8 +648,9 @@ static func _validate_run_completed_payload(payload_value: Dictionary) -> Action
 	# The boss-placeholder run-END boundary (Story 4.5). outcome is lower_snake AND value-equal to the
 	# stable boss-placeholder marker (mirroring _validate_level_victory_reached_payload's outcome ==
 	# "victory" assertion). boss_node_id (the boss node) carries hyphens -> PLAIN non-empty string.
-	# cleared_node_count is a non-negative integral (route.cleared_node_ids.size() AFTER the boss is cleared
-	# — for the MVP route this is the full path length, bounded 8-13, so a raw JSON number is safe).
+	# cleared_node_count is a non-negative integral: route.cleared_node_ids.size() AFTER the boss is cleared
+	# — the count of nodes the player cleared on the traversed path (one per tier on the fixed-depth MVP
+	# route), well under 2^53.
 	if not _has_lower_snake_payload(payload_value, &"outcome") \
 			or String(payload_value.get("outcome")) != String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER):
 		return _error_result(&"invalid_event_payload", {"field": "outcome"})
