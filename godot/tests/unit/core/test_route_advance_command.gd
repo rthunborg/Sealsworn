@@ -24,6 +24,7 @@ func run() -> Dictionary:
 	_rejects_no_current_node()
 	_rejects_hidden_cleared_unlinked_unknown_and_current_targets_with_no_mutation()
 	_rejects_invalid_context()
+	_rejects_non_positive_sequence_id_with_no_mutation()
 	_advance_draws_no_rng_on_success_and_reject()
 	_advance_is_deterministic()
 	_post_advance_run_still_validates_and_bridges_into_run_snapshot()
@@ -143,19 +144,27 @@ func _reveal_on_arrival_prevents_soft_lock_across_seeds() -> void:
 # ---- AC3: no-mutation rejections -----------------------------------------------------------------
 
 func _rejects_wrong_phase_with_no_mutation() -> void:
-	# NEW_RUN and NODE_RESOLUTION must both reject a route advance with wrong_run_phase + no mutation.
-	for phase: StringName in [RunState.PHASE_NEW_RUN, RunState.PHASE_NODE_RESOLUTION]:
-		var run: RunState = _hand_built_active_run()
-		if phase == RunState.PHASE_NEW_RUN:
-			# Rebuild a NEW_RUN run parked on the start (do not transition).
-			var start: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["node-1-0"])
-			var a: RouteNode = RouteNode.new("node-1-0", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, [])
-			var route: RouteState = RouteState.new([start, a], "node-0-0", [])
-			run = RunState.new_run(5, false, route)
-			run.route.current_node_id = "node-0-0"
-		else:
-			run.transition_to(RunState.PHASE_NODE_RESOLUTION)
+	# Every non-ACTIVE_ROUTE phase must reject a route advance with wrong_run_phase + no mutation +
+	# zero events. The command's guard is phase-agnostic (rejects ANY phase != ACTIVE_ROUTE), so the
+	# two non-terminal (NEW_RUN, NODE_RESOLUTION) AND the two terminal (COMPLETED, FAILED) phases all
+	# exercise the same single branch — but each gets a dedicated negative test. The terminal phases
+	# cannot be reached from a parked choice via the transition table, so the run is built DIRECTLY in
+	# the target phase via the RunState(phase, ...) constructor.
+	for phase: StringName in [
+		RunState.PHASE_NEW_RUN,
+		RunState.PHASE_NODE_RESOLUTION,
+		RunState.PHASE_COMPLETED,
+		RunState.PHASE_FAILED
+	]:
+		# A minimal valid route parked on the start node (revealed depth-1 link).
+		var start: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["node-1-0"])
+		var a: RouteNode = RouteNode.new("node-1-0", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, [])
+		var route: RouteState = RouteState.new([start, a], "node-0-0", [])
+		# Build the run DIRECTLY in the target phase (terminal phases are unreachable via transition_to
+		# from a parked choice). meta_progression_eligible = not is_manual_seed, so pass false/true.
+		var run: RunState = RunState.new(phase, 5, false, true, route)
 		assert_equal(run.phase, phase, "Setup: run should be in %s." % String(phase))
+		assert_true(run.validate().succeeded, "Setup: the %s run should validate." % String(phase))
 
 		var before: Dictionary = run.to_dictionary()
 		var command: RouteAdvanceCommand = RouteAdvanceCommand.new("node-1-0")
@@ -164,7 +173,7 @@ func _rejects_wrong_phase_with_no_mutation() -> void:
 
 		assert_true(rejected.is_error(), "An advance outside ACTIVE_ROUTE should be rejected (%s)." % String(phase))
 		assert_equal(rejected.error_code, &"wrong_run_phase", "Wrong-phase advance should use the stable wrong_run_phase code (%s)." % String(phase))
-		assert_equal(rejected.metadata.get("phase"), String(phase), "Wrong-phase rejection should carry the actual phase.")
+		assert_equal(rejected.metadata.get("phase"), String(phase), "Wrong-phase rejection should carry the actual phase (%s)." % String(phase))
 		assert_false(rejected.has_events(), "A rejected advance should emit zero events (%s)." % String(phase))
 		assert_equal(after, before, "A wrong-phase rejected advance must leave the run byte-identical (%s)." % String(phase))
 
@@ -246,13 +255,51 @@ func _rejects_invalid_context() -> void:
 	assert_equal(not_a_run.error_code, &"invalid_context", "A bad context should use the stable invalid_context code.")
 	assert_false(not_a_run.has_events(), "An invalid-context rejection should emit zero events.")
 
-	# A structurally INVALID run (unknown current node) is also rejected as invalid_context.
+	# A structurally INVALID run (unknown current node) is also rejected as invalid_context, AND the
+	# top-level invalid_context metadata surfaces the inner RouteState.validate() error so a corrupt-run
+	# rejection is diagnosable (the precise structural reason is not discarded).
 	var broken: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, [])
 	var route: RouteState = RouteState.new([broken], "ghost", [])
 	var run: RunState = RunState.new(RunState.PHASE_ACTIVE_ROUTE, 1, false, true, route)
+	var before_invalid: Dictionary = run.to_dictionary()
 	var invalid_run: ActionResult = command.execute(run)
+	var after_invalid: Dictionary = run.to_dictionary()
 	assert_true(invalid_run.is_error(), "A structurally invalid run should be rejected.")
 	assert_equal(invalid_run.error_code, &"invalid_context", "An invalid run should use the stable invalid_context code.")
+	assert_equal(invalid_run.metadata.get("inner_error_code"), "unknown_current_node", "invalid_context should surface the inner RouteState.validate() error code for diagnosis.")
+	var inner_metadata: Variant = invalid_run.metadata.get("inner_metadata")
+	assert_true(inner_metadata is Dictionary, "invalid_context should carry the inner validation metadata.")
+	assert_equal((inner_metadata as Dictionary).get("node_id"), "ghost", "The inner metadata should pinpoint the offending node id.")
+	assert_false(invalid_run.has_events(), "An invalid-context rejection should emit zero events.")
+	assert_equal(after_invalid, before_invalid, "An invalid-context rejection must leave the run byte-identical.")
+
+
+func _rejects_non_positive_sequence_id_with_no_mutation() -> void:
+	# Self-consistency gate (Round-1 finding 1): execute() builds a route_advanced event with the
+	# caller-supplied sequence id, and DomainEvent.try_from_dictionary requires sequence_id > 0. So a
+	# non-positive sequence id must be REJECTED before the event is built — the success path must never
+	# emit an event its own validator would reject. The rejection leaves the run byte-identical with
+	# zero events. (The constructor default is 1, so no current caller can hit this — it is a guard.)
+	for bad_sequence_id: int in [0, -1]:
+		var run: RunState = _hand_built_active_run()
+		var before: Dictionary = run.to_dictionary()
+		# Target node-1-0 is a perfectly LEGAL choice — only the sequence id is bad, proving the gate
+		# fires on the sequence id and not on the target.
+		var command: RouteAdvanceCommand = RouteAdvanceCommand.new("node-1-0", bad_sequence_id)
+		var rejected: ActionResult = command.execute(run)
+		var after: Dictionary = run.to_dictionary()
+
+		assert_true(rejected.is_error(), "A non-positive sequence id (%d) must be rejected." % bad_sequence_id)
+		assert_equal(rejected.error_code, &"invalid_event_sequence_id", "A non-positive sequence id should use the stable invalid_event_sequence_id code (%d)." % bad_sequence_id)
+		assert_equal(rejected.metadata.get("sequence_id"), bad_sequence_id, "The rejection should echo the offending sequence id.")
+		assert_false(rejected.has_events(), "A sequence-id rejection should emit zero events (%d)." % bad_sequence_id)
+		assert_equal(after, before, "A sequence-id rejection must leave the run byte-identical (%d)." % bad_sequence_id)
+
+	# validate() alone (pure read) also rejects a non-positive id before touching the run.
+	var validate_run: RunState = _hand_built_active_run()
+	var validate_only: ActionResult = RouteAdvanceCommand.new("node-1-0", 0).validate(validate_run)
+	assert_true(validate_only.is_error(), "validate() should reject a non-positive sequence id directly.")
+	assert_equal(validate_only.error_code, &"invalid_event_sequence_id", "validate() should surface the stable sequence-id code.")
 
 
 # ---- AC2: determinism / no RNG -------------------------------------------------------------------

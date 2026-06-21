@@ -46,16 +46,27 @@ func _init(new_target_node_id: String = "", new_sequence_id: int = 1) -> void:
 	sequence_id = new_sequence_id
 
 
-# Pure read: validate the context, phase, and chosen-node eligibility. No mutation, no event, no RNG.
+# Pure read: validate the sequence id, context, phase, and chosen-node eligibility. No mutation, no
+# event, no RNG.
 func validate(state: Variant) -> ActionResult:
+	# Self-consistency gate: execute() builds a route_advanced event with this sequence id, and
+	# DomainEvent.try_from_dictionary requires sequence_id > 0 — so a non-positive id would make the
+	# success path emit a non-round-trippable event. Reject it BEFORE any state is read or mutated so
+	# a command's success path can never emit an event its own validator rejects.
+	if sequence_id <= 0:
+		return ActionResult.error(&"invalid_event_sequence_id", {
+			"command": String(command_id),
+			"sequence_id": sequence_id
+		})
 	if not state is RunState:
 		return _invalid_context()
 	var run: RunState = state as RunState
 	if run.route == null:
 		return _invalid_context()
 	# The run/route must be structurally sound before we reason about a choice.
-	if run.validate().is_error():
-		return _invalid_context()
+	var run_validation: ActionResult = run.validate()
+	if run_validation.is_error():
+		return _invalid_context(run_validation)
 
 	# The route choice/commit happens IN PHASE_ACTIVE_ROUTE. Reject any other phase (AC3).
 	if run.phase != RunState.PHASE_ACTIVE_ROUTE:
@@ -141,8 +152,18 @@ func execute(state: Variant) -> ActionResult:
 	})
 
 
-func _invalid_context() -> ActionResult:
-	return ActionResult.error(&"invalid_context", {"command": String(command_id)})
+# A single stable top-level code (invalid_context) holds AC's "give me a valid run" contract for the
+# not-a-RunState / null-route / structurally-invalid-run cases. When the rejection is caused by a
+# structurally-invalid run, attach the inner RouteState/RunState validate() error_code (and its
+# metadata) so a corrupt-run rejection is diagnosable, mirroring how the ineligible-choice rejection
+# carries a precise reason. The not-a-RunState / null-route cases have no inner result.
+func _invalid_context(inner: ActionResult = null) -> ActionResult:
+	var metadata: Dictionary = {"command": String(command_id)}
+	if inner != null and inner.is_error():
+		metadata["inner_error_code"] = String(inner.error_code)
+		if not inner.metadata.is_empty():
+			metadata["inner_metadata"] = inner.metadata.duplicate(true)
+	return ActionResult.error(&"invalid_context", metadata)
 
 
 # Derive a precise diagnostic reason for an ineligible chosen node (metadata only — the top-level
