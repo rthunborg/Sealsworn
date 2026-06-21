@@ -20,7 +20,10 @@ enum Type {
 	ENEMY_WAITED,
 	LEVEL_VICTORY_REACHED,
 	LEVEL_DEFEAT_REACHED,
-	ROUTE_ADVANCED
+	ROUTE_ADVANCED,
+	NODE_ENTERED,
+	NODE_EXITED,
+	ROUTE_SEALED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -40,6 +43,9 @@ const EVENT_ID_ENEMY_WAITED := &"enemy_waited"
 const EVENT_ID_LEVEL_VICTORY_REACHED := &"level_victory_reached"
 const EVENT_ID_LEVEL_DEFEAT_REACHED := &"level_defeat_reached"
 const EVENT_ID_ROUTE_ADVANCED := &"route_advanced"
+const EVENT_ID_NODE_ENTERED := &"node_entered"
+const EVENT_ID_NODE_EXITED := &"node_exited"
+const EVENT_ID_ROUTE_SEALED := &"route_sealed"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -88,6 +94,48 @@ static func route_advanced(sequence_id: int, payload: Dictionary = {}) -> Domain
 				revealed_ids.append(String(revealed_id))
 	payload_value["revealed_node_ids"] = revealed_ids
 	return load("res://scripts/core/events/domain_event.gd").new(Type.ROUTE_ADVANCED, sequence_id, &"", payload_value)
+
+
+static func node_entered(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 4.4): a run-level node ENTRY that transitions ACTIVE_ROUTE ->
+	# NODE_RESOLUTION and produces a level GenerationRequest. NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty). node_id carries hyphens (RouteGenerator mints
+	# "node-<depth>-<index>") so it is a PLAIN non-empty string, NOT lower_snake. node_type, recipe_id,
+	# size_class, and the DERIVED lower_snake level_request_node_id ARE lower_snake. node_depth is a
+	# non-negative integral. Normalize/duplicate defensively (mirroring route_advanced).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["node_id"] = String(payload.get("node_id", ""))
+	payload_value["node_type"] = String(payload.get("node_type", ""))
+	payload_value["node_depth"] = int(payload.get("node_depth", 0))
+	payload_value["level_request_node_id"] = String(payload.get("level_request_node_id", ""))
+	payload_value["recipe_id"] = String(payload.get("recipe_id", ""))
+	payload_value["size_class"] = String(payload.get("size_class", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.NODE_ENTERED, sequence_id, &"", payload_value)
+
+
+static func node_exited(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 4.4): a run-level node EXIT that marks the resolved node cleared
+	# and transitions NODE_RESOLUTION -> ACTIVE_ROUTE. node_id carries hyphens -> PLAIN non-empty
+	# string; node_type is lower_snake; node_depth is a non-negative integral; rewards_placeholder is a
+	# bool. Normalize/duplicate defensively (mirroring route_advanced).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["node_id"] = String(payload.get("node_id", ""))
+	payload_value["node_type"] = String(payload.get("node_type", ""))
+	payload_value["node_depth"] = int(payload.get("node_depth", 0))
+	payload_value["rewards_placeholder"] = bool(payload.get("rewards_placeholder", false))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.NODE_EXITED, sequence_id, &"", payload_value)
+
+
+static func route_sealed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 4.4): the deterministic door-sealed CONTAINMENT cue emitted on node
+	# exit (GDD line 210 "doors seal behind the hero as a containment law"). It is a pure presentation
+	# record — presentation/audio MIRROR it; it never drives domain control flow. node_id (the sealed
+	# node) carries hyphens -> PLAIN non-empty string; cue_id is lower_snake (and the command asserts the
+	# exact value door_sealed_placeholder). Normalize/duplicate defensively.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["node_id"] = String(payload.get("node_id", ""))
+	payload_value["cue_id"] = String(payload.get("cue_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.ROUTE_SEALED, sequence_id, &"", payload_value)
 
 
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
@@ -414,6 +462,12 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_run_started_payload(payload_value)
 		Type.ROUTE_ADVANCED:
 			return _validate_route_advanced_payload(payload_value)
+		Type.NODE_ENTERED:
+			return _validate_node_entered_payload(payload_value)
+		Type.NODE_EXITED:
+			return _validate_node_exited_payload(payload_value)
+		Type.ROUTE_SEALED:
+			return _validate_route_sealed_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -472,6 +526,51 @@ static func _validate_route_advanced_payload(payload_value: Dictionary) -> Actio
 		return _error_result(&"invalid_event_payload", {"field": "revealed_node_ids"})
 	if _string_array_has_duplicates(payload_value.get("revealed_node_ids", [])):
 		return _error_result(&"invalid_event_payload", {"field": "revealed_node_ids"})
+	return _ok_result()
+
+
+static func _validate_node_entered_payload(payload_value: Dictionary) -> ActionResult:
+	# Node entry is a run-level SYSTEM transition (Story 4.4). node_id is the ORIGINAL route node id,
+	# which carries hyphens (RouteGenerator mints "node-<depth>-<index>") -> validated as a PLAIN
+	# non-empty string, NEVER via _has_lower_snake_payload (it rejects hyphens). node_type / recipe_id /
+	# size_class / the DERIVED level_request_node_id are lower_snake. node_depth is non-negative integral.
+	if not _has_nonempty_string_payload(payload_value, &"node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "node_id"})
+	if not _has_lower_snake_payload(payload_value, &"node_type"):
+		return _error_result(&"invalid_event_payload", {"field": "node_type"})
+	if not _has_nonnegative_integral_payload(payload_value, &"node_depth"):
+		return _error_result(&"invalid_event_payload", {"field": "node_depth"})
+	if not _has_lower_snake_payload(payload_value, &"level_request_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "level_request_node_id"})
+	if not _has_lower_snake_payload(payload_value, &"recipe_id"):
+		return _error_result(&"invalid_event_payload", {"field": "recipe_id"})
+	if not _has_lower_snake_payload(payload_value, &"size_class"):
+		return _error_result(&"invalid_event_payload", {"field": "size_class"})
+	return _ok_result()
+
+
+static func _validate_node_exited_payload(payload_value: Dictionary) -> ActionResult:
+	# Node exit is a run-level SYSTEM transition (Story 4.4). node_id carries hyphens -> PLAIN non-empty
+	# string. node_type is lower_snake; node_depth is non-negative integral; rewards_placeholder is bool.
+	if not _has_nonempty_string_payload(payload_value, &"node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "node_id"})
+	if not _has_lower_snake_payload(payload_value, &"node_type"):
+		return _error_result(&"invalid_event_payload", {"field": "node_type"})
+	if not _has_nonnegative_integral_payload(payload_value, &"node_depth"):
+		return _error_result(&"invalid_event_payload", {"field": "node_depth"})
+	if not _has_bool_payload(payload_value, &"rewards_placeholder"):
+		return _error_result(&"invalid_event_payload", {"field": "rewards_placeholder"})
+	return _ok_result()
+
+
+static func _validate_route_sealed_payload(payload_value: Dictionary) -> ActionResult:
+	# The door-sealed containment cue (Story 4.4). node_id (the sealed node) carries hyphens -> PLAIN
+	# non-empty string. cue_id is lower_snake non-empty (the validator enforces the SHAPE; the exact
+	# value door_sealed_placeholder is asserted in the command + tests).
+	if not _has_nonempty_string_payload(payload_value, &"node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "node_id"})
+	if not _has_lower_snake_payload(payload_value, &"cue_id"):
+		return _error_result(&"invalid_event_payload", {"field": "cue_id"})
 	return _ok_result()
 
 
@@ -974,6 +1073,12 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_LEVEL_DEFEAT_REACHED
 		Type.ROUTE_ADVANCED:
 			return EVENT_ID_ROUTE_ADVANCED
+		Type.NODE_ENTERED:
+			return EVENT_ID_NODE_ENTERED
+		Type.NODE_EXITED:
+			return EVENT_ID_NODE_EXITED
+		Type.ROUTE_SEALED:
+			return EVENT_ID_ROUTE_SEALED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1012,6 +1117,12 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.LEVEL_DEFEAT_REACHED
 		EVENT_ID_ROUTE_ADVANCED:
 			return Type.ROUTE_ADVANCED
+		EVENT_ID_NODE_ENTERED:
+			return Type.NODE_ENTERED
+		EVENT_ID_NODE_EXITED:
+			return Type.NODE_EXITED
+		EVENT_ID_ROUTE_SEALED:
+			return Type.ROUTE_SEALED
 		_:
 			return Type.UNKNOWN
 

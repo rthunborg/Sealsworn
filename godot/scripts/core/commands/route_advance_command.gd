@@ -108,12 +108,19 @@ func execute(state: Variant) -> ActionResult:
 	var route: RouteState = run.route
 	var from_node_id: String = route.current_node_id
 
-	# (1) Seal the path behind the hero: the LEFT node moves to cleared_node_ids + REVEAL_CLEARED.
-	var left_node: RouteNode = route.node_by_id(from_node_id)
-	left_node.reveal_state = RouteNode.REVEAL_CLEARED
-	var cleared: Array[String] = route.cleared_node_ids.duplicate()
-	cleared.append(from_node_id)
-	route.cleared_node_ids = cleared
+	# (1) Seal the path behind the hero: the LEFT node moves to cleared_node_ids + REVEAL_CLEARED. This
+	# step is IDEMPOTENT (Story 4.4 Task 4.1): if the left node is ALREADY cleared — which happens when
+	# the player enters+exits a node (NodeExitCommand clears the CURRENT node) and then advances OFF it
+	# — re-appending it would create a DUPLICATE that RouteState.validate() rejects (duplicate_cleared_
+	# node). Guarding the append + the REVEAL_CLEARED set on already-cleared membership is behavior-
+	# preserving for a fresh route (which never double-clears, so all 4.3 tests stay green) and makes the
+	# advance -> enter -> exit -> advance sequence valid.
+	if not route.cleared_node_ids.has(from_node_id):
+		var left_node: RouteNode = route.node_by_id(from_node_id)
+		left_node.reveal_state = RouteNode.REVEAL_CLEARED
+		var cleared: Array[String] = route.cleared_node_ids.duplicate()
+		cleared.append(from_node_id)
+		route.cleared_node_ids = cleared
 
 	# (2) Advance the pointer to the chosen node.
 	route.current_node_id = target_node_id
