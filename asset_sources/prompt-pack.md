@@ -51,42 +51,70 @@ How to use: paste the **STYLE PREFIX** for the tool, append the per-asset line, 
 
 ---
 
-## B. RECRAFT — UI / symbolic art
+## B. RECRAFT — UI / symbolic icons (FINALIZED METHOD)
 
-**STYLE PREFIX (paste before every prompt):**
-> dark fantasy game UI icon, single centered emblem, bold readable silhouette, thick clean outline, dark slate plate background, warm metallic highlight, subtle grim texture, flat with slight depth, high contrast, distinct by shape (colorblind-safe), even padding, vector
+The treatment is now baked into a **saved custom style**, so per-asset prompts are SHORT — just the subject. This replaces the old "paste a long prefix every time" approach.
 
-**NEGATIVE (all Recraft prompts):**
-> photorealistic, busy, paragraph text, multiple objects, thin faint lines, low contrast, gradient overload, drop-shadow clutter, sci-fi
+**Fixed setup for every icon:**
+- **Style:** `Sealsworn Icons` (custom, bound to **V3 Vector**). Its **style-level prompt** holds the treatment:
+  > dark fantasy game UI icon, polished steel and dark iron, bold clean dark outline, flat with slight depth, faint warm amber edge highlight only, high contrast, single centered emblem, even padding, dark slate background, distinct by silhouette
+- **Settings:** Aspect **1:1** · **AI prompt Off** · **Avoid text Yes** · **Palette Auto** · **Artistic level Not selected** · **Count 4** (one item at a time) — *except passive glyphs use **Image set** mode (see below).*
+- **Prompting rules (learned the hard way):** lead with the **shape**; name a real **archetype** (e.g. "kukri") not vague adjectives ("curved"); specify **material** for non-metal items; for sparse items add "large, fills most of the frame" so the model doesn't pad with decorative frames. Orientation need not be uniform — `centered` + even scale is what matters.
 
-### Weapon icons (9)
-- `icon.weapon.sword` — straight knightly sword
-- `icon.weapon.dagger` — short curved dagger
-- `icon.weapon.spear` — long thrusting spear
-- `icon.weapon.axe` — heavy battle axe
-- `icon.weapon.mace` — spiked flanged mace
-- `icon.weapon.bow` — recurve war bow
-- `icon.weapon.crossbow` — mechanical crossbow
-- `icon.weapon.staff` — arcane wooden staff with focus stone
-- `icon.weapon.wand` — short relic wand, faint glow
+**BASE NEGATIVE** (use for weapons/support/currency unless a row overrides it):
+> two weapons, crossed weapons, multiple objects, disconnected parts, orange-dominant, glowing blade, dark-filled blade, hollow outline, ornate frame, border, plaque, picture frame, background panel, decorative background, vignette, crest, badge, busy background, photorealistic, text, watermark, sci-fi, neon
+
+### Weapon icons (9) — ✅ generated
+| ID | Prompt | Extra negative (append to BASE) |
+|---|---|---|
+| `icon.weapon.sword` | a straight knightly sword, filled brushed-steel blade, leather-wrapped grip, centered | — |
+| `icon.weapon.dagger` | a short curved fighting dagger, kukri-style, broad single-edged blade with a gentle forward curve, sharp pointed tip, wrapped grip, centered | straight sword blade, longsword, sickle, crescent, scythe |
+| `icon.weapon.spear` | a long thrusting spear, small slender steel leaf-shaped head on a long straight wooden shaft, full length, centered | short blade, dagger, staff, halberd |
+| `icon.weapon.axe` | a heavy double-bladed battle axe, polished steel, faint amber edge only, centered | dark blade |
+| `icon.weapon.mace` | a one-handed war mace, dark iron flanged head with short spikes, short sturdy handle, centered | hammer, axe, flail, chain |
+| `icon.weapon.bow` | a recurve war bow, curved wooden bow with a taut bowstring, two limbs and visible string, dark wood and steel nocks, centered | sword, sickle, crescent blade, no string, harp |
+| `icon.weapon.crossbow` | a mechanical crossbow, horizontal bow limbs on a wooden stock with a trigger, T-shaped, dark wood and steel, centered | gun, rifle, longbow |
+| `icon.weapon.staff` | a tall arcane wizard staff, long wooden shaft topped with a small glowing focus crystal, no blade, centered | spear, blade, weapon, short wand |
+| `icon.weapon.wand` | a magic wand, short stout dark-wood rod with carved spiral runes, a small glowing crystal at the tip, relic craftsmanship, large, fills most of the frame, centered | staff, long thin shaft, blade, ornate frame, plaque |
 
 ### Support items (2)
-- `icon.support.tome` — closed arcane tome, clasp
-- `icon.support.shield` — heater shield, iron rim
+| ID | Prompt | Negative |
+|---|---|---|
+| `icon.support.tome` | a closed arcane tome, leather cover with a metal clasp and corner fittings, centered, single object | BASE |
+| `icon.support.shield` | a heater shield, dark steel face with an iron rim and a central boss, centered, single object | two objects, multiple objects, disconnected parts, orange-dominant, glowing, dark-filled, hollow outline, ornate frame, picture frame, background panel, decorative background, vignette, heraldic crest, coat of arms, busy background, photorealistic, text, watermark, sci-fi, neon |
 
-### Currency (4)
-- `icon.currency.gold` — gold coin stack
-- `icon.currency.oath_shard` — fractured oath shard, faint eldritch teal
-- `icon.currency.echo` — wisp/echo mote
-- `icon.currency.seal_fragment` — broken seal fragment, relic-magic
+> Shield gets its own negative: the BASE forbids "shield/crest/border," which would fight an actual shield. This version keeps anti-frame but allows the shield + rim.
 
-### Passive glyphs — 20–30 (templates; exact designs await Epic 6)
-Use one base template; vary the central symbol. Four archetypes to cover the GDD's pillars (including 3–5 "weird rule-benders"):
-- **Offense** (`icon.passive.NNN`) — jagged/spiked/bladed central symbol
-- **Defense** — shield / aegis / ward central symbol
-- **Utility** — eye / rune / hourglass / key central symbol
-- **Rule-bender (weird)** — broken, inverted, or paradoxical symbol, faint eldritch teal accent
-> Generate ~30 distinct central symbols on the shared plate so they read as one set. Map specific passives to glyphs when Epic 6 designs them.
+### Currency (4) — cosmic relics carry the reserved eldritch teal
+| ID | Prompt | Negative |
+|---|---|---|
+| `icon.currency.gold` | a small stack of gold coins, warm gold, centered, single object | BASE + `silver, gem` |
+| `icon.currency.oath_shard` | a fractured crystalline oath shard, faint eldritch teal glow, centered, single object | BASE |
+| `icon.currency.echo` | a small floating ghostly wisp mote, faint eldritch teal glow, centered, single object | BASE |
+| `icon.currency.seal_fragment` | a broken carved stone seal fragment, relic rune, faint eldritch teal glow, centered, single object | BASE |
+
+### Passive glyphs (20–30) — via **Image set** mode
+Placeholder archetype symbols; map to specific passives when Epic 6 designs them. All render through `Sealsworn Icons` as metal emblems, so prompts are just the symbol.
+
+**How to run Image set:**
+1. In the generation-mode dropdown (Image / Video / Mockup / **Image set** / Exploration) choose **Image set**.
+2. Keep the `Sealsworn Icons` style + the settings above selected — those are the "shared settings."
+3. You get a multi-row list: **paste one symbol prompt per row** (do ~8–10 per run).
+4. Generate — it produces all rows together in one batch, same style/negative.
+5. Pick the readable ones; re-roll misses individually at Count 4.
+
+**GLYPH NEGATIVE** (note: drops "multiple/crossed" since some glyphs are composite symbols):
+> orange-dominant, glowing edges, hollow outline, ornate frame, border, plaque, picture frame, background panel, decorative background, vignette, busy background, photorealistic, text, watermark, sci-fi, neon
+
+**Prompts** — `icon.passive.001`–`028` (each line = one emblem):
+
+*Offense:* `crossed swords` · `a flaming skull` · `a dripping blood drop` · `a jagged lightning bolt` · `a clenched spiked gauntlet fist` · `three slashing claw marks` · `a serrated fang`
+
+*Defense:* `a tower shield` · `a stone fortress wall` · `a layered aegis ward` · `a knight's helm` · `interlocked chain links` · `a thorned barrier ring` · `a closed fortress gate`
+
+*Utility:* `an open watchful eye` · `an hourglass` · `an ornate key` · `a compass rose` · `a lit lantern` · `a coiled rope` · `a pair of boots`
+
+*Rule-bender (add `faint eldritch teal accent` to each):* `an upside-down inverted hourglass` · `a cracked broken rune` · `a two-faced mask` · `an ouroboros looping serpent` · `a die showing impossible faces` · `a tangled knot` · `a coin frozen mid-flip`
 
 ### UI frames / overlays
 - `ui.*` frames — ornate dark-stone panel frame, iron corners, candle-warm trim. **Recommend:** generate decorative corner/border pieces and assemble as 9-slice in Godot rather than fixed-size full panels.

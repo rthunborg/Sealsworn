@@ -60,15 +60,17 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 ## Item icons — weapons (Recraft) — Epic 1 / 6
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| icon.weapon.sword | Sword | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.dagger | Dagger | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.spear | Spear | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.axe | Axe | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.mace | Mace | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.bow | Bow | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.crossbow | Crossbow | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.staff | Staff | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
-| icon.weapon.wand | Wand | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | planned | ☐ |
+| icon.weapon.sword | Sword | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.dagger | Dagger (curved/kukri — pick #1) | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.spear | Spear | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.axe | Axe | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.mace | Mace | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.bow | Bow | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.crossbow | Crossbow | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.staff | Staff | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+| icon.weapon.wand | Wand | asset_sources/icons/weapons/ | godot/assets/icons/weapons/ | generated | ☐ |
+
+> **Provenance (all Recraft icons):** tool = Recraft, model = V3 Vector, style = custom `Sealsworn Icons` (built from the steel-sword reference + style-level treatment prompt). Generated 2026-06-21. Prompts/negatives recorded in [`prompt-pack.md`](prompt-pack.md) §B. License: Recraft Pro (commercial). **Approval pending:** export SVG → `asset_sources/icons/weapons/` (by ID), confirm 3-point gate, then check the Approved box. Extra/spare weapon variants kept under `asset_sources/icons/_future/` (non-MVP, NFR18).
 
 ## Item icons — support (Recraft) — Epic 6
 | ID | Asset | Source dir | Runtime path | Status | Approved |
