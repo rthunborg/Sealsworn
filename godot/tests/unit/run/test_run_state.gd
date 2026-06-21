@@ -19,6 +19,7 @@ func run() -> Dictionary:
 	_run_state_round_trips_through_real_json()
 	_bridges_into_existing_run_snapshot_fields()
 	_top_level_current_node_pointer_is_honored_on_resume()
+	_phaseless_route_payload_resumes_as_new_run()
 	_run_snapshot_no_surprise_key_gate_stays_green()
 	return result()
 
@@ -283,6 +284,39 @@ func _top_level_current_node_pointer_is_honored_on_resume() -> void:
 	})
 	assert_true(disagree.is_error(), "A top-level/nested pointer conflict must be rejected.")
 	assert_equal(disagree.error_code, &"route_node_pointer_conflict", "A pointer conflict should use a stable code.")
+
+
+func _phaseless_route_payload_resumes_as_new_run() -> void:
+	# Story 4.4 Task 5.1 — RATIFY the 4.1 deferral: a route_state payload with NO run_phase key resolves
+	# to PHASE_NEW_RUN on resume (try_from_run_snapshot_fields defaults a missing run_phase to NEW_RUN
+	# while retaining mid-run current_route_node_id/cleared_node_ids), and the reconstructed run still
+	# validates. This is the intended save-compat behavior: it is internally consistent (validate()
+	# passes) and the live writer ALWAYS emits run_phase, so this only affects hand-written / future-
+	# migrated saves. (Owner of this deferral = Story 4.4; this test closes it.)
+	var route_payload_no_phase: Dictionary = RouteState.new([
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["boss"]),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_REVEALED, [])
+	], "boss", ["start"]).to_dictionary()
+	# Deliberately do NOT set RUN_PHASE_KEY on the route payload — and confirm it is absent.
+	assert_false(route_payload_no_phase.has(String(RunState.RUN_PHASE_KEY)), "Setup: the route payload carries no run_phase key (phaseless).")
+	# Mid-run progress is present (a non-empty current pointer + a cleared node) — the phaseless default
+	# must NOT discard it.
+	assert_equal(route_payload_no_phase.get("current_node_id"), "boss", "Setup: the phaseless payload retains a mid-run current node.")
+	assert_equal(route_payload_no_phase.get("cleared_node_ids"), ["start"], "Setup: the phaseless payload retains a cleared node.")
+
+	var resumed: ActionResult = RunState.try_from_run_snapshot_fields({
+		"root_seed": 4141,
+		"is_manual_seed": false,
+		"meta_progression_eligible": true,
+		"route_state": route_payload_no_phase,
+		"current_route_node_id": "boss"
+	})
+	assert_true(resumed.succeeded, "A phaseless route payload should reconstruct: %s" % resumed.metadata)
+	var resumed_run: RunState = resumed.metadata.get("run_state") as RunState
+	assert_equal(resumed_run.phase, RunState.PHASE_NEW_RUN, "A missing run_phase must default to PHASE_NEW_RUN (ratified save-compat default).")
+	assert_equal(resumed_run.route.current_node_id, "boss", "The phaseless default must retain the mid-run current node pointer.")
+	assert_true(resumed_run.route.cleared_node_ids.has("start"), "The phaseless default must retain the mid-run cleared set.")
+	assert_true(resumed_run.validate().succeeded, "The phaseless-default reconstructed run must still validate.")
 
 
 func _run_snapshot_no_surprise_key_gate_stays_green() -> void:

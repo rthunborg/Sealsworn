@@ -8,6 +8,12 @@ func run() -> Dictionary:
 	_route_advanced_serializes_and_parses_stable_payload()
 	_route_advanced_rejects_malformed_payloads()
 	_route_advanced_tolerates_hyphenated_node_ids()
+	_node_entered_serializes_and_parses_stable_payload()
+	_node_entered_rejects_malformed_payloads()
+	_node_exited_serializes_and_parses_stable_payload()
+	_node_exited_rejects_malformed_payloads()
+	_route_sealed_serializes_and_parses_stable_payload()
+	_route_sealed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -238,6 +244,235 @@ func _route_advanced_tolerates_hyphenated_node_ids() -> void:
 	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
 	assert_equal(restored.payload.get("from_node_id"), "node-3-1", "Hyphenated from-node id must survive validation.")
 	assert_equal(restored.payload.get("revealed_node_ids"), ["node-5-0"], "Hyphenated revealed id must survive validation.")
+
+
+func _node_entered_serializes_and_parses_stable_payload() -> void:
+	# Story 4.4: a node_entered SYSTEM event (no actor). node_id carries hyphens (plain non-empty string,
+	# NOT lower_snake); node_type / recipe_id / size_class / level_request_node_id are lower_snake;
+	# node_depth is a non-negative integral. Factory output must round-trip through real JSON.
+	var event: DomainEvent = DomainEvent.node_entered(7, {
+		"node_id": "node-1-0",
+		"node_type": "combat",
+		"node_depth": 1,
+		"level_request_node_id": "node_1_0",
+		"recipe_id": "small_combat_basic",
+		"size_class": "small"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "node_entered", "node_entered should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "node_entered is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "node_entered should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.NODE_ENTERED, "node_entered should parse back to NODE_ENTERED.")
+	assert_equal(restored.payload.get("node_id"), "node-1-0", "The hyphenated node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("level_request_node_id"), "node_1_0", "The derived lower_snake request id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("recipe_id"), "small_combat_basic", "The recipe id must survive a JSON round-trip.")
+
+	# A hyphenated node id with a boss-depth value also passes (the plain-string guard tolerates hyphens).
+	var elite: DomainEvent = DomainEvent.node_entered(3, {
+		"node_id": "node-4-1",
+		"node_type": "elite_combat",
+		"node_depth": 4,
+		"level_request_node_id": "node_4_1",
+		"recipe_id": "medium_combat_basic",
+		"size_class": "medium"
+	})
+	var elite_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(elite.to_dictionary())))
+	assert_true(elite_parse.succeeded, "node_entered with a hyphenated id + elite mapping should parse: %s" % elite_parse.metadata)
+
+
+func _node_entered_rejects_malformed_payloads() -> void:
+	# Missing node_id is rejected with the stable code + the offending field.
+	var missing_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_entered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_type": "combat",
+			"node_depth": 1,
+			"level_request_node_id": "node_1_0",
+			"recipe_id": "small_combat_basic",
+			"size_class": "small"
+		}
+	})
+	assert_true(missing_node.is_error(), "node_entered missing node_id should be rejected.")
+	assert_equal(missing_node.error_code, &"invalid_event_payload", "Malformed node_entered should use the stable code.")
+	assert_equal(missing_node.metadata.get("field"), "node_id", "Malformed node_entered should name the missing field.")
+
+	# A non-lower_snake node_type is rejected.
+	var bad_type: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_entered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "Elite-Combat",
+			"node_depth": 1,
+			"level_request_node_id": "node_1_0",
+			"recipe_id": "small_combat_basic",
+			"size_class": "small"
+		}
+	})
+	assert_true(bad_type.is_error(), "node_entered with a non-lower_snake type should be rejected.")
+	assert_equal(bad_type.metadata.get("field"), "node_type", "node_entered should require a lower_snake node_type.")
+
+	# A hyphenated level_request_node_id (NOT lower_snake) is rejected — the DERIVED request id must be
+	# lower_snake (the command replaces hyphens; a hyphen here would be a bug).
+	var bad_request_id: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_entered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "combat",
+			"node_depth": 1,
+			"level_request_node_id": "node-1-0",
+			"recipe_id": "small_combat_basic",
+			"size_class": "small"
+		}
+	})
+	assert_true(bad_request_id.is_error(), "node_entered with a hyphenated level_request_node_id should be rejected.")
+	assert_equal(bad_request_id.metadata.get("field"), "level_request_node_id", "node_entered should require a lower_snake level_request_node_id.")
+
+	# A negative node_depth is rejected.
+	var bad_depth: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_entered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "combat",
+			"node_depth": -1,
+			"level_request_node_id": "node_1_0",
+			"recipe_id": "small_combat_basic",
+			"size_class": "small"
+		}
+	})
+	assert_true(bad_depth.is_error(), "node_entered with a negative depth should be rejected.")
+	assert_equal(bad_depth.metadata.get("field"), "node_depth", "node_entered should require a non-negative depth.")
+
+
+func _node_exited_serializes_and_parses_stable_payload() -> void:
+	# Story 4.4: a node_exited SYSTEM event (no actor). node_id carries hyphens; node_type is lower_snake;
+	# node_depth is non-negative integral; rewards_placeholder is a bool.
+	var event: DomainEvent = DomainEvent.node_exited(9, {
+		"node_id": "node-2-0",
+		"node_type": "elite_combat",
+		"node_depth": 2,
+		"rewards_placeholder": true
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "node_exited", "node_exited should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "node_exited is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "node_exited should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.NODE_EXITED, "node_exited should parse back to NODE_EXITED.")
+	assert_equal(restored.payload.get("node_id"), "node-2-0", "The hyphenated node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("rewards_placeholder"), true, "The rewards_placeholder flag must survive a JSON round-trip.")
+
+	# rewards_placeholder == false is also valid.
+	var no_reward: DomainEvent = DomainEvent.node_exited(3, {
+		"node_id": "node-3-0",
+		"node_type": "combat",
+		"node_depth": 3,
+		"rewards_placeholder": false
+	})
+	var no_reward_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(no_reward.to_dictionary())))
+	assert_true(no_reward_parse.succeeded, "node_exited with rewards_placeholder false should parse: %s" % no_reward_parse.metadata)
+
+
+func _node_exited_rejects_malformed_payloads() -> void:
+	# Missing node_id is rejected.
+	var missing_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_exited",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_type": "combat",
+			"node_depth": 1,
+			"rewards_placeholder": true
+		}
+	})
+	assert_true(missing_node.is_error(), "node_exited missing node_id should be rejected.")
+	assert_equal(missing_node.metadata.get("field"), "node_id", "Malformed node_exited should name the missing field.")
+
+	# A non-bool rewards_placeholder is rejected.
+	var bad_reward: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "node_exited",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"node_type": "combat",
+			"node_depth": 1,
+			"rewards_placeholder": "yes"
+		}
+	})
+	assert_true(bad_reward.is_error(), "node_exited with a non-bool rewards_placeholder should be rejected.")
+	assert_equal(bad_reward.metadata.get("field"), "rewards_placeholder", "node_exited should require a bool rewards_placeholder.")
+
+
+func _route_sealed_serializes_and_parses_stable_payload() -> void:
+	# Story 4.4 (AC3): a route_sealed SYSTEM event (no actor) — the door-sealed containment cue. node_id
+	# carries hyphens; cue_id is lower_snake (the command + tests assert the exact door_sealed_placeholder
+	# value).
+	var event: DomainEvent = DomainEvent.route_sealed(11, {
+		"node_id": "node-1-0",
+		"cue_id": "door_sealed_placeholder"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "route_sealed", "route_sealed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "route_sealed is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "route_sealed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.ROUTE_SEALED, "route_sealed should parse back to ROUTE_SEALED.")
+	assert_equal(restored.payload.get("node_id"), "node-1-0", "The hyphenated sealed node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("cue_id"), "door_sealed_placeholder", "The door-sealed cue id must survive a JSON round-trip.")
+
+
+func _route_sealed_rejects_malformed_payloads() -> void:
+	# Missing cue_id is rejected.
+	var missing_cue: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "route_sealed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0"
+		}
+	})
+	assert_true(missing_cue.is_error(), "route_sealed missing cue_id should be rejected.")
+	assert_equal(missing_cue.metadata.get("field"), "cue_id", "Malformed route_sealed should name the missing cue_id field.")
+
+	# Missing node_id is rejected.
+	var missing_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "route_sealed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"cue_id": "door_sealed_placeholder"
+		}
+	})
+	assert_true(missing_node.is_error(), "route_sealed missing node_id should be rejected.")
+	assert_equal(missing_node.metadata.get("field"), "node_id", "Malformed route_sealed should name the missing node_id field.")
+
+	# A non-lower_snake cue_id is rejected (the validator enforces the lower_snake shape).
+	var bad_cue: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "route_sealed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {
+			"node_id": "node-1-0",
+			"cue_id": "Door-Sealed"
+		}
+	})
+	assert_true(bad_cue.is_error(), "route_sealed with a non-lower_snake cue_id should be rejected.")
+	assert_equal(bad_cue.metadata.get("field"), "cue_id", "route_sealed should require a lower_snake cue_id.")
 
 
 func _board_created_serializes_stable_event_id() -> void:
@@ -634,7 +869,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.ENEMY_WAITED: &"enemy_waited",
 		DomainEvent.Type.LEVEL_VICTORY_REACHED: &"level_victory_reached",
 		DomainEvent.Type.LEVEL_DEFEAT_REACHED: &"level_defeat_reached",
-		DomainEvent.Type.ROUTE_ADVANCED: &"route_advanced"
+		DomainEvent.Type.ROUTE_ADVANCED: &"route_advanced",
+		DomainEvent.Type.NODE_ENTERED: &"node_entered",
+		DomainEvent.Type.NODE_EXITED: &"node_exited",
+		DomainEvent.Type.ROUTE_SEALED: &"route_sealed"
 	}
 
 	for event_type: int in expected_ids.keys():
