@@ -113,12 +113,12 @@ dark fantasy game UI emblem icon, a single bold glossy red teardrop blood drople
 dark fantasy game UI emblem icon, a single bold jagged lightning bolt, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold clenched armored gauntlet fist, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold set of three parallel slashing claw marks, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
-dark fantasy game UI emblem icon, a single bold curved serrated fang, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold curved pointed fang, one smooth sharp canine tooth tapering to a fine point, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold tall tower shield, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
-dark fantasy game UI emblem icon, a single bold crenellated stone fortress wall, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold wide low section of crenellated stone castle rampart wall, a horizontal battlement with square merlons along the top, wider than it is tall, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold round layered aegis ward, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold knight's great helm, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
-dark fantasy game UI emblem icon, a single bold row of interlocked chain links, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold short length of heavy chain, three thick interlocked oval steel links, compact and centered, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold thorned barrier ring, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold closed iron portcullis gate, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold open watchful eye, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
@@ -134,30 +134,32 @@ dark fantasy game UI emblem icon, a single bold two-faced theater mask, polished
 dark fantasy game UI emblem icon, a single bold ouroboros serpent eating its tail, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold die showing impossible faces, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 dark fantasy game UI emblem icon, a single bold tangled celtic knot, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
-dark fantasy game UI emblem icon, a single bold coin spinning mid-flip, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold round metal coin tilted at an angle mid-flip, a stamped rune on its face, with two small curved motion lines beside it, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
 ```
 
-### UI frames & panels (Recraft → 9-slice in Godot)
+### UI frames & panels — V4.1 Pro Vector, self-contained
 
-Make ONE coherent chrome kit and **reuse it across all screens** — don't generate 9 separate screen frames. Models fill the middle, so prompt for an **empty/hollow center** and slice in Godot. Use base **V4.1 Vector**, not the icon style.
+Make ONE chrome kit and reuse it across all screens (don't generate 9 separate frames). V4.1 has no negative field, so "empty center, border only" goes in the positive. If the model keeps filling the center, generate a **corner-bracket ornament** instead and tile it as 9-slice in Godot.
 
-| Element → IDs | Prompt | Negative |
-|---|---|---|
-| panel frame (9-slice) → all `ui.*` | an ornate dark fantasy UI panel border frame, carved dark stone with iron corner brackets and faint candle-warm trim, empty hollow center, square, symmetrical | filled center, content inside, text, character, weapon, busy, photorealistic, sci-fi |
-| `ui.passive_modal` frame | an ornate dark fantasy modal window frame, iron filigree corners, dark stone, empty hollow center, portrait orientation | filled center, text, character, busy, photorealistic |
-| UI button plate | a dark fantasy UI button plate, iron-bound dark stone, slight bevel, empty label area, horizontal | text, icon inside, busy, photorealistic |
+- **Panel frame (→ all `ui.*`):**
+  > an ornate dark fantasy UI panel border frame, carved dark stone with iron corner brackets and a faint warm candle trim, a completely empty hollow transparent center, thick symmetrical square border only, flat vector, nothing inside
+- **Modal frame (`ui.passive_modal`):**
+  > an ornate dark fantasy modal window frame, iron filigree corners on dark stone, a completely empty hollow center, tall portrait border only, flat vector, nothing inside
+- **Button plate:**
+  > a dark fantasy UI button plate, iron-bound dark stone with a slight bevel, a wide empty flat label area, horizontal pill shape, flat vector
 
-The nine `ui.*` rows (hero_select, tactical_hud, preview, passive_modal, run_map, outpost, run_summary, settings, save_resume) are assembled in-engine from this kit — they are **not** nine separate generations.
+The nine `ui.*` rows (hero_select, tactical_hud, preview, passive_modal, run_map, outpost, run_summary, settings, save_resume) assemble in-engine from this kit — **not** nine separate generations.
 
-### Tactical overlays — mostly ENGINE-drawn, not AI
+### Tactical overlays — mostly ENGINE-drawn
 
-`overlay.move_range`, `overlay.attack_range`, `overlay.blocked_line`, `overlay.fog_hidden`, `overlay.fog_memory` must tile, be semi-transparent, and align exactly to the grid — build them as **flat color fills + distinct patterns in Godot** (per NFR9), not Recraft art. Only these three are worth AI-generating:
+`overlay.move_range`, `overlay.attack_range`, `overlay.blocked_line`, `overlay.fog_hidden`, `overlay.fog_memory` must tile, be semi-transparent, and align to the grid — build them as **flat color fills + distinct patterns in Godot** (NFR9), not Recraft art. Only these three are worth generating (V4.1 Pro Vector, Count 4):
 
-| ID | Prompt | Negative |
-|---|---|---|
-| `overlay.seer_mark` | a glowing eldritch teal targeting rune, concentric circle telegraph mark, flat top-down view, transparent background | weapon, character, busy, photorealistic, warm colors |
-| `banner.victory` | an ornate dark fantasy victory banner ribbon, iron-trimmed dark cloth with a faint warm glow, empty center | text, character, busy, photorealistic |
-| `banner.defeat` | a tattered dark fantasy defeat banner ribbon, muted desaturated cloth, empty center | text, character, bright colors, busy |
+- **`overlay.seer_mark`:**
+  > a glowing eldritch teal targeting rune, a clean concentric circle telegraph mark, flat top-down symbol, plain dark background, simple
+- **`banner.victory`:**
+  > an ornate dark fantasy victory banner ribbon, iron-trimmed dark cloth with a faint warm glow, a blank empty center panel, flat vector
+- **`banner.defeat`:**
+  > a tattered dark fantasy defeat banner ribbon, muted desaturated grey cloth, a blank empty center panel, flat vector
 
 ---
 
