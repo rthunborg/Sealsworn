@@ -81,7 +81,9 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 ## Passive glyphs (Recraft) — Epic 6 — `icon.passive.001`–`030`
 | ID range | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| icon.passive.001–028 | 28 placeholder glyphs (4 archetypes). Needs a DEDICATED glyph style — the weapon style forces blades; see prompt-pack §B. | asset_sources/icons/passives/ | godot/assets/icons/passives/ | planned | ☐ |
+| icon.passive.001–028 | 28 placeholder glyphs (4 archetypes), each mapped to `icon.passive.NNN.svg`. V4.1 Pro Vector; see prompt-pack §B. | asset_sources/icons/passives/ | godot/assets/icons/passives/ | generated | ☐ |
+
+> **Spares:** alternate versions + reusable distinct icons documented in [`icons/_future/UNUSED-ASSETS.md`](icons/_future/UNUSED-ASSETS.md) (NFR18). **Verify on import:** 002 skull, 007 fang, 012 chain, and especially **023 cracked-rune** were picked from multiple takes — swap from `_future/alternates/` if any look off.
 
 ## Currency icons (Recraft) — Epic 8
 | ID | Asset | Source dir | Runtime path | Status | Approved |
@@ -104,6 +106,8 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 | ui.settings | Settings | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
 | ui.save_resume | Save / resume | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
 
+> **Frame kit generated:** `icons/ui/{button_plate,panel_frame,modal_frame}.svg` (Recraft). The 9 `ui.*` screens are assembled in Godot (9-slice / StyleBox) from this kit, so those rows stay `planned` until built in-engine.
+
 ## Overlays & banners (Recraft) — Epic 2 / 1
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
@@ -112,9 +116,11 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 | overlay.blocked_line | Blocked-line marker | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
 | overlay.fog_hidden | Fog: hidden | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
 | overlay.fog_memory | Fog: memory | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
-| overlay.seer_mark | Ash Seer telegraph mark | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
-| banner.victory | Victory banner | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
-| banner.defeat | Defeat banner | asset_sources/overlays/ | godot/assets/overlays/ | planned | ☐ |
+| overlay.seer_mark | Ash Seer telegraph mark | asset_sources/overlays/ | godot/assets/overlays/ | generated | ☐ |
+| banner.victory | Victory banner | asset_sources/overlays/ | godot/assets/overlays/ | generated | ☐ |
+| banner.defeat | Defeat banner | asset_sources/overlays/ | godot/assets/overlays/ | generated | ☐ |
+
+> `overlay.move_range`, `attack_range`, `blocked_line`, `fog_hidden`, `fog_memory` are **engine-drawn** flat Godot fills/shaders (NFR9), not Recraft art — they stay `planned` until built in-engine. `seer_mark` + the win/lose banners are the only generated overlay art.
 
 ## SFX (tool TBD — ElevenLabs suggested) — cue map per Story 10.7
 | ID | Cue | Source dir | Runtime path | Status | Approved |
