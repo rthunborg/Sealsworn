@@ -14,11 +14,22 @@ Step-by-step process for the **board/world** assets (characters, enemies, boss, 
 
 **Key carry-over lesson:** a trained generator works *here* (characters/enemies/tiles are a cohesive family) — unlike the diverse glyphs, where it failed. So Scenario is the *right* place to train a style.
 
+## Which Scenario tool for what
+- **Create → Images** — the main generator for characters, enemies, boss, and props. You pick the base model here. ControlNet / reference controls live inside this tool.
+- **Generate → Textures** — makes *seamless materials* → use this for **floor / wall tiles** (tileable), not the Images tool.
+- **Models** (top nav) — browse/choose a base model; your trained model will live here later.
+- **Tools → Train** — train `sealsworn-darkfantasy-v0` (Phase 2).
+- **Edit → Remove Background** — transparent cutouts (Phase 4).
+- **Edit → Enhance** — upscale (Phase 4).
+
 ## Asset order (unblock order)
 Enemies (3) + hero silhouettes (3) → Labyrinth tiles/props (~9) → locked classes (2) → affinity treatments (4) → **boss last** (Epic 9).
 
 ## Phase 1 — North-star set (cheap, base model)
-1. New project/workspace. Browse Scenario's model library and pick a **stylized dark-fantasy / painterly RPG base model** (not photoreal, not anime).
+
+> **"North-star anchors"** = our term (not Scenario's) for the first 2–3 images we get *looking right*. They set the visual target for the whole set and become the references we train the model on. Nail these and the rest follows.
+
+1. Open **Create → Images** and pick a **stylized dark-fantasy / painterly RPG base model** via the model selector (not photoreal, not anime, not pixel-art).
 2. Generate ~20 candidates of just **3 anchors** — Warrior, Iron Cultist, and a floor+wall tile — using the Scenario STYLE PREFIX (prompt-pack §A) which already encodes the **Shattered Pixel Dungeon billboard look**: square grid, ~30° top-down floor, front-facing upright sprite, rim-lit, key light upper-left, dark stone palette + warm accents, plain dark background for clean cutout.
 3. **Curate 15–30** images that genuinely share the look. This is your training set — quality of this set = quality of everything downstream.
 
