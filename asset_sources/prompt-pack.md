@@ -55,6 +55,8 @@ How to use: paste the **STYLE PREFIX** for the tool, append the per-asset line, 
 
 The treatment is now baked into a **saved custom style**, so per-asset prompts are SHORT — just the subject. This replaces the old "paste a long prefix every time" approach.
 
+> **When the custom style applies:** `Sealsworn Icons` works only for **physical item icons** (weapons, support, currency — all dark-fantasy *objects*). It FAILS for **abstract symbols and structural pieces** (passive glyphs, UI frames, overlays): a learned style just inherits its references' bias — a sword reference makes blades, an ornate-rune reference makes framed plaques. Those categories use the **neutral preset + a descriptive prompt** instead (consistency comes from the prompt, applied uniformly).
+
 **Fixed setup for every icon:**
 - **Style:** `Sealsworn Icons` (custom, bound to **V3 Vector**). Its **style-level prompt** holds the treatment:
   > dark fantasy game UI icon, polished steel and dark iron, bold clean dark outline, flat with slight depth, faint warm amber edge highlight only, high contrast, single centered emblem, even padding, dark slate background, distinct by silhouette
@@ -93,18 +95,21 @@ The treatment is now baked into a **saved custom style**, so per-asset prompts a
 | `icon.currency.echo` | a small floating ghostly wisp mote, faint eldritch teal glow, centered, single object | BASE |
 | `icon.currency.seal_fragment` | a broken carved stone seal fragment, relic rune, faint eldritch teal glow, centered, single object | BASE |
 
-### Passive glyphs (20–30) — use a DEDICATED glyph style, NOT `Sealsworn Icons`
+### Passive glyphs (20–30) — neutral preset, NO custom style
 
-⚠️ **Lesson learned:** `Sealsworn Icons` is trained on a steel sword, so it forces abstract symbols into blades (lightning bolt → a blade, claw marks → three daggers, blood drop → a sword on drips). **Do not use the weapon style for glyphs.** Two fixes, both keeping the dark-steel-emblem family:
+⚠️ **Two dead ends we hit:** (1) the weapon style forced symbols into blades; (2) a custom glyph style built from ornate-rune references forced everything into framed plaques. **Don't use a custom style for glyphs** — use the neutral preset and let the prompt carry the look.
 
-- **Option A — neutral preset + treatment prompt (quick):** turn the custom style OFF, pick base **V4.1 Vector** (or V3 Vector), and prepend this treatment to every symbol:
-  > dark fantasy game UI rune emblem, single centered flat engraved symbol, bold thick dark outline, polished steel and dark iron with a faint amber edge, dark slate background, high contrast, distinct silhouette, even padding
-- **Option B — dedicated `Sealsworn Glyphs` style (recommended):** generate ONE clean *non-weapon* emblem with Option A (e.g. a shield or an eye), pick the cleanest, build a new style `Sealsworn Glyphs` from it, then Image-set all 28 through it. Same anchor→style→batch pattern as the weapons, without the sword bias.
+**Setup:** custom style **OFF** · base **V4.1 Vector** · **Image set** mode · same settings (1:1, AI prompt Off, Avoid text Yes, Palette Auto).
 
-**GLYPH NEGATIVE** — add `sword, blade, dagger, spear, weapon` to every NON-weapon symbol; omit those words only for `crossed swords`:
-> sword, blade, dagger, spear, weapon, realistic scene, ornate frame, border, plaque, background panel, vignette, multiple unrelated objects, busy, photorealistic, text, watermark, sci-fi, neon
+**Treatment prefix (prepend to every symbol):**
+> dark fantasy game UI icon, single bold flat symbol, polished steel and dark iron, thick dark outline, faint amber edge, plain dark slate background, no frame, no border, high contrast, centered, large, fills most of the frame
 
-**Run via Image set** (8–10 rows per batch; mode dropdown → Image set; keep style + settings as the shared config; one symbol per row). A few symbols were simplified after the first batch came out busy (flaming skull → horned skull; spiked gauntlet → gauntlet). Prompts `icon.passive.001`–`028`:
+**GLYPH NEGATIVE (heavy anti-frame — the key fix; add `sword, blade, dagger, spear, weapon` for every NON-weapon symbol, omit only for `crossed swords`):**
+> ornate frame, border, plaque, badge, picture frame, rounded frame, octagon frame, background panel, decorative background, vignette, inner frame outline, double border, two layers, busy, realistic scene, multiple unrelated objects, photorealistic, text, watermark, sci-fi, neon
+
+Two tricks that kill the plaque: **"no frame, no border, fills most of the frame"** in the prompt (no empty space for the model to decorate) + the heavy anti-frame negative. A few symbols were simplified after the first batch came out busy (flaming skull → horned skull; spiked gauntlet → gauntlet).
+
+**Run via Image set** (8–10 rows per batch; one symbol per row). Each line = `<treatment prefix>, a bold <symbol>`:
 
 *Offense:* `crossed swords` *(weapon — drop the anti-weapon negative for this one)* · `a horned skull` · `a single dripping blood drop` · `a jagged lightning bolt` · `a clenched gauntlet fist` · `three slashing claw marks` · `a serrated fang`
 
