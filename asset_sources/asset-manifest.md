@@ -14,48 +14,48 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 ## Characters — playable classes (Scenario) — Epic 5
 | ID | Asset | Views | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|---|
-| char.warrior | Warrior | portrait + board silhouette | asset_sources/characters/ | godot/assets/characters/ | planned | ☐ |
-| char.pyromancer | Pyromancer | portrait + board silhouette | asset_sources/characters/ | godot/assets/characters/ | planned | ☐ |
-| char.ranger | Ranger | portrait + board silhouette | asset_sources/characters/ | godot/assets/characters/ | planned | ☐ |
+| char.warrior | Warrior | portrait + board silhouette | asset_sources/characters/char.warrior.png | godot/assets/characters/ | generated | ☐ |
+| char.pyromancer | Pyromancer | portrait + board silhouette | asset_sources/characters/char.pyromancer.png | godot/assets/characters/ | generated | ☐ |
+| char.ranger | Ranger | portrait + board silhouette | asset_sources/characters/char.ranger.png | godot/assets/characters/ | generated | ☐ |
 
 ## Characters — locked classes (Scenario) — Epic 5
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| char.necromancer_locked | Necromancer (sealed) | asset_sources/characters/ | godot/assets/characters/ | planned | ☐ |
-| char.shadeblade_locked | Shadeblade (sealed) | asset_sources/characters/ | godot/assets/characters/ | planned | ☐ |
+| char.necromancer_locked | Necromancer (sealed) | asset_sources/characters/char.necromancer_locked.png | godot/assets/characters/ | generated | ☐ |
+| char.shadeblade_locked | Shadeblade (sealed) | asset_sources/characters/char.shadeblade_locked.png | godot/assets/characters/ | generated | ☐ |
 
 ## Enemies (Scenario) — Epic 1 / 3
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| enemy.iron_cultist | Iron Cultist | asset_sources/enemies/ | godot/assets/enemies/ | planned | ☐ |
-| enemy.gate_brute | Gate Brute | asset_sources/enemies/ | godot/assets/enemies/ | planned | ☐ |
-| enemy.ash_seer | Ash Seer | asset_sources/enemies/ | godot/assets/enemies/ | planned | ☐ |
+| enemy.iron_cultist | Iron Cultist | asset_sources/enemies/enemy.iron_cultist.png | godot/assets/enemies/ | generated | ☐ |
+| enemy.gate_brute | Gate Brute | asset_sources/enemies/enemy.gate_brute.png | godot/assets/enemies/ | generated | ☐ |
+| enemy.ash_seer | Ash Seer | asset_sources/enemies/enemy.ash_seer.png | godot/assets/enemies/ | generated | ☐ |
 
 ## Boss (Scenario) — Epic 9
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| boss.larval_avatar | Larval Avatar | asset_sources/boss/ | godot/assets/enemies/ | planned | ☐ |
+| boss.larval_avatar | Larval Avatar | asset_sources/boss/boss.larval_avatar.png | godot/assets/enemies/ | generated | ☐ |
 
 ## Affinity treatments (Scenario) — Epic 7
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| affinity.scorched | Scorched overlay | asset_sources/affinities/ | godot/assets/tiles/affinities/ | planned | ☐ |
-| affinity.flooded | Flooded/Conductive overlay | asset_sources/affinities/ | godot/assets/tiles/affinities/ | planned | ☐ |
-| affinity.cursed | Cursed overlay | asset_sources/affinities/ | godot/assets/tiles/affinities/ | planned | ☐ |
-| affinity.darkness | Darkness overlay | asset_sources/affinities/ | godot/assets/tiles/affinities/ | planned | ☐ |
+| affinity.scorched | Scorched overlay | asset_sources/affinities/affinity.scorched.png | godot/assets/tiles/affinities/ | generated | ☐ |
+| affinity.flooded | Flooded/Conductive overlay | asset_sources/affinities/affinity.flooded.png | godot/assets/tiles/affinities/ | generated | ☐ |
+| affinity.cursed | Cursed overlay | asset_sources/affinities/affinity.cursed.png | godot/assets/tiles/affinities/ | generated | ☐ |
+| affinity.darkness | Darkness overlay | asset_sources/affinities/affinity.darkness.png | godot/assets/tiles/affinities/ | generated | ☐ |
 
 ## Tiles & props (Scenario) — Epic 3
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| tile.floor | Floor | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.wall | Wall | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.blocker | Rubble / blocker | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.entrance | Entrance | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.exit | Exit / stair-down | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.door | Door (open state) | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.door_sealed | Door (sealed, forward-commit) | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.hazard | Hazard | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
-| tile.reward_object | Reward / object | asset_sources/tiles/ | godot/assets/tiles/ | planned | ☐ |
+| tile.floor | Floor | asset_sources/tiles/tile.floor.png | godot/assets/tiles/ | generated | ☐ |
+| tile.wall | Wall | asset_sources/tiles/tile.wall.png | godot/assets/tiles/ | generated | ☐ |
+| tile.blocker | Rubble / blocker | asset_sources/tiles/tile.blocker.png | godot/assets/tiles/ | generated | ☐ |
+| tile.entrance | Entrance | asset_sources/tiles/tile.entrance.png | godot/assets/tiles/ | generated | ☐ |
+| tile.exit | Exit / stair-down | asset_sources/tiles/tile.exit.png | godot/assets/tiles/ | generated | ☐ |
+| tile.door | Door (open state) | asset_sources/tiles/tile.door.png | godot/assets/tiles/ | generated | ☐ |
+| tile.door_sealed | Door (sealed, forward-commit) | asset_sources/tiles/tile.door_sealed.png | godot/assets/tiles/ | generated | ☐ |
+| tile.hazard | Hazard | asset_sources/tiles/tile.hazard.png | godot/assets/tiles/ | generated | ☐ |
+| tile.reward_object | Reward / object | asset_sources/tiles/tile.reward_object.png | godot/assets/tiles/ | generated | ☐ |
 
 ## Item icons — weapons (Recraft) — Epic 1 / 6
 | ID | Asset | Source dir | Runtime path | Status | Approved |
