@@ -115,3 +115,11 @@ Start balance 5000 → **~4424 remaining** (well under the ~1800 session cap). N
 - Downscale + mirror to `godot/assets/...` runtime paths (tiles 256², characters 256×384, boss ≤512) — deferred until approved.
 - Tiles `floor`/`wall` are near-seamless, not verified tiling; affinity tiles are full variants, not extracted overlays. Prop tiles (blocker/door/reward) are full tiles, not transparent props — revisit if the board renderer wants layered props.
 - `char.warrior` alt `asset_A72c7haiBJ1wyja84staSu8L` had a stray second sword (rejected).
+
+## Gate + runtime export + props (2026-06-22, pass 2)
+
+- **3-point readability gate: PASS** for all 22 (grayscale / phone-size / silhouette via `asset_sources/_tools/process_board_art.py`). Manifest flipped to `approved`. Notes: robed-caster trio (pyro/necro/ash_seer) share a silhouette family but separate by arm-pose + color; `entrance`≈`exit` at tiny grayscale; floor/wall not edge-seamless.
+- **Runtime mirror** exported to `godot/assets/` (downscaled from 1K masters, no upscaling): chars/enemies 256×384, boss 512², tiles+aff 256².
+- **Transparent props** (Bria, +12 CU) for placeable objects: `reward_object` `asset_BGXo6tiK16WPbZaBTisRm62D`, `door` `asset_V278J6ExrEQj7dq4hzMXjLEN`, `door_sealed` `asset_9yAjVtqMuHRv9K5Pn4Rcnmmc` → `godot/assets/tiles/props/`. Blocker prop `asset_TtD9r2y9HVPxQe4yDepHft8a` rejected (rubble fills tile, no bg removed).
+- **CU:** 576 → **588** (prop cuts). ~**4412 remaining**.
+- **Deferred (engine-time):** seamless tiling (variants/edge-blend), affinity overlays as in-engine recolor/shader, entrance/exit up-down cue.

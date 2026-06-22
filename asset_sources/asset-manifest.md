@@ -14,48 +14,48 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 ## Characters — playable classes (Scenario) — Epic 5
 | ID | Asset | Views | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|---|
-| char.warrior | Warrior | portrait + board silhouette | asset_sources/characters/char.warrior.png | godot/assets/characters/ | generated | ☐ |
-| char.pyromancer | Pyromancer | portrait + board silhouette | asset_sources/characters/char.pyromancer.png | godot/assets/characters/ | generated | ☐ |
-| char.ranger | Ranger | portrait + board silhouette | asset_sources/characters/char.ranger.png | godot/assets/characters/ | generated | ☐ |
+| char.warrior | Warrior | portrait + board silhouette | asset_sources/characters/char.warrior.png | godot/assets/characters/char.warrior.png | approved | ☑ |
+| char.pyromancer | Pyromancer | portrait + board silhouette | asset_sources/characters/char.pyromancer.png | godot/assets/characters/char.pyromancer.png | approved | ☑ |
+| char.ranger | Ranger | portrait + board silhouette | asset_sources/characters/char.ranger.png | godot/assets/characters/char.ranger.png | approved | ☑ |
 
 ## Characters — locked classes (Scenario) — Epic 5
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| char.necromancer_locked | Necromancer (sealed) | asset_sources/characters/char.necromancer_locked.png | godot/assets/characters/ | generated | ☐ |
-| char.shadeblade_locked | Shadeblade (sealed) | asset_sources/characters/char.shadeblade_locked.png | godot/assets/characters/ | generated | ☐ |
+| char.necromancer_locked | Necromancer (sealed) | asset_sources/characters/char.necromancer_locked.png | godot/assets/characters/char.necromancer_locked.png | approved | ☑ |
+| char.shadeblade_locked | Shadeblade (sealed) | asset_sources/characters/char.shadeblade_locked.png | godot/assets/characters/char.shadeblade_locked.png | approved | ☑ |
 
 ## Enemies (Scenario) — Epic 1 / 3
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| enemy.iron_cultist | Iron Cultist | asset_sources/enemies/enemy.iron_cultist.png | godot/assets/enemies/ | generated | ☐ |
-| enemy.gate_brute | Gate Brute | asset_sources/enemies/enemy.gate_brute.png | godot/assets/enemies/ | generated | ☐ |
-| enemy.ash_seer | Ash Seer | asset_sources/enemies/enemy.ash_seer.png | godot/assets/enemies/ | generated | ☐ |
+| enemy.iron_cultist | Iron Cultist | asset_sources/enemies/enemy.iron_cultist.png | godot/assets/enemies/enemy.iron_cultist.png | approved | ☑ |
+| enemy.gate_brute | Gate Brute | asset_sources/enemies/enemy.gate_brute.png | godot/assets/enemies/enemy.gate_brute.png | approved | ☑ |
+| enemy.ash_seer | Ash Seer | asset_sources/enemies/enemy.ash_seer.png | godot/assets/enemies/enemy.ash_seer.png | approved | ☑ |
 
 ## Boss (Scenario) — Epic 9
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| boss.larval_avatar | Larval Avatar | asset_sources/boss/boss.larval_avatar.png | godot/assets/enemies/ | generated | ☐ |
+| boss.larval_avatar | Larval Avatar | asset_sources/boss/boss.larval_avatar.png | godot/assets/enemies/boss.larval_avatar.png | approved | ☑ |
 
 ## Affinity treatments (Scenario) — Epic 7
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| affinity.scorched | Scorched overlay | asset_sources/affinities/affinity.scorched.png | godot/assets/tiles/affinities/ | generated | ☐ |
-| affinity.flooded | Flooded/Conductive overlay | asset_sources/affinities/affinity.flooded.png | godot/assets/tiles/affinities/ | generated | ☐ |
-| affinity.cursed | Cursed overlay | asset_sources/affinities/affinity.cursed.png | godot/assets/tiles/affinities/ | generated | ☐ |
-| affinity.darkness | Darkness overlay | asset_sources/affinities/affinity.darkness.png | godot/assets/tiles/affinities/ | generated | ☐ |
+| affinity.scorched | Scorched overlay | asset_sources/affinities/affinity.scorched.png | godot/assets/tiles/affinities/affinity.scorched.png | approved | ☑ |
+| affinity.flooded | Flooded/Conductive overlay | asset_sources/affinities/affinity.flooded.png | godot/assets/tiles/affinities/affinity.flooded.png | approved | ☑ |
+| affinity.cursed | Cursed overlay | asset_sources/affinities/affinity.cursed.png | godot/assets/tiles/affinities/affinity.cursed.png | approved | ☑ |
+| affinity.darkness | Darkness overlay | asset_sources/affinities/affinity.darkness.png | godot/assets/tiles/affinities/affinity.darkness.png | approved | ☑ |
 
 ## Tiles & props (Scenario) — Epic 3
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| tile.floor | Floor | asset_sources/tiles/tile.floor.png | godot/assets/tiles/ | generated | ☐ |
-| tile.wall | Wall | asset_sources/tiles/tile.wall.png | godot/assets/tiles/ | generated | ☐ |
-| tile.blocker | Rubble / blocker | asset_sources/tiles/tile.blocker.png | godot/assets/tiles/ | generated | ☐ |
-| tile.entrance | Entrance | asset_sources/tiles/tile.entrance.png | godot/assets/tiles/ | generated | ☐ |
-| tile.exit | Exit / stair-down | asset_sources/tiles/tile.exit.png | godot/assets/tiles/ | generated | ☐ |
-| tile.door | Door (open state) | asset_sources/tiles/tile.door.png | godot/assets/tiles/ | generated | ☐ |
-| tile.door_sealed | Door (sealed, forward-commit) | asset_sources/tiles/tile.door_sealed.png | godot/assets/tiles/ | generated | ☐ |
-| tile.hazard | Hazard | asset_sources/tiles/tile.hazard.png | godot/assets/tiles/ | generated | ☐ |
-| tile.reward_object | Reward / object | asset_sources/tiles/tile.reward_object.png | godot/assets/tiles/ | generated | ☐ |
+| tile.floor | Floor | asset_sources/tiles/tile.floor.png | godot/assets/tiles/tile.floor.png | approved | ☑ |
+| tile.wall | Wall | asset_sources/tiles/tile.wall.png | godot/assets/tiles/tile.wall.png | approved | ☑ |
+| tile.blocker | Rubble / blocker | asset_sources/tiles/tile.blocker.png | godot/assets/tiles/tile.blocker.png | approved | ☑ |
+| tile.entrance | Entrance | asset_sources/tiles/tile.entrance.png | godot/assets/tiles/tile.entrance.png | approved | ☑ |
+| tile.exit | Exit / stair-down | asset_sources/tiles/tile.exit.png | godot/assets/tiles/tile.exit.png | approved | ☑ |
+| tile.door | Door (open state) | asset_sources/tiles/tile.door.png | godot/assets/tiles/tile.door.png · prop: godot/assets/tiles/props/door.png | approved | ☑ |
+| tile.door_sealed | Door (sealed, forward-commit) | asset_sources/tiles/tile.door_sealed.png | godot/assets/tiles/tile.door_sealed.png · prop: godot/assets/tiles/props/door_sealed.png | approved | ☑ |
+| tile.hazard | Hazard | asset_sources/tiles/tile.hazard.png | godot/assets/tiles/tile.hazard.png | approved | ☑ |
+| tile.reward_object | Reward / object | asset_sources/tiles/tile.reward_object.png | godot/assets/tiles/tile.reward_object.png · prop: godot/assets/tiles/props/reward_object.png | approved | ☑ |
 
 ## Item icons — weapons (Recraft) — Epic 1 / 6
 | ID | Asset | Source dir | Runtime path | Status | Approved |
@@ -150,3 +150,16 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 | amb.cursed | Cursed | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
 | amb.darkness | Darkness | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
 | amb.boss | Boss / finale | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
+
+---
+
+## Scenario board art — gate + runtime export (2026-06-22)
+
+All 22 Scenario assets **passed the 3-point readability gate** (grayscale / phone-size / silhouette) — evidence regenerable via `python asset_sources/_tools/process_board_art.py`. Engine = Gemini 3.1 Flash (no custom model); full provenance + CU ledger in [`provenance-log.md`](provenance-log.md).
+
+**Runtime mirror exported** to `godot/assets/` (downscaled from 1K masters, never upscaled): characters/enemies 256×384, boss 512², tiles + affinities 256². Transparent **prop** versions (placeable on any floor/affinity cell) for `reward_object`, `door`, `door_sealed` live under `godot/assets/tiles/props/` (blocker prop skipped — rubble fills the tile so there was no background to remove; use its full tile).
+
+**Deferred to board-renderer time (not done — need the engine's compositing model):**
+- Seamless tiling: floor/wall read fine as per-cell textures but are not edge-seamless and repeat visibly — solve with variants or edge-blending alongside the renderer.
+- Affinity **overlays**: shipped as full-tile floor variants; true transparent overlays are better done in-engine (recolor/shader over the base floor using each tile's non-color cue) since the cue is fused into the stone.
+- `entrance` vs `exit` look alike at tiny grayscale — consider an up/down arrow cue.
