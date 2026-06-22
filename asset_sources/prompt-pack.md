@@ -95,29 +95,47 @@ The treatment is now baked into a **saved custom style**, so per-asset prompts a
 | `icon.currency.echo` | a small floating ghostly wisp mote, faint eldritch teal glow, centered, single object | BASE |
 | `icon.currency.seal_fragment` | a broken carved stone seal fragment, relic rune, faint eldritch teal glow, centered, single object | BASE |
 
-### Passive glyphs (20–30) — neutral preset, NO custom style
+### Passive glyphs — generate individually on V4.1 Pro Vector
 
-⚠️ **Two dead ends we hit:** (1) the weapon style forced symbols into blades; (2) a custom glyph style built from ornate-rune references forced everything into framed plaques. **Don't use a custom style for glyphs** — use the neutral preset and let the prompt carry the look.
+⚠️ **Three dead ends, then a winner:** weapon style → blades; ornate-rune custom style → framed plaques; Image set → only offers V3 (worse). **What works: generate each glyph on its own with `Recraft V4.1 Pro Vector`, Count 4, pick the best.** Constraints that shaped the prompts:
+> - V4.1 has **no negative-prompt field** — everything (anti-frame, "single symbol", material) lives in the **positive** prompt.
+> - Vague symbols go abstract ("blood drop" became a cross/shuriken) — every symbol is now **concrete**.
+> - No style lock → a **close family, not pixel-identical**. Acceptable for the reward modal.
 
-**Setup:** custom style **OFF** · base **V4.1 Vector** · **Image set** mode · same settings (1:1, AI prompt Off, Avoid text Yes, Palette Auto).
+**Consistent treatment baked into every line:** polished silver-steel + thick dark outline + thin warm amber rim (→ **eldritch teal rim for rule-benders**), flat, centered, filling the frame, plain dark slate, no frame. Settings: 1:1, Count 4, AI prompt Off.
 
-**Treatment prefix (prepend to every symbol):**
-> dark fantasy game UI icon, single bold flat symbol, polished steel and dark iron, thick dark outline, faint amber edge, plain dark slate background, no frame, no border, high contrast, centered, large, fills most of the frame
+**Ready-to-paste prompts** — one per generation, in order = `icon.passive.001`–`028`:
 
-**GLYPH NEGATIVE (heavy anti-frame — the key fix; add `sword, blade, dagger, spear, weapon` for every NON-weapon symbol, omit only for `crossed swords`):**
-> ornate frame, border, plaque, badge, picture frame, rounded frame, octagon frame, background panel, decorative background, vignette, inner frame outline, double border, two layers, busy, realistic scene, multiple unrelated objects, photorealistic, text, watermark, sci-fi, neon
-
-Two tricks that kill the plaque: **"no frame, no border, fills most of the frame"** in the prompt (no empty space for the model to decorate) + the heavy anti-frame negative. A few symbols were simplified after the first batch came out busy (flaming skull → horned skull; spiked gauntlet → gauntlet).
-
-**Run via Image set** (8–10 rows per batch; one symbol per row). Each line = `<treatment prefix>, a bold <symbol>`:
-
-*Offense:* `crossed swords` *(weapon — drop the anti-weapon negative for this one)* · `a horned skull` · `a single dripping blood drop` · `a jagged lightning bolt` · `a clenched gauntlet fist` · `three slashing claw marks` · `a serrated fang`
-
-*Defense:* `a tower shield` · `a stone fortress wall` · `a layered aegis ward` · `a knight's helm` · `interlocked chain links` · `a thorned barrier ring` · `a closed fortress gate`
-
-*Utility:* `an open watchful eye` · `an hourglass` · `an ornate key` · `a compass rose` · `a lit lantern` · `a coiled rope` · `a pair of boots`
-
-*Rule-bender (add `faint eldritch teal accent` to each):* `an upside-down inverted hourglass` · `a cracked broken rune` · `a two-faced mask` · `an ouroboros looping serpent` · `a die showing impossible faces` · `a tangled knot` · `a coin frozen mid-flip`
+```
+dark fantasy game UI emblem icon, a single bold pair of crossed steel swords, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold horned demon skull, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold glossy red teardrop blood droplet, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold jagged lightning bolt, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold clenched armored gauntlet fist, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold set of three parallel slashing claw marks, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold curved serrated fang, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold tall tower shield, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold crenellated stone fortress wall, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold round layered aegis ward, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold knight's great helm, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold row of interlocked chain links, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold thorned barrier ring, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold closed iron portcullis gate, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold open watchful eye, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold hourglass, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold ornate key, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold compass rose, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold lit lantern, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold coiled rope, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold pair of traveler's boots, polished silver-steel with a thick dark outline and a thin warm amber rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold upside-down inverted hourglass, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold cracked broken rune stone, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold two-faced theater mask, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold ouroboros serpent eating its tail, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold die showing impossible faces, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold tangled celtic knot, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+dark fantasy game UI emblem icon, a single bold coin spinning mid-flip, polished silver-steel with a thick dark outline and a thin eldritch teal rim, flat vector, centered, large, filling the frame, plain dark slate background, no frame, no border, high contrast
+```
 
 ### UI frames & panels (Recraft → 9-slice in Godot)
 
