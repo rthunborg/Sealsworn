@@ -4,7 +4,7 @@ baseline_commit: c567aab3181f2e48cc9a3c179f8f876f1305089a
 
 # Story 4.5: MVP Node Types and Boss Placeholder
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
