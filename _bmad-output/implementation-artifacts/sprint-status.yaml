@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-22T08:32:00+00:00
+# last_updated: 2026-06-23T18:48:11+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -38,7 +38,7 @@
 # - Epic 3 and Epic 4 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-23T00:00:00+00:00
+last_updated: 2026-06-23T18:48:11+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -87,5 +87,5 @@ development_status:
   4-3-route-choice-and-forward-commitment: done
   4-4-node-entry-and-exit-resolution: done
   4-5-mvp-node-types-and-boss-placeholder: done
-  4-6-playable-run-shell-from-start-to-end: review
+  4-6-playable-run-shell-from-start-to-end: done
   epic-4-retrospective: optional

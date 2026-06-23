@@ -4,7 +4,7 @@ baseline_commit: 73ee38f215a26e05d567f9b0569be67c17ee813a
 
 # Story 4.6: Playable Run Shell from Start to End
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
