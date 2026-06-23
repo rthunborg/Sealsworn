@@ -100,12 +100,34 @@ func start(root_seed: int, is_manual_seed: bool = false) -> ActionResult:
 
 
 # Seat an ALREADY-started run (e.g. one restored from a route-position save) + its run-level RngStreamSet, so
-# the orchestrator can continue it from the restored boundary. The run must be non-terminal and valid; the
-# caller owns having produced it (RunStartCommand or RunResumeService.resume_route_position).
-func start_from(existing_run: RunState, existing_streams: RngStreamSet, next_sequence_id: int = 1) -> void:
+# the orchestrator can continue it from the restored boundary. The run MUST be non-terminal and structurally
+# valid: seating a terminal or invalid run would make the subsequent run_to_completion behave oddly (an
+# already-terminal run returns the stale, null-for-a-seated-run _run_completed_* fields, surfacing
+# outcome == ""). Mirrors the command no-partial contract: returns a structured ActionResult and rejects a
+# null/terminal/invalid run with a stable code WITHOUT seating anything (the orchestrator stays unseeded so the
+# caller cannot accidentally drive a rejected run). On success seats the run/streams/counter and returns ok.
+func start_from(existing_run: RunState, existing_streams: RngStreamSet, next_sequence_id: int = 1) -> ActionResult:
+	if existing_run == null:
+		return ActionResult.error(&"invalid_seated_run", {"command": "run_orchestrator", "reason": "null_run"})
+	if existing_streams == null:
+		return ActionResult.error(&"invalid_seated_streams", {"command": "run_orchestrator", "reason": "null_streams"})
+	if existing_run.is_terminal():
+		return ActionResult.error(&"seated_run_terminal", {
+			"command": "run_orchestrator",
+			"phase": String(existing_run.phase)
+		})
+	var validation: ActionResult = existing_run.validate()
+	if validation.is_error():
+		return ActionResult.error(&"invalid_seated_run", {
+			"command": "run_orchestrator",
+			"inner_error_code": String(validation.error_code),
+			"inner_metadata": validation.metadata.duplicate(true)
+		})
+
 	run = existing_run
 	streams = existing_streams
 	_next_sequence_id = maxi(1, next_sequence_id)
+	return ActionResult.ok([], {"run": run})
 
 
 # Resolve the node the run is currently parked on, DISPATCHING BY NODE TYPE. Returns a structured outcome
@@ -120,6 +142,21 @@ func resolve_current_node() -> ActionResult:
 	var current: RouteNode = run.route.node_by_id(run.route.current_node_id)
 	if current == null:
 		return ActionResult.error(&"no_current_node", {"command": "run_orchestrator"})
+
+	# Already-cleared no-op guard: if the run is parked on a node already in cleared_node_ids (a post-exit /
+	# pre-advance position — e.g. resuming from a route-position save composed before the advance), do NOT
+	# re-resolve it. NodeEnterCommand/NodeResolvePlaceholderCommand do not reject an already-cleared parked
+	# node (they only check phase/parked/type), so without this guard run_to_completion would needlessly
+	# re-enter the cleared node (regenerate a level / re-resolve a placeholder). The idempotent clear guards
+	# keep state uncorrupted, but the work is wasted and the semantics are surprising — early-return ok (a
+	# no-op) so the loop advances past it instead.
+	if run.route.cleared_node_ids.has(current.id):
+		return ActionResult.ok([], {
+			"node_id": current.id,
+			"node_type": String(current.type),
+			"resolution": "already_cleared_noop",
+			"run_completed": false
+		})
 
 	if current.type == RouteNode.TYPE_BOSS:
 		return _resolve_boss(current)
@@ -177,15 +214,20 @@ func run_to_completion(request_route_position_save_callback: Variant = null) -> 
 			return resolved
 		if run.is_terminal():
 			break
+		var advance: ActionResult = advance_to_first_eligible()
+		if advance.is_error():
+			return advance
 		# Between-node boundary: optionally compose + hand off a route-position autosave (the 4.4 NodeExit
-		# autosave seam, now board-free for a route choice).
+		# autosave seam, now board-free for a route choice). It is composed AFTER advance_to_first_eligible()
+		# so the snapshot captures the POST-ADVANCE position (the run parked on a FRESH, unresolved node in
+		# ACTIVE_ROUTE) — the exact position shape RunResumeService.resume_route_position +
+		# test_run_route_position_save round-trip, NOT the post-exit/pre-advance pointer parked on a
+		# just-cleared node (resuming from which would needlessly re-enter an already-cleared node — see the
+		# resolve_current_node() already-cleared no-op guard for the defense-in-depth).
 		if request_route_position_save_callback is Callable:
 			var snapshot: RunSnapshot = compose_route_position_snapshot()
 			_last_route_position_snapshot = snapshot
 			(request_route_position_save_callback as Callable).call(snapshot)
-		var advance: ActionResult = advance_to_first_eligible()
-		if advance.is_error():
-			return advance
 		steps += 1
 
 	if not run.is_terminal():

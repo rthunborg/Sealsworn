@@ -30,8 +30,11 @@ func run() -> Dictionary:
 	_route_position_save_restores_the_route_position()
 	_route_position_rng_round_trips_and_reproduces_next_draw()
 	_interrupted_equals_uninterrupted()
+	_callback_autosave_position_resumes_equals_uninterrupted()
 	_corrupt_and_missing_save_expose_no_partial_state()
 	_composed_route_position_snapshot_stays_within_the_23_key_gate()
+	_route_position_seed_mismatch_rejects()
+	_start_from_rejects_a_terminal_or_invalid_run()
 	_cleanup()
 	return result()
 
@@ -147,7 +150,7 @@ func _interrupted_equals_uninterrupted() -> void:
 
 		# Continue the RESTORED run to completion through a fresh orchestrator seated on the restored state.
 		var resumed: RunOrchestrator = RunOrchestrator.new()
-		resumed.start_from(restored_run, restored_streams)
+		assert_true(resumed.start_from(restored_run, restored_streams).succeeded, "Seed %d: seating the restored non-terminal run should succeed." % seed_value)
 		var completion: ActionResult = resumed.run_to_completion()
 		assert_true(completion.succeeded, "Seed %d: the resumed run should complete: %s" % [seed_value, completion.metadata])
 
@@ -157,6 +160,54 @@ func _interrupted_equals_uninterrupted() -> void:
 		# The full final run state matches byte-for-byte (route + cleared + phase + seed). Mismatches identify
 		# the first divergent step via the stringified diff in the message.
 		assert_equal(JSON.stringify(resumed.run.to_dictionary()), uninterrupted_final, "Seed %d: interrupted == uninterrupted — the resumed final run state must match the uninterrupted final run state." % seed_value)
+
+
+# Finding-1 regression: the wired run_to_completion route-position autosave callback must save a position the
+# resume path can round-trip. Drive run_to_completion WITH a real save callback (which now fires AFTER each
+# advance, capturing the POST-ADVANCE fresh-node position), resume from the FIRST captured snapshot, continue
+# to COMPLETED, and assert interrupted == uninterrupted for THAT callback boundary. Before the fix the callback
+# fired pre-advance (pointer on a just-cleared node); resuming from it re-entered the cleared node. The
+# resolve_current_node() already-cleared no-op guard is the defense-in-depth; this proves the SAVED position is
+# a fresh, cleanly-resumable node.
+func _callback_autosave_position_resumes_equals_uninterrupted() -> void:
+	for seed_value: int in [42, 314]:
+		# Uninterrupted reference run.
+		var uninterrupted: RunOrchestrator = RunOrchestrator.new()
+		assert_true(uninterrupted.start(seed_value, false).succeeded, "Seed %d: callback-autosave uninterrupted start should succeed." % seed_value)
+		assert_true(uninterrupted.run_to_completion().succeeded, "Seed %d: callback-autosave uninterrupted run should complete." % seed_value)
+		var uninterrupted_final: String = JSON.stringify(uninterrupted.run.to_dictionary())
+		var uninterrupted_cleared: int = uninterrupted.run.route.cleared_node_ids.size()
+		var uninterrupted_outcome: String = uninterrupted.run_completed_outcome()
+
+		# Drive a fresh run to completion WITH a save callback; capture the FIRST autosaved snapshot through
+		# the REAL repository (the callback persists each post-advance position).
+		var captured: Array[RunSnapshot] = []
+		var driver: RunOrchestrator = RunOrchestrator.new()
+		assert_true(driver.start(seed_value, false).succeeded, "Seed %d: callback-autosave driver start should succeed." % seed_value)
+		var callback: Callable = func(snapshot: RunSnapshot) -> void:
+			if captured.is_empty():
+				captured.append(snapshot)
+				_write_through_repository(snapshot)
+		assert_true(driver.run_to_completion(callback).succeeded, "Seed %d: callback-autosave driver run should complete." % seed_value)
+		assert_false(captured.is_empty(), "Seed %d: the autosave callback must fire at least once (>= 1 between-node boundary)." % seed_value)
+		# The captured (post-advance) save position parks on a node that is NOT yet cleared (the fix's point).
+		var captured_snapshot: RunSnapshot = captured[0]
+		assert_false(captured_snapshot.route_state.get("cleared_node_ids", []).has(captured_snapshot.current_route_node_id), "Seed %d: the callback-saved position must park on a node NOT already cleared (post-advance fresh node)." % seed_value)
+
+		# Resume from the FIRST callback-saved snapshot and continue to COMPLETED via a fresh orchestrator.
+		var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+		assert_true(restore.succeeded, "Seed %d: resuming the callback-saved position should succeed: %s" % [seed_value, restore.metadata])
+		var restored_run: RunState = restore.metadata.get("run_state") as RunState
+		var restored_streams: RngStreamSet = restore.metadata.get("rng_streams") as RngStreamSet
+		var resumed: RunOrchestrator = RunOrchestrator.new()
+		assert_true(resumed.start_from(restored_run, restored_streams).succeeded, "Seed %d: seating the callback-restored run should succeed." % seed_value)
+		var completion: ActionResult = resumed.run_to_completion()
+		assert_true(completion.succeeded, "Seed %d: the callback-resumed run should complete: %s" % [seed_value, completion.metadata])
+
+		assert_equal(resumed.run.phase, RunState.PHASE_COMPLETED, "Seed %d: the callback-resumed run should reach COMPLETED." % seed_value)
+		assert_equal(resumed.run_completed_outcome(), uninterrupted_outcome, "Seed %d: the callback-resumed outcome must match the uninterrupted outcome." % seed_value)
+		assert_equal(resumed.run.route.cleared_node_ids.size(), uninterrupted_cleared, "Seed %d: the callback-resumed cleared_node_count must match the uninterrupted path." % seed_value)
+		assert_equal(JSON.stringify(resumed.run.to_dictionary()), uninterrupted_final, "Seed %d: callback-autosave interrupted == uninterrupted — the resumed final run state must match." % seed_value)
 
 
 func _corrupt_and_missing_save_expose_no_partial_state() -> void:
@@ -201,6 +252,49 @@ func _composed_route_position_snapshot_stays_within_the_23_key_gate() -> void:
 	# The run-level RNG root_seed in the snapshot must be the int64-safe decimal STRING form.
 	var rng_streams: Dictionary = (json_data as Dictionary).get("rng_streams")
 	assert_true(rng_streams.get("root_seed") is String, "The rng_streams root_seed must be a decimal string (int64-safe).")
+
+
+# Finding-2 regression: from_route_position must reject a streams set seeded differently from the run (the
+# run-seed and RNG-seed would otherwise diverge silently in the snapshot). The single orchestrator caller
+# always passes matching seeds; this drives the defensive guard directly.
+func _route_position_seed_mismatch_rejects() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	# A matching-seed compose succeeds (the normal path).
+	var ok_result: ActionResult = RunSnapshot.from_route_position(orchestrator.run, orchestrator.streams)
+	assert_true(ok_result.succeeded, "A matching run/streams seed should compose a route-position snapshot.")
+	# A DIFFERENT-seed streams set must be rejected with the stable mismatch code and NO snapshot.
+	var mismatched_streams: RngStreamSet = RngStreamSet.new(orchestrator.run.root_seed + 1)
+	var bad_result: ActionResult = RunSnapshot.from_route_position(orchestrator.run, mismatched_streams)
+	assert_true(bad_result.is_error(), "A run/streams root_seed mismatch must be a structured error.")
+	assert_equal(bad_result.error_code, &"route_position_seed_mismatch", "A seed mismatch should use the stable route_position_seed_mismatch code.")
+	assert_false(bad_result.metadata.has("snapshot"), "A seed-mismatch failure must expose no composed snapshot.")
+
+
+# Finding-3 regression: start_from must reject a terminal or structurally-invalid seated run (mirroring the
+# command no-partial contract) so the resume-seat seam cannot drive a stale/invalid run. A valid non-terminal
+# run is still accepted (the normal resume path).
+func _start_from_rejects_a_terminal_or_invalid_run() -> void:
+	# A null run / null streams reject.
+	var null_run: ActionResult = RunOrchestrator.new().start_from(null, RngStreamSet.new(0))
+	assert_true(null_run.is_error(), "Seating a null run must be a structured error.")
+	assert_equal(null_run.error_code, &"invalid_seated_run", "A null seated run should use the stable invalid_seated_run code.")
+	var parked: RunOrchestrator = _orchestrator_parked_after_clearing(7, 2)
+	var null_streams: ActionResult = RunOrchestrator.new().start_from(parked.run, null)
+	assert_true(null_streams.is_error(), "Seating null streams must be a structured error.")
+	assert_equal(null_streams.error_code, &"invalid_seated_streams", "Null seated streams should use the stable invalid_seated_streams code.")
+
+	# A TERMINAL run rejects: run a fresh run to COMPLETED, then try to seat it.
+	var completed: RunOrchestrator = RunOrchestrator.new()
+	assert_true(completed.start(7, false).succeeded, "Seating-terminal: start should succeed.")
+	assert_true(completed.run_to_completion().succeeded, "Seating-terminal: run should complete.")
+	assert_true(completed.run.is_terminal(), "Seating-terminal: the run should be terminal before the reject check.")
+	var terminal_seat: ActionResult = RunOrchestrator.new().start_from(completed.run, completed.streams)
+	assert_true(terminal_seat.is_error(), "Seating a terminal run must be a structured error.")
+	assert_equal(terminal_seat.error_code, &"seated_run_terminal", "A terminal seated run should use the stable seated_run_terminal code.")
+
+	# A valid NON-terminal run is still accepted (the normal resume-seat path).
+	var ok_seat: ActionResult = RunOrchestrator.new().start_from(parked.run, parked.streams)
+	assert_true(ok_seat.succeeded, "Seating a valid non-terminal run should succeed.")
 
 
 # ---- utilities -----------------------------------------------------------------------------------

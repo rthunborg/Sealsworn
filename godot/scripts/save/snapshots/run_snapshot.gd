@@ -229,6 +229,19 @@ static func from_route_position(
 	# root_seed + each per-stream state are decimal-string encoded by to_snapshot() (JSON-double-safe).
 	var rng_snapshot: Dictionary = streams.to_snapshot()
 
+	# The snapshot's run-seed (from the RunState) and RNG-seed (from the RngStreamSet) MUST agree: on restore
+	# resume_route_position rebuilds the RunState from the top-level root_seed and the RngStreamSet from
+	# rng_streams.root_seed INDEPENDENTLY, so a streams set seeded differently from the run would silently
+	# produce a snapshot whose restored run-seed and RNG-seed diverge (a determinism break surfacing only as a
+	# subtle wrong downstream draw). The single orchestrator caller always passes matching seeds; reject a
+	# mismatch with a structured error (no partial snapshot) so a future mis-wiring fails loud here.
+	if str(rng_snapshot.get("root_seed")) != str(source_run.root_seed):
+		return ActionResult.error(&"route_position_seed_mismatch", {
+			"field": "root_seed",
+			"run_root_seed": str(source_run.root_seed),
+			"streams_root_seed": str(rng_snapshot.get("root_seed"))
+		})
+
 	var snapshot: RunSnapshot = load("res://scripts/save/snapshots/run_snapshot.gd").new()
 	snapshot.root_seed = _int64_or_zero(fields.get("root_seed", 0))
 	snapshot.is_manual_seed = bool(fields.get("is_manual_seed", false))
