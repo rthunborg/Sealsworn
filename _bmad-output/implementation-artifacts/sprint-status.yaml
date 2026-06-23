@@ -87,5 +87,5 @@ development_status:
   4-3-route-choice-and-forward-commitment: done
   4-4-node-entry-and-exit-resolution: done
   4-5-mvp-node-types-and-boss-placeholder: done
-  4-6-playable-run-shell-from-start-to-end: ready-for-dev
+  4-6-playable-run-shell-from-start-to-end: review
   epic-4-retrospective: optional

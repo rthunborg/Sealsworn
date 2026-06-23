@@ -5,6 +5,7 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
+const RunState = preload("res://scripts/run/run_state.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
 
 const SCHEMA_VERSION: int = 1
@@ -191,6 +192,55 @@ static func from_between_level(
 	snapshot.run_id = str(options.get("run_id", ""))
 	# Embed (do not flatten) the tactical snapshot as the between-level level payload.
 	snapshot.level_state = {TACTICAL_SNAPSHOT_KEY: tactical.to_dictionary()}
+	return ActionResult.ok([], {"snapshot": snapshot})
+
+
+# Compose a board-FREE ROUTE-POSITION run save from a live RunState + the run-level RngStreamSet (Story
+# 4.6 Task 4.1). This is the SEPARATE save path for a between-NODE boundary — the player parked at a route
+# CHOICE, NOT mid-level, where there is NO live BoardState (so from_between_level, which REQUIRES a board and
+# embeds a strict TacticalSnapshot, does not fit). It COMPOSES the EXISTING RunSnapshot fields (it does NOT
+# fork a parallel route-save format):
+#   - root_seed / is_manual_seed / meta_progression_eligible / route_state (with nested run_phase) /
+#     current_route_node_id / revealed_route_node_ids  <- from run.to_run_snapshot_fields() (the 4.1 bridge);
+#   - rng_streams  <- from the passed-in run-level RngStreamSet.to_snapshot() (int64 decimal-string root_seed
+#     + per-stream state, JSON-double-safe);
+#   - level_state stays EMPTY (no embedded tactical board at a route choice).
+# All these fields are ALREADY in the 23-key no-surprise-key gate, so this adds NO new top-level key and the
+# gate stays green. It is a PURE READ: it draws no RNG and mutates neither the run nor the streams.
+#
+# Restore reads these run-level fields back through the EXISTING RunState.try_from_run_snapshot_fields (the
+# 4.1/4.4 bridge — nested run_phase + the top-level pointer cross-check + the phaseless->NEW_RUN default) and
+# the run-level RngStreamSet via try_restore — see RunResumeService.resume_route_position.
+#
+# options (all optional): profile_id / run_id: String.
+static func from_route_position(
+	source_run: RunState,
+	streams: RngStreamSet,
+	options: Dictionary = {}
+) -> ActionResult:
+	if source_run == null:
+		return ActionResult.error(&"missing_run_state", {"field": "run"})
+	if streams == null:
+		return ActionResult.error(&"missing_rng_streams", {"field": "rng_streams"})
+
+	# The 4.1 bridge: the existing run/route snapshot fields, with run_phase nested inside route_state.
+	var fields: Dictionary = source_run.to_run_snapshot_fields()
+	# Single pure read of the run-level RNG snapshot (consumes no draws, mutates nothing). The int64
+	# root_seed + each per-stream state are decimal-string encoded by to_snapshot() (JSON-double-safe).
+	var rng_snapshot: Dictionary = streams.to_snapshot()
+
+	var snapshot: RunSnapshot = load("res://scripts/save/snapshots/run_snapshot.gd").new()
+	snapshot.root_seed = _int64_or_zero(fields.get("root_seed", 0))
+	snapshot.is_manual_seed = bool(fields.get("is_manual_seed", false))
+	snapshot.meta_progression_eligible = bool(fields.get("meta_progression_eligible", true))
+	snapshot.route_state = _dictionary_or_empty(fields.get("route_state", {}))
+	snapshot.current_route_node_id = str(fields.get("current_route_node_id", ""))
+	snapshot.revealed_route_node_ids = _string_array(fields.get("revealed_route_node_ids", []))
+	snapshot.rng_streams = rng_snapshot
+	# No board at a route choice: level_state stays empty (NOT a tactical-snapshot embed).
+	snapshot.level_state = {}
+	snapshot.profile_id = str(options.get("profile_id", "default"))
+	snapshot.run_id = str(options.get("run_id", ""))
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 
