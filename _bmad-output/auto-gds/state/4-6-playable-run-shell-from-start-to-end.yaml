@@ -3,10 +3,10 @@ epic_num: 4
 story_num: 6
 branch: story/4-6-playable-run-shell-from-start-to-end
 status: in-progress
-updated_at: "2026-06-23T18:22:34Z"
+updated_at: "2026-06-23T18:38:02Z"
 started_at: "2026-06-23T15:02:24Z"
 completed_at: null
-active_seconds: 4174
+active_seconds: 5102
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -23,7 +23,7 @@ git_mode: remote
 base_branch: main
 epic_story_count: 6
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 1
+code_review_iterations: 2
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
@@ -34,6 +34,7 @@ commits:
   - d1bd5d6
   - 73ee38f
   - f91ba81
+  - 10496c2
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

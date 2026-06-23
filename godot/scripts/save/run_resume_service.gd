@@ -91,6 +91,8 @@ func resume(save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> ActionResult
 #        run_phase + the top-level pointer cross-check + the phaseless->NEW_RUN default; structural validate())
 #   3. RngStreamSet.new(0).try_restore(run_snapshot.rng_streams) -> invalid_rng_snapshot on malformed input;
 #        no mutation on failure
+#   4. Symmetric seed cross-check -> route_position_seed_mismatch when the top-level root_seed diverges from
+#        rng_streams.root_seed (mirrors the compose-side from_route_position guard; rejects a hand-edited save)
 #
 # On success returns ok with the restored domain pieces under metadata keys: run_snapshot, run_state,
 # rng_streams. On any failure returns the FIRST validator's structured error carrying NO restored objects.
@@ -124,6 +126,20 @@ func resume_route_position(save_path: String = SaveRepository.DEFAULT_RUN_PATH) 
 	var rng_result: ActionResult = streams.try_restore(run_snapshot.rng_streams)
 	if rng_result.is_error():
 		return rng_result
+
+	# Symmetric READ-side seed cross-check (mirrors the compose-side guard in RunSnapshot.from_route_position).
+	# The RunState was rebuilt from the top-level root_seed and the RngStreamSet from rng_streams.root_seed
+	# INDEPENDENTLY (try_from_run_snapshot_fields never sees rng_streams), so a hand-edited / corrupted save
+	# whose top-level root_seed diverges from rng_streams.root_seed would otherwise restore SILENTLY (a subtle
+	# determinism divergence on the first post-resume draw, no crash). The compose side now guarantees the game
+	# never writes such a save; reject one here with a structured error (NO partial state) so the resume seam
+	# fails loud rather than trusting two independently-sourced seeds.
+	if str(run_snapshot.root_seed) != str(streams.to_snapshot().get("root_seed")):
+		return ActionResult.error(&"route_position_seed_mismatch", {
+			"field": "root_seed",
+			"run_root_seed": str(run_snapshot.root_seed),
+			"streams_root_seed": str(streams.to_snapshot().get("root_seed"))
+		})
 
 	return ActionResult.ok([], {
 		"run_snapshot": run_snapshot,

@@ -34,6 +34,7 @@ func run() -> Dictionary:
 	_corrupt_and_missing_save_expose_no_partial_state()
 	_composed_route_position_snapshot_stays_within_the_23_key_gate()
 	_route_position_seed_mismatch_rejects()
+	_resume_route_position_seed_mismatch_rejects()
 	_start_from_rejects_a_terminal_or_invalid_run()
 	_cleanup()
 	return result()
@@ -268,6 +269,40 @@ func _route_position_seed_mismatch_rejects() -> void:
 	assert_true(bad_result.is_error(), "A run/streams root_seed mismatch must be a structured error.")
 	assert_equal(bad_result.error_code, &"route_position_seed_mismatch", "A seed mismatch should use the stable route_position_seed_mismatch code.")
 	assert_false(bad_result.metadata.has("snapshot"), "A seed-mismatch failure must expose no composed snapshot.")
+
+
+# Round-2 finding regression (READ-side symmetry): the compose side now guarantees the game never WRITES a
+# route-position save whose top-level root_seed diverges from rng_streams.root_seed — but resume_route_position
+# rebuilds the RunState (from the top-level root_seed) and the RngStreamSet (from rng_streams.root_seed)
+# INDEPENDENTLY, so a HAND-EDITED / corrupted on-disk save must be rejected on the read side too. Write a valid
+# snapshot, mutate ONLY its on-disk rng_streams.root_seed to a different (still-valid int64) value, and assert
+# resume rejects with the stable route_position_seed_mismatch code and NO restored run_state (no partial state).
+func _resume_route_position_seed_mismatch_rejects() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	_write_through_repository(snapshot)
+
+	# Hand-edit the on-disk JSON: diverge rng_streams.root_seed from the top-level root_seed (still a valid
+	# int64 decimal string, so try_restore SUCCEEDS and the new symmetric cross-check is what rejects it).
+	var file: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.READ)
+	assert_true(file != null, "The written route-position save should be readable for the hand-edit.")
+	var on_disk: Variant = JSON.parse_string(file.get_as_text())
+	file = null
+	assert_true(on_disk is Dictionary, "The on-disk save must parse as a Dictionary.")
+	var data: Dictionary = on_disk
+	var rng_streams: Dictionary = data.get("rng_streams")
+	rng_streams["root_seed"] = str(snapshot.root_seed + 1)
+	data["rng_streams"] = rng_streams
+	var rewrite: FileAccess = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	assert_true(rewrite != null, "The hand-edited save should be writable.")
+	rewrite.store_string(JSON.stringify(data))
+	rewrite.flush()
+	rewrite = null
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.is_error(), "A route-position save with a diverged on-disk rng_streams.root_seed must be a structured error.")
+	assert_equal(restore.error_code, &"route_position_seed_mismatch", "The read-side seed mismatch should use the stable route_position_seed_mismatch code.")
+	assert_false(restore.metadata.has("run_state"), "A read-side seed-mismatch failure must expose no restored RunState (no partial state).")
 
 
 # Finding-3 regression: start_from must reject a terminal or structurally-invalid seated run (mirroring the
