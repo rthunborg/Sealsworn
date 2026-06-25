@@ -3,10 +3,10 @@ epic_num: 5
 story_num: 4
 branch: story/5-4-starting-passive-rule-integration
 status: in-progress
-updated_at: "2026-06-25T20:00:09Z"
+updated_at: "2026-06-25T20:07:09Z"
 started_at: "2026-06-25T19:32:36Z"
 completed_at: null
-active_seconds: 1580
+active_seconds: 1900
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 5
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["1ef7458", "b46d767"]
+commits: ["1ef7458", "b46d767", "88048b8"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -40,7 +40,9 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "Decision 1 (Low, forward note): per-effect passive operations + combat hook sites deferred to 5.5/Epic 6; v0 passives are explanation-only. Ratify the scope line (recommended)."
+  - "Decision 2 (Low, forward note): RunState.rules_resolver is not serialized; 5.5 must re-derive it on a route-position resume. Ratify (recommended)."
 deferred_work:
   - "Per-effect passive OPERATIONS + combat HOOK sites (movement/targeting/damage mutation) -> Story 5.5 / Epic 6. v0 passives are explanation-only."
   - "Re-derive rules_resolver on restore is the caller's responsibility (Shape A; not serialized) -> Story 5.5 forward note (mirrors 5.3 kit)."
