@@ -21,6 +21,7 @@ const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
+const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -62,6 +63,21 @@ var selected_class_id: StringName = &""
 # round-tripped run preserves the kit. It is DELIBERATELY NOT serialized into the route-position save — the kit
 # is RE-DERIVED from selected_class_id on restore (see SELECTED_CLASS_ID_KEY), keeping the save minimal.
 var starting_kit: StartingKit = null
+# The run's rules-kernel resolver holding the registered STARTING passives (Story 5.4). An ADDITIVE + LENIENT
+# run-progression field: default null is a legacy "no resolver" run (a seed-only / empty-class start seats NO
+# resolver; pre-5.4 run dicts / saves parse with null). RunStartCommand SEATS it AFTER starting_kit when a
+# confirmed-selectable class starts a run — it registers the class's two resolved PassiveDefinitions (the
+# class passive + the equipment-synergy passive) into a RulesResolver keyed by their declared trigger windows.
+# This is the AC1 "available to the rules kernel through explicit trigger windows" run-domain surface (NOT a
+# global / autoload / side-channel — it lives on the RunState).
+#
+# It is DELIBERATELY NOT a required validate() field (an empty-class/legacy run has no resolver and must still
+# validate). It is DELIBERATELY NOT serialized — it is a LIVE RefCounted service (like the run-level
+# RngStreamSet on RunOrchestrator and the 5.3 starting_kit), RE-DERIVED from selected_class_id on restore
+# (re-derive the kit -> resolve the two passive ids -> rebuild the resolver), so it is NOT in
+# to_dictionary() / to_run_snapshot_fields() / the 23-key RunSnapshot. copy() carries the reference (a live
+# re-derivable service; a copied run keeps the same registered passives — the resolver is immutable content).
+var rules_resolver: RulesResolver = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -70,7 +86,8 @@ func _init(
 	new_meta_progression_eligible: bool = true,
 	new_route: RouteState = null,
 	new_selected_class_id: StringName = &"",
-	new_starting_kit: StartingKit = null
+	new_starting_kit: StartingKit = null,
+	new_rules_resolver: RulesResolver = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -79,6 +96,7 @@ func _init(
 	route = new_route if new_route != null else load("res://scripts/run/route_state.gd").new()
 	selected_class_id = new_selected_class_id
 	starting_kit = new_starting_kit
+	rules_resolver = new_rules_resolver
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -179,7 +197,12 @@ func copy() -> RunState:
 		meta_progression_eligible,
 		_route_or_new().copy(),
 		selected_class_id,
-		null if starting_kit == null else starting_kit.copy()
+		null if starting_kit == null else starting_kit.copy(),
+		# Story 5.4: carry the resolver REFERENCE on a copy. The resolver is a LIVE service over IMMUTABLE
+		# content (registered PassiveDefinition resources), so sharing the reference is safe — a copied run
+		# resolves the SAME registered passives. It is NOT in to_dictionary(), so a copy()'s to_dictionary()
+		# stays byte-identical to the source's regardless (the round-trip tests rely on this).
+		rules_resolver
 	)
 
 
