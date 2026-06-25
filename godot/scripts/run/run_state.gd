@@ -20,6 +20,7 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
+const StartingKit = preload("res://scripts/run/starting_kit.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -31,6 +32,13 @@ const PHASE_FAILED := &"failed"
 # Key under which the run phase is NESTED inside the route_state payload, so the pinned 23-key
 # RunSnapshot top-level no-surprise-key gate stays green untouched (Task 4.3 decision).
 const RUN_PHASE_KEY := &"run_phase"
+
+# Story 5.3: key under which the selected class id is NESTED inside the route_state payload of
+# to_run_snapshot_fields(), so a between-node route-position save carries the class (closing the 5.2 -> 5.3
+# persistence defer) WITHOUT adding a new top-level RunSnapshot key (the pinned 23-key gate stays green). The
+# kit is NOT persisted — it is RE-DERIVED from the class id on restore (a deterministic pure function of the
+# class + the baseline repos), so this single nested id is the entire route-position persistence surface.
+const SELECTED_CLASS_ID_KEY := &"selected_class_id"
 
 var phase: StringName = PHASE_NEW_RUN
 var root_seed: int = 0
@@ -45,6 +53,15 @@ var route: RouteState = null
 # Story 5.3 owns class persistence alongside the derived kit). It rides to_dictionary()/try_from_dictionary
 # (the FULL run dict, NOT the 23-key snapshot) lenient-read so copied/round-tripped runs preserve the class.
 var selected_class_id: StringName = &""
+# The APPLIED starting kit (Story 5.3). An ADDITIVE + LENIENT run-progression field: default null is a legacy
+# "no kit" run (a seed-only / empty-class start records NO kit; pre-5.3 run dicts / saves parse with null). It
+# is RECORDED by RunStartCommand AFTER selected_class_id when a confirmed-selectable class starts a run (the
+# resolved weapon/support ids + baseline_hp + the two passive-id references). DELIBERATELY NOT a required
+# validate() field (an empty-class/legacy run has no kit and must still validate). It rides
+# to_dictionary()/try_from_dictionary (the FULL run dict, NOT the 23-key RunSnapshot) lenient-read so a copied/
+# round-tripped run preserves the kit. It is DELIBERATELY NOT serialized into the route-position save — the kit
+# is RE-DERIVED from selected_class_id on restore (see SELECTED_CLASS_ID_KEY), keeping the save minimal.
+var starting_kit: StartingKit = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -52,7 +69,8 @@ func _init(
 	new_is_manual_seed: bool = false,
 	new_meta_progression_eligible: bool = true,
 	new_route: RouteState = null,
-	new_selected_class_id: StringName = &""
+	new_selected_class_id: StringName = &"",
+	new_starting_kit: StartingKit = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -60,6 +78,7 @@ func _init(
 	meta_progression_eligible = new_meta_progression_eligible
 	route = new_route if new_route != null else load("res://scripts/run/route_state.gd").new()
 	selected_class_id = new_selected_class_id
+	starting_kit = new_starting_kit
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -144,7 +163,11 @@ func to_dictionary() -> Dictionary:
 		# Story 5.2: the selected class id rides the FULL run dict (NOT the 23-key RunSnapshot). It is a small
 		# lower_snake StringName, serialized as a plain String. try_from_dictionary reads it back leniently
 		# (defaults &"" when absent) so every pre-5.2 run dict still parses.
-		"selected_class_id": String(selected_class_id)
+		"selected_class_id": String(selected_class_id),
+		# Story 5.3: the applied kit rides the FULL run dict too (NOT the 23-key RunSnapshot). null (a legacy/
+		# empty-class run) serializes as a JSON null; a recorded kit serializes via its exact-key to_dictionary().
+		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-5.3 run dict still parses.
+		"starting_kit": null if starting_kit == null else starting_kit.to_dictionary()
 	}
 
 
@@ -155,7 +178,8 @@ func copy() -> RunState:
 		is_manual_seed,
 		meta_progression_eligible,
 		_route_or_new().copy(),
-		selected_class_id
+		selected_class_id,
+		null if starting_kit == null else starting_kit.copy()
 	)
 
 
@@ -172,6 +196,13 @@ func to_run_snapshot_fields() -> Dictionary:
 	var route_payload: Dictionary = current_route.to_dictionary()
 	# Nest the phase inside the route payload (no new top-level RunSnapshot key).
 	route_payload[String(RUN_PHASE_KEY)] = String(phase)
+	# Story 5.3: NEST the selected class id inside the route payload too (the SAME mechanism as run_phase), so a
+	# between-node route-position save carries the class through the existing restore seam WITHOUT a new
+	# top-level RunSnapshot key (the pinned 23-key gate stays green). This closes the 5.2 -> 5.3 persistence
+	# defer: a run resumed from a route-position save rehydrates the SAME class (and re-derives its kit) instead
+	# of &"". The kit itself is NOT nested — it is re-derived from this id on restore. An empty class id nests
+	# "" (a legacy run carries no class, restores to &"").
+	route_payload[String(SELECTED_CLASS_ID_KEY)] = String(selected_class_id)
 
 	# Derive the revealed-node id list from the route nodes (reveal_state revealed OR cleared).
 	# Cleared nodes were necessarily revealed; both surface in revealed_route_node_ids for the
@@ -212,7 +243,10 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		bool(_field(data, &"meta_progression_eligible")),
 		parsed_route,
 		# Lenient: a pre-5.2 run dict has no selected_class_id key -> default &"" (legacy no-class run).
-		_string_name_or_empty(_field(data, &"selected_class_id") if _has_field(data, &"selected_class_id") else &"")
+		_string_name_or_empty(_field(data, &"selected_class_id") if _has_field(data, &"selected_class_id") else &""),
+		# Lenient: a pre-5.3 run dict has no starting_kit key (or null) -> default null (legacy no-kit run); a
+		# present kit dict is reconstructed leniently via StartingKit.try_from_dictionary.
+		_starting_kit_or_null(_field(data, &"starting_kit") if _has_field(data, &"starting_kit") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -265,12 +299,19 @@ static func try_from_run_snapshot_fields(fields: Dictionary) -> ActionResult:
 	elif top_level_node_id != null:
 		return ActionResult.error(&"invalid_run_state", {"field": "current_route_node_id"})
 
+	# Story 5.3: read the selected class id back from the nested route_state key (lenient: a pre-5.3 route-position
+	# payload has no SELECTED_CLASS_ID_KEY -> default &"", the legacy no-class run, which still validates). The
+	# kit is NOT in the save — a caller that needs the applied kit RE-DERIVES it from this restored class id
+	# through the content repositories (a deterministic pure function of the class + the baseline repos).
+	var restored_class_id: StringName = _string_name_or_empty(route_payload.get(String(SELECTED_CLASS_ID_KEY), &""))
+
 	var run_state: RunState = load("res://scripts/run/run_state.gd").new(
 		StringName(String(phase_value)),
 		_int64_or_zero(fields.get("root_seed", 0)),
 		bool(fields.get("is_manual_seed", false)),
 		bool(fields.get("meta_progression_eligible", true)),
-		parsed_route
+		parsed_route,
+		restored_class_id
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -357,6 +398,15 @@ static func _string_name_or_empty(value: Variant) -> StringName:
 	if value is String:
 		return StringName(value)
 	return &""
+
+
+# Lenient StartingKit decode for the additive starting_kit field: a Dictionary is reconstructed via
+# StartingKit.try_from_dictionary; anything else (null / absent / non-dict) resolves to null (the legacy no-kit
+# run). Mirrors the selected_class_id leniency so every pre-5.3 run dict still parses.
+static func _starting_kit_or_null(value: Variant) -> StartingKit:
+	if value is Dictionary:
+		return StartingKit.try_from_dictionary(value)
+	return null
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:

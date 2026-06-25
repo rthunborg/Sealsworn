@@ -16,6 +16,8 @@ extends "res://tests/unit/test_case.gd"
 #     key), and carries an EMPTY level_state (no embedded tactical board at a route choice).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
+const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
@@ -23,6 +25,7 @@ const RunResumeService = preload("res://scripts/save/run_resume_service.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const SaveRepository = preload("res://scripts/save/save_repository.gd")
+const StartingKit = preload("res://scripts/run/starting_kit.gd")
 
 const SAVE_PATH := "user://test_route_position_save.json"
 
@@ -36,6 +39,11 @@ func run() -> Dictionary:
 	_route_position_seed_mismatch_rejects()
 	_resume_route_position_seed_mismatch_rejects()
 	_start_from_rejects_a_terminal_or_invalid_run()
+	# Story 5.3 — the class survives a route-position resume (closes the 5.2 -> 5.3 persistence defer).
+	_selected_class_survives_route_position_resume()
+	_pre_5_3_route_position_payload_restores_with_legacy_empty_default()
+	_kit_re_derives_from_restored_class_id()
+	_composed_class_run_snapshot_stays_within_the_23_key_gate()
 	_cleanup()
 	return result()
 
@@ -58,6 +66,26 @@ func _orchestrator_parked_after_clearing(seed_value: int, advances: int) -> RunO
 	assert_false(orchestrator.run.is_terminal(), "Seed %d: the parked run must NOT be terminal." % seed_value)
 	assert_equal(orchestrator.run.phase, RunState.PHASE_ACTIVE_ROUTE, "Seed %d: the parked run must be at an ACTIVE_ROUTE choice." % seed_value)
 	assert_true(orchestrator.run.route.cleared_node_ids.size() >= 1, "Seed %d: the parked run must have cleared >= 1 node." % seed_value)
+	return orchestrator
+
+
+# Story 5.3: drive an orchestrator partway with a SELECTED CLASS (the orchestrator.start class_id path), parked
+# at a route CHOICE after clearing >= 1 node, NOT terminal. Same shape as _orchestrator_parked_after_clearing
+# but seeds the run with a class so the route-position save carries it.
+func _orchestrator_parked_after_clearing_with_class(seed_value: int, advances: int, class_id: StringName) -> RunOrchestrator:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(seed_value, false, class_id).succeeded, "Seed %d (%s): class start should succeed." % [seed_value, class_id])
+	var steps: int = 0
+	while steps < advances and not orchestrator.run.is_terminal():
+		var current: RouteNode = orchestrator.run.route.node_by_id(orchestrator.run.route.current_node_id)
+		if current.type == RouteNode.TYPE_BOSS:
+			break
+		assert_true(orchestrator.resolve_current_node().succeeded, "Seed %d (%s): resolve should succeed at parked step %d." % [seed_value, class_id, steps])
+		assert_true(orchestrator.advance_to_first_eligible().succeeded, "Seed %d (%s): advance should succeed at parked step %d." % [seed_value, class_id, steps])
+		steps += 1
+	assert_false(orchestrator.run.is_terminal(), "Seed %d (%s): the parked class run must NOT be terminal." % [seed_value, class_id])
+	assert_equal(orchestrator.run.phase, RunState.PHASE_ACTIVE_ROUTE, "Seed %d (%s): the parked class run must be at an ACTIVE_ROUTE choice." % [seed_value, class_id])
+	assert_true(orchestrator.run.route.cleared_node_ids.size() >= 1, "Seed %d (%s): the parked class run must have cleared >= 1 node." % [seed_value, class_id])
 	return orchestrator
 
 
@@ -330,6 +358,102 @@ func _start_from_rejects_a_terminal_or_invalid_run() -> void:
 	# A valid NON-terminal run is still accepted (the normal resume-seat path).
 	var ok_seat: ActionResult = RunOrchestrator.new().start_from(parked.run, parked.streams)
 	assert_true(ok_seat.succeeded, "Seating a valid non-terminal run should succeed.")
+
+
+# ---- Story 5.3: the class (and re-derivable kit) survives a route-position resume ----------------
+
+# AC1/AC3 + the 5.2 -> 5.3 persistence defer CLOSED: a started SELECTABLE-class run, parked mid-route, composed +
+# WRITTEN + READ through the REAL SaveRepository, and restored via RunResumeService.resume_route_position,
+# rehydrates the SAME selected_class_id (NOT &"") — proving the class now survives a between-node resume. The
+# class is nested under route_state (no new top-level RunSnapshot key).
+func _selected_class_survives_route_position_resume() -> void:
+	for class_id: StringName in [&"warrior", &"pyromancer", &"ranger"]:
+		var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing_with_class(42, 2, class_id)
+		assert_equal(orchestrator.run.selected_class_id, class_id, "%s: the live parked run should carry the class." % class_id)
+
+		var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+		assert_true(snapshot != null, "%s: compose_route_position_snapshot should return a snapshot." % class_id)
+		_write_through_repository(snapshot)
+
+		var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+		assert_true(restore.succeeded, "%s: resuming the route position should succeed: %s" % [class_id, restore.metadata])
+		var restored_run: RunState = restore.metadata.get("run_state") as RunState
+		assert_true(restored_run != null, "%s: the route-position resume should return a restored RunState." % class_id)
+		assert_equal(restored_run.selected_class_id, class_id, "%s: the restored run must rehydrate the SAME class id (defer CLOSED — not &\"\")." % class_id)
+		assert_true(restored_run.validate().succeeded, "%s: the restored class run must validate." % class_id)
+
+
+# Lenient-default: a PRE-5.3 route-position payload (no nested selected_class_id key under route_state) restores
+# with the legacy empty default (&"") and still validates — proving the nested read is lenient and every
+# pre-5.3 save still resumes. Composes a real snapshot, STRIPS the nested key from its route_state, writes +
+# reads it through the real repository.
+func _pre_5_3_route_position_payload_restores_with_legacy_empty_default() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing_with_class(42, 2, &"warrior")
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	# Simulate a pre-5.3 save: remove the nested selected_class_id key from route_state (the key 5.3 added).
+	var legacy_route_state: Dictionary = snapshot.route_state.duplicate(true)
+	legacy_route_state.erase(String(RunState.SELECTED_CLASS_ID_KEY))
+	assert_false(legacy_route_state.has(String(RunState.SELECTED_CLASS_ID_KEY)), "The pre-5.3 fixture must have NO nested selected_class_id key.")
+	snapshot.route_state = legacy_route_state
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "A pre-5.3 route-position payload must still resume: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_equal(restored_run.selected_class_id, &"", "A pre-5.3 payload (no nested class key) must restore with the legacy empty default (&\"\").")
+	assert_true(restored_run.validate().succeeded, "A pre-5.3 restored run must still validate.")
+
+
+# AC1/AC3 (the re-derive-kit-on-restore decision): the route-position save persists ONLY the class id (not the
+# kit), so a caller re-derives the kit from the RESTORED class id through the content repositories. This proves
+# the re-derivation is a deterministic pure function of the class id matching the kit RunStartCommand recorded.
+func _kit_re_derives_from_restored_class_id() -> void:
+	# A fresh start of the class records the authoritative kit (what RunStartCommand applied).
+	var fresh: ActionResult = RunOrchestrator.new().start(42, false, &"pyromancer")
+	assert_true(fresh.succeeded, "A pyromancer start should succeed for the re-derive reference: %s" % fresh.metadata)
+	var fresh_run: RunState = fresh.metadata.get("run") as RunState
+	var recorded_kit: StartingKit = fresh_run.starting_kit
+	assert_true(recorded_kit != null, "The fresh pyromancer start should record a kit.")
+
+	# Park + save + restore the class through the repository round-trip.
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing_with_class(42, 2, &"pyromancer")
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	_write_through_repository(snapshot)
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "The pyromancer route-position resume should succeed: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+
+	# RE-DERIVE the kit from the restored class id through the baseline ClassRepository (the deterministic pure
+	# function). It must match the kit RunStartCommand recorded on a fresh start of the same class.
+	var class_repo: ClassRepository = ClassRepository.create_baseline_repository()
+	var def: ClassDefinition = class_repo.get_class_definition(restored_run.selected_class_id)
+	assert_true(def != null, "The restored class id must resolve through the repository for kit re-derivation.")
+	var re_derived: StartingKit = StartingKit.new(
+		restored_run.selected_class_id,
+		def.starting_weapon_id,
+		def.starting_support_id,
+		def.baseline_hp,
+		def.class_passive_id,
+		def.equipment_synergy_passive_id
+	)
+	assert_equal(JSON.stringify(re_derived.to_dictionary()), JSON.stringify(recorded_kit.to_dictionary()), "The kit re-derived from the restored class id must match the kit RunStartCommand recorded (deterministic pure function).")
+
+
+# The composed route-position snapshot of a CLASS run still stays within the 23-key gate (the nested
+# selected_class_id rides INSIDE route_state, NOT as a new top-level key).
+func _composed_class_run_snapshot_stays_within_the_23_key_gate() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing_with_class(99, 2, &"warrior")
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	var data: Dictionary = snapshot.to_dictionary()
+	var json_data: Variant = JSON.parse_string(JSON.stringify(data))
+	assert_true(json_data is Dictionary, "The class route-position snapshot must survive a JSON round-trip.")
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	for key: Variant in (json_data as Dictionary).keys():
+		assert_true(allowed.has(key), "A class route-position save must not introduce a surprise top-level key (%s)." % str(key))
+	# The class id is nested INSIDE route_state, not a top-level key.
+	var route_state: Dictionary = (json_data as Dictionary).get("route_state")
+	assert_true(route_state.has(String(RunState.SELECTED_CLASS_ID_KEY)), "The class id must be nested inside route_state.")
+	assert_equal(str(route_state.get(String(RunState.SELECTED_CLASS_ID_KEY))), "warrior", "The nested route_state must carry the selected class id.")
 
 
 # ---- utilities -----------------------------------------------------------------------------------
