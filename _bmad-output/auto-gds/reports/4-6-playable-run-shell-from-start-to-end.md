@@ -39,3 +39,14 @@ Archived 4 resolved entries (the entire "code review of 4-1" deferral section �
 3. Complete the AC4/AC5 human-felt play-pass notes.
 
 **Next:** with 4-6 `done`, `story_plan.py` would select **`epic-4-retrospective`** (status `optional`) — i.e. the next Auto-GDS dry run reports the Epic-4 retrospective. Epics 5–10 remain out of scope (excluded) until planned.
+
+## Report — 2026-06-25 (epic-4 closeout addendum)
+
+Post-finalize epic-4 closeout, performed at the user's explicit request ("proceed with all three") after the clean 4-6 completion above. Folded onto the 4-6 branch (the retrospective's natural Phase-8 home) and shipped with PR #19.
+
+- **Epic-4 retrospective:** RUN via the Auto-GDS retrospective delegate (`agds-alt-high`, `gds-retrospective`). Produced `_bmad-output/implementation-artifacts/epic-4-retro-2026-06-25.md`; `epic-4-retrospective` flipped `optional → done`. (The earlier `skip retrospective` override applied only to the 4-6 run; the user later opted in.)
+- **Planning drift:** none structural — build matched the plan. Three detail-level notes, all on Story 4.6 ACs and all anchored to later real-content/presentation epics (no PRD/architecture/epics rewrite): AC5 minute targets are a tester overlay (shared w/ Story 10.4); AC1 run-level RngStreamSet threaded-but-inert in v0 (→ Epic 6/7/9); AC1 combat auto-resolved, no tactical play loop/HUD yet (→ later presentation story).
+- **Epic transition:** `epic-4: in-progress → done` (orchestrator-owned; all six stories `done` + retrospective `done`). Scope line updated to `epics-1-4-complete`.
+- **AC4/AC5 evidence pass:** re-ran `tools/dump_run_pacing_survey.gd` live — reproduces the recorded survey byte-for-byte (18 seeds, non-boss counts all `[8,12]`, constant boss depth 7, node-type mix combat 67 / elite 40 / shop 20 / event 18 / reforge 11 / secret 7 / gambling 7 / boss 18). The **structural** AC4/AC5 surface is captured; the **subjective** human-felt note (felt minutes, felt decision impact) remains a genuine human deliverable owned by the first run-map/HUD presentation story — not auto-completable, deliberately not fabricated. Addendum recorded in the story's Playtest/pacing section.
+- **Tests:** full headless suite re-run GREEN — 74 PASS / 0 FAIL.
+- **Merge:** PR #19 merged to `main` (merge commit, branch deleted) at the user's direction.

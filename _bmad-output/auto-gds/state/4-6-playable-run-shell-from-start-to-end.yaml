@@ -40,7 +40,10 @@ commits:
   - 3cc651b
   - a8673ef
 deferred_work_archived: 4
-planning_drift: []
+planning_drift:
+  - "epics.md Story 4.6 AC5 minute targets (20-35/5-15/45 min) — detail-level: v0 has no per-node content time; tester overlay pending a human pass (shared w/ Story 10.4). No epics rewrite."
+  - "epics.md Story 4.6 AC1 route/level/RNG lockstep — detail-level: run-level RngStreamSet threaded but inert in v0 (determinism still correct off root_seed); tracked to Epic 6/7/9."
+  - "epics.md Story 4.6 AC1 playable combat level — detail-level: combat auto-resolved on generation (route<->level handoff proven, no tactical play loop/HUD); owned by a later presentation story."
 pr_url: https://github.com/rthunborg/Sealsworn/pull/19
 ci_run_url: null
 ci_status: none

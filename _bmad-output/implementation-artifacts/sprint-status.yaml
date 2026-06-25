@@ -1,10 +1,10 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-23T18:48:11+00:00
+# last_updated: 2026-06-25T00:00:00+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
 # story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-# scope: Epics 1-3 complete; Epic 4 (Run Map and Forward Progression) brought into scope for implementation.
+# scope: Epics 1-4 complete (Epic 4 = Run Map and Forward Progression); epics 5-10 remain excluded until planned.
 #
 # STATUS DEFINITIONS:
 # ==================
@@ -38,12 +38,12 @@
 # - Epic 3 and Epic 4 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-23T18:48:11+00:00
+last_updated: 2026-06-25T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-scope: epics-1-3-complete-epic-4-in-scope
+scope: epics-1-4-complete
 source_epics_file: C:/Sealsworn/_bmad-output/planning-artifacts/epics.md
 readiness_status: READY_WITH_GATES
 
@@ -81,11 +81,11 @@ development_status:
   3-6-generator-validation-and-bounded-retry: done
   3-7-manual-seed-level-loader-and-regression-tests: done
   epic-3-retrospective: done
-  epic-4: in-progress
+  epic-4: done
   4-1-run-state-and-route-node-model: done
   4-2-seeded-8-12-node-route-generation: done
   4-3-route-choice-and-forward-commitment: done
   4-4-node-entry-and-exit-resolution: done
   4-5-mvp-node-types-and-boss-placeholder: done
   4-6-playable-run-shell-from-start-to-end: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
