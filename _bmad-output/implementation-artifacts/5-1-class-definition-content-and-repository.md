@@ -1,0 +1,356 @@
+---
+created: 2026-06-25
+source_story_key: 5-1-class-definition-content-and-repository
+baseline_commit: 1497b9a9b52f18ff3da61220b8af1851596fa621
+---
+
+# Story 5.1: Class Definition Content and Repository
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want each class to have clear starting identity data,
+so that class selection can create different tactical openings.
+
+## Acceptance Criteria
+
+Source: `_bmad-output/planning-artifacts/epics.md` -> Epic 5 -> Story 5.1 (verbatim AC, with the implementation-grounded detail this story adds).
+
+1. **Class definitions for all five MVP classes expose the full identity contract, accessed only through the repository.**
+   **Given** class definitions are authored for Warrior, Pyromancer, Ranger, Necromancer, and Shadeblade
+   **When** the content repository loads them
+   **Then** each definition exposes id, display name, lock state, unlock hint, starting equipment, class passive id, and equipment-synergy passive id
+   **And** gameplay systems do not read class files directly (they resolve definitions through `ClassRepository` -> `ContentRepository`, never `FileAccess`/`load()`/`JSON.parse` in a gameplay/hot path).
+
+2. **An unknown class id fails closed with a structured lookup error; no run can be built from unknown class data.**
+   **Given** a class id is missing or invalid
+   **When** the repository is queried
+   **Then** it returns a structured lookup error (a `get_class(id)` miss is observable as `null` / a structured `ActionResult.error` from the registration/lookup boundary, NOT a crash or a silently-fabricated default)
+   **And** no run starts from unknown class data (this story does not build a run; it guarantees the *content lookup* fails closed so the future run-start seam — Story 5.2/5.3 — can reject an unknown/locked class before any `RunState` is built).
+
+3. **Class content validation requires a complete kit + passive references for selectable classes and a clear unlock hint for locked classes.**
+   **Given** class content validation runs
+   **When** definitions are checked
+   **Then** selectable classes require complete starting kit and passive references (a non-empty, shape-valid starting weapon id, support id, baseline HP, class passive id, and equipment-synergy passive id — `validate()` rejects a selectable class missing any of them)
+   **And** locked classes require a clear unlock hint (`validate()` rejects a locked class with a blank/empty unlock hint).
+
+### Acceptance-criteria interpretation notes (read before coding)
+
+- **This is the FIRST Epic 5 story and it is a PURE CONTENT/DATA story — a `ClassDefinition` (`Resource`) + a fail-closed `ClassRepository` (registered through `ContentRepository`) + baseline definitions for the five MVP classes + a focused test suite. It mirrors Story 3.1 (`LevelRecipeDefinition`/`LevelRecipeRepository`) and the existing `EnemyDefinition`/`EnemyRepository` EXACTLY.** There is NO run-start change, NO `RunState` change, NO hero-select UI, NO starting-kit application, and NO rules-kernel/passive wiring in this story. Those are Stories 5.2 (hero select + run-request-with-class), 5.3 (starting-kit application into domain state), and 5.4 (starting-passive rule integration). Keep this story to the content boundary.
+
+- **CRITICAL — passive ids are STRING-SHAPE references this story, NOT resolved against a passive repository (none exists yet).** Grep-confirmed at story-creation (2026-06-25): there is NO passive definition, NO passive repository, and NO rules-kernel code anywhere in `godot/scripts/` (the `scripts/rules/{conditions,operations,resolver,triggers}` dirs are EMPTY scaffolding — 0 `.gd` files; the only "passive" hit is an unrelated comment in `run_snapshot.gd`). The MVP passive pool (FR46) is **Epic 6** work, and wiring class passives into the rules kernel is **Story 5.4**. Therefore `ClassDefinition.validate()` MUST validate `class_passive_id` / `equipment_synergy_passive_id` as **lower_snake id SHAPE only** (non-empty + `_is_lower_snake_id`), and MUST NOT attempt to resolve them against a passive repository or the rules kernel. Document this explicitly: the ids are a forward contract Epic 6 / Story 5.4 will resolve; 5.1 only guarantees they are present and well-formed for selectable classes.
+
+- **Starting-equipment ids: validate SHAPE, decide cross-repository resolution as a documented `[Decision]`.** The starting weapon id and support item id are lower_snake content ids that DO already have real repositories (`WeaponRepository` baseline ids: `sword/dagger/spear/axe/mace/bow/crossbow/staff/wand`; `SupportRepository` baseline ids: `none/tome/shield`). Two defensible postures — PICK ONE and record it as a `[Decision]` in Completion Notes:
+  - **(Option A — RECOMMENDED, matches the `LevelRecipeDefinition` precedent) `ClassDefinition.validate()` validates the equipment ids as lower_snake SHAPE only (non-empty for a selectable class), and does NOT cross-resolve them against `WeaponRepository`/`SupportRepository`.** Rationale: `LevelRecipeDefinition` references enemy/reward content by-id WITHOUT the definition cross-validating against the enemy repository (resolution happens later, at consumption time — Story 3.5 places enemies through `EnemyRepository`). The class starting kit is consumed at run-start (Story 5.3), which is the natural place to resolve the weapon/support ids through their repositories and fail closed if missing. Keeping `ClassDefinition` a pure self-contained `Resource` (no repository dependency in `validate()`) matches every existing `*Definition`. The baseline definitions still use REAL, existing ids so the references are valid by construction.
+  - **(Option B) `ClassRepository.create_*` cross-validates each baseline class's weapon/support ids against injected `WeaponRepository`/`SupportRepository` instances at registration time.** REJECTED as the default for v0: no existing `*Repository` takes a sibling repository dependency for cross-content validation, it complicates the fail-closed factory shape, and Story 5.3 (starting-kit application) is the correct owner of "resolve the kit's equipment through its repositories and reject a missing item." If you want an early integration safety net, you MAY add an OPTIONAL repository test (not in `validate()`) asserting every baseline class's weapon/support id IS a real `WeaponRepository`/`SupportRepository` baseline id — but keep that out of the definition's `validate()`.
+
+- **`starting equipment` (AC1) is the starting WEAPON id + the starting SUPPORT id (+ baseline HP belongs to the kit too, per Story 5.3 AC).** The MVP hero wields one weapon (`FR14`/`FR16`) and one support item (`FR17`), starts at baseline HP (`FR6` = 18, but the class kit carries the per-class baseline so Warrior/Pyromancer/Ranger can differ if design wants — default to 18). So the definition's "starting equipment" fields are: `starting_weapon_id: StringName` (lower_snake), `starting_support_id: StringName` (lower_snake; may be `none`), and `baseline_hp: int` (> 0). Story 5.3 applies these into domain state; 5.1 only DEFINES + validates them.
+
+- **Lock state + unlock hint (AC1/AC3, FR43): Warrior/Pyromancer/Ranger are SELECTABLE (unlocked); Necromancer/Shadeblade are LOCKED future classes with a clear unlock hint.** Model lock state as a small named-constant field (e.g. `lock_state: StringName` with `LOCK_STATE_SELECTABLE := &"selectable"` / `LOCK_STATE_LOCKED := &"locked"`, OR a `is_locked: bool` — PICK ONE; a named-constant StringName reads clearer and matches the codebase's enum-like-string convention, but a bool is acceptable and simpler). The `unlock_hint: String` is REQUIRED non-empty for a LOCKED class (AC3) and may be empty/blank for a selectable class. `validate()` enforces: a SELECTABLE class requires the full kit + both passive ids; a LOCKED class requires a non-empty `unlock_hint` (and MAY omit/blank the kit/passive references since it can never start a run — decide whether locked classes carry partial kit data or empty; the cleanest is to NOT require kit/passive fields for locked classes and to require `unlock_hint` only).
+
+- **Scope discipline — what 5.1 MUST NOT do (the single biggest risk, exactly as for every first-epic content story):**
+  - NO hero-select UI / scene / view model (Story 5.2 — `scenes/ui/`, `scripts/ui/`).
+  - NO new-run-request-with-class / `RunState` class field / `RunStartCommand` change (Story 5.2 wires the run request to carry a class id; Story 5.3 applies the kit; the epic-4 retro flags this seam — see "Epic transition prep" below).
+  - NO starting-kit APPLICATION into domain state (Story 5.3 — equip the weapon/support, set HP, seat the passive references).
+  - NO passive definition / passive repository / rules-kernel trigger wiring (Epic 6 builds the passive pool; Story 5.4 registers class passives into the rules kernel through explicit trigger windows). 5.1 carries passive ids as STRING references only.
+  - NO active class skills / level-1 abilities (FR45 — a hard class-scope constraint; Story 5.4 asserts active-skill fields are absent/empty/disabled). 5.1 simply does NOT add any active-skill field; if you add one for forward-shape, it MUST default empty/disabled and `validate()` must reject a level-1 active skill (cleaner: omit it entirely this story).
+  - NO change to `WeaponDefinition`/`EnemyDefinition`/`SupportDefinition`/`LevelRecipeDefinition` or their repositories or `ContentRepository` (REUSE the pattern + the boundary; do not fork or modify them).
+  - NO JSON/CSV content pipeline / `.tres` mirror / schema file — code-constant baselines, mirroring the existing weapon/enemy/support/recipe convention (the `data/{source,resources}/` roots are STILL EMPTY through Epic 4; do not introduce the JSON pipeline early — that is an Epic 6 decision per `project-context.md`).
+  - NO cloud/account/multiplayer/telemetry/.NET/new-test-framework/new-engine-library/prototype dependency.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1 — Pre-implementation gate + FAILING tests first (TDD red) (AC: 1-3)**
+  - [ ] 1.1 Confirm in `_bmad-output/implementation-artifacts/sprint-status.yaml` that `epic-1`..`epic-4` are `done`, `epic-5` is `in-progress` (create-story flips it), and this story (`5-1-class-definition-content-and-repository`) is `ready-for-dev`. If any earlier Epic 1-4 status regressed, STOP and restore the boundary before implementing class content.
+  - [ ] 1.2 Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is NOT your change.
+  - [ ] 1.3 Add focused FAILING tests before any production edit. New files: `godot/tests/unit/content/test_class_definition.gd` and `godot/tests/unit/content/test_class_repository.gd`. The headless runner auto-discovers `test_*.gd` under `godot/tests/unit` and `godot/tests/integration` ONLY (NOT `tests/fixtures`, NOT `tests/headless`); no registry/`.tscn` edit is needed. Mirror `test_enemy_repository.gd` / `test_level_recipe_repository.gd` structure: an `EXPECTED_*` dictionary of baseline ids -> expected field values, a stable-ordered registration assertion, a per-field validation positive+negative assertion, a generic-`ContentRepository`-boundary assertion, and a fail-closed-factory assertion.
+  - [ ] 1.4 Reuse existing primitives — `ActionResult` (`scripts/core/results/action_result.gd`), the `ContentRepository` + `*Definition`/`*Repository` PATTERN (`scripts/content/`), and the lower-snake-id validation idiom (`_is_lower_snake_id`/`_invalid`) used verbatim in `EnemyDefinition`/`SupportDefinition`/`LevelRecipeDefinition`. Do NOT invent a new result type, a new repository abstraction, or a parallel content-loading layer.
+  - [ ] 1.5 Do NOT in this story: build hero-select UI (5.2), the new-run-request-with-class / `RunState` class field / `RunStartCommand` change (5.2), starting-kit application into domain state (5.3), passive definitions / passive repository / rules-kernel trigger wiring (Epic 6 / 5.4), or any active class skill (FR45); touch tactical truth, the run autosave, settings, generation, route, or meta progression; add cloud/account/telemetry or any new engine/library/test-framework dependency.
+
+- [ ] **Task 2 — Implement `ClassDefinition` (typed `Resource`, repository-loaded) (AC: 1, 3)**
+  - [ ] 2.1 Add `godot/scripts/content/definitions/class_definition.gd` (`ClassDefinition extends Resource`, data-layer only — NOT a `Node`, NO scene nodes). Mirror `EnemyDefinition`/`LevelRecipeDefinition` EXACTLY: `const DEFINITION_TYPE := &"class"` (verify this string does not collide with any existing `DEFINITION_TYPE`; current ones are `enemy`/`weapon`/`support`/`level_recipe`), named constants for enum-like string fields (lock states), `@export` typed fields, an `_init(...)` with defaulted args **in field-declaration order** (see the 3.1 `[Decision]` warning below), and a `validate() -> ActionResult` that returns `ActionResult.error(&"invalid_class_definition", {"reason": "invalid_field", "field": <name>})` on the FIRST bad field. Copy the `_invalid()` + `_is_lower_snake_id()` static helpers VERBATIM (every existing definition keeps its own copy — that local duplication is the established convention, NOT a smell to "fix").
+  - [ ] 2.2 Fields (AC1 — each definition exposes): `class_id: StringName` (lower_snake), `display_name: String` (non-empty — the human-facing name, NOT lower_snake; mirror how `tactical_identity` is a free String), `lock_state: StringName` (named constants `LOCK_STATE_SELECTABLE := &"selectable"`, `LOCK_STATE_LOCKED := &"locked"`; reject any other value), `unlock_hint: String` (required non-empty for LOCKED, may be blank for SELECTABLE), `starting_weapon_id: StringName` (lower_snake), `starting_support_id: StringName` (lower_snake; may be `none`), `baseline_hp: int` (> 0), `class_passive_id: StringName` (lower_snake SHAPE — see CRITICAL note), `equipment_synergy_passive_id: StringName` (lower_snake SHAPE). Keep every enum-like string lower_snake and validated against a fixed allowlist.
+  - [ ] 2.3 `validate()` (fail-closed, first-bad-field, REJECT-never-coerce — mirror `EnemyDefinition.validate()` branching): always reject non-lower_snake `class_id`, blank `display_name`, and unknown `lock_state`. Then branch on `lock_state`:
+    - SELECTABLE: require lower_snake `starting_weapon_id`; lower_snake `starting_support_id`; `baseline_hp > 0`; lower_snake `class_passive_id`; lower_snake `equipment_synergy_passive_id` (each rejected on its own field name). This is AC3's "selectable classes require complete starting kit and passive references."
+    - LOCKED: require non-empty `unlock_hint` (reject blank on field `unlock_hint`). This is AC3's "locked classes require a clear unlock hint." (Decide + document whether a locked class is ALSO required to leave kit/passive fields empty or is simply not validated for them — the cleanest is to require ONLY `unlock_hint` for locked classes and not constrain their kit/passive fields.)
+  - [ ] 2.4 (Optional convenience, mirror `EnemyDefinition.melee_source_id()` / `SupportDefinition.supports_bonus_for_weapon()`) add small read helpers if useful (e.g. `is_selectable() -> bool`). Keep them pure. Do NOT add an active-skill field (FR45 — omit it; if forward-shape is desired it must default empty/disabled and be rejected at level 1, but omission is cleaner this story).
+
+- [ ] **Task 3 — Implement `ClassRepository` (fails closed, registers through `ContentRepository`) (AC: 1, 2)**
+  - [ ] 3.1 Add `godot/scripts/content/repositories/class_repository.gd` (`ClassRepository extends RefCounted`). Mirror `EnemyRepository`/`LevelRecipeRepository` EXACTLY: hold a `ContentRepository`; expose `register_class(def) -> ActionResult` (null-guard -> `definition.validate()` -> `register_definition(ClassDefinition.DEFINITION_TYPE, def.class_id, def)` -> track stable order), `get_class(id) -> ClassDefinition`, `has_class(id) -> bool`, `class_ids() -> Array[StringName]` (stable ordered, `.duplicate()`d), `content_repository() -> ContentRepository`, `register_baseline_classes() -> ActionResult`, a `static create_baseline_repository(content_repository=null)`, and a `static create_repository_from_definitions(defs, content_repository=null)` that PRE-VALIDATES every definition up front and returns `null` (FAIL CLOSED) on the first invalid/null one — copy `EnemyRepository.create_repository_from_definitions`'s pre-validate-then-register shape verbatim. Add a `BASELINE_CLASS_IDS: Array[StringName]` named constant.
+  - [ ] 3.2 AC2 fail-closed lookup: `get_class(unknown_id)` returns `null` (via `ContentRepository.get_definition` miss); `register_class(null)` / `register_class(<invalid def>)` returns a structured `ActionResult.error` (`invalid_class_repository` for a null def via `_invalid`, or the definition's own `invalid_class_definition` validation error) and registers NOTHING. The factory returns `null` on the first invalid definition. There is NO silent fabrication of a default class.
+  - [ ] 3.3 `static _baseline_definitions() -> Array[ClassDefinition]`: the FIVE MVP classes with stable lower_snake ids and REAL existing equipment ids:
+    - `warrior` — SELECTABLE; a melee starting weapon (e.g. `sword`) + a support (e.g. `shield` or `none`); `baseline_hp` (18 default, or per-design); a `class_passive_id` + `equipment_synergy_passive_id` (lower_snake placeholder ids Epic 6/5.4 will resolve, e.g. `&"warrior_<...>"`). Display name "Warrior".
+    - `pyromancer` — SELECTABLE; a caster weapon (e.g. `staff` or `wand`) + a support (e.g. `tome` or `none`); baseline HP; passive ids. Display "Pyromancer".
+    - `ranger` — SELECTABLE; a ranged weapon (e.g. `bow`) + a support (e.g. `none`); baseline HP; passive ids. Display "Ranger".
+    - `necromancer` — LOCKED; non-empty `unlock_hint`; display "Necromancer".
+    - `shadeblade` — LOCKED; non-empty `unlock_hint`; display "Shadeblade".
+    - These are APPROVED static definitions; do not generate them at runtime. Use REAL `WeaponRepository`/`SupportRepository` baseline ids for the selectable classes so the references are valid by construction (see the Option-A `[Decision]`). The exact passive-id strings + per-class equipment choices are v0 placeholders consistent with the GDD class flavor (Warrior = sturdy melee, Pyromancer = scorched caster, Ranger = ranged kiter) — design polish is later; correctness here is "selectable classes carry a complete, shape-valid kit + passive references; locked classes carry a clear unlock hint."
+
+- [ ] **Task 4 — Tests: definition validation + repository registration/fail-closed (AC: 1-3 — the load-bearing proofs)**
+  - [ ] 4.1 `test_class_definition.gd`: all five baseline definitions `validate()` OK; then every invalid/no-mutation field rejected on its own field name — non-lower_snake `class_id`; blank `display_name`; unknown `lock_state`; (SELECTABLE) blank/non-lower_snake `starting_weapon_id`, non-lower_snake `starting_support_id`, `baseline_hp <= 0`, non-lower_snake `class_passive_id`, non-lower_snake `equipment_synergy_passive_id`; (LOCKED) blank `unlock_hint`. Assert the error code is `invalid_class_definition` and `metadata.field` is the expected field (mirror `test_level_recipe_definition.gd`'s per-field rejection style).
+  - [ ] 4.2 `test_class_repository.gd`: baseline ids registered by stable order (`class_ids()` equals `BASELINE_CLASS_IDS` ordered keys); each id is registered through the generic `ContentRepository` (assert `content_repository().has_definition(ClassDefinition.DEFINITION_TYPE, id)` for each — mirror `_*_repository_keeps_generic_content_registration_intact`); `get_class(known)` returns the definition with expected fields (`EXPECTED_CLASSES` dict); `get_class(&"does_not_exist")` returns `null` and `has_class(&"does_not_exist")` is `false` (AC2 fail-closed lookup); `register_class(null)` returns a structured error and registers nothing; `create_repository_from_definitions([<one invalid def>])` returns `null` (AC2 fail-closed factory — mirror `_*_repository_factory_fails_closed_on_invalid_definitions`); the factory does NOT mutate a provided `ContentRepository` on failure.
+  - [ ] 4.3 (OPTIONAL integration safety net — only if low-cost; NOT in `validate()`) assert every SELECTABLE baseline class's `starting_weapon_id` is a `WeaponRepository` baseline id and `starting_support_id` is a `SupportRepository` baseline id, so the v0 baseline kit references are real (this is the Option-B safety net kept OUT of the definition, recorded as a `[Decision]` if you do it). If you skip it, note in Completion Notes that Story 5.3 owns cross-repository kit resolution.
+
+- [ ] **Task 5 — Run the full headless suite + diff check (gate before review) (AC: 1-3)**
+  - [ ] 5.1 Run through PowerShell (the bare `godot` resolves only as `C:\Users\Rasmus\bin\godot.cmd` via PowerShell; the Bash tool PATH cannot find it): `godot --version`, then `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`, then `git diff --check`.
+  - [ ] 5.2 Expect: Godot `4.6.3.stable.official...`; the full headless runner exits code `0`, final line `Headless tests passed.`; ALL prior Epic 1-4 tests stay green (including `test_project_structure.gd` — note it ALREADY asserts `res://scripts/content` exists, so your new `class_definition.gd`/`class_repository.gd` sit inside an already-required root and must NOT break it; you do NOT add a new domain/data root); `git diff --check` reports no whitespace errors. The two `ERROR: Parse JSON failed` stderr lines are the documented-expected save/settings parse-failure diagnostics from OTHER suites, NOT failures.
+  - [ ] 5.3 **Heavy/cross-domain false-PASS guard (epic-4 retro action item #3 — adopt as a standing gate):** the headless runner can print PASS for a script that failed to LOAD (a return-type/parse error emits "Compile Error at line 0" yet the PASS sentinel still prints). Your two NEW test files load class content cross-referencing the content boundary — after the suite, verify there is NO `SCRIPT ERROR` / `Parse Error` / `Compile Error` line attributable to `test_class_definition.gd` / `test_class_repository.gd` / `class_definition.gd` / `class_repository.gd` (grep the run output directly, do NOT trust the PASS summary line alone). This is cheap and prevents a silent green-suite miss.
+
+- [ ] **Task 6 — Update story records (AC: 1-3)**
+  - [ ] 6.1 Update this story's Dev Agent Record, Completion Notes, File List, Change Log, and Status (-> `review` when implementation + tests pass). Record the `[Decision]`s explicitly: (a) the Option-A "validate equipment-id SHAPE only, defer cross-repository resolution to Story 5.3" decision; (b) the "passive ids are string-shape forward references, resolved by Epic 6 / Story 5.4" decision; (c) the lock-state field shape chosen (named-constant StringName vs bool); (d) code-constant baselines vs a JSON content pipeline (code-constant, mirroring weapons/enemies/support/recipes — no JSON/`.tres`/schema this story).
+  - [ ] 6.2 Keep `sprint-status.yaml` synchronized with this story's status. This is the FIRST Epic 5 story; the orchestrator owns the `epic-5` status flip and any epic closeout — do NOT flip `epic-5` yourself.
+  - [ ] 6.3 Clean up any `user://` artifact your tests create. This story does NO save/resume work and should not write `user://` at all — if a test does, sweep it (`*.json`, `*.json.tmp`, `*.json.bak`). Leave `user://` clean.
+
+## Dev Notes
+
+### Pre-Implementation Gate
+
+This is the **FIRST Epic 5 implementation story** (Epic 5: Classes and Starting Kits). It establishes the CLASS CONTENT layer — the class definition `Resource` + its fail-closed repository — that Stories 5.2 (hero select + run-request-with-class), 5.3 (starting-kit application), 5.4 (starting-passive rule integration), and 5.5 (class-start playable smoke slice) build on. Story-creation analysis on 2026-06-25 found:
+
+- `epic-1: done`, `epic-2: done`, `epic-3: done`, `epic-4: done` (all four retros `done`); Story 5.1 was `backlog` and is now `ready-for-dev`; `epic-5` flips `backlog -> in-progress` by create-story. Stories 5.2-5.5 are `backlog`.
+- There is currently **NO class code anywhere** in `godot/` (a project-wide grep for `class_definition`/`ClassDefinition`/`hero_class`/`warrior`/`pyromancer`/`ranger` finds nothing). There is also **NO passive definition, NO passive repository, and NO rules-kernel code** (`scripts/rules/{conditions,operations,resolver,triggers}` are EMPTY scaffolding — 0 `.gd` files). The class content layer is the greenfield deliverable here; passives + the rules kernel are Epic 6 / Story 5.4 and are explicitly OUT of this story.
+- The content layer (`ContentRepository`, `WeaponDefinition`/`EnemyDefinition`/`SupportDefinition`/`LevelRecipeDefinition` + their repositories), `ActionResult`, and the lower-snake-id validation idiom all exist and are the PATTERN/integration points — mirror them; do NOT fork them. `RunState` exists (the Epic-4 run-progression model) and has NO class field yet — that seam is Story 5.2/5.3, NOT this story.
+
+Before implementing, re-confirm the local tree is clean or that dirty files are intentional user work. If any Story 1.x-4.x status regressed, stop and restore that boundary first.
+
+### Scope Boundary
+
+This story delivers the **class content layer**: a `ClassDefinition` (`Resource`) with the full identity contract (id, display name, lock state, unlock hint, starting equipment, class passive id, equipment-synergy passive id) and fail-closed `validate()`, plus a `ClassRepository` (`RefCounted`) that registers through `ContentRepository`, fails closed on lookup/registration, and ships baseline definitions for all five MVP classes. NO UI, NO run/kit application, NO passive/rules wiring.
+
+In scope:
+
+- `ClassDefinition` (`Resource`) — `DEFINITION_TYPE := &"class"`, lock-state constants, typed `@export` fields, `_init(...)` in field-declaration order, fail-closed `validate()` (selectable -> complete kit + passive refs; locked -> non-empty unlock hint), lower-snake helpers copied verbatim.
+- `ClassRepository` (`RefCounted`) — register/get/has/ids (stable ordered), `content_repository()`, `register_baseline_classes()`, fail-closed `create_baseline_repository`/`create_repository_from_definitions`, `BASELINE_CLASS_IDS`, and `_baseline_definitions()` with Warrior/Pyromancer/Ranger (selectable) + Necromancer/Shadeblade (locked).
+- Tests: definition validation (all five baselines valid + every invalid/no-mutation field rejected on its own field name); repository registration by stable order + generic-`ContentRepository`-boundary + fail-closed factory + unknown-id lookup miss + null-register rejection.
+
+Out of scope (owned elsewhere — do NOT build here):
+
+- **Hero-select UI + the new-run-request-with-class.** Story 5.2 builds hero select (Warrior/Pyromancer/Ranger selectable, Necromancer/Shadeblade shown locked with the unlock hint) and routes the confirmed class id into a new-run request through DOMAIN state (the run-start seam). 5.1 only provides the CONTENT the UI reads. [Source: epics.md Story 5.2]
+- **Starting-kit application into domain state.** Story 5.3 equips the configured starting weapon/support, sets baseline HP, and seats the class passive + equipment-synergy passive references into the run's domain state, failing closed with a structured content error on a missing reference. 5.1 only DEFINES + validates the kit fields. [Source: epics.md Story 5.3]
+- **Starting-passive rule integration.** Story 5.4 registers the class passive + equipment-synergy passive into the RULES KERNEL through explicit trigger windows (Consume/command/result/event flow), and asserts no level-1 active class skills (FR45). The MVP passive POOL itself is Epic 6. 5.1 carries passive ids as STRING-shape forward references only — it does NOT build passives, a passive repository, or any rules-kernel trigger. [Source: epics.md Story 5.4; Epic 6; FR44/FR45/FR46]
+- **Class-start playable smoke slice.** Story 5.5 proves each MVP class starts a tactical run with the correct kit + a felt class nudge (a human playtest deliverable). 5.1 is content-only. [Source: epics.md Story 5.5]
+- **Any active class skill / level-1 ability.** FR45: classes must not start with active class skills at level 1. 5.1 adds NO active-skill field (Story 5.4 asserts their absence). [Source: epics.md Story 5.4 AC3; FR45]
+- **A JSON/CSV content pipeline / `.tres` mirror / schema.** Code-constant baselines (the current weapon/enemy/support/recipe convention — `data/{source,resources}/` are STILL EMPTY through Epic 4). The JSON-source + typed-Resource mirror is an Epic 6 decision; do NOT introduce it early. [Source: project-context.md Technology Stack "Static-content storage (through Epic 4) ... STILL EMPTY ... do not introduce it early"]
+- **`RunState`/`RunStartCommand`/route/generation/tactical/save/settings/meta changes.** Untouched. (The class-into-run-start seam is Story 5.2/5.3 — see "Epic transition prep" below.)
+- Cloud saves, accounts, multiplayer, leaderboards, telemetry, Godot .NET/C#, React/Vite production dependencies, or new test frameworks / new engine libraries.
+
+### Current Repository Baseline (READ THIS FIRST — class content is greenfield; mirror the content + ActionResult patterns)
+
+The most important constraint: **the class content is NEW. Mirror the proven content/result patterns in `scripts/content/`; do NOT fork `ActionResult`, the `ContentRepository`, or the `*Definition`/`*Repository` shape, and do NOT invent a parallel content loader.** The closest and most recent precedent is Story 3.1's `LevelRecipeDefinition`/`LevelRecipeRepository`; the canonical branch-on-a-typed-field `validate()` is `EnemyDefinition`.
+
+- `godot/scripts/content/repositories/content_repository.gd` — `ContentRepository extends RefCounted`. The generic boundary: `register_definition(definition_type: StringName, definition_id: StringName, definition: Resource)`, `get_definition(...)` (returns `null` on a miss — this IS the fail-closed lookup), `has_definition(...)`, keyed by a `DEFINITION_TYPE` per definition class. AC1's "gameplay systems do not read class files directly" = registering classes through THIS and resolving via the repository. The `ClassRepository` holds a `ContentRepository` and registers under `ClassDefinition.DEFINITION_TYPE`.
+- `godot/scripts/content/definitions/enemy_definition.gd` — the `*Definition` PATTERN + the closest `validate()` model: `extends Resource`, `const DEFINITION_TYPE := &"enemy"`, named `const` enum-like values, `@export` typed fields, `_init(...)` with defaulted args IN FIELD-DECLARATION ORDER, a `validate() -> ActionResult` returning `_invalid(<field>)` on the first bad field, and the `_is_lower_snake_id()` + `_invalid()` static helpers (copy verbatim). `EnemyDefinition.validate()` BRANCHES on `behavior_id` (`BEHAVIOR_MELEE_PRESSURE` vs `BEHAVIOR_SEER_MARK`) and rejects contradictory field combinations per branch — this is EXACTLY the shape your `validate()` needs: branch on `lock_state` (`selectable` requires the full kit + passive refs; `locked` requires a non-empty `unlock_hint`). The error code is `invalid_<type>_definition` with `{"reason": "invalid_field", "field": <name>}`.
+- `godot/scripts/content/definitions/support_definition.gd` — a second `validate()` example (lower-snake id + bounded float + a coupling guard `bonus_damage`<->`bonus_weapon_ids`). Useful if any class field needs a coupling rule. Note `SupportDefinition` IDs include `none` — a valid lower_snake id — so a class with `starting_support_id = &"none"` is legitimate.
+- `godot/scripts/content/definitions/level_recipe_definition.gd` (Story 3.1) — the MOST RECENT `*Definition` and the closest analog for "a definition that references other content BY ID without resolving it in `validate()`" (it carries reward/wrinkle/budget fields and references enemy/reward content by-id; resolution happens at consumption time, not in the definition). This is the precedent for the Option-A equipment-id-SHAPE-only decision.
+- `godot/scripts/content/repositories/enemy_repository.gd` AND `level_recipe_repository.gd` — the `*Repository` PATTERN to copy: hold a `ContentRepository`; `register_<x>(def) -> ActionResult` (null-guard -> `validate()` -> `register_definition` -> track stable order); `get_<x>(id)`; `has_<x>(id)`; `<x>_ids()` (ordered, `.duplicate()`d); `content_repository()`; `register_baseline_<x>s()`; `static create_baseline_repository(content_repository=null)`; and `static create_repository_from_definitions(defs, content_repository=null)` that PRE-VALIDATES every definition and returns `null` on the first invalid/null (FAIL CLOSED — `test_enemy_repository.gd` / `test_level_recipe_repository.gd` assert this with `_*_repository_factory_fails_closed_on_invalid_definitions`; add the same assertion for classes). `BASELINE_*_IDS` is a named constant listing the stable baseline ids — add `BASELINE_CLASS_IDS`. NOTE the factory uses `load("res://.../<x>_repository.gd").new(...)` (not `<X>Repository.new`) to avoid the self-`class_name` cyclic-preload quirk — mirror that exact idiom.
+- `godot/scripts/content/repositories/weapon_repository.gd` — `BASELINE_WEAPON_IDS = [sword, dagger, spear, axe, mace, bow, crossbow, staff, wand]`. Use these REAL ids for the selectable classes' `starting_weapon_id`.
+- `godot/scripts/content/repositories/support_repository.gd` — `BASELINE_SUPPORT_IDS = [none, tome, shield]`. Use these REAL ids for `starting_support_id`.
+- `godot/scripts/core/results/action_result.gd` — `ActionResult` (`succeeded`, `is_error()`, `error_code: StringName`, `metadata: Dictionary` deep-copied). `ok(events, metadata)` / `error(code, metadata)`. Error codes MUST be lower-snake (no spaces/dots/colons/dashes/slashes/quotes) or they collapse to `invalid_error_code`. Definition `validate()` returns `ActionResult`; the repository's fail paths return `ActionResult.error(&"invalid_class_repository", {...})`. REUSE — do not reimplement.
+- `godot/tests/unit/test_case.gd` — the custom headless harness base. Tests `extends "res://tests/unit/test_case.gd"`, expose `run() -> Dictionary`, call `assert_true/false/equal`, and return `result()`. Do NOT add GUT/GdUnit.
+- `godot/tests/unit/content/test_enemy_repository.gd`, `test_level_recipe_repository.gd`, and `test_level_recipe_definition.gd` — the closest test TEMPLATES. Mirror their structure exactly for `test_class_repository.gd` / `test_class_definition.gd`: `EXPECTED_*` dict, stable-id registration, generic-`ContentRepository`-boundary assertion, fail-closed factory, per-field validation positive+negative.
+- `godot/tests/unit/core/test_project_structure.gd` — the structural "fail-loud" gate. `REQUIRED_DOMAIN_ROOTS` ALREADY includes `res://scripts/content`; your new files live inside it, so the gate stays green. You do NOT need a new root. Do NOT add one.
+
+### Existing Files To Update Or Preserve
+
+| Path | Current State | This Story Changes | Preserve |
+|---|---|---|---|
+| `godot/scripts/content/repositories/content_repository.gd` | Generic type-keyed definition registry; `get_definition` returns `null` on a miss. | NO change — REUSE as the registration + fail-closed-lookup boundary for classes. | `register_definition`/`get_definition`/`has_definition` contract. |
+| `godot/scripts/content/definitions/enemy_definition.gd` / `support_definition.gd` / `level_recipe_definition.gd` | `*Definition` + branch-on-typed-field `validate()` + lower-snake helpers. | NO change — COPY the pattern into `ClassDefinition`. | All existing definition behavior + tests. |
+| `godot/scripts/content/repositories/enemy_repository.gd` / `level_recipe_repository.gd` | Fail-closed `*Repository` factories + stable-order ids. | NO change — COPY the pattern into `ClassRepository`. | Fail-closed factory behavior + tests. |
+| `godot/scripts/content/repositories/weapon_repository.gd` / `support_repository.gd` | Baseline weapon/support ids. | NO change — REFERENCE their baseline ids for the selectable classes' starting kit. | All existing behavior + tests. |
+| `godot/scripts/core/results/action_result.gd` | Structured ok/error result, lower-snake codes, deep-copied metadata. | NO change — REUSE for `validate()` + repository error paths. | `ok`/`error`/`is_error`/code normalization. |
+| `godot/scripts/run/run_state.gd` | Epic-4 run-progression model (phase machine, root_seed, manual-seed eligibility). NO class field. | NO change this story — the class-into-run seam is Story 5.2/5.3. | All Epic-4 run-state behavior, the 23-key snapshot bridge, the manual-seed eligibility invariant. |
+| `godot/tests/unit/core/test_project_structure.gd` | Asserts `res://scripts/content` (and other roots) exist. | NO change (`scripts/content` already listed; new files live inside it). | All required-root assertions. |
+| `godot/scripts/content/definitions/`, `repositories/` | weapon/enemy/support/level_recipe definitions + repositories. | ADD `class_definition.gd` + `class_repository.gd` alongside them. | All existing content files + their tests. |
+
+### Recommended New Files
+
+Use these names unless implementation discovers a clearer local pattern:
+
+- `godot/scripts/content/definitions/class_definition.gd` — `ClassDefinition extends Resource`. `DEFINITION_TYPE := &"class"`, lock-state constants, typed `@export` fields (class_id, display_name, lock_state, unlock_hint, starting_weapon_id, starting_support_id, baseline_hp, class_passive_id, equipment_synergy_passive_id), `_init(...)` in field-declaration order, fail-closed `validate() -> ActionResult` (branch on lock_state), `_is_lower_snake_id`/`_invalid` helpers.
+- `godot/scripts/content/repositories/class_repository.gd` — `ClassRepository extends RefCounted`. Mirrors `EnemyRepository`/`LevelRecipeRepository`: register/get/has/ids, `content_repository()`, `register_baseline_classes()`, fail-closed `create_baseline_repository`/`create_repository_from_definitions`, `BASELINE_CLASS_IDS`, `_baseline_definitions()` with Warrior/Pyromancer/Ranger (selectable) + Necromancer/Shadeblade (locked).
+- `godot/tests/unit/content/test_class_definition.gd` — all five baselines validate; every invalid/no-mutation field rejected on its own field name (bad class_id, blank display_name, unknown lock_state, selectable-missing-kit/passive-ref, locked-blank-unlock-hint).
+- `godot/tests/unit/content/test_class_repository.gd` — baseline ids registered by stable order; registered through the generic `ContentRepository`; `get_class`/`has_class` known-vs-unknown (fail-closed lookup miss); `register_class(null)` structured error; factory fails closed on invalid; factory does not mutate a provided `ContentRepository` on failure.
+
+Avoid: a parallel content loader; a new result base type; reading JSON/CSV from a gameplay/hot path; resolving passive ids against a (nonexistent) passive repository or the rules kernel; cross-validating equipment ids inside `ClassDefinition.validate()` (Option A defers that to Story 5.3); building hero-select UI or any run/kit/rules wiring; a difficulty knob; a new test framework.
+
+### Class Content Contract (AC1 + AC3 — the definition exposes the identity contract; selectable->complete kit, locked->unlock hint)
+
+The single most important correctness constraint: **`ClassDefinition.validate()` fails closed (REJECT, never coerce) and branches on lock state — a selectable class is only valid with a complete, shape-valid starting kit + both passive references; a locked class is only valid with a non-empty unlock hint.** This sets the right precedent from the content story onward (the same "reject, don't coerce" posture the Story 1.3 board-snapshot deferral warns about — see Deferred-Work Ledger Check).
+
+- A `ClassDefinition` exposes (AC1): `class_id`, `display_name`, `lock_state`, `unlock_hint`, starting equipment (`starting_weapon_id` + `starting_support_id` + `baseline_hp`), `class_passive_id`, `equipment_synergy_passive_id`. [Source: epics.md Story 5.1 AC1; FR42/FR43/FR44; gdd.md class roster]
+- MVP class roster (FR42/FR43): Warrior, Pyromancer, Ranger are SELECTABLE (`FR42`); Necromancer, Shadeblade are LOCKED future classes shown grayed-out with a clear unlock hint (`FR43`). The `lock_state` field + the SELECTABLE/LOCKED `validate()` branches encode this. [Source: epics.md Story 5.1/5.2; FR42/FR43]
+- Each playable class starts with one class passive + one equipment-synergy passive (FR44) and NO active class skill at level 1 (FR45). 5.1 carries the two passive IDs (string-shape) on the definition; Story 5.4 wires them into the rules kernel and asserts no level-1 active skill. 5.1 adds NO active-skill field. [Source: epics.md Story 5.1/5.4; FR44/FR45]
+- AC2/AC3 fail-closed: an unknown class id resolves to `null` (a fail-closed lookup, never a fabricated default), and `validate()` rejects an incomplete selectable class or a hint-less locked class. The repository's `create_*` factory returns `null` on the first invalid definition. This mirrors the codebase's "structured `ActionResult`, fail closed, never coerce" discipline. [Source: epics.md Story 5.1 AC2/AC3; project-context.md "Procedural generation may only select from approved static definitions"; "Do not access files directly from gameplay systems; use repositories"]
+- Approved-content rule: class definitions are APPROVED static content selected at run-start, never generated at runtime. The baseline definitions are approved static definitions. [Source: project-context.md Static Content & Asset Rules; AGENTS.md "Procedural generation selects from approved static definitions only"; epics.md Epic 5 implementation notes "Class content should be data-driven and routed through repositories"]
+
+### Passive-ID Forward-Reference Note (carry it — passives + the rules kernel do NOT exist yet)
+
+`ClassDefinition.class_passive_id` and `equipment_synergy_passive_id` are lower_snake STRING references to passives that **do not exist in code yet**. Grep-confirmed (2026-06-25): no passive definition, no passive repository, and an EMPTY rules-kernel tree (`scripts/rules/{conditions,operations,resolver,triggers}` have 0 `.gd` files). The MVP passive pool (20-30 passives incl. rule-benders) is FR46 / **Epic 6**, and registering class passives into the rules kernel through explicit trigger windows is **Story 5.4**. Therefore:
+
+- `validate()` checks these ids for SHAPE ONLY (`_is_lower_snake_id`, non-empty for a selectable class). It MUST NOT resolve them against a passive repository or the rules kernel (there is nothing to resolve against).
+- Do NOT build a passive definition, a passive repository, or any rules-kernel code to "support" these ids in this story. That is Epic 6 / Story 5.4 scope.
+- Document in Completion Notes that the two passive ids are a forward contract: Story 5.4 resolves/registers them; Epic 6 authors the passive content they point at. This avoids the dev agent reinventing the passive system three stories early.
+
+### Difficulty Non-Goal Note (carry it — class data must not become a difficulty knob)
+
+Sealsworn has a HARD non-goal against player-selectable difficulty ladders and against any setting/content that scales enemy stats/HP/damage/rewards/RNG/run length. Class identity (kit, passives, baseline HP) shapes the TACTICAL OPENING — it must NOT become a difficulty selector. `baseline_hp` differences between classes are a class-identity choice (a sturdy Warrior vs a fragile caster), NOT a difficulty tier, and must not be exposed as a player-tunable difficulty knob or wired to enemy scaling. A Story 2.9 regression already forbids difficulty keys in SETTINGS; do not undermine it by treating class selection as a difficulty mechanism. [Source: project-context.md "DIFFICULTY IS A HARD NON-GOAL"; epics.md Story 2.9 AC2/AC3]
+
+### State / No-Mutation Contract
+
+Class content construction is a pure data/definition operation this story. It must never mutate tactical truth, the run save, settings, route, generation, or progression, and must not draw RNG.
+
+Never during this story's work:
+
+- Execute move/attack/run commands or any tactical/run mutation, or build a `RunState`.
+- Read, write, or mutate `user://run_autosave.json` or `user://settings.json` (class content has no save work this story).
+- Draw gameplay RNG from any stream (class content is deterministic data; there is no randomness here).
+- Alter rewards, gold, Oath Shards, corruption, affinities, route, generation, or meta progression.
+- Read JSON/CSV from a gameplay/hot path (AC1) — all definition access is through the repository boundary; baselines are code constants.
+- Apply a starting kit, equip a weapon/support, set HP on a hero, or seat a passive into the rules kernel (that is Stories 5.3 + 5.4).
+
+### Previous Story Intelligence + Epic-4 -> Epic-5 Transition Prep (folded in — these are epic-transition items, not a generic "see the retro" pointer)
+
+Story 4.6 (Playable Run Shell from Start to End) was the LAST Epic 4 story; `epic-4` is `done` and the epic-4 retrospective (`epic-4-retro-2026-06-25.md`) is `done`. The retro's FORWARD-looking guidance for Epic 5 is folded in below as concrete constraints for THIS story (and flagged where it lands on a LATER Epic 5 story so the dev does not chase it):
+
+- **Decide where class selection seats into the run-start flow — and do NOT fork the run-start path (retro §7 + §11 #2 + §8 + the Epic-5 preview).** The retro's single most specific Epic-5 prep item: "The cleanest fit is extending `RunStartCommand`'s inputs (or a sibling) so the class is chosen at `NEW_RUN -> ACTIVE_ROUTE`, recorded on `RunState`, and surviving the route-position save. Flag this so the Epic-5 dev does not fork a parallel run-start path." For STORY 5.1 the application is **light and indirect**: 5.1 does NOT touch `RunStartCommand`/`RunState` — but it MUST shape the class CONTENT so the 5.2/5.3 seam is a clean extension. Concretely: the class is identified by a single lower_snake `class_id` (so the future run request carries just the id, resolved through `ClassRepository` at run-start — NOT a fat embedded class object), and the kit is a small set of by-id references (weapon/support/passives) + `baseline_hp` (so Story 5.3 applies them into the EXISTING `RunState` without a parallel run format). Record in Completion Notes that 5.1 deliberately keeps the class a by-id content lookup so 5.2 extends `RunStartCommand` (not forks it) and 5.3 seats the kit into the existing `RunState`. [Source: epic-4-retro-2026-06-25.md §7 Preparation needs + §8 + §11 #2; §7 Next Epic Preview "extend the run-start command/orchestrator to seat a class selection"]
+- **Static-content discipline applies the moment classes carry data (retro §7 + §11 #3).** Verbatim from the retro: "Class definitions / starting kits are static content -> JSON/CSV source + typed Godot Resource through a repository/import boundary, with validation + human approval (the project's content rule + the Epic-3 recipe/enemy repository precedent). This is the first new content domain since enemies/recipes; mirror that boundary, do not hot-read files." That is EXACTLY this story: `ClassDefinition` is a typed `Resource` registered through `ContentRepository` via `ClassRepository`, validated fail-closed, never hot-read. The "JSON/CSV source" is the eventual authoring target — for v0, code-constant baselines (the existing weapon/enemy/support/recipe convention) are the approved shape; do NOT introduce the JSON pipeline early. [Source: epic-4-retro-2026-06-25.md §7 Preparation needs + §11 #3; project-context.md Technology Stack "data/ roots STILL EMPTY ... do not introduce it early"]
+- **Carry the `RngStreamSet` inert-stream warning into Epic 5 IF class nudges introduce run-affecting RNG (retro §7 + §8 #5 + §11 #6).** "If a class passive ever rolls anything, route it through the orchestrator's run-level stream (the Epic 6/7/9 obligation applies the instant ANY run-affecting draw appears)." For STORY 5.1 this is **not triggered** — class CONTENT draws no RNG (it is static data). It is flagged so the dev does NOT add any RNG to class content, and so Story 5.4 (passive rule integration) knows that the moment a class passive rolls anything, that draw must route through the run-level `RngStreamSet` (currently inert) rather than a local RNG. No action in 5.1 beyond "class content stays deterministic, zero RNG." [Source: epic-4-retro-2026-06-25.md §7 + §8 Action Item #5 + §11 #6]
+- **Adopt the direct `SCRIPT ERROR|Parse Error` grep as a standing gate for heavy/cross-domain test files (retro §5 lesson #1 + §8 action item #3 — the highest-value new lesson of Epic 4).** A return-type/parse error can emit "Compile Error at line 0" while the runner STILL prints PASS for that script (the test body never ran). Your two NEW test files cross-reference the content boundary — after the suite, grep the run output directly for `SCRIPT ERROR`/`Parse Error`/`Compile Error` attributable to your new files, do NOT trust the PASS summary line alone. This is Task 5.3. [Source: epic-4-retro-2026-06-25.md §5 Key Insight #1 + §8 Action Item #3 + §11 #4]
+- **No structural planning drift; Epic 5 prerequisites all satisfied — no new infrastructure/library/web research (retro §7 Technical prerequisites + §9 + §10).** The retro's drift assessment found Epic 5's dependencies (the run-start path, the `RunState`/`RunSnapshot` save bridge + 23-key gate, the MVP node/level pipeline, the manual-seed eligibility invariant) all present and clean, and "the one genuinely new surface Epic 5 introduces is a class/kit content domain + its repository boundary" — i.e. THIS story. Godot 4.6.3 + typed GDScript is settled; no new engine library and NO web research are required. [Source: epic-4-retro-2026-06-25.md §7 Technical prerequisites + §9 + §10 Readiness]
+
+Epic 1-4 review patterns that still apply to this story:
+
+- Failed/invalid input paths need structured `ActionResult.error()` with stable lower-snake codes + diagnostic metadata — never a silent crash or half-built/coerced state. (`EnemyDefinition`/`LevelRecipeDefinition.validate()` are the model.)
+- `ActionResult.ok()/error()` deep-copy metadata and normalize codes; reuse, don't reimplement.
+- Fail-closed factories: `create_repository_from_definitions` returns `null` on the first invalid/null definition (asserted by the enemy/recipe repository tests). `ClassRepository` must do the same.
+- Value sanitization has been tightened repeatedly across reviews — REJECT (never coerce) every out-of-range/wrong-type/unknown-enum field deterministically, in ONE place per field inside `validate()` (the Story 1.3 board-snapshot deferral is the cautionary "reject, don't coerce" precedent — see below).
+
+### Git Intelligence
+
+Recent commits before this story:
+
+- `1497b9a chore(story-5-1): start auto-gds pipeline` (this story's baseline)
+- `cf91798 Merge pull request #20 from rthunborg/chore/epic-5-sprint-planning`
+- `07ad8d2 chore(epic-5): sprint planning — bring Epic 5 into scope`
+- `ea00c8f Merge pull request #19 from rthunborg/story/4-6-playable-run-shell-from-start-to-end`
+- `5c52068 docs(epic-4): retrospective + epic-4 done + AC4/AC5 evidence`
+
+Actionable patterns:
+
+- The project consistently uses narrow typed `Resource` definitions + fail-closed `RefCounted` `*Repository` factories under `scripts/content/`, with tests under `tests/unit/content/`. Put `ClassDefinition` + `ClassRepository` there alongside weapons/enemies/support/recipes, with `test_class_definition.gd` + `test_class_repository.gd` under `tests/unit/content/`.
+- The headless runner auto-discovers `test_*.gd` under `godot/tests/unit` and `godot/tests/integration`; no registry/`.tscn` edit is needed. Tests under `tests/fixtures` or `tests/headless` are NOT auto-run.
+- ENVIRONMENT (every prior epic): the bare `godot` resolves only as `C:\Users\Rasmus\bin\godot.cmd` through PowerShell; the Bash tool's PATH/`where` cannot find it. Run `godot --version` and the headless suite through `powershell.exe -NoProfile -Command "..."`.
+- Review findings across the project have repeatedly tightened value sanitization, no-mutation/no-partial-state assertions, stable reason/error ids, structured error metadata, and per-field negative coverage. Treat all five as first-class for the class `validate()`, the repository error path, and the registration/lookup tests. (Story 3.1's review deferred three Low coverage gaps for un-tested `validate()` branches — pre-empt the equivalent here by giving EVERY `validate()` branch a dedicated negative test, including each selectable-required field and the locked-unlock-hint branch.)
+
+### Architecture Compliance
+
+- Runtime-facing definitions are typed Godot `Resource`s queried through a `ContentRepository`/import layer; class definitions are content. [Source: game-architecture.md#Static Content & Data; epics.md Additional Requirements "Runtime-facing definitions should include ... PassiveDefinition, ... WeaponDefinition, SupportItemDefinition"; epics.md Epic 5 implementation notes "Class content should be data-driven and routed through repositories"]
+- Configuration layering: content/balance lives in the content pipeline (typed Godot Resources, validated — for v0 code-constant baselines mirroring the existing content), NOT in `user://settings.json`. Classes are content. [Source: game-architecture.md#Configuration; project-context.md Static Content rules]
+- Gameplay systems depend on repository contracts, not raw files; classes are selected from approved static definitions and never generated at runtime. [Source: project-context.md "Do not access files directly from gameplay systems; use repositories" + Static Content & Asset Rules; AGENTS.md]
+- `scripts/content/` is `RefCounted` services + typed `Resource` definitions, independent of scene nodes; headless tests run without rendering/audio/UI scenes. [Source: project-context.md Code Organization rules; AGENTS.md Hard Architecture Rules; NFR14]
+- Starting passives must use the rules kernel rather than ad-hoc class logic (Epic 5 implementation note) — but that WIRING is Story 5.4; 5.1 only carries the passive IDs as content. Classes must not start with active class skills at level 1 (FR45) — 5.1 adds no active-skill field. [Source: epics.md Epic 5 implementation notes + Story 5.4; FR44/FR45]
+- Structured results, not exceptions: `validate()` + repository registration return `ActionResult`; lower-snake error/reason codes; deep-copied metadata. [Source: project-context.md determinism + content rules; `action_result.gd`]
+- Do not add cloud services, accounts, multiplayer, telemetry, Godot .NET/C#, new test frameworks, or React/Vite production dependencies. [Source: project-context.md Critical Don't-Miss rules]
+
+### Library And Framework Requirements
+
+- Required engine: Godot 4.6.3 stable standard build. Required language: typed GDScript. No new engine library or external dependency is introduced (confirmed by the epic-4 retro: Epic 5 needs none — "no new infrastructure, library, or external dependency"). No web research required.
+- `ClassDefinition` is a typed `Resource`; `ClassRepository` is `RefCounted` (NOT a `Node`, NOT an autoload). The autoload set is unchanged through Epic 4 and this story adds NO autoload.
+- Reuse `ActionResult` (`scripts/core/results/action_result.gd`) for `validate()` + repository error paths. Reuse `ContentRepository` (`scripts/content/repositories/content_repository.gd`) as the registration boundary. Copy the `_is_lower_snake_id`/`_invalid` helpers verbatim from `EnemyDefinition` (the local duplication is the established convention).
+- Use the existing custom headless harness: tests `extends "res://tests/unit/test_case.gd"`, expose `run() -> Dictionary`, return `result()`. Do NOT add GUT, GdUnit, or another testing dependency.
+- No int64/JSON-string encoding is needed this story (class content carries no full-64-bit seed; the only ints are small bounded `baseline_hp`). If a future story persists class selection into the run save, it rides the EXISTING `RunSnapshot` bridge (Story 5.2/5.3) under the 23-key gate — NOT a parallel format — but that is NOT this story's concern.
+
+### Latest Technical Information
+
+Official Godot 4.6 sources relevant to typed `Resource` definitions (these inform correctness, not gameplay):
+
+- `Resource` + `@export` typed properties are the established definition shape (`WeaponDefinition`/`EnemyDefinition`/`SupportDefinition`/`LevelRecipeDefinition` use them). Source: https://docs.godotengine.org/en/4.6/classes/class_resource.html
+- `StringName` is the established id type for content ids; lower_snake validation is a per-definition static helper. No new API is needed.
+- If a JSON class-content source is ever added (NOT this story), `JSON.parse_string` returns `null` on parse failure and must be handled inside the repository/import boundary, never a gameplay/hot path; `res://data/source/...` is the bundled-source location and is read-only in exported builds. Source: https://docs.godotengine.org/en/4.6/classes/class_json.html and https://docs.godotengine.org/en/4.6/tutorials/io/data_paths.html
+
+### Project Structure Notes
+
+- The class DEFINITION + REPOSITORY belong under the existing `godot/scripts/content/definitions/` and `godot/scripts/content/repositories/` (alongside weapons/enemies/support/recipes). Class tests go under `godot/tests/unit/content/`.
+- `test_project_structure.gd` already requires `res://scripts/content`; your additions live inside that required root and keep the gate green. Do NOT add a new top-level domain/data root (none is needed).
+- If class content is EVER authored as JSON (NOT this story), source would go under `godot/data/source/classes/`, typed `.tres` mirrors under `godot/data/resources/classes/`, a schema under `godot/data/schemas/`. These are NOT created this story; code-constant baselines (the current weapon/enemy/support/recipe convention) are the v0 shape and `data/{source,resources}/` stay empty scaffolding.
+- Production code stays under `godot/`; no production dependency on `prototype/`.
+- Root `project-context.md` is canonical; do not create duplicate project context files under `_bmad-output/`.
+- No standalone UX file exists and none is needed for 5.1 — this is a domain/content/contract story with no UI scene artifact (hero-select UX is Story 5.2).
+
+### Deferred-Work Ledger Check
+
+A review of `_bmad-output/implementation-artifacts/deferred-work.md` (2026-06-25) found **one Low item with partial subject overlap** to this story's content-definition/validation area, and many that do NOT overlap (do not reopen them here):
+
+- **PARTIAL OVERLAP (informational — set the right precedent):** the Epic 1 review of Story 1.3 deferred three board-snapshot hardening items — chiefly that `BoardCell.from_dictionary()` COERCES malformed fields before validation can reject the corrupt snapshot. This does NOT require action in THIS story (you do not touch `BoardState`/`BoardCell`). BUT it is the directly relevant cautionary precedent: your `ClassDefinition.validate()` must REJECT (not coerce) out-of-range/wrong-type/unknown-enum fields — exactly what the `EnemyDefinition` pattern does. Following the pattern satisfies this; the only actionable takeaway is "reject, don't coerce, in `validate()`." [Source: deferred-work.md "Deferred from: code review of 1-3-actionresult-and-domain-event-foundation (2026-06-05)"]
+- **ADJACENT-BUT-NOT-THIS-STORY (do NOT fold in — flagged so the dev knows it is a LATER Epic 5 story's concern):** the Story 4.6 `[Review][Defer]` "inert run-level `RngStreamSet`" item (owner Epic 6/7/9) becomes live the instant a class passive draws run-affecting RNG. That is **Story 5.4** (passive rule integration), NOT 5.1 — 5.1's class content is pure static data with zero RNG. Recorded only so the dev does not (a) add RNG to class content, or (b) think 5.1 owns the inert-stream fix. [Source: deferred-work.md "Deferred from: code review of 4-6-... (2026-06-23)" tracked-forward obligation]
+- **NO OVERLAP (do NOT reopen — they belong to their originating domains):** the 3.1-3.7 generation/level coverage Lows, the 4.x route/run defers (the `GenerationResult.seed` success-path split, the route-fingerprint `clues`/`reveal_state` extension, the seed-varied-route-depth pacing item), the settings schemaless-`{}` policy (2.9), the `save_open_failed` resume path (2.8), the `RngStreamSet.try_restore` numeric-`state` tightening (2.7), the accessibility/adaptive-layout presentation Lows (2.5/2.6). NONE touch class content, class validation, or the `ClassRepository` boundary.
+
+Stated explicitly so the dev agent does not go hunting the ledger for class work — the only actionable takeaway is "reject, don't coerce, in `validate()`" (which the `EnemyDefinition` pattern already does), plus the awareness that the inert-stream item is Story 5.4's, not 5.1's.
+
+### Testing Requirements
+
+Run at minimum (through PowerShell — the bare `godot` is not on the Bash tool PATH; it resolves only as `C:\Users\Rasmus\bin\godot.cmd` via PowerShell):
+
+```powershell
+godot --version
+godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10
+git diff --check
+```
+
+If invoking from the Bash tool, wrap the commands, e.g. `powershell.exe -NoProfile -Command "godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10"`.
+
+Expected final result:
+
+- Godot version is `4.6.3.stable.official...` or explicitly compatible with project policy.
+- The full headless runner exits with code `0`, final line `Headless tests passed.`.
+- ALL existing Epic 1-4 tests stay green — including `test_project_structure.gd` (your new `scripts/content/` files live inside the already-required `scripts/content` root), the content suite (`test_weapon_repository.gd`, `test_enemy_repository.gd`, `test_support_repository.gd`, `test_level_recipe_definition.gd`, `test_level_recipe_repository.gd`), and every run/route/generation/save/settings suite (untouched).
+- AC1: a `ClassDefinition` exposes id, display name, lock state, unlock hint, starting equipment (weapon id + support id + baseline HP), class passive id, equipment-synergy passive id; all five baselines validate; class content is resolved ONLY through `ClassRepository` -> `ContentRepository` (no raw file read).
+- AC2: `get_class(unknown_id)` returns `null` (fail-closed lookup); `register_class(null)`/`register_class(<invalid>)` returns a structured `ActionResult.error` and registers nothing; `create_repository_from_definitions([<invalid>])` returns `null` (fail-closed factory); no default class is fabricated.
+- AC3: `validate()` rejects a SELECTABLE class missing any of {weapon id, support id, baseline HP > 0, class passive id, equipment-synergy passive id} on that field; `validate()` rejects a LOCKED class with a blank `unlock_hint`; every `validate()` branch has a dedicated positive+negative test (pre-empting the Story 3.1-style coverage-gap defers).
+- `git diff --check` reports no whitespace errors.
+- Heavy/cross-domain false-PASS guard: no `SCRIPT ERROR`/`Parse Error`/`Compile Error` attributable to the new class files in the run output (grep directly; do not trust the PASS summary alone — epic-4 retro lesson #1). [Source: epic-4-retro-2026-06-25.md §5 #1 + §8 #3]
+- NOTE: this story should not need any deliberate malformed-JSON parse test (no save/resume/JSON-source work). The two pre-existing `ERROR: Parse JSON failed` stderr lines come from the save/settings suites and are NOT failures. [Source: project-context.md Testing rules]
+
+### Project Context Rules
+
+- Read and follow root `project-context.md` before implementation; read `_bmad-output/game-architecture.md` before architecture-sensitive changes (Static Content & Data, Configuration table, Naming Conventions).
+- Repositories, not raw file access: classes go through `ContentRepository` via `ClassRepository`; gameplay/UI systems never read class files directly. [project-context.md "Do not access files directly from gameplay systems; use repositories"]
+- Approved static content: procedural/run systems select ONLY from approved static class definitions; class content is never generated at runtime. Code-constant baselines for v0 (the existing weapon/enemy/support/recipe convention); do NOT introduce a JSON content pipeline early (an Epic 6 decision). [project-context.md Static Content rules + Technology Stack "data/ roots STILL EMPTY ... do not introduce it early"]
+- Structured results, not exceptions: `validate()` + repository registration return `ActionResult`; fail closed on bad/unknown input; lower-snake error/reason codes; deep-copied metadata. [project-context.md determinism + content rules]
+- `scripts/content/` is `RefCounted`/`Resource` services + DTOs, independent of scene nodes; headless tests run without rendering/audio/UI. [project-context.md Code Organization + Testing rules; NFR14]
+- Passives use the rules kernel (Story 5.4 wires them) and there are NO level-1 active class skills (FR45); 5.1 carries passive ids as string-shape references only and adds no active-skill field. [project-context.md/epics.md Epic 5; FR44/FR45/FR46]
+- DIFFICULTY IS A HARD NON-GOAL: class identity (kit/passives/baseline HP) shapes the tactical opening, NOT a difficulty tier; no enemy-stat/HP/damage/reward/RNG/run-length scaling keyed off class. [project-context.md "DIFFICULTY IS A HARD NON-GOAL"; epics.md Story 2.9]
+- No cloud/accounts/multiplayer/telemetry/.NET/new-frameworks/prototype dependencies. [project-context.md Critical Don't-Miss rules]
+- Naming: `snake_case` files/folders, `PascalCase` classes (`ClassDefinition`, `ClassRepository`), `UPPER_SNAKE_CASE` constants (`DEFINITION_TYPE`, `LOCK_STATE_*`, `BASELINE_CLASS_IDS`), `*Definition`/`*Repository` suffix conventions, `test_*.gd` tests, stable lower-snake content ids and `ActionResult` error codes (`invalid_class_definition`, `invalid_class_repository`). [project-context.md Naming rules]
+
+### References
+
+- [Source: epics.md#Epic 5: Classes and Starting Kits / Story 5.1] — user story + AC1-AC3 (verbatim basis for this story).
+- [Source: epics.md#Epic 5 Stories 5.2-5.5] — downstream scope boundaries (hero-select UI + run-request-with-class, starting-kit application, starting-passive rule integration, class-start smoke slice) that this story must NOT implement.
+- [Source: epics.md Epic 5 implementation notes] — "Class content should be data-driven and routed through repositories. Starting passives must use the rules kernel rather than ad hoc class logic."
+- [Source: epics.md FR42/FR43/FR44/FR45] — Warrior/Pyromancer/Ranger selectable; Necromancer/Shadeblade locked with unlock hints; one class passive + one equipment-synergy passive per class; no level-1 active class skills.
+- [Source: epics.md FR6/FR14/FR16/FR17] — baseline 18 HP; universal weapon-shaped basic attack; baseline weapon identities (sword/dagger/spear/axe/mace/bow/crossbow/staff/wand); baseline support identities (none/tome/shield) — the starting-kit referenceable content.
+- [Source: epics.md FR46] — the MVP passive pool (20-30 passives incl. rule-benders) is Epic 6 — i.e. the passive content the class passive ids point at is NOT built here.
+- [Source: game-architecture.md#Static Content & Data] — typed `Resource` definitions queried through a `ContentRepository`/import layer; class content is content.
+- [Source: game-architecture.md#Configuration] — layered configuration: content/balance in the content pipeline, not code constants meant for invariants and not `user://settings.json`.
+- [Source: project-context.md] — repository boundary, approved-static-content rule, structured results, code organization (`scripts/content/` is `RefCounted`/`Resource`, scene-free), naming, difficulty non-goal, testing rules, environment (`godot` resolves via PowerShell only), and "data/ roots STILL EMPTY through Epic 4 — do not introduce the JSON pipeline early."
+- [Source: epic-4-retro-2026-06-25.md §7 Next Epic Preview + Preparation needs + §8 Action Items + §9 + §10 + §11 Next Steps] — Epic 5 prep: class/kit content domain + repository boundary is the one genuinely new Epic-5 surface (THIS story); decide where class selection seats into run-start and do NOT fork the run-start path (Story 5.2/5.3 seam — keep the class a by-id lookup); apply the static-content/repository boundary (Epic-3 recipe/enemy precedent), code-constant baselines for v0; carry the inert-`RngStreamSet` warning only if class nudges add RNG (Story 5.4, not 5.1); adopt the direct `SCRIPT ERROR|Parse Error` grep as a standing gate for heavy/cross-domain test files; no new infrastructure/library/web research.
+- [Source: deferred-work.md (Story 1.3 board-snapshot items)] — cautionary precedent: validate-then-REJECT malformed fields rather than coerce; the `validate()` posture here. (Story 4.6 inert-`RngStreamSet` item is Story 5.4's concern, not 5.1's.)
+- Reference code to mirror: `godot/scripts/content/repositories/content_repository.gd`, `godot/scripts/content/definitions/{enemy,support,level_recipe}_definition.gd`, `godot/scripts/content/repositories/{enemy,level_recipe}_repository.gd`, `godot/scripts/content/repositories/{weapon,support}_repository.gd` (for the real baseline equipment ids), `godot/scripts/core/results/action_result.gd`; reference tests: `godot/tests/unit/content/test_{enemy,level_recipe}_repository.gd`, `godot/tests/unit/content/test_level_recipe_definition.gd`, `godot/tests/unit/core/test_project_structure.gd`.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+{{agent_model_name_version}}
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
