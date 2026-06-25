@@ -32,6 +32,12 @@ func run() -> Dictionary:
 	_bad_sequence_id_rejects_with_no_mutation()
 	_start_is_deterministic_for_same_inputs()
 	_node_count_stays_bounded_across_seed_sample()
+	# Story 5.2 — the class-into-run-start seam (AC2/AC3).
+	_start_with_selectable_class_records_it_and_leaves_route_unchanged()
+	_start_with_empty_class_is_back_compatible_and_records_empty()
+	_start_with_locked_class_rejects_fail_closed()
+	_start_with_unknown_class_rejects_fail_closed()
+	_start_with_class_is_deterministic_for_same_inputs()
 	return result()
 
 
@@ -141,3 +147,97 @@ func _node_count_stays_bounded_across_seed_sample() -> void:
 		assert_true(started.succeeded, "Run start should succeed for seed %d: %s" % [seed_value, started.metadata])
 		var node_count: int = int(started.events[0].payload.get("node_count"))
 		assert_true(node_count >= 8 and node_count <= 12, "Seed %d: run_started node_count must stay bounded [8, 12], got %d." % [seed_value, node_count])
+
+
+# Story 5.2 AC3: starting a run WITH a selectable class id records selected_class_id on the started RunState
+# (domain state, not UI-only), keeps the run in ACTIVE_ROUTE + validate() green, and leaves the route + the
+# run_started event byte-identical to a seed-only start of the same seed (the class adds ONLY the recorded
+# field + optional metadata; it does NOT alter route generation or the event payload).
+func _start_with_selectable_class_records_it_and_leaves_route_unchanged() -> void:
+	var with_class: ActionResult = RunStartCommand.new(42, false, 1, &"warrior").execute(null)
+	assert_true(with_class.succeeded, "Starting a run with a selectable class should succeed: %s" % with_class.metadata)
+	var run: RunState = with_class.metadata.get("run") as RunState
+	assert_true(run != null, "A successful class run start should return the live RunState.")
+	assert_equal(run.phase, RunState.PHASE_ACTIVE_ROUTE, "A class run start should be in ACTIVE_ROUTE.")
+	assert_equal(run.selected_class_id, &"warrior", "AC3: the started run must RECORD the selected class id (domain state).")
+	assert_true(run.validate().succeeded, "A class run start should validate: %s" % run.validate().metadata)
+	# The class is surfaced via result metadata for the caller (the run_started payload stays unchanged).
+	assert_equal(String(with_class.metadata.get("class_id", "")), "warrior", "The success metadata should surface the chosen class id.")
+
+	# Route + run_started event are IDENTICAL to a seed-only start of the same seed (the class records only
+	# the field; it does not perturb the deterministic route or the event schema).
+	var seed_only: ActionResult = RunStartCommand.new(42).execute(null)
+	var seed_only_run: RunState = seed_only.metadata.get("run") as RunState
+	assert_equal(run.route.nodes().size(), seed_only_run.route.nodes().size(), "A class start must produce the same-size route as a seed-only start.")
+	assert_equal(run.route.current_node_id, seed_only_run.route.current_node_id, "A class start must park on the same start node as a seed-only start.")
+	assert_equal(JSON.stringify(with_class.events[0].to_dictionary()), JSON.stringify(seed_only.events[0].to_dictionary()), "A class start's run_started event must be byte-identical to a seed-only start (payload unchanged).")
+	# The seed-only run records an empty class (back-compat); the only run.to_dictionary() difference is the
+	# selected_class_id field.
+	assert_equal(seed_only_run.selected_class_id, &"", "A seed-only start records an empty class id (legacy run).")
+
+
+# Story 5.2 back-compat: the existing seed-only / (seed,is_manual) / (seed,is_manual,sequence_id)
+# constructions still succeed and record an EMPTY class id (the legacy 'no class chosen' run). An empty class
+# id is NOT a validation failure — it is the back-compat path the 4.6 orchestrator + tests rely on.
+func _start_with_empty_class_is_back_compatible_and_records_empty() -> void:
+	# All existing positional constructions still produce a valid run with an empty class id.
+	for command: RunStartCommand in [
+		RunStartCommand.new(7),
+		RunStartCommand.new(7, false),
+		RunStartCommand.new(7, false, 1),
+		RunStartCommand.new(7, false, 1, &"")
+	]:
+		var started: ActionResult = command.execute(null)
+		assert_true(started.succeeded, "A back-compat (empty-class) start should succeed.")
+		var run: RunState = started.metadata.get("run") as RunState
+		assert_equal(run.selected_class_id, &"", "A back-compat start must record an EMPTY class id (legacy run).")
+		assert_true(run.validate().succeeded, "A back-compat start should validate.")
+	# validate() must NOT reject an empty class id (it is the back-compat path, not a failure).
+	var validation: ActionResult = RunStartCommand.new(7, false, 1, &"").validate(null)
+	assert_true(validation.succeeded, "An empty class id must pass validate() (back-compat, not a failure).")
+
+
+# Story 5.2 AC2: a LOCKED class id is rejected fail-closed in BOTH validate() and execute() with the stable
+# class_not_selectable code, ZERO events, and NO run built (byte-identical no-mutation — 'no run can start
+# with the locked class').
+func _start_with_locked_class_rejects_fail_closed() -> void:
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"necromancer")
+	# validate() rejects.
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC2: a locked class should be rejected by validate().")
+	assert_equal(validation.error_code, &"class_not_selectable", "A locked class should use the stable class_not_selectable code.")
+	assert_equal(String(validation.metadata.get("class_id", "")), "necromancer", "The reject metadata should carry the offending class id.")
+	# execute() likewise rejects, emits zero events, builds no run.
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC2: a locked class should be rejected by execute().")
+	assert_equal(started.error_code, &"class_not_selectable", "execute() should reject a locked class with class_not_selectable.")
+	assert_true(started.events.is_empty(), "A rejected locked-class start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC2: a rejected locked-class start must build NO run.")
+
+
+# Story 5.2 AC2: an UNKNOWN class id (not in the repository) is rejected fail-closed in BOTH validate() and
+# execute() with the stable unknown_class code, ZERO events, and NO run built.
+func _start_with_unknown_class_rejects_fail_closed() -> void:
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"does_not_exist")
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC2: an unknown class should be rejected by validate().")
+	assert_equal(validation.error_code, &"unknown_class", "An unknown class should use the stable unknown_class code.")
+	assert_equal(String(validation.metadata.get("class_id", "")), "does_not_exist", "The reject metadata should carry the offending class id.")
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC2: an unknown class should be rejected by execute().")
+	assert_equal(started.error_code, &"unknown_class", "execute() should reject an unknown class with unknown_class.")
+	assert_true(started.events.is_empty(), "A rejected unknown-class start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC2: a rejected unknown-class start must build NO run.")
+
+
+# Story 5.2: a started run WITH a class is deterministic — same (seed, is_manual_seed, sequence_id, class_id)
+# -> byte-identical run.to_dictionary() (incl. the recorded selected_class_id) + the same run_started event.
+func _start_with_class_is_deterministic_for_same_inputs() -> void:
+	var first: ActionResult = RunStartCommand.new(777, false, 1, &"pyromancer").execute(null)
+	var second: ActionResult = RunStartCommand.new(777, false, 1, &"pyromancer").execute(null)
+	assert_true(first.succeeded and second.succeeded, "Both deterministic class starts should succeed.")
+	var first_run: RunState = first.metadata.get("run") as RunState
+	var second_run: RunState = second.metadata.get("run") as RunState
+	assert_equal(JSON.stringify(first_run.to_dictionary()), JSON.stringify(second_run.to_dictionary()), "Same inputs (with a class) must produce a byte-identical run.to_dictionary().")
+	assert_equal(first_run.selected_class_id, &"pyromancer", "The deterministic class run records the chosen class.")
+	assert_equal(JSON.stringify(first.events[0].to_dictionary()), JSON.stringify(second.events[0].to_dictionary()), "Same inputs (with a class) must produce a byte-identical run_started event.")

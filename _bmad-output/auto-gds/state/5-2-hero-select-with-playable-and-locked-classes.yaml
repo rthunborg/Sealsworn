@@ -1,0 +1,49 @@
+story_key: 5-2-hero-select-with-playable-and-locked-classes
+epic_num: 5
+story_num: 2
+branch: story/5-2-hero-select-with-playable-and-locked-classes
+status: done
+updated_at: "2026-06-25T16:11:59Z"
+started_at: "2026-06-25T15:38:52Z"
+completed_at: "2026-06-25T16:11:59Z"
+active_seconds: 1900
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform:
+  - unity
+  - unreal
+  - godot
+  - other
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 5
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 1
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["2451af5", "23deed3", "bbe36aa", "3e2c9e0", "c96b8fc"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: null
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work:
+  - "Story 5.3 must thread the selected class (or derived kit/HP) into the route-position save so it survives a between-node resume (selected_class_id currently rehydrates to &\"\" under Option A); nest any new run field under route_state, never a new top-level RunSnapshot key."
+  - "[Review][Defer, Low] RunOrchestrator.start on a reused orchestrator leaves a stale prior run/streams after a bad-class reject (pre-existing early-return pattern, not currently reachable — every run uses a fresh orchestrator). Future hardening: null run/streams on any start() reject."
+blockers: []
+overrides: {}
+constraints: []

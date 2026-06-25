@@ -83,12 +83,20 @@ func _init(
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
 
 
-# Start a fresh run from (root_seed, is_manual_seed) via RunStartCommand. Seats the live RunState + the
-# run-level RngStreamSet (seeded from the SAME root_seed so route generation in the command and level
+# Start a fresh run from (root_seed, is_manual_seed[, class_id]) via RunStartCommand. Seats the live RunState
+# + the run-level RngStreamSet (seeded from the SAME root_seed so route generation in the command and level
 # generation here share the run's deterministic streams), captures the run_started event, and advances the
 # sequence counter past it. Returns the RunStartCommand result verbatim (surface any error to the caller).
-func start(root_seed: int, is_manual_seed: bool = false) -> ActionResult:
-	var start_result: ActionResult = RunStartCommand.new(root_seed, is_manual_seed, _next_sequence_id).execute(null)
+#
+# Story 5.2 (the confirm-path seam — direct orchestrator entry): an OPTIONAL class_id (default &"" = the
+# legacy "no class chosen" start) is threaded into RunStartCommand.new(...). The command resolves it through
+# its injected ClassRepository and REJECTS fail-closed on an unknown/locked class BEFORE building any run — so
+# a rejected start surfaces the command's unknown_class / class_not_selectable error VERBATIM and seats NO run
+# (the orchestrator stays unseeded; the caller cannot drive a rejected run). On success the seated run records
+# selected_class_id (AC3). The hero-select HeroSelectViewModel.is_class_selectable(id) is the UI-side pre-gate;
+# THIS command path is the authoritative fail-closed gate (AC2 — "no run can start with the locked class").
+func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = &"") -> ActionResult:
+	var start_result: ActionResult = RunStartCommand.new(root_seed, is_manual_seed, _next_sequence_id, class_id).execute(null)
 	if start_result.is_error():
 		return start_result
 	run = start_result.metadata.get("run") as RunState
