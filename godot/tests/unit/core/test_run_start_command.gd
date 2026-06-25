@@ -17,12 +17,18 @@ extends "res://tests/unit/test_case.gd"
 # node_count [8, 12] bound across a seed sample (closing the 4.1 node_count defer as permanently benign).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
+const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
+const StartingKit = preload("res://scripts/run/starting_kit.gd")
+const SupportRepository = preload("res://scripts/content/repositories/support_repository.gd")
+const WeaponRepository = preload("res://scripts/content/repositories/weapon_repository.gd")
 
 const SAMPLE_SEEDS: Array[int] = [0, 1, 7, 42, 2026, 13, 99, 314, 777]
+const PLAYABLE_CLASS_IDS: Array[StringName] = [&"warrior", &"pyromancer", &"ranger"]
 
 func run() -> Dictionary:
 	_start_produces_active_run_on_combat_start_node()
@@ -38,6 +44,15 @@ func run() -> Dictionary:
 	_start_with_locked_class_rejects_fail_closed()
 	_start_with_unknown_class_rejects_fail_closed()
 	_start_with_class_is_deterministic_for_same_inputs()
+	# Story 5.3 — kit resolution + applied-kit recording (AC1/AC2/AC3).
+	_start_with_each_playable_class_records_the_resolved_kit()
+	_start_with_ranger_resolves_none_support_not_a_failure()
+	_start_with_bogus_starting_weapon_rejects_fail_closed()
+	_start_with_bogus_starting_support_rejects_fail_closed()
+	_empty_class_start_records_no_kit_and_stays_byte_identical()
+	_locked_and_unknown_class_reject_before_kit_resolution()
+	_start_with_kit_is_deterministic_for_same_inputs()
+	_applied_kit_survives_run_to_dictionary_round_trip()
 	return result()
 
 
@@ -241,3 +256,187 @@ func _start_with_class_is_deterministic_for_same_inputs() -> void:
 	assert_equal(JSON.stringify(first_run.to_dictionary()), JSON.stringify(second_run.to_dictionary()), "Same inputs (with a class) must produce a byte-identical run.to_dictionary().")
 	assert_equal(first_run.selected_class_id, &"pyromancer", "The deterministic class run records the chosen class.")
 	assert_equal(JSON.stringify(first.events[0].to_dictionary()), JSON.stringify(second.events[0].to_dictionary()), "Same inputs (with a class) must produce a byte-identical run_started event.")
+
+
+# ---- Story 5.3: kit resolution + applied-kit recording -------------------------------------------
+
+# AC1/AC3: starting a run WITH each playable class RESOLVES that class's starting kit (weapon/support via the
+# repositories) and RECORDS it on the started RunState (run.starting_kit) — matching the RESOLVED ClassRepository
+# baseline (NOT hardcoded literals: the expected values are READ FROM the class definition). The kit is surfaced
+# via result.metadata too. Asserts the recorded weapon/support/baseline_hp + the two passive-id references.
+func _start_with_each_playable_class_records_the_resolved_kit() -> void:
+	var class_repo: ClassRepository = ClassRepository.create_baseline_repository()
+	for class_id: StringName in PLAYABLE_CLASS_IDS:
+		var def: ClassDefinition = class_repo.get_class_definition(class_id)
+		assert_true(def != null and def.is_selectable(), "Fixture sanity: %s should resolve as a selectable class." % class_id)
+
+		var started: ActionResult = RunStartCommand.new(42, false, 1, class_id).execute(null)
+		assert_true(started.succeeded, "Starting a run with %s should succeed: %s" % [class_id, started.metadata])
+		var run: RunState = started.metadata.get("run") as RunState
+		assert_true(run != null, "A %s start should return the live RunState." % class_id)
+		# The applied kit is recorded on the RunState (domain state).
+		var kit: StartingKit = run.starting_kit
+		assert_true(kit != null, "AC1: a %s start must RECORD the applied StartingKit on the RunState." % class_id)
+		# Every kit field matches the RESOLVED class definition (read the def — not a hardcoded literal).
+		assert_equal(kit.class_id, class_id, "%s: the recorded kit class id must match." % class_id)
+		assert_equal(kit.weapon_id, def.starting_weapon_id, "%s: the recorded weapon must match the class definition's starting_weapon_id." % class_id)
+		assert_equal(kit.support_id, def.starting_support_id, "%s: the recorded support must match the class definition's starting_support_id." % class_id)
+		assert_equal(kit.baseline_hp, def.baseline_hp, "%s: the recorded baseline_hp must match the class definition." % class_id)
+		assert_equal(kit.class_passive_id, def.class_passive_id, "%s: the recorded class passive id must match (string-shape, verbatim)." % class_id)
+		assert_equal(kit.equipment_synergy_passive_id, def.equipment_synergy_passive_id, "%s: the recorded equipment-synergy passive id must match (string-shape, verbatim)." % class_id)
+		# The kit is surfaced via result metadata for the caller.
+		assert_true(started.metadata.has("kit"), "%s: the success metadata should surface the applied kit." % class_id)
+		assert_equal(String(started.metadata.get("weapon_id", "")), String(def.starting_weapon_id), "%s: the success metadata weapon_id should match." % class_id)
+		assert_equal(int(started.metadata.get("baseline_hp", -1)), def.baseline_hp, "%s: the success metadata baseline_hp should match." % class_id)
+		# Baseline-fact pin (cross-check the resolved baselines themselves, so a baseline drift is caught here).
+		match class_id:
+			&"warrior":
+				assert_equal(kit.weapon_id, &"sword", "Warrior's resolved kit weapon should be sword.")
+				assert_equal(kit.support_id, &"shield", "Warrior's resolved kit support should be shield.")
+				assert_equal(kit.baseline_hp, 18, "Warrior's baseline HP should be 18.")
+			&"pyromancer":
+				assert_equal(kit.weapon_id, &"staff", "Pyromancer's resolved kit weapon should be staff.")
+				assert_equal(kit.support_id, &"tome", "Pyromancer's resolved kit support should be tome.")
+				assert_equal(kit.baseline_hp, 18, "Pyromancer's baseline HP should be 18.")
+			&"ranger":
+				assert_equal(kit.weapon_id, &"bow", "Ranger's resolved kit weapon should be bow.")
+				assert_equal(kit.support_id, &"none", "Ranger's resolved kit support should be none (the real SUPPORT_NONE).")
+				assert_equal(kit.baseline_hp, 18, "Ranger's baseline HP should be 18.")
+
+
+# AC2 trap: Ranger's starting_support_id is &"none" (the real SUPPORT_NONE). It RESOLVES — the Ranger start must
+# SUCCEED and record support == none, NOT fail with unknown_starting_support.
+func _start_with_ranger_resolves_none_support_not_a_failure() -> void:
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"ranger")
+	# validate() must NOT reject Ranger (none resolves through SupportRepository).
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.succeeded, "Ranger's &\"none\" support MUST resolve — validate() must not reject it: %s" % validation.metadata)
+	var started: ActionResult = command.execute(null)
+	assert_true(started.succeeded, "A Ranger start must SUCCEED (none is a real support, not a missing item): %s" % started.metadata)
+	var run: RunState = started.metadata.get("run") as RunState
+	assert_equal(run.starting_kit.support_id, &"none", "Ranger's recorded support must be the real &\"none\" id (resolved, not skipped).")
+
+
+# AC2: a class whose starting_weapon_id does NOT resolve against WeaponRepository rejects fail-closed in BOTH
+# validate() and execute() with the stable unknown_starting_weapon code, ZERO events, NO run built, no partial
+# kit. The offending weapon id rides metadata. Uses a fixture class with a real lower_snake (so the class
+# validates) but non-existent weapon id, injected via a fixture ClassRepository.
+func _start_with_bogus_starting_weapon_rejects_fail_closed() -> void:
+	var class_repo: ClassRepository = _class_repo_with_bogus_kit(&"bogus_weapon_class", &"not_a_real_weapon", &"shield")
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"bogus_weapon_class", class_repo)
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC2: a missing starting weapon should be rejected by validate().")
+	assert_equal(validation.error_code, &"unknown_starting_weapon", "A missing starting weapon should use the stable unknown_starting_weapon code.")
+	assert_equal(String(validation.metadata.get("weapon_id", "")), "not_a_real_weapon", "The reject metadata should carry the offending weapon id.")
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC2: a missing starting weapon should be rejected by execute().")
+	assert_equal(started.error_code, &"unknown_starting_weapon", "execute() should reject a missing starting weapon with unknown_starting_weapon.")
+	assert_true(started.events.is_empty(), "A rejected missing-weapon start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC2: a rejected missing-weapon start must build NO run (no partial state).")
+	assert_false(started.metadata.has("kit"), "A rejected missing-weapon start must surface no kit.")
+
+
+# AC2: a class whose starting_support_id does NOT resolve against SupportRepository rejects fail-closed in BOTH
+# validate() and execute() with the stable unknown_starting_support code, ZERO events, NO run built. The
+# offending support id rides metadata. The weapon (sword) DOES resolve, so the support is the sole failure.
+func _start_with_bogus_starting_support_rejects_fail_closed() -> void:
+	var class_repo: ClassRepository = _class_repo_with_bogus_kit(&"bogus_support_class", &"sword", &"not_a_real_support")
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"bogus_support_class", class_repo)
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC2: a missing starting support should be rejected by validate().")
+	assert_equal(validation.error_code, &"unknown_starting_support", "A missing starting support should use the stable unknown_starting_support code.")
+	assert_equal(String(validation.metadata.get("support_id", "")), "not_a_real_support", "The reject metadata should carry the offending support id.")
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC2: a missing starting support should be rejected by execute().")
+	assert_equal(started.error_code, &"unknown_starting_support", "execute() should reject a missing starting support with unknown_starting_support.")
+	assert_true(started.events.is_empty(), "A rejected missing-support start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC2: a rejected missing-support start must build NO run (no partial state).")
+
+
+# AC1 back-compat: an EMPTY class start records NO kit (run.starting_kit == null) AND its run.to_dictionary() is
+# byte-identical to a seed-only start of the same seed (the kit/class add nothing for a legacy run). The 4.6
+# seed-only path stays exactly as it was.
+func _empty_class_start_records_no_kit_and_stays_byte_identical() -> void:
+	var empty_class: ActionResult = RunStartCommand.new(42, false, 1, &"").execute(null)
+	assert_true(empty_class.succeeded, "An empty-class start should succeed.")
+	var empty_run: RunState = empty_class.metadata.get("run") as RunState
+	assert_true(empty_run.starting_kit == null, "AC1 back-compat: an empty-class start must record NO kit (starting_kit == null).")
+	assert_false(empty_class.metadata.has("kit"), "An empty-class start must surface no kit metadata.")
+
+	var seed_only: ActionResult = RunStartCommand.new(42).execute(null)
+	var seed_only_run: RunState = seed_only.metadata.get("run") as RunState
+	assert_true(seed_only_run.starting_kit == null, "A seed-only start must record NO kit.")
+	# The full run dict is byte-identical between the seed-only and explicit-empty-class starts.
+	assert_equal(JSON.stringify(empty_run.to_dictionary()), JSON.stringify(seed_only_run.to_dictionary()), "An empty-class start must be byte-identical to a seed-only start (no kit, no class).")
+
+
+# AC3: the 5.2 fail-closed class gate is PRESERVED — a locked/unknown class still rejects BEFORE any kit
+# resolution (the reject is the class code, never a kit code; no kit is surfaced). This proves kit resolution
+# runs ONLY for a confirmed-selectable class.
+func _locked_and_unknown_class_reject_before_kit_resolution() -> void:
+	var locked: ActionResult = RunStartCommand.new(42, false, 1, &"necromancer").execute(null)
+	assert_true(locked.is_error(), "A locked class must still reject.")
+	assert_equal(locked.error_code, &"class_not_selectable", "A locked class rejects with class_not_selectable (BEFORE kit resolution).")
+	assert_false(locked.metadata.has("kit"), "A locked-class reject surfaces no kit (kit resolution never ran).")
+
+	var unknown: ActionResult = RunStartCommand.new(42, false, 1, &"does_not_exist").execute(null)
+	assert_true(unknown.is_error(), "An unknown class must still reject.")
+	assert_equal(unknown.error_code, &"unknown_class", "An unknown class rejects with unknown_class (BEFORE kit resolution).")
+	assert_false(unknown.metadata.has("kit"), "An unknown-class reject surfaces no kit (kit resolution never ran).")
+
+
+# AC3: a class start WITH a kit is deterministic — same inputs -> byte-identical run.to_dictionary() (incl. the
+# recorded starting_kit) + the same run_started event. The kit adds no RNG.
+func _start_with_kit_is_deterministic_for_same_inputs() -> void:
+	var first: ActionResult = RunStartCommand.new(777, false, 1, &"warrior").execute(null)
+	var second: ActionResult = RunStartCommand.new(777, false, 1, &"warrior").execute(null)
+	assert_true(first.succeeded and second.succeeded, "Both deterministic kit starts should succeed.")
+	var first_run: RunState = first.metadata.get("run") as RunState
+	var second_run: RunState = second.metadata.get("run") as RunState
+	assert_equal(JSON.stringify(first_run.to_dictionary()), JSON.stringify(second_run.to_dictionary()), "Same inputs (with a kit) must produce a byte-identical run.to_dictionary() incl. the recorded kit.")
+	assert_equal(JSON.stringify(first.events[0].to_dictionary()), JSON.stringify(second.events[0].to_dictionary()), "Same inputs (with a kit) must produce a byte-identical run_started event.")
+
+
+# AC1: the applied kit survives a full RunState.to_dictionary() -> try_from_dictionary round-trip (it rides the
+# FULL run dict lenient-read, the selected_class_id precedent), so a copied/round-tripped run preserves the kit.
+func _applied_kit_survives_run_to_dictionary_round_trip() -> void:
+	var started: ActionResult = RunStartCommand.new(42, false, 1, &"warrior").execute(null)
+	var run: RunState = started.metadata.get("run") as RunState
+	# Round-trip the full run dict through real JSON.
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	assert_true(round_trip is Dictionary, "The run dict (with a kit) must survive a JSON round-trip.")
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with a kit must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_true(restored.starting_kit != null, "The round-tripped run must preserve the applied kit.")
+	assert_equal(restored.starting_kit.weapon_id, run.starting_kit.weapon_id, "The round-tripped kit weapon must match.")
+	assert_equal(restored.starting_kit.baseline_hp, run.starting_kit.baseline_hp, "The round-tripped kit baseline_hp must match.")
+	assert_equal(restored.starting_kit.class_passive_id, run.starting_kit.class_passive_id, "The round-tripped kit class passive id must match.")
+	# A copy() also preserves the kit.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the applied kit byte-for-byte.")
+
+
+# ---- Story 5.3 fixture helpers -------------------------------------------------------------------
+
+# Build a fixture ClassRepository containing the five baseline classes PLUS one extra SELECTABLE class whose
+# starting_weapon_id / starting_support_id are the supplied ids. The ids must be lower_snake (so ClassDefinition
+# .validate() passes) but may be NON-EXISTENT weapon/support ids (so the kit gate fails closed). The baseline
+# WeaponRepository/SupportRepository are NOT modified — they are injected with defaults by RunStartCommand, so a
+# bogus kit id resolves to null there. No duplicate ids are registered (the duplicate-id trap stays untriggered).
+func _class_repo_with_bogus_kit(class_id: StringName, weapon_id: StringName, support_id: StringName) -> ClassRepository:
+	var repo: ClassRepository = ClassRepository.create_baseline_repository()
+	var fixture: ClassDefinition = ClassDefinition.new(
+		class_id,
+		"Fixture Class",
+		ClassDefinition.LOCK_STATE_SELECTABLE,
+		"",
+		weapon_id,
+		support_id,
+		18,
+		&"fixture_class_passive",
+		&"fixture_equip_synergy_passive"
+	)
+	var registered: ActionResult = repo.register_class(fixture)
+	assert_true(registered.succeeded, "Fixture class registration should succeed: %s" % registered.metadata)
+	return repo

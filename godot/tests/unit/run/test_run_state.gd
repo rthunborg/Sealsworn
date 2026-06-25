@@ -6,6 +6,7 @@ const RouteNode = preload("res://scripts/run/route_node.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
+const StartingKit = preload("res://scripts/run/starting_kit.gd")
 
 func run() -> Dictionary:
 	_new_run_initializes_ac1_fields()
@@ -21,6 +22,10 @@ func run() -> Dictionary:
 	_top_level_current_node_pointer_is_honored_on_resume()
 	_phaseless_route_payload_resumes_as_new_run()
 	_run_snapshot_no_surprise_key_gate_stays_green()
+	# Story 5.3 — the applied kit + the nested class-id in the snapshot bridge.
+	_kit_less_run_validates_and_round_trips_with_null_kit()
+	_run_with_kit_round_trips_through_dictionary_and_copy()
+	_selected_class_id_nests_in_the_snapshot_bridge_and_round_trips()
 	return result()
 
 
@@ -332,6 +337,83 @@ func _run_snapshot_no_surprise_key_gate_stays_green() -> void:
 	var allowed: Dictionary = _allowed_run_snapshot_keys()
 	for key: Variant in data.keys():
 		assert_true(allowed.has(key), "Composing run state must not add a surprise top-level RunSnapshot key (%s)." % str(key))
+
+
+# Story 5.3: a run with NO kit (the legacy/empty-class path) still validates AND round-trips with a null kit
+# through the full run dict (the additive kit field is lenient — absent/null -> null).
+func _kit_less_run_validates_and_round_trips_with_null_kit() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	assert_true(run.starting_kit == null, "A new run has no kit by default.")
+	assert_true(run.validate().succeeded, "A kit-less run must validate (the kit is not a required field).")
+	# Full run dict carries null for the kit; a round-trip preserves null.
+	var data: Dictionary = run.to_dictionary()
+	assert_equal(data.get("starting_kit"), null, "A kit-less run serializes starting_kit as null.")
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(data))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A kit-less run dict must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_true(restored.starting_kit == null, "A round-tripped kit-less run must keep a null kit.")
+	# A pre-5.3 run dict (no starting_kit key at all) also parses with a null kit.
+	var legacy_dict: Dictionary = run.to_dictionary()
+	legacy_dict.erase("starting_kit")
+	var legacy_parsed: ActionResult = RunState.try_from_dictionary(legacy_dict)
+	assert_true(legacy_parsed.succeeded, "A pre-5.3 run dict (no starting_kit key) must parse: %s" % legacy_parsed.metadata)
+	assert_true((legacy_parsed.metadata.get("run_state") as RunState).starting_kit == null, "A pre-5.3 run dict restores a null kit.")
+
+
+# Story 5.3: a run WITH a kit round-trips through to_dictionary()/try_from_dictionary (lenient) and copy()
+# preserves the kit byte-for-byte.
+func _run_with_kit_round_trips_through_dictionary_and_copy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.selected_class_id = &"warrior"
+	run.starting_kit = StartingKit.new(&"warrior", &"sword", &"shield", 18, &"warrior_unbreakable_guard", &"warrior_blade_and_board")
+	assert_true(run.validate().succeeded, "A run with a kit must validate.")
+	# Round-trip the full run dict.
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with a kit must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_true(restored.starting_kit != null, "The round-tripped run must preserve the kit.")
+	assert_equal(restored.starting_kit.weapon_id, &"sword", "The round-tripped kit weapon must match.")
+	assert_equal(restored.starting_kit.support_id, &"shield", "The round-tripped kit support must match.")
+	assert_equal(restored.starting_kit.baseline_hp, 18, "The round-tripped kit baseline_hp must match.")
+	assert_equal(restored.selected_class_id, &"warrior", "The round-tripped run must preserve the class id.")
+	# copy() preserves the kit byte-for-byte.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the kit byte-for-byte.")
+	# The copy is a distinct kit instance (deep copy, not a shared reference).
+	assert_true(copied.starting_kit != run.starting_kit, "copy() must produce a distinct kit instance.")
+
+
+# Story 5.3: selected_class_id NESTS inside the route_state payload of to_run_snapshot_fields() and round-trips
+# back through try_from_run_snapshot_fields() — WITHOUT adding a top-level RunSnapshot key. A payload with no
+# nested class key restores with the legacy empty default.
+func _selected_class_id_nests_in_the_snapshot_bridge_and_round_trips() -> void:
+	var run: RunState = RunState.new_run(2026, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.selected_class_id = &"ranger"
+
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	var route_state: Dictionary = fields.get("route_state")
+	# The class id is nested INSIDE route_state (the same mechanism as run_phase), NOT a top-level field.
+	assert_equal(route_state.get(String(RunState.SELECTED_CLASS_ID_KEY)), "ranger", "selected_class_id must nest inside the route_state payload.")
+	assert_false(fields.has(String(RunState.SELECTED_CLASS_ID_KEY)), "selected_class_id must NOT be a top-level snapshot field.")
+
+	# Round-trip back: the nested class id rehydrates.
+	var rebuilt: ActionResult = RunState.try_from_run_snapshot_fields(fields)
+	assert_true(rebuilt.succeeded, "A class-carrying snapshot bridge must reconstruct: %s" % rebuilt.metadata)
+	assert_equal((rebuilt.metadata.get("run_state") as RunState).selected_class_id, &"ranger", "The nested class id must rehydrate through the snapshot bridge.")
+
+	# A payload with NO nested class key restores with the legacy empty default (&"").
+	var legacy_fields: Dictionary = run.to_run_snapshot_fields()
+	var legacy_route_state: Dictionary = legacy_fields.get("route_state")
+	legacy_route_state.erase(String(RunState.SELECTED_CLASS_ID_KEY))
+	legacy_fields["route_state"] = legacy_route_state
+	var legacy_rebuilt: ActionResult = RunState.try_from_run_snapshot_fields(legacy_fields)
+	assert_true(legacy_rebuilt.succeeded, "A pre-5.3 snapshot bridge (no nested class key) must reconstruct: %s" % legacy_rebuilt.metadata)
+	assert_equal((legacy_rebuilt.metadata.get("run_state") as RunState).selected_class_id, &"", "A pre-5.3 bridge restores the legacy empty class default.")
 
 
 func _allowed_run_snapshot_keys() -> Dictionary:

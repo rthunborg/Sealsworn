@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-25T18:30:00+00:00
+# last_updated: 2026-06-25T21:00:00+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -39,7 +39,7 @@
 # - Epic 3, Epic 4, and Epic 5 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-25T18:30:00+00:00
+last_updated: 2026-06-25T21:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -93,7 +93,7 @@ development_status:
   epic-5: in-progress
   5-1-class-definition-content-and-repository: done
   5-2-hero-select-with-playable-and-locked-classes: done
-  5-3-starting-kit-application: ready-for-dev
+  5-3-starting-kit-application: review
   5-4-starting-passive-rule-integration: backlog
   5-5-class-start-playable-smoke-slice: backlog
   epic-5-retrospective: optional
