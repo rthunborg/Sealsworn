@@ -5,7 +5,7 @@ source_story_key: 5-3-starting-kit-application
 
 # Story 5.3: Starting Kit Application
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
