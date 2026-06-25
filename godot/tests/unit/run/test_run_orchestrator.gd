@@ -33,7 +33,47 @@ const RUN_SEEDS: Array[int] = [1, 7, 42, 2026, 13, 99, 314, 777]
 func run() -> Dictionary:
 	_orchestrated_run_reaches_completed_for_every_seed()
 	_orchestrated_run_is_fully_deterministic()
+	# Story 5.2 — the confirm-path seam: RunOrchestrator.start threads the chosen class into RunStartCommand.
+	_start_with_selectable_class_records_it_on_the_seated_run()
+	_start_with_locked_class_surfaces_command_error_and_seats_no_run()
 	return result()
+
+
+# Story 5.2 (confirm-path option b — direct orchestrator entry): RunOrchestrator.start(seed, is_manual,
+# class_id) threads the chosen class into RunStartCommand, so the seated run RECORDS the selected class and is
+# otherwise an ordinary started run (ACTIVE_ROUTE on the depth-0 combat node, validate() green).
+func _start_with_selectable_class_records_it_on_the_seated_run() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	var start: ActionResult = orchestrator.start(42, false, &"warrior")
+	assert_true(start.succeeded, "Starting a run with a selectable class should succeed: %s" % start.metadata)
+	var run: RunState = orchestrator.run
+	assert_true(run != null, "A class run start should seat the live RunState on the orchestrator.")
+	assert_equal(run.selected_class_id, &"warrior", "The seated run must RECORD the chosen class id.")
+	assert_equal(run.phase, RunState.PHASE_ACTIVE_ROUTE, "A class run start should be in ACTIVE_ROUTE.")
+	assert_true(run.validate().succeeded, "A class run start should validate.")
+	# The orchestrator drives the class run start-to-end exactly like a seed-only run (the class records only
+	# a field; it does not alter dispatch or completion).
+	var completion: ActionResult = orchestrator.run_to_completion()
+	assert_true(completion.succeeded, "A class run should drive to completion like a seed-only run: %s" % completion.metadata)
+	assert_true(orchestrator.run.is_terminal(), "A class run should reach a terminal phase.")
+	assert_equal(orchestrator.run.selected_class_id, &"warrior", "The class id must persist on the run through completion.")
+
+
+# Story 5.2 AC2 (confirm-path option b): RunOrchestrator.start with a LOCKED class surfaces the command's
+# class_not_selectable error VERBATIM and seats NO run (the orchestrator stays unseeded — no run can start
+# with the locked class even through the orchestrator entry).
+func _start_with_locked_class_surfaces_command_error_and_seats_no_run() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	var start: ActionResult = orchestrator.start(42, false, &"necromancer")
+	assert_true(start.is_error(), "AC2: starting through the orchestrator with a locked class must fail.")
+	assert_equal(start.error_code, &"class_not_selectable", "The orchestrator must surface the command's class_not_selectable code verbatim.")
+	assert_true(orchestrator.run == null, "AC2: a rejected locked-class start must seat NO run on the orchestrator.")
+	# An unknown class likewise surfaces the command's unknown_class code with no run seated.
+	var unknown_orchestrator: RunOrchestrator = RunOrchestrator.new()
+	var unknown_start: ActionResult = unknown_orchestrator.start(42, false, &"does_not_exist")
+	assert_true(unknown_start.is_error(), "AC2: starting through the orchestrator with an unknown class must fail.")
+	assert_equal(unknown_start.error_code, &"unknown_class", "The orchestrator must surface the command's unknown_class code verbatim.")
+	assert_true(unknown_orchestrator.run == null, "AC2: a rejected unknown-class start must seat NO run on the orchestrator.")
 
 
 # An instrumented start-to-completion drive that asserts the per-boundary invariants the production

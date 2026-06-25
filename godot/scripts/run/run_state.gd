@@ -37,19 +37,29 @@ var root_seed: int = 0
 var is_manual_seed: bool = false
 var meta_progression_eligible: bool = true
 var route: RouteState = null
+# The selected hero class id (Story 5.2). An ADDITIVE live-run field: default &"" is a legacy "no class
+# chosen" run (still valid — RunStartCommand's empty-class back-compat path). RunStartCommand records it
+# AFTER new_run() when the hero-select confirm path supplies a selectable class. It is DELIBERATELY NOT a
+# required validate() field (an empty class is a valid run) and DELIBERATELY NOT in to_run_snapshot_fields()
+# / the route-position save this story (Option A — the pinned 23-key RunSnapshot gate stays green untouched;
+# Story 5.3 owns class persistence alongside the derived kit). It rides to_dictionary()/try_from_dictionary
+# (the FULL run dict, NOT the 23-key snapshot) lenient-read so copied/round-tripped runs preserve the class.
+var selected_class_id: StringName = &""
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
 	new_root_seed: int = 0,
 	new_is_manual_seed: bool = false,
 	new_meta_progression_eligible: bool = true,
-	new_route: RouteState = null
+	new_route: RouteState = null,
+	new_selected_class_id: StringName = &""
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
 	is_manual_seed = new_is_manual_seed
 	meta_progression_eligible = new_meta_progression_eligible
 	route = new_route if new_route != null else load("res://scripts/run/route_state.gd").new()
+	selected_class_id = new_selected_class_id
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -130,7 +140,11 @@ func to_dictionary() -> Dictionary:
 		"root_seed": str(root_seed),
 		"is_manual_seed": is_manual_seed,
 		"meta_progression_eligible": meta_progression_eligible,
-		"route": _route_or_new().to_dictionary()
+		"route": _route_or_new().to_dictionary(),
+		# Story 5.2: the selected class id rides the FULL run dict (NOT the 23-key RunSnapshot). It is a small
+		# lower_snake StringName, serialized as a plain String. try_from_dictionary reads it back leniently
+		# (defaults &"" when absent) so every pre-5.2 run dict still parses.
+		"selected_class_id": String(selected_class_id)
 	}
 
 
@@ -140,7 +154,8 @@ func copy() -> RunState:
 		root_seed,
 		is_manual_seed,
 		meta_progression_eligible,
-		_route_or_new().copy()
+		_route_or_new().copy(),
+		selected_class_id
 	)
 
 
@@ -195,7 +210,9 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		_int64_or_zero(_field(data, &"root_seed")),
 		bool(_field(data, &"is_manual_seed")),
 		bool(_field(data, &"meta_progression_eligible")),
-		parsed_route
+		parsed_route,
+		# Lenient: a pre-5.2 run dict has no selected_class_id key -> default &"" (legacy no-class run).
+		_string_name_or_empty(_field(data, &"selected_class_id") if _has_field(data, &"selected_class_id") else &"")
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -330,6 +347,16 @@ static func _int64_or_zero(value: Variant) -> int:
 			return 0
 		_:
 			return 0
+
+
+# Lenient StringName decode for the additive selected_class_id field: accept a String/StringName, default
+# &"" for anything else (a missing/absent/non-string value resolves to the legacy no-class run).
+static func _string_name_or_empty(value: Variant) -> StringName:
+	if value is StringName:
+		return value
+	if value is String:
+		return StringName(value)
+	return &""
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:

@@ -23,6 +23,16 @@ extends "res://scripts/core/commands/game_command.gd"
 # REJECTED for the event-emitting path: an emitting action must be a GameCommand returning ActionResult so
 # run_started rides the same validate/execute/no-mutation/result contract as every other event.
 #
+# STORY 5.2 EXTENSION — start a run WITH a selected hero class: the constructor gained an OPTIONAL trailing
+# class_id (default &"" = the legacy "no class chosen" back-compat run) + an injected ClassRepository (default
+# baseline). When class_id is non-empty, validate() resolves it through the repository and REJECTS fail-closed
+# on an unknown id (unknown_class) or a locked/non-selectable class (class_not_selectable) BEFORE building any
+# RunState (AC2). On success execute() RECORDS run.selected_class_id (AC3 — the class arrives at
+# NEW_RUN -> ACTIVE_ROUTE as DOMAIN state) and surfaces the id via result.metadata; the run_started event
+# payload is UNCHANGED. The class does NOT apply the starting kit (equip/HP/passive seating is Story 5.3) and
+# does NOT alter route generation, the event schema, or determinism — an empty-class start stays byte-identical
+# to today's start.
+#
 # WHAT THIS IS NOT (scope boundaries):
 #   - It does NOT change RouteGenerator / the `map` stream / the route fingerprints (it CONSUMES generation).
 #   - It does NOT run LevelGenerator (that is the orchestrator's combat-node concern, Story 4.6 Task 3).
@@ -34,6 +44,8 @@ extends "res://scripts/core/commands/game_command.gd"
 # RouteGenerator.generate (the `map` stream); it touches no other stream directly.
 
 # ActionResult is already declared on the GameCommand parent (inherited here); do not redeclare it.
+const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
+const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RouteGenerator = preload("res://scripts/generation/route/route_generator.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
@@ -42,12 +54,31 @@ const RunState = preload("res://scripts/run/run_state.gd")
 var root_seed: int = 0
 var is_manual_seed: bool = false
 var sequence_id: int = 1
+# Story 5.2: the chosen hero class id (the hero-select confirm path supplies it). OPTIONAL, defaulting to
+# &"" — an EMPTY class id is the BACK-COMPAT "no class chosen" run (the Story-4.6 seed-only start path + all
+# 4.6 tests rely on this; an empty class is NOT a validation failure). It is the LAST positional constructor
+# arg so every existing .new(seed) / .new(seed, is_manual) / .new(seed, is_manual, sequence_id) call is
+# untouched. When NON-empty it is resolved through _class_repository in validate() and rejected fail-closed
+# on unknown/locked BEFORE any RunState is built (AC2 — "no run can start with the locked class").
+var class_id: StringName = &""
+# Story 5.2: the class content repository, INJECTED (mirroring RunOrchestrator's repository injection),
+# defaulting to the baseline repository. Only consulted when class_id is non-empty. Constructor-injected (not
+# an autoload / global) so tests can supply a fixture repository.
+var _class_repository: ClassRepository = null
 
-func _init(new_root_seed: int = 0, new_is_manual_seed: bool = false, new_sequence_id: int = 1) -> void:
+func _init(
+	new_root_seed: int = 0,
+	new_is_manual_seed: bool = false,
+	new_sequence_id: int = 1,
+	new_class_id: StringName = &"",
+	new_class_repository: ClassRepository = null
+) -> void:
 	command_id = &"run_start"
 	root_seed = new_root_seed
 	is_manual_seed = new_is_manual_seed
 	sequence_id = new_sequence_id
+	class_id = new_class_id
+	_class_repository = new_class_repository if new_class_repository != null else ClassRepository.create_baseline_repository()
 
 
 # Pure read: validate the sequence id and the seed. No mutation, no event, no RNG. Option-A context: the
@@ -70,6 +101,28 @@ func validate(_state: Variant) -> ActionResult:
 			"command": String(command_id),
 			"root_seed": root_seed
 		})
+	# Story 5.2 class gate (AC2): resolve a NON-empty class id through the injected ClassRepository and fail
+	# CLOSED before building any RunState. An EMPTY class id SKIPS the gate (the back-compat "no class chosen"
+	# run — the orchestrator's seed-only start + every 4.6 test rely on this; an empty class is NOT a failure).
+	# This is a PURE read (no mutation, no event, no RNG) so execute() short-circuits on it, mirroring the
+	# sequence_id / root_seed gates above. The error code stays lower_snake; the offending class id rides
+	# metadata (a class id is already lower_snake, but never embed it in the code).
+	if not class_id.is_empty():
+		var def: ClassDefinition = _class_repository.get_class_definition(class_id)
+		if def == null:
+			# Unknown id (not registered in the repository) — fail closed.
+			return ActionResult.error(&"unknown_class", {
+				"command": String(command_id),
+				"class_id": String(class_id)
+			})
+		if not def.is_selectable():
+			# Resolves but is a LOCKED/non-selectable future class — fail closed ("no run can start with the
+			# locked class").
+			return ActionResult.error(&"class_not_selectable", {
+				"command": String(command_id),
+				"class_id": String(class_id),
+				"lock_state": String(def.lock_state)
+			})
 	return ActionResult.ok()
 
 
@@ -124,6 +177,13 @@ func execute(_state: Variant) -> ActionResult:
 			"inner_error_code": String(transition.error_code)
 		})
 
+	# Story 5.2 (AC3): RECORD the selected class on the started run so it is DOMAIN state (not UI-only). Set
+	# AFTER new_run() + the start-pointer set + the NEW_RUN -> ACTIVE_ROUTE transition (the "set after new_run,
+	# build event after transition" ordering). validate() already rejected an unknown/locked class, so by here
+	# class_id is empty (legacy run) or a confirmed-selectable id. This DOES NOT apply the kit (equip/HP/passive
+	# seating is Story 5.3) — it only records the id. An empty class id records &"" (legacy no-class run).
+	run.selected_class_id = class_id
+
 	# (5) Build the single run_started event AFTER the transition. node_count is the route's NON-BOSS count
 	# (bounded [8, 12], RouteGenerator.PAYLOAD_NODE_COUNT_KEY / metadata.node_count) — a small bounded count,
 	# carried as a raw integer (NOT decimal-string encoded; it is a count, not a seed). root_seed is decimal-
@@ -139,5 +199,10 @@ func execute(_state: Variant) -> ActionResult:
 		"run": run,
 		"node_count": non_boss_count,
 		"root_seed": root_seed,
-		"is_manual_seed": is_manual_seed
+		"is_manual_seed": is_manual_seed,
+		# Story 5.2: surface the chosen class id to the caller via metadata ONLY (the run_started event PAYLOAD
+		# stays unchanged — root_seed/is_manual_seed/node_count — keeping the event schema stable). An empty
+		# class id surfaces "" (legacy run). A downstream story that needs the class IN the event appends it
+		# deliberately as a SYSTEM-event field; 5.2 does not.
+		"class_id": String(class_id)
 	})
