@@ -2,10 +2,10 @@ story_key: 5-2-hero-select-with-playable-and-locked-classes
 epic_num: 5
 story_num: 2
 branch: story/5-2-hero-select-with-playable-and-locked-classes
-status: in-progress
-updated_at: "2026-06-25T16:11:07Z"
+status: done
+updated_at: "2026-06-25T16:11:59Z"
 started_at: "2026-06-25T15:38:52Z"
-completed_at: null
+completed_at: "2026-06-25T16:11:59Z"
 active_seconds: 1900
 is_first_in_epic: false
 is_last_in_epic: false
@@ -22,7 +22,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 5
-completed_phases: [0, 1, 3, 5, 7]
+completed_phases: [0, 1, 3, 5, 7, 9]
 code_review_iterations: 1
 code_review_loop_done: true
 external_review_iterations: 0
@@ -30,7 +30,7 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["2451af5", "23deed3", "bbe36aa"]
+commits: ["2451af5", "23deed3", "bbe36aa", "3e2c9e0", "c96b8fc"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

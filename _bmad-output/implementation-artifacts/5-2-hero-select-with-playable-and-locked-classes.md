@@ -6,7 +6,7 @@ baseline_commit: 2451af5
 
 # Story 5.2: Hero Select with Playable and Locked Classes
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
