@@ -987,14 +987,54 @@ static func _has_bool_payload(payload_value: Dictionary, field_name: StringName)
 	return payload_value.has(String(field_name)) and typeof(payload_value.get(String(field_name))) == TYPE_BOOL
 
 
-# A field carried as a decimal-string-encoded integer (the int64-safe wire form for seeds).
+# A field carried as a decimal-string-encoded integer (the int64-safe wire form for seeds). Used ONLY by
+# _validate_run_started_payload for run_started.root_seed (grep-confirmed single caller), so tightening it
+# regresses no other event. Beyond accepting a String/StringName that is_valid_int(), it now ALSO enforces
+# the int64 lossless round-trip (the Story 3.7 idiom ported from ManualSeedLoader): String.to_int() saturates
+# an over-max-int64 string to max-int64 and WRAPS a max-int64+1 string into the negative range, so an
+# out-of-int64-range decimal string would otherwise pass is_valid_int() yet silently map to a wrong value.
+# Requiring _canonical_decimal_string(text) == str(text.to_int()) REJECTS such a hand-edited/foreign payload
+# while still accepting the benign representational differences is_valid_int() tolerates (a leading "+",
+# surplus leading zeros, a signed zero). The live emit path encodes root_seed via str(run.root_seed) (always
+# in-range), so this hardens the VALIDATOR against malformed payloads without changing any emitted event.
 static func _has_decimal_string_payload(payload_value: Dictionary, field_name: StringName) -> bool:
 	if not payload_value.has(String(field_name)):
 		return false
 	var value: Variant = payload_value.get(String(field_name))
 	if not (value is String or value is StringName):
 		return false
-	return String(value).is_valid_int()
+	var text: String = String(value)
+	if not text.is_valid_int():
+		return false
+	return _decimal_string_round_trips_losslessly(text, text.to_int())
+
+
+# Int64-string lossless check (ported as a static helper from ManualSeedLoader._decimal_string_round_trips_
+# losslessly, kept LOCAL to domain_event.gd to avoid a new cross-script dependency — _has_decimal_string_
+# payload is static so the port must be static too). Did String.to_int() preserve the full magnitude of the
+# is_valid_int-accepted decimal string `text`? Compare a canonicalized form of the input to str(parsed_value):
+# a mismatch means the value did not round-trip (out of int64 range) and must be rejected.
+static func _decimal_string_round_trips_losslessly(text: String, parsed_value: int) -> bool:
+	return _canonical_decimal_string(text) == str(parsed_value)
+
+
+# Canonicalize an is_valid_int-accepted decimal string to the same form str(int) produces: drop a single
+# leading "+"/"-" sign, strip surplus leading zeros (keep one digit), and treat "-0"/"+0"/"0" as "0". Ported
+# (static) from ManualSeedLoader._canonical_decimal_string.
+static func _canonical_decimal_string(text: String) -> String:
+	var sign_prefix: String = ""
+	var body: String = text
+	if body.begins_with("+"):
+		body = body.substr(1)
+	elif body.begins_with("-"):
+		sign_prefix = "-"
+		body = body.substr(1)
+	while body.length() > 1 and body.begins_with("0"):
+		body = body.substr(1)
+	if body == "0":
+		# A signed zero ("-0"/"+0") and "0" all canonicalize to the unsigned "0" str(0) produces.
+		sign_prefix = ""
+	return sign_prefix + body
 
 
 static func _has_positive_integral_payload(payload_value: Dictionary, field_name: StringName) -> bool:

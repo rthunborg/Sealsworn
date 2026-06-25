@@ -94,6 +94,52 @@ func _run_started_serializes_and_parses_stable_payload() -> void:
 	assert_true(numeric_seed.is_error(), "Run-started with a raw-int root_seed should be rejected.")
 	assert_equal(numeric_seed.metadata.get("field"), "root_seed", "Run-started should require the decimal-string root_seed form.")
 
+	# Story 4.6 (closes the 4.1 Round-2 _has_decimal_string_payload loose-is_valid_int() defer): an OUT-OF-
+	# int64-range decimal-string root_seed must now be REJECTED with the stable invalid_event_payload + field:
+	# root_seed (it passes is_valid_int() but String.to_int() saturates/wraps it, so it does not round-trip).
+	# max-int64+1 (wraps to negative) and an over-2^64 string (saturates to max-int64) are both rejected.
+	for out_of_range_seed: String in ["9223372036854775808", "99999999999999999999"]:
+		var oversize: ActionResult = DomainEvent.try_from_dictionary({
+			"event_id": "run_started",
+			"sequence_id": 1,
+			"actor_id": "",
+			"payload": {
+				"root_seed": out_of_range_seed,
+				"is_manual_seed": false,
+				"node_count": 9
+			}
+		})
+		assert_true(oversize.is_error(), "Run-started with an out-of-int64-range root_seed (%s) should be rejected (lossless round-trip)." % out_of_range_seed)
+		assert_equal(oversize.error_code, &"invalid_event_payload", "An out-of-range root_seed should use the stable invalid_event_payload code (%s)." % out_of_range_seed)
+		assert_equal(oversize.metadata.get("field"), "root_seed", "An out-of-range root_seed rejection should name the root_seed field (%s)." % out_of_range_seed)
+
+	# The max-int64 value ITSELF (the largest in-range seed) must STILL round-trip (the lossless tighten must
+	# not over-reject the boundary).
+	var max_int64_seed: DomainEvent = DomainEvent.run_started(1, {
+		"root_seed": "9223372036854775807",
+		"is_manual_seed": false,
+		"node_count": 12
+	})
+	var max_round_trip: Variant = JSON.parse_string(JSON.stringify(max_int64_seed.to_dictionary()))
+	var max_parse: ActionResult = DomainEvent.try_from_dictionary(max_round_trip)
+	assert_true(max_parse.succeeded, "Run-started with the max-int64 root_seed must still parse (the lossless tighten must not over-reject the boundary): %s" % max_parse.metadata)
+
+	# node_count bounded-disposition check (closes the 4.1 Round-1 node_count raw-JSON-number defer as
+	# permanently benign): the run_started payload carries node_count as a raw JSON integer (NOT decimal-string
+	# encoded) and the validator accepts the MVP route's bounded [8, 12] non-boss count. node_count is a small
+	# bounded count, never a seed, so it correctly stays a raw number; the run-start command pins the [8, 12]
+	# bound across seeds (see test_run_start_command.gd).
+	for bounded_count: int in [8, 12]:
+		var counted: DomainEvent = DomainEvent.run_started(1, {
+			"root_seed": "42",
+			"is_manual_seed": false,
+			"node_count": bounded_count
+		})
+		var counted_round_trip: Variant = JSON.parse_string(JSON.stringify(counted.to_dictionary()))
+		var counted_parse: ActionResult = DomainEvent.try_from_dictionary(counted_round_trip)
+		assert_true(counted_parse.succeeded, "Run-started with a bounded node_count (%d) must parse." % bounded_count)
+		assert_equal((counted_parse.metadata.get("event") as DomainEvent).payload.get("node_count"), bounded_count, "node_count must round-trip as a raw integer (%d)." % bounded_count)
+
 
 func _route_advanced_serializes_and_parses_stable_payload() -> void:
 	# Story 4.3: a route-advanced SYSTEM event (no actor). Node ids carry hyphens, so they are plain

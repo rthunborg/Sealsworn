@@ -31,3 +31,21 @@ func autosave_between_level(snapshot: RunSnapshot, save_path: String = SaveRepos
 # structured ActionResult is returned UNCHANGED for a recovery flow / presenter to consume.
 func resume_run(save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> ActionResult:
 	return RunResumeService.new().resume(save_path)
+
+
+# Between-NODE route-position autosave entry point (Story 4.6). Thin delegation to the repository's atomic
+# write, mirroring autosave_between_level — returns the repository's structured ActionResult UNCHANGED. This
+# autoload owns no snapshot schema policy and no composition logic: the caller composes the board-free
+# route-position RunSnapshot (see RunSnapshot.from_route_position / RunOrchestrator.compose_route_position_
+# snapshot) and this method only persists it. The route-position save and the between-level save share the
+# SAME run-autosave file + the SAME atomic writer (a route-position save simply has an empty level_state).
+func autosave_route_position(snapshot: RunSnapshot, save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> ActionResult:
+	return repository.write_run_snapshot(snapshot, save_path)
+
+
+# Between-NODE route-position resume entry point (Story 4.6). Thin delegation to RunResumeService.resume_
+# route_position, which rebuilds the RunState + run-level RngStreamSet from a board-free route-position save
+# (no embedded tactical snapshot required) and returns them on success or the first structured error (no
+# partial state) on failure. This autoload owns no restore/composition logic and no schema policy.
+func resume_route_position(save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> ActionResult:
+	return RunResumeService.new().resume_route_position(save_path)
