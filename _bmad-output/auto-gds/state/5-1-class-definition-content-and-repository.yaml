@@ -3,10 +3,10 @@ epic_num: 5
 story_num: 1
 branch: story/5-1-class-definition-content-and-repository
 status: in-progress
-updated_at: "2026-06-25T13:07:39Z"
+updated_at: "2026-06-25T13:17:45Z"
 started_at: "2026-06-25T12:47:35Z"
 completed_at: null
-active_seconds: 1180
+active_seconds: 1640
 is_first_in_epic: true
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 5
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["1497b9a", "5e9ee2f"]
+commits: ["1497b9a", "5e9ee2f", "b67764e"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -40,7 +40,10 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "Decision 1: locked classes accept a malformed starting kit — validate() only constrains unlock_hint on the locked branch. Keep v0 parity (recommended) vs tighten locked branch."
+  - "Decision 2: register_class duplicate-id is silent last-write-wins (parity with all 4 sibling repos). Keep parity (recommended) vs add duplicate_class rejection in a cross-cutting hardening story."
+  - "Decision 3: accessor get_class -> get_class_definition rename is mandatory (reserved native Object.get_class collision). Ratify and confirm 5.2/5.3 story text uses the new accessor."
 deferred_work: []
 blockers: []
 overrides: {}
