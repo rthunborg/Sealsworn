@@ -20,6 +20,10 @@ func run() -> Dictionary:
 	_run_completed_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
+	_reward_offered_serializes_and_parses_stable_payload()
+	_reward_offered_rejects_malformed_payloads()
+	_reward_resolved_serializes_and_parses_stable_payload()
+	_reward_resolved_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -812,6 +816,141 @@ func _item_gained_rejects_malformed_payloads() -> void:
 	assert_equal(bad_index.metadata.get("field"), "slot_index", "item_gained should require a non-negative slot_index.")
 
 
+func _reward_offered_serializes_and_parses_stable_payload() -> void:
+	# Story 6.3 (AC1): a reward_offered SYSTEM event (no actor) — a deterministic reward-offer record. table_id +
+	# each offered entry's category/content_id are Story-6.1 content ids (lower_snake, NO hyphens); the category
+	# allowlist adds gold/passive; roll + draw_index are non-negative integral; offered_entries is a non-empty list.
+	var event: DomainEvent = DomainEvent.reward_offered(7, {
+		"table_id": "standard_combat_reward",
+		"offered_entries": [
+			{"category": "weapon", "content_id": "sword"},
+			{"category": "gold", "content_id": "small_gold_purse"}
+		],
+		"roll": 3,
+		"draw_index": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "reward_offered", "reward_offered should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "reward_offered is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "reward_offered should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.REWARD_OFFERED, "reward_offered should parse back to REWARD_OFFERED.")
+	assert_equal(restored.payload.get("table_id"), "standard_combat_reward", "The table_id must survive a JSON round-trip.")
+	assert_equal((restored.payload.get("offered_entries") as Array).size(), 2, "The offered_entries must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("roll"), 3, "The roll must survive a JSON round-trip.")
+	# The passive category is accepted (the reward allowlist is broader than the backpack allowlist).
+	var passive_offer: ActionResult = DomainEvent.try_from_dictionary(DomainEvent.reward_offered(1, {
+		"table_id": "passive_reward_choice",
+		"offered_entries": [{"category": "passive", "content_id": "warrior_unbreakable_guard"}],
+		"roll": 0, "draw_index": 0
+	}).to_dictionary())
+	assert_true(passive_offer.succeeded, "reward_offered should accept a passive offered entry (the reward allowlist adds passive).")
+
+
+func _reward_offered_rejects_malformed_payloads() -> void:
+	# A missing/hyphenated table_id is rejected.
+	var bad_table: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "not-snake", "offered_entries": [{"category": "weapon", "content_id": "sword"}], "roll": 0, "draw_index": 0}
+	})
+	assert_true(bad_table.is_error(), "reward_offered with a hyphenated table_id should be rejected.")
+	assert_equal(bad_table.error_code, &"invalid_event_payload", "Malformed reward_offered should use the stable code.")
+	assert_equal(bad_table.metadata.get("field"), "table_id", "reward_offered should name the table_id field.")
+
+	# An EMPTY offered_entries list is rejected.
+	var empty_entries: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "offered_entries": [], "roll": 0, "draw_index": 0}
+	})
+	assert_true(empty_entries.is_error(), "reward_offered with an empty offered_entries list should be rejected.")
+	assert_equal(empty_entries.metadata.get("field"), "offered_entries", "reward_offered should name the offered_entries field.")
+
+	# An OFF-allowlist category in an offered entry is rejected.
+	var bad_category: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "offered_entries": [{"category": "relic", "content_id": "sword"}], "roll": 0, "draw_index": 0}
+	})
+	assert_true(bad_category.is_error(), "reward_offered with an off-allowlist entry category should be rejected.")
+	assert_equal(bad_category.metadata.get("field"), "offered_entries", "reward_offered should pin entry categories to the allowlist.")
+
+	# A non-lower_snake content_id in an offered entry is rejected.
+	var bad_content: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "offered_entries": [{"category": "weapon", "content_id": "Sword"}], "roll": 0, "draw_index": 0}
+	})
+	assert_true(bad_content.is_error(), "reward_offered with a non-lower_snake entry content_id should be rejected.")
+	assert_equal(bad_content.metadata.get("field"), "offered_entries", "reward_offered should reject a non-lower_snake entry content_id.")
+
+	# A negative roll is rejected.
+	var bad_roll: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "offered_entries": [{"category": "weapon", "content_id": "sword"}], "roll": -1, "draw_index": 0}
+	})
+	assert_true(bad_roll.is_error(), "reward_offered with a negative roll should be rejected.")
+	assert_equal(bad_roll.metadata.get("field"), "roll", "reward_offered should require a non-negative roll.")
+
+	# A negative draw_index is rejected.
+	var bad_index: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_offered", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "offered_entries": [{"category": "weapon", "content_id": "sword"}], "roll": 0, "draw_index": -1}
+	})
+	assert_true(bad_index.is_error(), "reward_offered with a negative draw_index should be rejected.")
+	assert_equal(bad_index.metadata.get("field"), "draw_index", "reward_offered should require a non-negative draw_index.")
+
+
+func _reward_resolved_serializes_and_parses_stable_payload() -> void:
+	# Story 6.3 (AC2): a reward_resolved SYSTEM event (no actor) — a reward-resolution record. table_id + content_id
+	# are lower_snake content ids; category is lower_snake AND in the reward allowlist (adds gold/passive).
+	var event: DomainEvent = DomainEvent.reward_resolved(8, {
+		"table_id": "standard_combat_reward",
+		"category": "weapon",
+		"content_id": "sword"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "reward_resolved", "reward_resolved should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "reward_resolved is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "reward_resolved should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.REWARD_RESOLVED, "reward_resolved should parse back to REWARD_RESOLVED.")
+	assert_equal(restored.payload.get("content_id"), "sword", "The content_id must survive a JSON round-trip.")
+	# gold + passive categories are accepted.
+	for category: String in ["gold", "passive"]:
+		var per: ActionResult = DomainEvent.try_from_dictionary(DomainEvent.reward_resolved(1, {
+			"table_id": "t", "category": category, "content_id": "some_id"
+		}).to_dictionary())
+		assert_true(per.succeeded, "reward_resolved should accept the reward category '%s'." % category)
+
+
+func _reward_resolved_rejects_malformed_payloads() -> void:
+	# A missing table_id is rejected.
+	var missing_table: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_resolved", "sequence_id": 1, "actor_id": "",
+		"payload": {"category": "weapon", "content_id": "sword"}
+	})
+	assert_true(missing_table.is_error(), "reward_resolved missing table_id should be rejected.")
+	assert_equal(missing_table.metadata.get("field"), "table_id", "reward_resolved should name the table_id field.")
+
+	# An off-allowlist category is rejected.
+	var bad_category: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_resolved", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "t", "category": "relic", "content_id": "sword"}
+	})
+	assert_true(bad_category.is_error(), "reward_resolved with an off-allowlist category should be rejected.")
+	assert_equal(bad_category.metadata.get("field"), "category", "reward_resolved should pin the category to the allowlist.")
+
+	# A non-lower_snake content_id is rejected.
+	var bad_content: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_resolved", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "t", "category": "weapon", "content_id": "Sword"}
+	})
+	assert_true(bad_content.is_error(), "reward_resolved with a non-lower_snake content_id should be rejected.")
+	assert_equal(bad_content.metadata.get("field"), "content_id", "reward_resolved should reject a non-lower_snake content_id.")
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1211,13 +1350,19 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.NODE_EXITED: &"node_exited",
 		DomainEvent.Type.ROUTE_SEALED: &"route_sealed",
 		DomainEvent.Type.NODE_PLACEHOLDER_RESOLVED: &"node_placeholder_resolved",
-		DomainEvent.Type.RUN_COMPLETED: &"run_completed"
+		DomainEvent.Type.RUN_COMPLETED: &"run_completed",
+		DomainEvent.Type.ITEM_GAINED: &"item_gained",
+		# Story 6.3: the two new SYSTEM events appended at the enum end (never renumbered).
+		DomainEvent.Type.REWARD_OFFERED: &"reward_offered",
+		DomainEvent.Type.REWARD_RESOLVED: &"reward_resolved"
 	}
 
 	for event_type: int in expected_ids.keys():
 		var event_id: StringName = DomainEvent.id_for_type(event_type)
 		assert_equal(event_id, expected_ids[event_type], "DomainEvent ids should remain stable.")
 		_assert_machine_id(String(event_id), "DomainEvent ids should be lower-snake machine ids.")
+		# Round-trip: the id maps back to the same enum member (the append did not break type_for_id).
+		assert_equal(DomainEvent.type_for_id(event_id), event_type, "DomainEvent id_for_type/type_for_id must round-trip.")
 
 
 func _assert_machine_id(value: String, message: String) -> void:

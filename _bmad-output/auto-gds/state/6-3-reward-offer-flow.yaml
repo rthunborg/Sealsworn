@@ -1,0 +1,57 @@
+story_key: 6-3-reward-offer-flow
+epic_num: 6
+story_num: 3
+branch: story/6-3-reward-offer-flow
+status: done
+updated_at: "2026-06-26T16:22:35Z"
+started_at: "2026-06-26T15:35:24Z"
+completed_at: "2026-06-26T16:22:35Z"
+active_seconds: 2520
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform:
+  - unity
+  - unreal
+  - godot
+  - other
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 7
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 1
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+code_review_round_1: "agds-xhigh (Opus 4.8) — APPROVE; Critical 0 / High 0 / Med 0 / Low 0 blocking; 2 [Review][Decision] (forward-looking, owned downstream); 0 patch; 0 defer; suite re-verified green 105 PASS; T2 fix + 23-key gate + validated-tables confirmed"
+testing:
+  enabled: false
+  ran: []
+suite_verified: "exit 0, 105 PASS / 0 FAIL, snapshot-gate + route-position-save tests green, diff-check clean (orchestrator re-run after dev-story)"
+interface_changes: "additive backward-compatible: RunState 10th param pending_reward_offer + key; RunOrchestrator 3rd param reward_table_repository; RewardTableDefinition +3 defaulted params (choice_count/exception); DomainEvent.Type appends reward_offered + reward_resolved. No run_snapshot.gd/23-key gate change. No BREAKING CHANGE."
+commits:
+  - a424f95
+  - 7c61eb5
+  - 8b74800
+  - 24206da
+open_questions_note: "Multiple [Decision] items folded into story 6-3 with recommended defaults (offer value-object vs dict; generate site; stream-per-category; AC4 distinct-pick + MVP-exception marker; gold-no-wallet residual; persist-offer-in-save recommended no; whether to also do level-gen RngStreamSet-injection half of T2); non-blocking."
+deferred_work_archived: 0
+planning_drift: []
+pr_url: null
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions:
+  - "[Review][Decision] reward GENERATE is caller-driven, not auto-wired into the orchestrator loop — owner: later HUD/orchestrator story with a resolution policy. AC1 satisfied via a caller. Non-blocking."
+  - "[Review][Decision] level-generator-injection half of T2 (LevelGenerator.generate injected RngStreamSet) left as a tracked residual — no 6.3 AC requires it. Non-blocking."
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []

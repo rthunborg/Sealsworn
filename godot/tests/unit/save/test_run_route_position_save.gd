@@ -32,6 +32,9 @@ const SAVE_PATH := "user://test_route_position_save.json"
 func run() -> Dictionary:
 	_route_position_save_restores_the_route_position()
 	_route_position_rng_round_trips_and_reproduces_next_draw()
+	# Story 6.3 (T2 fix): a reward drawn through the run BEFORE saving advances the run-level stream, and the
+	# route-position save persists the ADVANCED stream (replacing the inert-stream false confidence above).
+	_route_position_after_a_reward_draw_round_trips_the_advanced_stream()
 	_interrupted_equals_uninterrupted()
 	_callback_autosave_position_resumes_equals_uninterrupted()
 	_corrupt_and_missing_save_expose_no_partial_state()
@@ -154,6 +157,40 @@ func _route_position_rng_round_trips_and_reproduces_next_draw() -> void:
 	var restored_draw: ActionResult = restored_streams.rand_int(RngStreamSet.STREAM_MAP, 0, 1000000, {})
 	assert_true(restored_draw.succeeded, "The restored next draw should succeed.")
 	assert_equal(restored_draw.metadata.get("value"), expected_draw.metadata.get("value"), "The restored run-level streams must reproduce the EXACT next map draw (int64 round-trip).")
+
+
+# Story 6.3 (the T2 inert-stream fix — REPLACES the false confidence of the inert round-trip above): the prior
+# test peeks the rewards/map streams of a NEVER-ADVANCED orchestrator.streams (it would pass even if `streams`
+# were removed from the run lifecycle). This test PROVES the run-level stream actually advances: it draws a reward
+# offer through orchestrator.streams (the FIRST live reward roll), composes the route-position snapshot AFTER the
+# draw, and asserts the restored stream reproduces the NEXT rewards draw — so the route-position save persists the
+# stream the reward roll advanced (interrupted == uninterrupted once RNG advances mid-run).
+func _route_position_after_a_reward_draw_round_trips_the_advanced_stream() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(2026, 2)
+	# The rewards stream is inert at the parked position (route/level generation key off map/level, not rewards).
+	var pre_rewards: Dictionary = (orchestrator.streams.to_snapshot().get("streams") as Dictionary).get("rewards")
+	assert_equal(int(pre_rewards.get("draw_index")), 0, "Setup: the rewards stream is inert (draw_index 0) before any reward roll.")
+
+	# Draw a reward through the RUN-LEVEL streams — this advances orchestrator.streams' rewards stream.
+	assert_true(orchestrator.generate_reward_offer(&"standard_combat_reward").succeeded, "The reward generate should succeed (the T2 advance).")
+	var post_snapshot: Dictionary = orchestrator.streams.to_snapshot()
+	assert_equal(int((post_snapshot.get("streams") as Dictionary).get("rewards").get("draw_index")), 1, "The reward roll must ADVANCE the run-level rewards stream (draw_index 0 -> 1).")
+
+	# Peek the live post-draw next rewards draw from a restored copy (live streams untouched).
+	var expected_streams: RngStreamSet = RngStreamSet.new(0)
+	assert_true(expected_streams.try_restore(post_snapshot).succeeded, "The post-reward-draw snapshot should restore for the expected-draw peek.")
+	var expected_draw: ActionResult = expected_streams.rand_int(RngStreamSet.STREAM_REWARDS, 0, 1000000, {})
+	assert_true(expected_draw.succeeded, "The expected next rewards draw should succeed.")
+
+	# Save + restore through the repository; the restored streams must reproduce the EXACT next rewards draw.
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	_write_through_repository(snapshot)
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Route-position resume after a reward draw should succeed: %s" % restore.metadata)
+	var restored_streams: RngStreamSet = restore.metadata.get("rng_streams") as RngStreamSet
+	var restored_draw: ActionResult = restored_streams.rand_int(RngStreamSet.STREAM_REWARDS, 0, 1000000, {})
+	assert_true(restored_draw.succeeded, "The restored next rewards draw should succeed.")
+	assert_equal(restored_draw.metadata.get("value"), expected_draw.metadata.get("value"), "The restored run-level streams must reproduce the EXACT next REWARDS draw — the route-position save persists the stream the reward roll advanced (T2 fix, NOT inert).")
 
 
 func _interrupted_equals_uninterrupted() -> void:

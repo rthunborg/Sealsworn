@@ -19,7 +19,8 @@ const RewardTableDefinition = preload("res://scripts/content/definitions/reward_
 
 const BASELINE_REWARD_TABLE_IDS: Array[StringName] = [
 	&"standard_combat_reward",
-	&"elite_combat_reward"
+	&"elite_combat_reward",
+	&"passive_reward_choice"
 ]
 
 var _content_repository: ContentRepository
@@ -118,6 +119,23 @@ static func _baseline_definitions() -> Array[RewardTableDefinition]:
 				{"category": RewardTableDefinition.CATEGORY_CONSUMABLE, "content_id": &"ember_flask", "weight": 3},
 				{"category": RewardTableDefinition.CATEGORY_GOLD, "content_id": &"large_gold_purse", "weight": 3}
 			]
+		),
+		# Story 6.3 AC4: the passive "3-choice moment" reward table. It draws THREE DISTINCT passive choices
+		# (choice_count = 3, drawn without replacement through the run-level rewards stream). It references EXISTING
+		# baseline passive ids by-id (the six Story-5.4 starting passives) — it authors NO new passive content. Six
+		# distinct passive entries comfortably exceed the 3-distinct floor, so this table needs NO MVP exception
+		# marker (a sub-3 passive table would). Cross-checked against PassiveRepository.BASELINE_PASSIVE_IDS by test.
+		RewardTableDefinition.new(
+			&"passive_reward_choice",
+			[
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"warrior_unbreakable_guard", "weight": 1},
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"warrior_blade_and_board", "weight": 1},
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"pyromancer_kindling_focus", "weight": 1},
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"pyromancer_arcane_conduit", "weight": 1},
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"ranger_steady_aim", "weight": 1},
+				{"category": RewardTableDefinition.CATEGORY_PASSIVE, "content_id": &"ranger_hunters_quiver", "weight": 1}
+			],
+			3
 		)
 	]
 
