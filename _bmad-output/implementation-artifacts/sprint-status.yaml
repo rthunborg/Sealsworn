@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-26T19:00:00+00:00
+last_updated: 2026-06-26T21:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -104,7 +104,7 @@ development_status:
   epic-6: in-progress
   6-1-item-loot-and-reward-definitions: done
   6-2-small-inventory-and-equipment-model: done
-  6-3-reward-offer-flow: ready-for-dev
+  6-3-reward-offer-flow: review
   6-4-passive-reward-modal-data-contract: backlog
   6-5-consume-passive-command: backlog
   6-6-destroy-passive-command-and-outcome-distribution: backlog

@@ -8,6 +8,7 @@ const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
+const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 
 func run() -> Dictionary:
 	_new_run_initializes_ac1_fields()
@@ -32,6 +33,11 @@ func run() -> Dictionary:
 	_run_with_inventory_round_trips_through_dictionary_and_copy()
 	_pre_6_2_run_dict_without_inventory_key_parses_to_empty_inventory()
 	_inventory_stays_out_of_the_run_snapshot_bridge()
+	# Story 6.3 — the additive pending_reward_offer field.
+	_fresh_run_has_no_pending_offer_and_validates()
+	_run_with_pending_offer_round_trips_through_dictionary_and_copy()
+	_pre_6_3_run_dict_without_offer_key_parses_to_null()
+	_pending_offer_stays_out_of_the_run_snapshot_bridge()
 	return result()
 
 
@@ -499,6 +505,83 @@ func _inventory_stays_out_of_the_run_snapshot_bridge() -> void:
 	var allowed: Dictionary = _allowed_run_snapshot_keys()
 	for key: Variant in data.keys():
 		assert_true(allowed.has(key), "Composing a run with an inventory must not add a surprise top-level RunSnapshot key (%s)." % str(key))
+
+
+# Story 6.3: a fresh run carries NO pending offer (null) and still validates (the offer is additive, NOT a
+# required validate() field).
+func _fresh_run_has_no_pending_offer_and_validates() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	assert_true(run.pending_reward_offer == null, "A fresh run has no pending reward offer (null).")
+	assert_true(run.validate().succeeded, "A run with no pending offer must validate (the offer is not a required field).")
+	# The full run dict carries null for the offer.
+	var data: Dictionary = run.to_dictionary()
+	assert_true(data.has("pending_reward_offer"), "The full run dict carries a pending_reward_offer key.")
+	assert_equal(data.get("pending_reward_offer"), null, "A fresh run serializes pending_reward_offer as null.")
+
+
+# Story 6.3: a run WITH a pending offer round-trips through to_dictionary()/try_from_dictionary (lenient) and
+# copy() deep-copies the offer (a distinct instance; mutating the copy does not perturb the source).
+func _run_with_pending_offer_round_trips_through_dictionary_and_copy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.pending_reward_offer = RewardOffer.new(
+		&"standard_combat_reward",
+		RewardOffer.STATUS_PENDING,
+		[{"category": "weapon", "content_id": "sword"}],
+		{},
+		"rewards",
+		2,
+		0,
+		987654321
+	)
+	assert_true(run.validate().succeeded, "A run with a pending offer must validate.")
+	# Round-trip the full run dict.
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with a pending offer must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_true(restored.pending_reward_offer != null, "The round-tripped run must preserve the pending offer.")
+	assert_equal(restored.pending_reward_offer.table_id, &"standard_combat_reward", "The round-tripped offer table id must match.")
+	assert_equal(restored.pending_reward_offer.offered_entries.size(), 1, "The round-tripped offer entries must match.")
+	assert_equal(restored.pending_reward_offer.state_after, 987654321, "The round-tripped offer state_after must match (int64-safe).")
+	# copy() preserves the offer byte-for-byte AND is a distinct deep instance.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the pending offer byte-for-byte.")
+	assert_true(copied.pending_reward_offer != run.pending_reward_offer, "copy() must produce a distinct offer instance (deep copy).")
+	copied.pending_reward_offer.offered_entries.append({"category": "armor", "content_id": "padded_vest"})
+	assert_equal(run.pending_reward_offer.offered_entries.size(), 1, "Mutating the copy's offer must NOT perturb the source.")
+
+
+# Story 6.3: a pre-6.3 run dict (no pending_reward_offer key at all) parses with a null offer (lenient decode).
+func _pre_6_3_run_dict_without_offer_key_parses_to_null() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	var legacy_dict: Dictionary = run.to_dictionary()
+	legacy_dict.erase("pending_reward_offer")
+	var legacy_parsed: ActionResult = RunState.try_from_dictionary(legacy_dict)
+	assert_true(legacy_parsed.succeeded, "A pre-6.3 run dict (no offer key) must parse: %s" % legacy_parsed.metadata)
+	assert_true((legacy_parsed.metadata.get("run_state") as RunState).pending_reward_offer == null, "A pre-6.3 run dict restores a null offer.")
+
+
+# Story 6.3: the pending offer rides the FULL run dict ONLY — it is DELIBERATELY NOT in to_run_snapshot_fields() /
+# the 23-key gate, and composing a route-position snapshot adds NO offer content + NO surprise top-level key.
+func _pending_offer_stays_out_of_the_run_snapshot_bridge() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.pending_reward_offer = RewardOffer.new(&"standard_combat_reward", RewardOffer.STATUS_PENDING, [{"category": "weapon", "content_id": "sword"}])
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	assert_false(fields.has("pending_reward_offer"), "to_run_snapshot_fields() must NOT carry a pending_reward_offer field (it rides the full run dict only).")
+	# The nested route_state payload must not smuggle the offer either.
+	var route_state: Dictionary = fields.get("route_state")
+	assert_false(route_state.has("pending_reward_offer"), "The nested route_state payload must not carry a pending offer.")
+	# Composing the snapshot adds no surprise top-level key.
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.route_state = fields.get("route_state")
+	snapshot.current_route_node_id = fields.get("current_route_node_id")
+	snapshot.revealed_route_node_ids = fields.get("revealed_route_node_ids")
+	var data: Dictionary = snapshot.to_dictionary()
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	for key: Variant in data.keys():
+		assert_true(allowed.has(key), "Composing a run with a pending offer must not add a surprise top-level RunSnapshot key (%s)." % str(key))
 
 
 func _allowed_run_snapshot_keys() -> Dictionary:

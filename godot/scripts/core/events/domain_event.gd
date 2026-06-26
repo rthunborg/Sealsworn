@@ -26,7 +26,9 @@ enum Type {
 	ROUTE_SEALED,
 	NODE_PLACEHOLDER_RESOLVED,
 	RUN_COMPLETED,
-	ITEM_GAINED
+	ITEM_GAINED,
+	REWARD_OFFERED,
+	REWARD_RESOLVED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -52,6 +54,8 @@ const EVENT_ID_ROUTE_SEALED := &"route_sealed"
 const EVENT_ID_NODE_PLACEHOLDER_RESOLVED := &"node_placeholder_resolved"
 const EVENT_ID_RUN_COMPLETED := &"run_completed"
 const EVENT_ID_ITEM_GAINED := &"item_gained"
+const EVENT_ID_REWARD_OFFERED := &"reward_offered"
+const EVENT_ID_REWARD_RESOLVED := &"reward_resolved"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -64,6 +68,23 @@ const ITEM_GAINED_CATEGORIES: Array[StringName] = [
 	&"support",
 	&"consumable",
 	&"pickup"
+]
+
+# The allowlisted reward categories the reward_offered / reward_resolved payloads may carry (lower_snake). It is
+# the backpack categories PLUS `gold` and `passive` (the two reward-only categories that are NOT backpack items —
+# gold has no wallet yet, a passive's Consume/Destroy resolution is Story 6.5/6.6). Mirrors
+# RewardTableDefinition.REWARD_CATEGORIES. Kept LOCAL to domain_event.gd (a static const) so the validator has no
+# cross-script dependency on the content model — the value sets are pinned to match by test. A category outside
+# this set is rejected as a malformed payload.
+const REWARD_CATEGORIES: Array[StringName] = [
+	&"weapon",
+	&"armor",
+	&"jewelry",
+	&"support",
+	&"consumable",
+	&"pickup",
+	&"passive",
+	&"gold"
 ]
 
 # The stable placeholder markers carried by the two Story 4.5 events (lower_snake). RESOLUTION_PLACEHOLDER
@@ -215,6 +236,54 @@ static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEve
 	payload_value["backpack_size_after"] = int(payload.get("backpack_size_after", 0))
 	payload_value["slot_index"] = int(payload.get("slot_index", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.ITEM_GAINED, sequence_id, &"", payload_value)
+
+
+static func reward_offered(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 6.3): the deterministic reward-OFFER record emitted at GENERATE time when a
+	# combat/reward node draws a reward offer through the run-level RngStreamSet (the FIRST live reward roll). NOT
+	# an entity action, so it is NOT in _event_requires_actor (actor_id stays empty). table_id + each offered
+	# entry's category/content_id are Story-6.1 CONTENT ids -> lower_snake (no hyphens), so they use the
+	# lower_snake helpers (UNLIKE the hyphenated route node ids); the category allowlist adds gold/passive
+	# (REWARD_CATEGORIES). roll + draw_index are non-negative integral (the draw's weighted-pick roll + the stream
+	# draw index). offered_entries is normalized to a plain Array of plain {category, content_id} dicts.
+	# Normalize/duplicate the payload defensively (mirroring item_gained).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["table_id"] = String(payload.get("table_id", ""))
+	payload_value["offered_entries"] = _normalize_reward_entries(payload.get("offered_entries", []))
+	payload_value["roll"] = int(payload.get("roll", 0))
+	payload_value["draw_index"] = int(payload.get("draw_index", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.REWARD_OFFERED, sequence_id, &"", payload_value)
+
+
+static func reward_resolved(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 6.3): the reward-RESOLVED record emitted by ResolveRewardCommand AFTER the
+	# offer is applied (the chosen entry's category/content_id) and the offer flips to `resolved`. NOT an entity
+	# action, so it is NOT in _event_requires_actor (actor_id stays empty). table_id + category + content_id are
+	# Story-6.1 CONTENT ids -> lower_snake (no hyphens); the category allowlist adds gold/passive
+	# (REWARD_CATEGORIES). Normalize/duplicate the payload defensively (mirroring item_gained).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["table_id"] = String(payload.get("table_id", ""))
+	payload_value["category"] = String(payload.get("category", ""))
+	payload_value["content_id"] = String(payload.get("content_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.REWARD_RESOLVED, sequence_id, &"", payload_value)
+
+
+# Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
+# reward_offered factory uses this so the payload entry shape stays pinned). Each Dictionary entry is reshaped to
+# EXACTLY {category, content_id} (plain Strings); a non-dict entry is skipped. Deep-copies (no shared reference).
+static func _normalize_reward_entries(raw: Variant) -> Array:
+	var result: Array = []
+	if not raw is Array:
+		return result
+	for entry_value: Variant in (raw as Array):
+		if not entry_value is Dictionary:
+			continue
+		var entry: Dictionary = entry_value
+		result.append({
+			"category": String(entry.get("category", "")),
+			"content_id": String(entry.get("content_id", ""))
+		})
+	return result
 
 
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
@@ -553,6 +622,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_run_completed_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
+		Type.REWARD_OFFERED:
+			return _validate_reward_offered_payload(payload_value)
+		Type.REWARD_RESOLVED:
+			return _validate_reward_resolved_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -708,6 +781,49 @@ static func _validate_item_gained_payload(payload_value: Dictionary) -> ActionRe
 		return _error_result(&"invalid_event_payload", {"field": "backpack_size_after"})
 	if not _has_nonnegative_integral_payload(payload_value, &"slot_index"):
 		return _error_result(&"invalid_event_payload", {"field": "slot_index"})
+	return _ok_result()
+
+
+static func _validate_reward_offered_payload(payload_value: Dictionary) -> ActionResult:
+	# A deterministic reward-OFFER record (Story 6.3). table_id is a Story-6.1 content id -> lower_snake. roll +
+	# draw_index are non-negative integral. offered_entries is a NON-EMPTY Array of {category, content_id} where
+	# each category is lower_snake AND in the REWARD_CATEGORIES allowlist (the value sets are pinned to match
+	# RewardTableDefinition.REWARD_CATEGORIES by test) and each content_id is lower_snake. A malformed entry, an
+	# empty list, an off-allowlist category, or a non-lower_snake id is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"table_id"):
+		return _error_result(&"invalid_event_payload", {"field": "table_id"})
+	if not payload_value.has("offered_entries") or not payload_value.get("offered_entries") is Array:
+		return _error_result(&"invalid_event_payload", {"field": "offered_entries"})
+	var offered_entries: Array = payload_value.get("offered_entries")
+	if offered_entries.is_empty():
+		return _error_result(&"invalid_event_payload", {"field": "offered_entries"})
+	for entry_value: Variant in offered_entries:
+		if not entry_value is Dictionary:
+			return _error_result(&"invalid_event_payload", {"field": "offered_entries"})
+		var entry: Dictionary = entry_value
+		if not _has_lower_snake_payload(entry, &"category") \
+				or not REWARD_CATEGORIES.has(StringName(String(entry.get("category")))):
+			return _error_result(&"invalid_event_payload", {"field": "offered_entries"})
+		if not _has_lower_snake_payload(entry, &"content_id"):
+			return _error_result(&"invalid_event_payload", {"field": "offered_entries"})
+	if not _has_nonnegative_integral_payload(payload_value, &"roll"):
+		return _error_result(&"invalid_event_payload", {"field": "roll"})
+	if not _has_nonnegative_integral_payload(payload_value, &"draw_index"):
+		return _error_result(&"invalid_event_payload", {"field": "draw_index"})
+	return _ok_result()
+
+
+static func _validate_reward_resolved_payload(payload_value: Dictionary) -> ActionResult:
+	# A reward-RESOLVED record (Story 6.3). table_id + content_id are Story-6.1 content ids -> lower_snake. category
+	# is lower_snake AND in the REWARD_CATEGORIES allowlist (adds gold/passive over the backpack set). A malformed
+	# field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"table_id"):
+		return _error_result(&"invalid_event_payload", {"field": "table_id"})
+	if not _has_lower_snake_payload(payload_value, &"category") \
+			or not REWARD_CATEGORIES.has(StringName(String(payload_value.get("category")))):
+		return _error_result(&"invalid_event_payload", {"field": "category"})
+	if not _has_lower_snake_payload(payload_value, &"content_id"):
+		return _error_result(&"invalid_event_payload", {"field": "content_id"})
 	return _ok_result()
 
 
@@ -1262,6 +1378,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_RUN_COMPLETED
 		Type.ITEM_GAINED:
 			return EVENT_ID_ITEM_GAINED
+		Type.REWARD_OFFERED:
+			return EVENT_ID_REWARD_OFFERED
+		Type.REWARD_RESOLVED:
+			return EVENT_ID_REWARD_RESOLVED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1312,6 +1432,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.RUN_COMPLETED
 		EVENT_ID_ITEM_GAINED:
 			return Type.ITEM_GAINED
+		EVENT_ID_REWARD_OFFERED:
+			return Type.REWARD_OFFERED
+		EVENT_ID_REWARD_RESOLVED:
+			return Type.REWARD_RESOLVED
 		_:
 			return Type.UNKNOWN
 

@@ -46,6 +46,10 @@ const LevelRecipeRepository = preload("res://scripts/content/repositories/level_
 const NodeEnterCommand = preload("res://scripts/core/commands/node_enter_command.gd")
 const NodeExitCommand = preload("res://scripts/core/commands/node_exit_command.gd")
 const NodeResolvePlaceholderCommand = preload("res://scripts/core/commands/node_resolve_placeholder_command.gd")
+const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+const RewardOfferBuilder = preload("res://scripts/content/reward_offer_builder.gd")
+const RewardTableDefinition = preload("res://scripts/content/definitions/reward_table_definition.gd")
+const RewardTableRepository = preload("res://scripts/content/repositories/reward_table_repository.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteAdvanceCommand = preload("res://scripts/core/commands/route_advance_command.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
@@ -71,16 +75,24 @@ var _run_completed_outcome: String = ""
 # for tests. The orchestrator is the ONLY 4.x site that runs LevelGenerator.generate.
 var _recipe_repository: LevelRecipeRepository = null
 var _enemy_repository: EnemyRepository = null
+# The reward-table repository for the reward GENERATE path (Story 6.3). Default to the baseline repository;
+# injectable for tests (mirrors the recipe/enemy injection). Resolves a table id to a VALIDATED
+# RewardTableDefinition (fail-closed null on a miss) — the reward-table validate-before-draw posture (the 6.1
+# [Review][Decision]) is satisfied by routing every draw through this repo (validated tables only) + the builder
+# (which re-validates before drawing).
+var _reward_table_repository: RewardTableRepository = null
 # Last composed route-position snapshot (set when persistence is requested at a between-node boundary).
 var _last_route_position_snapshot: RunSnapshot = null
 
 
 func _init(
 	recipe_repository: LevelRecipeRepository = null,
-	enemy_repository: EnemyRepository = null
+	enemy_repository: EnemyRepository = null,
+	reward_table_repository: RewardTableRepository = null
 ) -> void:
 	_recipe_repository = recipe_repository if recipe_repository != null else LevelRecipeRepository.create_baseline_repository()
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
+	_reward_table_repository = reward_table_repository if reward_table_repository != null else RewardTableRepository.create_baseline_repository()
 
 
 # Start a fresh run from (root_seed, is_manual_seed[, class_id]) via RunStartCommand. Seats the live RunState
@@ -263,6 +275,151 @@ func compose_route_position_snapshot() -> RunSnapshot:
 	if compose_result.is_error():
 		return null
 	return compose_result.metadata.get("snapshot") as RunSnapshot
+
+
+# ---- reward offer generation (Story 6.3 — the FIRST live reward roll + the T2 inert-stream fix) --------------
+
+# GENERATE a deterministic SINGLE-PICK reward offer from `table_id`, drawing through the RUN-LEVEL RngStreamSet
+# (`streams`) on `stream_name` (rewards / loot) via the EXISTING RewardOfferBuilder, and STORE it on RunState as
+# `pending`. This is the T2 fix: the draw advances the SAME run-level set the route-position save persists (so a
+# route-position save composed AFTER a reward roll round-trips an ADVANCED stream — interrupted == uninterrupted
+# determinism once RNG advances mid-run). Resolves the table through _reward_table_repository (validated tables
+# only) -> hands the resolved RewardTableDefinition to the builder (which re-validates before the draw) — the 6.1
+# validate-before-draw [Review][Decision] is satisfied end-to-end (never a hand-rolled draw against an
+# unvalidated table). Emits a reward_offered event + advances the sequence counter. Returns the builder/table
+# error VERBATIM on failure (no partial offer); fail-closed `unknown_reward_table` on a repository miss; rejects
+# a generate while an offer is still pending (`reward_offer_pending`).
+#
+# stream_name defaults to STREAM_REWARDS (a standard combat/reward offer). A LOOT offer passes STREAM_LOOT.
+func generate_reward_offer(table_id: StringName, stream_name: StringName = RngStreamSet.STREAM_REWARDS) -> ActionResult:
+	var precheck: ActionResult = _reward_generate_precheck(table_id)
+	if precheck.is_error():
+		return precheck
+	var table: RewardTableDefinition = precheck.metadata.get("table") as RewardTableDefinition
+
+	# The ONE RNG draw — through the RUN-LEVEL streams (the T2 fix), via the builder (validate-before-draw).
+	var draw: ActionResult = RewardOfferBuilder.new().build_offer(streams, stream_name, table)
+	if draw.is_error():
+		return draw
+
+	var offer_payload: Dictionary = draw.metadata.get("offer")
+	var selected: Dictionary = offer_payload.get("selected")
+	var offered_entries: Array = [{
+		"category": String(selected.get("category")),
+		"content_id": String(selected.get("content_id"))
+	}]
+	return _store_offer_and_emit(table, offered_entries, draw, stream_name)
+
+
+# GENERATE a deterministic AC4 3-CHOICE PASSIVE reward offer from `table_id`, drawing THREE DISTINCT passive
+# content ids WITHOUT REPLACEMENT through the run-level streams (re-drawing a duplicate via the builder — each
+# draw advances the SAME run-level stream, so it is deterministic + reproduces from the same seed/state). The
+# table's declared `choice_count` is the target distinct count (3 for a passive 3-choice moment); a table whose
+# distinct-content-id count is below `choice_count` is VALID only with the explicit MVP exception marker (enforced
+# by RewardTableDefinition.validate() at registration), and this path then offers as many distinct as the table
+# can yield (the sanctioned reduced density). Stores the offer on RunState as `pending`, emits reward_offered,
+# advances the sequence. Same stream contract (default STREAM_REWARDS). Provenance (roll/draw_index/state_after)
+# reflects the LAST draw of the multi-pick.
+func generate_passive_reward_offer(table_id: StringName, stream_name: StringName = RngStreamSet.STREAM_REWARDS) -> ActionResult:
+	var precheck: ActionResult = _reward_generate_precheck(table_id)
+	if precheck.is_error():
+		return precheck
+	var table: RewardTableDefinition = precheck.metadata.get("table") as RewardTableDefinition
+
+	# The target distinct count: the table's declared choice_count, capped by the distinct content ids available
+	# (a validated non-exception table has distinct_count >= choice_count; an exception-marked table may have
+	# fewer, in which case the sanctioned reduced density is offered).
+	var target: int = mini(table.choice_count, table.distinct_content_id_count())
+	if target < 1:
+		target = 1
+
+	var offered_entries: Array = []
+	var seen: Dictionary = {}
+	var last_draw: ActionResult = null
+	# Deterministic draw-without-replacement: keep drawing through the run-level stream, skipping a duplicate
+	# content_id, until `target` distinct entries are collected. A generous attempt bound guards against a
+	# pathological table (never reached for a validated table: distinct_count >= target by construction).
+	var max_attempts: int = maxi(target * 64, 64)
+	var attempts: int = 0
+	while offered_entries.size() < target and attempts < max_attempts:
+		attempts += 1
+		var draw: ActionResult = RewardOfferBuilder.new().build_offer(streams, stream_name, table)
+		if draw.is_error():
+			return draw
+		last_draw = draw
+		var selected: Dictionary = draw.metadata.get("offer").get("selected")
+		var content_id: String = String(selected.get("content_id"))
+		if seen.has(content_id):
+			continue
+		seen[content_id] = true
+		offered_entries.append({
+			"category": String(selected.get("category")),
+			"content_id": content_id
+		})
+
+	if offered_entries.is_empty() or last_draw == null:
+		# Defensive: a validated table always yields >= 1 distinct entry; fail closed rather than store an empty
+		# offer (never fabricate a default).
+		return ActionResult.error(&"reward_offer_generation_failed", {
+			"command": "run_orchestrator",
+			"table_id": String(table_id)
+		})
+	return _store_offer_and_emit(table, offered_entries, last_draw, stream_name)
+
+
+# Shared GENERATE precheck: the orchestrator must be seated (a non-null run), no offer may already be pending
+# (resolve the prior offer first — never silently overwrite an unresolved offer, which would drop a reward), and
+# the table id must resolve through the repository (validated tables only; fail-closed unknown_reward_table on a
+# miss). On success returns ok with metadata.table.
+func _reward_generate_precheck(table_id: StringName) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if run.pending_reward_offer != null and run.pending_reward_offer.is_pending():
+		# An unresolved offer is still open — generating a new one would silently drop it. Fail closed.
+		return ActionResult.error(&"reward_offer_pending", {
+			"command": "run_orchestrator",
+			"table_id": String(run.pending_reward_offer.table_id)
+		})
+	var table: RewardTableDefinition = _reward_table_repository.get_reward_table(table_id)
+	if table == null:
+		return ActionResult.error(&"unknown_reward_table", {
+			"command": "run_orchestrator",
+			"table_id": String(table_id)
+		})
+	return ActionResult.ok([], {"table": table})
+
+
+# Store the generated offer on RunState as `pending`, emit the reward_offered event, advance the sequence counter,
+# and return ok with the offer + event. `provenance_draw` is the builder ActionResult whose metadata carries the
+# roll/draw_index/state_after (the last draw for a multi-pick). Shared by the single + multi pick paths.
+func _store_offer_and_emit(table: RewardTableDefinition, offered_entries: Array, provenance_draw: ActionResult, stream_name: StringName) -> ActionResult:
+	var offer: RewardOffer = RewardOffer.new(
+		table.table_id,
+		RewardOffer.STATUS_PENDING,
+		offered_entries,
+		{},
+		String(stream_name),
+		int(provenance_draw.metadata.get("offer").get("roll")),
+		int(provenance_draw.metadata.get("draw_index")),
+		int(provenance_draw.metadata.get("state_after"))
+	)
+	run.pending_reward_offer = offer
+
+	var offered_event: DomainEvent = DomainEvent.reward_offered(_next_sequence_id, {
+		"table_id": String(table.table_id),
+		"offered_entries": offered_entries,
+		"roll": offer.roll,
+		"draw_index": offer.draw_index
+	})
+	var result: ActionResult = ActionResult.ok([offered_event], {
+		"reward_offered": true,
+		"table_id": String(table.table_id),
+		"offered_entries": offered_entries,
+		"stream_name": String(stream_name),
+		"offer": offer.to_dictionary()
+	})
+	_advance_sequence_past(result)
+	return result
 
 
 func run_started_event() -> DomainEvent:

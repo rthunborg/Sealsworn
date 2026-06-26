@@ -16,10 +16,23 @@ extends Resource
 #
 # validate() rejects an empty table, an out-of-allowlist category, a non-lower_snake content id, a malformed
 # entry, or a non-positive weight (REJECT, never coerce — every branch has a dedicated negative test).
+#
+# AC4 3-CHOICE-PASSIVE EXCEPTION MARKER (Story 6.3): `choice_count` declares how many DISTINCT choices a generated
+# offer from this table draws (default 1 — a normal single-pick reward table; 3 for a passive "3-choice moment").
+# A without-replacement draw of `choice_count` distinct entries needs at least `choice_count` distinct content ids
+# in the table — so validate() REJECTS a table whose declared `choice_count` exceeds its distinct-content-id count
+# UNLESS the explicit `mvp_choice_count_exception` marker is set WITH a non-empty `choice_count_exception_reason`
+# (mirroring the 6.1 *_mvp_deferred posture — the marker makes a sub-`choice_count`-distinct table VALID + VISIBLE;
+# without it a passive 3-choice table with fewer than three distinct entries is invalid_reward_table_definition).
+# The exception is surfaced (this validate() check + a tuning note in the consuming story's Completion Notes),
+# never a silent reduction.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 
 const DEFINITION_TYPE := &"reward_table"
+
+# The default declared choice count (a normal single-pick reward table draws ONE entry).
+const DEFAULT_CHOICE_COUNT := 1
 
 # The eight MVP loot/reward categories (AC1 / FR52). A reward-table entry's category MUST be one of these. The
 # string values match each category definition's DEFINITION_TYPE (weapon/armor/jewelry/support/consumable/
@@ -46,13 +59,28 @@ const REWARD_CATEGORIES: Array[StringName] = [
 
 @export var table_id: StringName = &""
 @export var entries: Array = []
+# AC4: how many DISTINCT choices a generated offer from this table draws (default 1; 3 for a passive 3-choice
+# moment). Must be a positive int.
+@export var choice_count: int = DEFAULT_CHOICE_COUNT
+# AC4: the explicit MVP test-scope exception marker. When true (WITH a reason), a table whose distinct-content-id
+# count is below `choice_count` is still VALID (a sanctioned reduced-density table). Never a silent reduction.
+@export var mvp_choice_count_exception: bool = false
+# AC4: the required human-readable reason accompanying the exception marker (visible in tuning notes). Non-empty
+# when the marker is set.
+@export var choice_count_exception_reason: String = ""
 
 func _init(
 	new_table_id: StringName = &"",
-	new_entries: Array = []
+	new_entries: Array = [],
+	new_choice_count: int = DEFAULT_CHOICE_COUNT,
+	new_mvp_choice_count_exception: bool = false,
+	new_choice_count_exception_reason: String = ""
 ) -> void:
 	table_id = new_table_id
 	entries = _copy_entries(new_entries)
+	choice_count = new_choice_count
+	mvp_choice_count_exception = new_mvp_choice_count_exception
+	choice_count_exception_reason = new_choice_count_exception_reason
 
 
 func validate() -> ActionResult:
@@ -74,7 +102,33 @@ func validate() -> ActionResult:
 			return _invalid(&"entries")
 		if not _is_positive_int(entry.get("weight")):
 			return _invalid(&"entries")
+	# AC4: the declared choice count must be a positive int.
+	if choice_count < 1:
+		return _invalid(&"choice_count")
+	# AC4: a without-replacement draw of `choice_count` distinct entries needs at least `choice_count` distinct
+	# content ids — UNLESS the explicit MVP exception marker (WITH a reason) sanctions a reduced-density table.
+	if choice_count > distinct_content_id_count():
+		if not mvp_choice_count_exception:
+			# A passive 3-choice (or any multi-choice) table with fewer than `choice_count` distinct entries is
+			# only valid with the explicit, visible exception marker (the 6.1 *_mvp_deferred posture).
+			return _invalid(&"choice_count")
+		if choice_count_exception_reason.strip_edges().is_empty():
+			# The exception marker MUST carry a reason (visible in tuning notes — never a silent reduction).
+			return _invalid(&"choice_count_exception_reason")
 	return ActionResult.ok()
+
+
+# AC4: the number of DISTINCT content ids across the table entries (a without-replacement multi-choice draw can
+# yield at most this many distinct offered entries). Counts only shape-valid (Dictionary) entries' content ids.
+func distinct_content_id_count() -> int:
+	var seen: Dictionary = {}
+	for entry_value: Variant in entries:
+		if not entry_value is Dictionary:
+			continue
+		var content_id: String = String((entry_value as Dictionary).get("content_id", ""))
+		if not content_id.is_empty():
+			seen[content_id] = true
+	return seen.size()
 
 
 # A copy of the entries as plain {category, content_id, weight} dicts (lower_snake StringName ids, int weights),

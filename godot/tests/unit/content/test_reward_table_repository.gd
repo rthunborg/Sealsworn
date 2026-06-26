@@ -17,10 +17,13 @@ const JewelryRepository = preload("res://scripts/content/repositories/jewelry_re
 const ConsumableRepository = preload("res://scripts/content/repositories/consumable_repository.gd")
 const PickupRepository = preload("res://scripts/content/repositories/pickup_repository.gd")
 const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
+const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
 
 const EXPECTED_TABLE_IDS: Array[StringName] = [
 	&"standard_combat_reward",
-	&"elite_combat_reward"
+	&"elite_combat_reward",
+	# Story 6.3 AC4: the passive 3-choice reward table (references the six baseline passive ids by-id).
+	&"passive_reward_choice"
 ]
 
 func run() -> Dictionary:
@@ -135,6 +138,7 @@ func _baseline_table_entries_reference_real_content_ids() -> void:
 	var consumable_ids: Array[StringName] = ConsumableRepository.BASELINE_CONSUMABLE_IDS
 	var pickup_ids: Array[StringName] = PickupRepository.BASELINE_PICKUP_IDS
 	var gold_ids: Array[StringName] = GoldRewardRepository.BASELINE_GOLD_REWARD_IDS
+	var passive_ids: Array[StringName] = PassiveRepository.BASELINE_PASSIVE_IDS
 
 	var repository: RewardTableRepository = RewardTableRepository.create_baseline_repository()
 	for table_id: StringName in EXPECTED_TABLE_IDS:
@@ -158,3 +162,5 @@ func _baseline_table_entries_reference_real_content_ids() -> void:
 					assert_true(pickup_ids.has(content_id), "Table %s pickup entry %s should be a real pickup baseline id." % [String(table_id), String(content_id)])
 				RewardTableDefinition.CATEGORY_GOLD:
 					assert_true(gold_ids.has(content_id), "Table %s gold entry %s should be a real gold-reward baseline id." % [String(table_id), String(content_id)])
+				RewardTableDefinition.CATEGORY_PASSIVE:
+					assert_true(passive_ids.has(content_id), "Table %s passive entry %s should be a real passive baseline id." % [String(table_id), String(content_id)])

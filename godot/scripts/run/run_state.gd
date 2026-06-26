@@ -23,6 +23,7 @@ const RouteNode = preload("res://scripts/run/route_node.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
+const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -90,6 +91,19 @@ var rules_resolver: RulesResolver = null
 # inventory save yet; a later story that owns the in-node save wires the model into those existing fields).
 # copy() DEEP-copies it (the backpack slot list must not be shared by reference).
 var inventory: InventoryState = null
+# The run's PENDING reward offer (Story 6.3). An ADDITIVE + LENIENT run-progression field: default null is "no
+# pending offer" (most of the time there is no offer — a legacy / pre-6.3 / between-offer run carries null). The
+# reward GENERATE path (RunOrchestrator.generate_reward_offer) ROLLS a deterministic offer through the run-level
+# RngStreamSet and STORES it here as `pending`; ResolveRewardCommand applies the chosen entry and flips it to
+# `resolved`. It is DELIBERATELY NOT a required validate() field (a run with no offer is valid; a pre-6.3 run dict
+# with no offer key parses to null). It is SERIALIZABLE DATA ONLY (a RewardOffer value object — NEVER a live
+# RewardTableDefinition/RngStreamSet). It rides to_dictionary()/try_from_dictionary (the FULL run dict, NOT the
+# 23-key RunSnapshot) lenient-read so a copied/round-tripped run preserves a pending offer. It is DELIBERATELY
+# NOT serialized into the route-position save (a between-NODE route choice is composed AFTER the node resolves, by
+# which point the offer is already resolved — the live in-node reward-offer save is a later story; the
+# RunSnapshot 23-key gate stays untouched). copy() null-safe DEEP-copies it (the offered-entries list must not be
+# shared by reference).
+var pending_reward_offer: RewardOffer = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -100,7 +114,8 @@ func _init(
 	new_selected_class_id: StringName = &"",
 	new_starting_kit: StartingKit = null,
 	new_rules_resolver: RulesResolver = null,
-	new_inventory: InventoryState = null
+	new_inventory: InventoryState = null,
+	new_pending_reward_offer: RewardOffer = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -112,6 +127,8 @@ func _init(
 	rules_resolver = new_rules_resolver
 	# Default to a fresh EMPTY inventory (never null) so the backpack is always present.
 	inventory = new_inventory if new_inventory != null else load("res://scripts/run/inventory_state.gd").new()
+	# Default to null (no pending offer). Unlike the inventory, null is the meaningful "nothing to resolve" state.
+	pending_reward_offer = new_pending_reward_offer
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -205,7 +222,11 @@ func to_dictionary() -> Dictionary:
 		# RunSnapshot.inventory/equipment placeholders stay empty this story). It is never null (a default-empty
 		# InventoryState), so it always serializes via its exact-key to_dictionary(). try_from_dictionary reads it
 		# back leniently (absent -> a fresh empty model) so every pre-6.2 run dict still parses.
-		"inventory": _inventory_or_new().to_dictionary()
+		"inventory": _inventory_or_new().to_dictionary(),
+		# Story 6.3: the pending reward offer rides the FULL run dict (NOT the 23-key RunSnapshot). null (no pending
+		# offer) serializes as a JSON null; a pending offer serializes via its exact-key to_dictionary().
+		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-6.3 run dict still parses.
+		"pending_reward_offer": null if pending_reward_offer == null else pending_reward_offer.to_dictionary()
 	}
 
 
@@ -225,7 +246,11 @@ func copy() -> RunState:
 		rules_resolver,
 		# Story 6.2: DEEP-copy the inventory (the backpack slot list must not be shared by reference, so a
 		# mutation of the copy's backpack never perturbs the source — mirroring the starting_kit deep copy).
-		_inventory_or_new().copy()
+		_inventory_or_new().copy(),
+		# Story 6.3: null-safe DEEP-copy the pending offer (the offered-entries list must not be shared by
+		# reference, so a mutation of the copy's offer never perturbs the source — mirroring the starting_kit
+		# deep copy; null stays null).
+		null if pending_reward_offer == null else pending_reward_offer.copy()
 	)
 
 
@@ -299,7 +324,11 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		# Story 6.2: lenient inventory decode. A pre-6.2 run dict has no inventory key -> _init defaults a fresh
 		# empty InventoryState (never null). A present inventory dict is reconstructed leniently via
 		# InventoryState.try_from_dictionary so a partial/legacy inventory dict still parses.
-		_inventory_or_new_from(_field(data, &"inventory") if _has_field(data, &"inventory") else null)
+		_inventory_or_new_from(_field(data, &"inventory") if _has_field(data, &"inventory") else null),
+		# Story 6.3: lenient reward-offer decode. A pre-6.3 run dict has no pending_reward_offer key (or null) ->
+		# default null (no pending offer). A present offer dict is reconstructed leniently via
+		# RewardOffer.try_from_dictionary so a partial/legacy offer dict still parses.
+		_reward_offer_or_null(_field(data, &"pending_reward_offer") if _has_field(data, &"pending_reward_offer") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -477,6 +506,15 @@ static func _inventory_or_new_from(value: Variant) -> InventoryState:
 	if value is Dictionary:
 		return InventoryState.try_from_dictionary(value)
 	return load("res://scripts/run/inventory_state.gd").new()
+
+
+# Lenient RewardOffer decode for the additive pending_reward_offer field: a Dictionary is reconstructed via
+# RewardOffer.try_from_dictionary; anything else (null / absent / non-dict) -> null (no pending offer). Mirrors
+# the starting_kit leniency so every pre-6.3 run dict still parses.
+static func _reward_offer_or_null(value: Variant) -> RewardOffer:
+	if value is Dictionary:
+		return RewardOffer.try_from_dictionary(value)
+	return null
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:
