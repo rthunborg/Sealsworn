@@ -61,7 +61,9 @@ func register_class(definition: ClassDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(ClassDefinition.DEFINITION_TYPE, definition.class_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(ClassDefinition.DEFINITION_TYPE, definition.class_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.class_id)
 	if not _class_order.has(definition.class_id):
 		_class_order.append(definition.class_id)
 	return ActionResult.ok([], {
@@ -138,4 +140,11 @@ static func _baseline_definitions() -> Array[ClassDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_class_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(class_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_class", {
+		"reason": "duplicate_id",
+		"id": String(class_id)
 	})

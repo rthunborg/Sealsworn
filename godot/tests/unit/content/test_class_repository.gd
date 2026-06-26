@@ -38,6 +38,7 @@ func run() -> Dictionary:
 	_unknown_class_lookup_fails_closed()
 	_register_class_rejects_null_definition()
 	_class_repository_factory_fails_closed_on_invalid_definitions()
+	_class_repository_rejects_duplicate_id_fail_loud()
 	_selectable_baseline_kit_ids_are_real_content_ids()
 	return result()
 
@@ -134,6 +135,29 @@ func _class_repository_factory_fails_closed_on_invalid_definitions() -> void:
 		shared_content_repository.has_definition(ClassDefinition.DEFINITION_TYPE, valid_definition.class_id),
 		"Failed class repository creation must not mutate a provided content repository."
 	)
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present class id fails loud with a structured
+# duplicate_class error, leaving class_ids() + get_class_definition consistent. A duplicate in a batch fails
+# closed.
+func _class_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: ClassDefinition = ClassDefinition.new(
+		&"shadeblade", "Shadeblade", ClassDefinition.LOCK_STATE_LOCKED, "First locked hint."
+	)
+	var duplicate: ClassDefinition = ClassDefinition.new(
+		&"shadeblade", "Shadeblade Reborn", ClassDefinition.LOCK_STATE_LOCKED, "Distinct duplicate hint."
+	)
+	var repository: ClassRepository = ClassRepository.new()
+	assert_true(repository.register_class(first).succeeded, "The first class registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_class(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same class id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_class", "A duplicate id should use the stable duplicate_class code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "shadeblade", "The duplicate error should carry the offending id.")
+	assert_equal(repository.class_ids(), [&"shadeblade"] as Array[StringName], "class_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_equal(repository.get_class_definition(&"shadeblade").display_name, "Shadeblade", "get_class_definition must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: ClassRepository = ClassRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")
 
 
 func _selectable_baseline_kit_ids_are_real_content_ids() -> void:

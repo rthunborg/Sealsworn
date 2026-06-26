@@ -37,6 +37,7 @@ func run() -> Dictionary:
 	_enemy_definitions_validate_baseline_fields()
 	_enemy_repository_keeps_generic_content_registration_intact()
 	_enemy_repository_factory_fails_closed_on_invalid_definitions()
+	_enemy_repository_rejects_duplicate_id_fail_loud()
 	return result()
 
 
@@ -119,3 +120,25 @@ func _enemy_repository_factory_fails_closed_on_invalid_definitions() -> void:
 		shared_content_repository.has_definition(EnemyDefinition.DEFINITION_TYPE, &"iron_cultist"),
 		"Failed enemy repository creation must not mutate a provided content repository."
 	)
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present enemy id fails loud with a structured
+# duplicate_enemy error, leaving enemy_ids() + get_enemy consistent. A duplicate in a batch fails closed.
+func _enemy_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: EnemyDefinition = EnemyDefinition.new(
+		&"iron_cultist", 10, &"melee_pressure", true, 1, 1, 3, &"physical", 0, false, 0, &"physical", "First."
+	)
+	var duplicate: EnemyDefinition = EnemyDefinition.new(
+		&"iron_cultist", 99, &"melee_pressure", true, 1, 1, 7, &"physical", 0, false, 0, &"physical", "Distinct duplicate."
+	)
+	var repository: EnemyRepository = EnemyRepository.new()
+	assert_true(repository.register_enemy(first).succeeded, "The first enemy registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_enemy(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same enemy id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_enemy", "A duplicate id should use the stable duplicate_enemy code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "iron_cultist", "The duplicate error should carry the offending id.")
+	assert_equal(repository.enemy_ids(), [&"iron_cultist"] as Array[StringName], "enemy_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_equal(repository.get_enemy(&"iron_cultist").max_hp, 10, "get_enemy must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: EnemyRepository = EnemyRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")

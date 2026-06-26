@@ -1,10 +1,10 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-06-26T00:00:00+00:00
+# last_updated: 2026-06-26T14:00:00+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
 # story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-# scope: Epics 1-4 complete (Epic 4 = Run Map and Forward Progression); epics 5-10 remain excluded until planned.
+# scope: Full MVP epic breakdown (Epics 1-10) now tracked. Epics 1-5 complete; Epics 6-10 in backlog.
 #
 # STATUS DEFINITIONS:
 # ==================
@@ -14,8 +14,8 @@
 #   - done: All stories in epic completed
 #
 # Epic Status Transitions:
-#   - backlog -> in-progress: When the first Epic 1 implementation story is actively started
-#   - in-progress -> done: Manually when all Epic 1 stories reach 'done' status
+#   - backlog -> in-progress: Automatically when the first story in the epic is created (via create-story)
+#   - in-progress -> done: Manually when all stories in the epic reach 'done' status
 #
 # Story Status:
 #   - backlog: Story only exists in the epic file or sprint plan
@@ -30,21 +30,25 @@
 #
 # WORKFLOW NOTES:
 # ===============
-# - Epics 1 and 2 are fully implemented and done (epic-2 retrospective done; epic-1 retrospective optional).
-# - Epic 3 (Procedural Level Generation v0) is fully implemented and done (epic-3 retrospective done).
-# - Epic 4 (Run Map and Forward Progression) brought into scope 2026-06-18; implemented and done (epic-4 retrospective done).
-# - Epic 5 (Classes and Starting Kits) brought into scope 2026-06-25 for implementation; epics 6-10 remain excluded until planned.
+# - Epics 1-5 are fully implemented and done.
+#     - Epic 1 (Core Tactical Combat Slice): retrospective optional.
+#     - Epic 2 (Mobile UX, Accessibility, Save/Resume): retrospective done.
+#     - Epic 3 (Procedural Level Generation v0): retrospective done.
+#     - Epic 4 (Run Map and Forward Progression): retrospective done.
+#     - Epic 5 (Classes and Starting Kits): retrospective done.
+# - Epics 6-10 brought into tracking scope 2026-06-26 via sprint planning; all stories start in backlog
+#   (no story files created yet). Next implementation target is Epic 6 (Loot, Passives, and Consume/Destroy).
 # - Broad Epic 1 parent stories are split in epic-1-sprint-plan-2026-06-04.md.
 # - Epic 2 planning is documented in epic-2-sprint-plan-2026-06-07.md.
-# - Epic 3, Epic 4, and Epic 5 stories source from the canonical epics file: planning-artifacts/epics.md.
+# - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-26T12:11:00+00:00
+last_updated: 2026-06-26T14:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-scope: epics-1-5-complete
+scope: epics-1-10-tracked
 source_epics_file: C:/Sealsworn/_bmad-output/planning-artifacts/epics.md
 readiness_status: READY_WITH_GATES
 
@@ -97,3 +101,45 @@ development_status:
   5-4-starting-passive-rule-integration: done
   5-5-class-start-playable-smoke-slice: done
   epic-5-retrospective: done
+  epic-6: in-progress
+  6-1-item-loot-and-reward-definitions: done
+  6-2-small-inventory-and-equipment-model: backlog
+  6-3-reward-offer-flow: backlog
+  6-4-passive-reward-modal-data-contract: backlog
+  6-5-consume-passive-command: backlog
+  6-6-destroy-passive-command-and-outcome-distribution: backlog
+  6-7-loot-and-passive-build-smoke-run: backlog
+  epic-6-retrospective: optional
+  epic-7: backlog
+  7-1-risk-economy-state: backlog
+  7-2-curse-and-corruption-rules: backlog
+  7-3-risk-reward-event-choices: backlog
+  7-4-affinity-definitions-and-assignment: backlog
+  7-5-tactical-affinity-effects: backlog
+  7-6-darkness-fairness-and-memory-pressure: backlog
+  epic-7-retrospective: optional
+  epic-8: backlog
+  8-1-run-completion-and-return-to-outpost-flow: backlog
+  8-2-run-summary-snapshot: backlog
+  8-3-meta-profile-and-oath-shard-awards: backlog
+  8-4-echoes-seal-fragments-and-unlock-progress: backlog
+  8-5-first-death-line-and-optional-narrative-delivery: backlog
+  8-6-outpost-menu-and-start-another-descent: backlog
+  8-7-meta-and-summary-save-load-tests: backlog
+  epic-8-retrospective: optional
+  epic-9: backlog
+  9-1-boss-node-transition-and-finale-setup: backlog
+  9-2-larval-avatar-definition-and-phases: backlog
+  9-3-boss-actions-telegraphs-and-ai-decisions: backlog
+  9-4-boss-victory-and-first-victory-reveal: backlog
+  9-5-finale-regression-and-run-length-tuning-hooks: backlog
+  epic-9-retrospective: optional
+  epic-10: backlog
+  10-1-device-tiers-and-performance-budgets: backlog
+  10-2-headless-seed-regression-suite: backlog
+  10-3-generator-soft-lock-and-fairness-batch-checks: backlog
+  10-4-gameplay-comprehension-and-playtest-checklist: backlog
+  10-5-accessibility-and-readability-audit: backlog
+  10-6-mvp-readiness-gate-and-playable-build-preservation: backlog
+  10-7-asset-audio-placeholder-and-ux-readiness-gate: backlog
+  epic-10-retrospective: optional

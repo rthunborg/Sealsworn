@@ -23,6 +23,7 @@ func run() -> Dictionary:
 	_recipe_repository_keeps_generic_content_registration_intact()
 	_recipe_repository_factory_fails_closed_on_invalid_definitions()
 	_register_recipe_rejects_null_definition()
+	_recipe_repository_rejects_duplicate_id_fail_loud()
 	return result()
 
 
@@ -105,3 +106,41 @@ func _register_recipe_rejects_null_definition() -> void:
 	assert_true(result_value.is_error(), "Registering a null recipe should fail.")
 	assert_equal(result_value.error_code, &"invalid_level_recipe_repository", "Null recipe registration should use the stable repository error code.")
 	assert_true(repository.recipe_ids().is_empty(), "A failed registration should not add a recipe id.")
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present recipe id fails loud with a structured
+# duplicate_level_recipe error, leaving recipe_ids() + get_recipe consistent. A duplicate in a batch fails
+# closed.
+func _recipe_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: LevelRecipeDefinition = _minimal_recipe(0.22)
+	var duplicate: LevelRecipeDefinition = _minimal_recipe(0.40)
+	var repository: LevelRecipeRepository = LevelRecipeRepository.new()
+	assert_true(repository.register_recipe(first).succeeded, "The first recipe registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_recipe(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same recipe id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_level_recipe", "A duplicate id should use the stable duplicate_level_recipe code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "small_combat_basic", "The duplicate error should carry the offending id.")
+	assert_equal(repository.recipe_ids(), [&"small_combat_basic"] as Array[StringName], "recipe_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_true(is_equal_approx(repository.get_recipe(&"small_combat_basic").wall_density, 0.22), "get_recipe must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: LevelRecipeRepository = LevelRecipeRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")
+
+
+func _minimal_recipe(wall_density: float) -> LevelRecipeDefinition:
+	return LevelRecipeDefinition.new(
+		&"small_combat_basic",
+		LevelRecipeDefinition.SIZE_SMALL,
+		true,
+		wall_density,
+		2,
+		5,
+		2,
+		4,
+		0,
+		1,
+		false,
+		1,
+		[LevelRecipeDefinition.WRINKLE_CHOKE_POINT],
+		"Minimal valid combat recipe for the duplicate-id negative."
+	)

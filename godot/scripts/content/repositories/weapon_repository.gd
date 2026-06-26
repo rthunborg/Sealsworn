@@ -56,7 +56,9 @@ func register_weapon(definition: WeaponDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(WeaponDefinition.DEFINITION_TYPE, definition.weapon_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(WeaponDefinition.DEFINITION_TYPE, definition.weapon_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.weapon_id)
 	if not _weapon_order.has(definition.weapon_id):
 		_weapon_order.append(definition.weapon_id)
 	return ActionResult.ok([], {
@@ -192,4 +194,11 @@ static func _baseline_definitions() -> Array[WeaponDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_weapon_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(weapon_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_weapon", {
+		"reason": "duplicate_id",
+		"id": String(weapon_id)
 	})

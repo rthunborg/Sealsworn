@@ -104,6 +104,7 @@ func run() -> Dictionary:
 	_weapon_definition_validation_rejects_contradictory_adjacency_modifiers()
 	_weapon_repository_keeps_generic_content_registration_intact()
 	_weapon_repository_factory_fails_closed_on_invalid_definitions()
+	_weapon_repository_rejects_duplicate_id_fail_loud()
 	return result()
 
 
@@ -188,3 +189,26 @@ func _weapon_repository_factory_fails_closed_on_invalid_definitions() -> void:
 	var repository: WeaponRepository = WeaponRepository.create_repository_from_definitions([invalid_definition])
 
 	assert_equal(repository, null, "Repository factory should fail closed instead of returning partially registered content.")
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present weapon id fails loud with a structured
+# duplicate_weapon error, leaving weapon_ids() + get_weapon consistent (the rejected def is neither listed nor
+# resolvable — no silent last-write-win shadow). A definitions batch carrying a duplicate id fails closed.
+func _weapon_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: WeaponDefinition = WeaponDefinition.new(
+		&"sword", 1, 4, WeaponDefinition.TARGETING_ADJACENT_CARDINAL, "First sword."
+	)
+	var duplicate: WeaponDefinition = WeaponDefinition.new(
+		&"sword", 2, 9, WeaponDefinition.TARGETING_STRAIGHT_LINE, "Distinct second definition under the same id."
+	)
+	var repository: WeaponRepository = WeaponRepository.new()
+	assert_true(repository.register_weapon(first).succeeded, "The first weapon registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_weapon(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same weapon id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_weapon", "A duplicate id should use the stable duplicate_weapon code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "sword", "The duplicate error should carry the offending id.")
+	assert_equal(repository.weapon_ids(), [&"sword"] as Array[StringName], "weapon_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_equal(repository.get_weapon(&"sword").base_damage, 4, "get_weapon must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: WeaponRepository = WeaponRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")

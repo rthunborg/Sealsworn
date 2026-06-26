@@ -59,7 +59,9 @@ func register_enemy(definition: EnemyDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(EnemyDefinition.DEFINITION_TYPE, definition.enemy_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(EnemyDefinition.DEFINITION_TYPE, definition.enemy_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.enemy_id)
 	if not _enemy_order.has(definition.enemy_id):
 		_enemy_order.append(definition.enemy_id)
 	return ActionResult.ok([], {
@@ -136,4 +138,11 @@ static func _baseline_definitions() -> Array[EnemyDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_enemy_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(enemy_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_enemy", {
+		"reason": "duplicate_id",
+		"id": String(enemy_id)
 	})
