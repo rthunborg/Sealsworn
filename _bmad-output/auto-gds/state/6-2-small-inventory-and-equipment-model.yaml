@@ -3,7 +3,7 @@ epic_num: 6
 story_num: 2
 branch: story/6-2-small-inventory-and-equipment-model
 status: in-progress
-updated_at: "2026-06-26T14:18:40Z"
+updated_at: "2026-06-26T14:25:46Z"
 started_at: "2026-06-26T13:51:40Z"
 completed_at: null
 active_seconds: 0
@@ -23,10 +23,11 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
+code_review_round_1: "agds-xhigh (Opus 4.8) — APPROVE; Critical 0 / High 0 / Med 0 / Low 0 blocking; 2 [Review][Decision] (forward-looking, pre-recorded by dev, reviewer concurred non-blocking); 0 patch; 0 defer; suite re-verified green 102 PASS"
 testing:
   enabled: false
   ran: []
@@ -35,6 +36,7 @@ interface_changes: "additive backward-compatible: RunState ctor gains trailing i
 commits:
   - e04fc45
   - f9edc8d
+  - 1bf4bd5
 open_questions_note: "3 [Decision] items folded into story 6-2 with recommended defaults (inventory_full error vs replacement-choice; defer equip-level CHECK; do not serialize into RunSnapshot placeholders this story); non-blocking."
 deferred_work_archived: 0
 planning_drift: []
@@ -45,7 +47,9 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions: []
+open_questions:
+  - "[Review][Decision] equip-gate character-level CHECK deferred — owner: later story introducing hero character-level (or 6.3). 6.2 builds equipment structure only. Pre-recorded by dev; reviewer concurred non-blocking."
+  - "[Review][Decision] inventory/equipment SAVE wiring into RunSnapshot deferred — owner: later in-node-save story. Model rides RunState full serialization only, out of 23-key gate. Pre-recorded by dev; reviewer concurred non-blocking."
 deferred_work: []
 blockers: []
 overrides: {}
