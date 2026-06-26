@@ -58,7 +58,9 @@ func register_recipe(definition: LevelRecipeDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(LevelRecipeDefinition.DEFINITION_TYPE, definition.recipe_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(LevelRecipeDefinition.DEFINITION_TYPE, definition.recipe_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.recipe_id)
 	if not _recipe_order.has(definition.recipe_id):
 		_recipe_order.append(definition.recipe_id)
 	return ActionResult.ok([], {
@@ -131,4 +133,11 @@ static func _baseline_definitions() -> Array[LevelRecipeDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_level_recipe_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(recipe_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_level_recipe", {
+		"reason": "duplicate_id",
+		"id": String(recipe_id)
 	})

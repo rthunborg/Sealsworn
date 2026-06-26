@@ -31,6 +31,7 @@ func run() -> Dictionary:
 	_support_definitions_validate_baseline_fields()
 	_support_repository_keeps_generic_content_registration_intact()
 	_support_repository_factory_fails_closed_on_invalid_definitions()
+	_support_repository_rejects_duplicate_id_fail_loud()
 	return result()
 
 
@@ -99,3 +100,25 @@ func _support_repository_factory_fails_closed_on_invalid_definitions() -> void:
 		shared_content_repository.has_definition(SupportDefinition.DEFINITION_TYPE, SupportDefinition.SUPPORT_NONE),
 		"Failed support repository creation must not mutate a provided content repository."
 	)
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present support id fails loud with a structured
+# duplicate_support error, leaving support_ids() + get_support consistent. A duplicate in a batch fails closed.
+func _support_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: SupportDefinition = SupportDefinition.new(
+		SupportDefinition.SUPPORT_SHIELD, 1, 0.5, 0, [], "First shield."
+	)
+	var duplicate: SupportDefinition = SupportDefinition.new(
+		SupportDefinition.SUPPORT_SHIELD, 3, 0.9, 0, [], "Distinct duplicate shield."
+	)
+	var repository: SupportRepository = SupportRepository.new()
+	assert_true(repository.register_support(first).succeeded, "The first support registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_support(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same support id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_support", "A duplicate id should use the stable duplicate_support code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "shield", "The duplicate error should carry the offending id.")
+	assert_equal(repository.support_ids(), [&"shield"] as Array[StringName], "support_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_equal(repository.get_support(SupportDefinition.SUPPORT_SHIELD).armor, 1, "get_support must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: SupportRepository = SupportRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")

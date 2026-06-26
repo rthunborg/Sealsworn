@@ -59,7 +59,9 @@ func register_support(definition: SupportDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(SupportDefinition.DEFINITION_TYPE, definition.support_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(SupportDefinition.DEFINITION_TYPE, definition.support_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.support_id)
 	if not _support_order.has(definition.support_id):
 		_support_order.append(definition.support_id)
 	return ActionResult.ok([], {
@@ -115,4 +117,11 @@ static func _baseline_definitions() -> Array[SupportDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_support_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(support_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_support", {
+		"reason": "duplicate_id",
+		"id": String(support_id)
 	})

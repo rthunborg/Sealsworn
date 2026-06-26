@@ -13,11 +13,12 @@ extends RefCounted
 # the broader 20-30 MVP passive POOL (FR46) + the per-effect operation model are Epic 6 — do NOT author the
 # full pool here.
 #
-# DUPLICATE-ID NOTE: this repository inherits ContentRepository's last-write-wins behavior by construction,
-# exactly like its five siblings (now SIX repos). The duplicate-id last-write-wins trap is a cross-cutting,
-# human-ratified [Review][Defer] owned by a dedicated all-repos hardening story — this repository is NOT
-# forked to fail-loud on a duplicate id; the new repo is folded into that ledger entry's scope. No test
-# fixture registers duplicate ids.
+# DUPLICATE-ID NOTE: as of Story 6.1 (AC6), this repository — like all its siblings and the new Epic-6
+# loot/reward repos — inherits the central ContentRepository duplicate-id fail-loud guard. A second
+# registration under an already-present passive id returns a structured `duplicate_passive` error (the
+# offending id in metadata) instead of silently last-write-winning; the rejected definition is neither stored
+# nor appended to passive_ids(). The carried Epic-5 cross-cutting [Review][Defer] is closed here.
+# test_passive_repository.gd pins this with a duplicate-id negative.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const ContentRepository = preload("res://scripts/content/repositories/content_repository.gd")
@@ -81,7 +82,9 @@ func register_passive(definition: PassiveDefinition) -> ActionResult:
 	if validation.is_error():
 		return validation
 
-	_content_repository.register_definition(PassiveDefinition.DEFINITION_TYPE, definition.passive_id, definition)
+	var registration: ActionResult = _content_repository.register_definition(PassiveDefinition.DEFINITION_TYPE, definition.passive_id, definition)
+	if registration.is_error():
+		return _duplicate(definition.passive_id)
 	if not _passive_order.has(definition.passive_id):
 		_passive_order.append(definition.passive_id)
 	return ActionResult.ok([], {
@@ -161,4 +164,11 @@ static func _baseline_definitions() -> Array[PassiveDefinition]:
 static func _invalid(reason: StringName) -> ActionResult:
 	return ActionResult.error(&"invalid_passive_repository", {
 		"reason": String(reason)
+	})
+
+
+static func _duplicate(passive_id: StringName) -> ActionResult:
+	return ActionResult.error(&"duplicate_passive", {
+		"reason": "duplicate_id",
+		"id": String(passive_id)
 	})

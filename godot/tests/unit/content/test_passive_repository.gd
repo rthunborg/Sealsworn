@@ -6,7 +6,7 @@ extends "res://tests/unit/test_case.gd"
 # stable order; get_passive(id) resolves each baseline + returns null on a miss (fail-closed); has_passive;
 # passive_ids order; registration goes through the generic ContentRepository boundary;
 # create_repository_from_definitions fails closed on a bad def (and does not mutate a provided content
-# repository). No duplicate ids are registered (the duplicate-id trap stays untriggered).
+# repository). Story 6.1 AC6: a duplicate passive id now fails loud (duplicate_passive) — pinned below.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const ContentRepository = preload("res://scripts/content/repositories/content_repository.gd")
@@ -33,6 +33,7 @@ func run() -> Dictionary:
 	_repository_keeps_generic_content_registration_intact()
 	_factory_fails_closed_on_invalid_definitions()
 	_baseline_passive_ids_constant_matches_registered_ids()
+	_passive_repository_rejects_duplicate_id_fail_loud()
 	return result()
 
 
@@ -111,3 +112,28 @@ func _factory_fails_closed_on_invalid_definitions() -> void:
 func _baseline_passive_ids_constant_matches_registered_ids() -> void:
 	var repository: PassiveRepository = PassiveRepository.create_baseline_repository()
 	assert_equal(PassiveRepository.BASELINE_PASSIVE_IDS, repository.passive_ids(), "The BASELINE_PASSIVE_IDS constant should match the actually-registered ids.")
+
+
+# Story 6.1 AC6 — a SECOND registration under an already-present passive id fails loud with a structured
+# duplicate_passive error, leaving passive_ids() + get_passive consistent (closes the carried Epic-5
+# cross-cutting [Review][Defer] for this repo). A duplicate in a batch fails closed.
+func _passive_repository_rejects_duplicate_id_fail_loud() -> void:
+	var first: PassiveDefinition = PassiveDefinition.new(
+		&"warrior_unbreakable_guard", "Unbreakable Guard", PassiveDefinition.KIND_CLASS,
+		[RuleTrigger.BEFORE_ATTACK], "First definition."
+	)
+	var duplicate: PassiveDefinition = PassiveDefinition.new(
+		&"warrior_unbreakable_guard", "Distinct Duplicate", PassiveDefinition.KIND_EQUIPMENT_SYNERGY,
+		[RuleTrigger.RUN_STARTED], "Distinct second definition under the same id."
+	)
+	var repository: PassiveRepository = PassiveRepository.new()
+	assert_true(repository.register_passive(first).succeeded, "The first passive registration should succeed.")
+	var duplicate_result: ActionResult = repository.register_passive(duplicate)
+	assert_true(duplicate_result.is_error(), "A second registration under the same passive id must fail loud.")
+	assert_equal(duplicate_result.error_code, &"duplicate_passive", "A duplicate id should use the stable duplicate_passive code.")
+	assert_equal(String(duplicate_result.metadata.get("id")), "warrior_unbreakable_guard", "The duplicate error should carry the offending id.")
+	assert_equal(repository.passive_ids(), [&"warrior_unbreakable_guard"] as Array[StringName], "passive_ids() must keep the id exactly once after a rejected duplicate.")
+	assert_equal(repository.get_passive(&"warrior_unbreakable_guard").display_name, "Unbreakable Guard", "get_passive must still resolve the FIRST definition (no silent shadow).")
+
+	var batch_repository: PassiveRepository = PassiveRepository.create_repository_from_definitions([first, duplicate])
+	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")
