@@ -39,7 +39,7 @@
 # - Epic 3, Epic 4, and Epic 5 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-26T12:00:00+00:00
+last_updated: 2026-06-26T14:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -96,4 +96,4 @@ development_status:
   5-3-starting-kit-application: done
   5-4-starting-passive-rule-integration: done
   5-5-class-start-playable-smoke-slice: review
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
