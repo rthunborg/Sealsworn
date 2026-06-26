@@ -61,8 +61,11 @@ extends "res://scripts/core/commands/game_command.gd"
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
+const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
 const RouteGenerator = preload("res://scripts/generation/route/route_generator.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
+const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const SupportRepository = preload("res://scripts/content/repositories/support_repository.gd")
@@ -87,6 +90,12 @@ var _class_repository: ClassRepository = null
 # starting weapon/support). Constructor-injected so tests can supply fixture repos with bogus kit ids.
 var _weapon_repository: WeaponRepository = null
 var _support_repository: SupportRepository = null
+# Story 5.4: the passive content repository, INJECTED (same posture as the other repos), defaulting to the
+# baseline repository. Only consulted when class_id is non-empty AND selectable (to resolve the class's two
+# starting passive ids -> typed PassiveDefinitions). It is the LAST positional constructor arg (AFTER the 5.3
+# weapon/support repos) so every existing .new(...) call still compiles unchanged. Constructor-injected so
+# tests can supply a fixture passive repository (e.g. one missing a class's passive id, to prove fail-closed).
+var _passive_repository: PassiveRepository = null
 
 func _init(
 	new_root_seed: int = 0,
@@ -95,7 +104,8 @@ func _init(
 	new_class_id: StringName = &"",
 	new_class_repository: ClassRepository = null,
 	new_weapon_repository: WeaponRepository = null,
-	new_support_repository: SupportRepository = null
+	new_support_repository: SupportRepository = null,
+	new_passive_repository: PassiveRepository = null
 ) -> void:
 	command_id = &"run_start"
 	root_seed = new_root_seed
@@ -105,6 +115,7 @@ func _init(
 	_class_repository = new_class_repository if new_class_repository != null else ClassRepository.create_baseline_repository()
 	_weapon_repository = new_weapon_repository if new_weapon_repository != null else WeaponRepository.create_baseline_repository()
 	_support_repository = new_support_repository if new_support_repository != null else SupportRepository.create_baseline_repository()
+	_passive_repository = new_passive_repository if new_passive_repository != null else PassiveRepository.create_baseline_repository()
 
 
 # Pure read: validate the sequence id and the seed. No mutation, no event, no RNG. Option-A context: the
@@ -159,6 +170,17 @@ func validate(_state: Variant) -> ActionResult:
 		var kit_check: ActionResult = _validate_kit_resolves(def)
 		if kit_check.is_error():
 			return kit_check
+		# Story 5.4 passive-resolution gate (AC1): resolve the SELECTABLE class's two starting passive ids
+		# (class_passive_id + equipment_synergy_passive_id) against the injected PassiveRepository and fail
+		# CLOSED on a miss BEFORE building any RunState ("do not bypass command/result/event flow"; the same
+		# fail-closed content discipline as the 5.3 kit gate). This runs ONLY for a confirmed-selectable class
+		# (the unknown/locked + missing-weapon/support rejects above already short-circuited), so passive
+		# resolution never runs for a locked/unknown/kit-invalid class. It is a PURE read (no mutation, no event,
+		# no RNG), so execute() short-circuits on it exactly like the class/kit/sequence/seed gates. The empty/
+		# legacy run skips the whole block (no passives).
+		var passive_check: ActionResult = _validate_passives_resolve(def)
+		if passive_check.is_error():
+			return passive_check
 	return ActionResult.ok()
 
 
@@ -180,6 +202,28 @@ func _validate_kit_resolves(def: ClassDefinition) -> ActionResult:
 			"command": String(command_id),
 			"class_id": String(class_id),
 			"support_id": String(def.starting_support_id)
+		})
+	return ActionResult.ok()
+
+
+# Story 5.4: pure read — resolve the SELECTABLE class def's two starting passive ids (class_passive_id +
+# equipment_synergy_passive_id) against the injected PassiveRepository. Returns ok() when BOTH resolve, or a
+# fail-closed structured error (unknown_class_passive / unknown_equipment_synergy_passive) carrying the
+# offending passive id in metadata. Mirrors the 5.3 kit-gate metadata pattern (one stable lower_snake code per
+# failure class; the id rides metadata, never the code). The caller guarantees def != null and
+# def.is_selectable(). The class passive is resolved FIRST so its code is the reported failure when both miss.
+func _validate_passives_resolve(def: ClassDefinition) -> ActionResult:
+	if _passive_repository.get_passive(def.class_passive_id) == null:
+		return ActionResult.error(&"unknown_class_passive", {
+			"command": String(command_id),
+			"class_id": String(class_id),
+			"passive_id": String(def.class_passive_id)
+		})
+	if _passive_repository.get_passive(def.equipment_synergy_passive_id) == null:
+		return ActionResult.error(&"unknown_equipment_synergy_passive", {
+			"command": String(command_id),
+			"class_id": String(class_id),
+			"passive_id": String(def.equipment_synergy_passive_id)
 		})
 	return ActionResult.ok()
 
@@ -250,9 +294,27 @@ func execute(_state: Variant) -> ActionResult:
 	# string-shape refs resolved against NOTHING — Story 5.4/Epic 6). This applies the kit into the EXISTING
 	# RunState (no parallel run format, no tactical board player — Story 5.5). Draws NO RNG.
 	var applied_kit: StartingKit = null
+	# Story 5.4 (AC1): build a RulesResolver, REGISTER the two resolved starting passives into it (each keyed
+	# by its declared trigger window(s)), and SEAT it on the run as run domain state — AFTER recording the kit
+	# (the "record after kit" ordering, mirroring "set selected_class_id after new_run, record kit after that").
+	# ONLY for a non-empty + selectable class (the empty/legacy run seats NO resolver — back-compat). validate()
+	# already proved both passive ids resolve (the passive gate), so the resolution here cannot miss — but build
+	# it through the same accessor so the registered passives ARE the resolved content. Draws NO RNG (a content
+	# lookup + a stable-order registration + a field set); applies NO combat mutation.
+	var resolver: RulesResolver = null
+	var class_passive_def: PassiveDefinition = null
+	var equip_passive_def: PassiveDefinition = null
 	if not class_id.is_empty():
 		applied_kit = _resolve_starting_kit()
 		run.starting_kit = applied_kit
+		class_passive_def = _passive_repository.get_passive(applied_kit.class_passive_id)
+		equip_passive_def = _passive_repository.get_passive(applied_kit.equipment_synergy_passive_id)
+		resolver = RulesResolver.new()
+		# Registration order = stable resolution order. Register the class passive first, then the
+		# equipment-synergy passive (a deterministic, documented order).
+		resolver.register_passive(class_passive_def)
+		resolver.register_passive(equip_passive_def)
+		run.rules_resolver = resolver
 
 	# (5) Build the single run_started event AFTER the transition. node_count is the route's NON-BOSS count
 	# (bounded [8, 12], RouteGenerator.PAYLOAD_NODE_COUNT_KEY / metadata.node_count) — a small bounded count,
@@ -284,6 +346,25 @@ func execute(_state: Variant) -> ActionResult:
 		result_metadata["weapon_id"] = String(applied_kit.weapon_id)
 		result_metadata["support_id"] = String(applied_kit.support_id)
 		result_metadata["baseline_hp"] = applied_kit.baseline_hp
+	# Story 5.4: surface the registered starting passives to the caller via metadata ONLY (the run_started event
+	# PAYLOAD stays unchanged — root_seed/is_manual_seed/node_count). Surface the two passive ids, the resolver's
+	# registered-id list (stable order), and the player/debug-readable explanation lines (a deterministic
+	# Array[String]) — the AC2 explanation surface. An empty-class start surfaces NO passive keys (back-compat).
+	# The explanations are surfaced as plain Strings (NOT a typed Array[Dictionary], which would not survive the
+	# ActionResult metadata deep-copy).
+	if resolver != null:
+		result_metadata["class_passive_id"] = String(applied_kit.class_passive_id)
+		result_metadata["equipment_synergy_passive_id"] = String(applied_kit.equipment_synergy_passive_id)
+		var registered_ids: Array[String] = []
+		for registered_id: StringName in resolver.registered_passive_ids():
+			registered_ids.append(String(registered_id))
+		result_metadata["registered_passive_ids"] = registered_ids
+		var explanations: Array[String] = []
+		if class_passive_def != null:
+			explanations.append(class_passive_def.explanation)
+		if equip_passive_def != null:
+			explanations.append(equip_passive_def.explanation)
+		result_metadata["passive_explanations"] = explanations
 	return ActionResult.ok([event], result_metadata)
 
 

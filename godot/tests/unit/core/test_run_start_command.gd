@@ -20,7 +20,11 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
+const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
+const RuleTrigger = preload("res://scripts/rules/triggers/rule_trigger.gd")
+const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
@@ -53,6 +57,15 @@ func run() -> Dictionary:
 	_locked_and_unknown_class_reject_before_kit_resolution()
 	_start_with_kit_is_deterministic_for_same_inputs()
 	_applied_kit_survives_run_to_dictionary_round_trip()
+	# Story 5.4 — starting-passive resolution + registration + resolver seating (AC1/AC2/AC3).
+	_start_with_each_playable_class_registers_and_seats_the_resolver()
+	_seated_resolver_resolves_declared_windows_with_explanations()
+	_start_with_unknown_class_passive_rejects_fail_closed()
+	_start_with_unknown_equipment_synergy_passive_rejects_fail_closed()
+	_empty_class_start_seats_no_resolver_and_stays_byte_identical()
+	_locked_and_unknown_class_reject_before_passive_resolution()
+	_start_with_passives_is_deterministic_for_same_inputs()
+	_seated_resolver_holds_only_passives_no_active_skill()
 	return result()
 
 
@@ -417,6 +430,177 @@ func _applied_kit_survives_run_to_dictionary_round_trip() -> void:
 	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the applied kit byte-for-byte.")
 
 
+# ---- Story 5.4: starting-passive resolution + registration --------------------------------------
+
+# AC1: starting a run WITH each playable class RESOLVES that class's two starting passive ids (class +
+# equipment-synergy) through PassiveRepository and SEATS a RulesResolver on the started RunState holding both
+# (in registration order: class passive first, equipment-synergy passive second). The registered ids match
+# the RESOLVED ClassRepository/PassiveRepository baselines (read the def — not hardcoded literals). The
+# resolver + the two passive ids + the explanation lines are surfaced via result.metadata.
+func _start_with_each_playable_class_registers_and_seats_the_resolver() -> void:
+	var class_repo: ClassRepository = ClassRepository.create_baseline_repository()
+	var passive_repo: PassiveRepository = PassiveRepository.create_baseline_repository()
+	for class_id: StringName in PLAYABLE_CLASS_IDS:
+		var def: ClassDefinition = class_repo.get_class_definition(class_id)
+		assert_true(def != null and def.is_selectable(), "Fixture sanity: %s should resolve as a selectable class." % class_id)
+
+		var started: ActionResult = RunStartCommand.new(42, false, 1, class_id).execute(null)
+		assert_true(started.succeeded, "Starting a run with %s should succeed: %s" % [class_id, started.metadata])
+		var run: RunState = started.metadata.get("run") as RunState
+		assert_true(run != null, "A %s start should return the live RunState." % class_id)
+
+		# AC1: the resolver is SEATED on the RunState (run domain state, not a side-channel global).
+		var resolver: RulesResolver = run.rules_resolver
+		assert_true(resolver != null, "AC1: a %s start must SEAT a RulesResolver on the RunState." % class_id)
+		assert_equal(resolver.registered_passive_count(), 2, "%s: the resolver must hold exactly the two starting passives." % class_id)
+		# Registered in order: class passive first, equipment-synergy passive second — matching the resolved def.
+		var expected_ids: Array[StringName] = [def.class_passive_id, def.equipment_synergy_passive_id] as Array[StringName]
+		assert_equal(resolver.registered_passive_ids(), expected_ids, "%s: the resolver must register the class passive then the equipment-synergy passive (matching the resolved class def)." % class_id)
+		# The registered passives are the RESOLVED baseline definitions (cross-check against PassiveRepository).
+		for passive_id: StringName in expected_ids:
+			assert_true(passive_repo.get_passive(passive_id) != null, "%s: the registered passive %s must resolve in the baseline PassiveRepository." % [class_id, String(passive_id)])
+
+		# The passives are surfaced via result metadata for the caller.
+		assert_equal(String(started.metadata.get("class_passive_id", "")), String(def.class_passive_id), "%s: metadata should surface the class passive id." % class_id)
+		assert_equal(String(started.metadata.get("equipment_synergy_passive_id", "")), String(def.equipment_synergy_passive_id), "%s: metadata should surface the equipment-synergy passive id." % class_id)
+		var meta_ids: Array = started.metadata.get("registered_passive_ids", [])
+		assert_equal(meta_ids.size(), 2, "%s: metadata registered_passive_ids should list both passives." % class_id)
+		var meta_explanations: Array = started.metadata.get("passive_explanations", [])
+		assert_equal(meta_explanations.size(), 2, "%s: metadata passive_explanations should surface both readable lines." % class_id)
+		for explanation: Variant in meta_explanations:
+			assert_false(String(explanation).strip_edges().is_empty(), "%s: each surfaced passive explanation must be non-empty (the Readability Rule)." % class_id)
+
+
+# AC2: resolving the declared trigger window(s) through the SEATED resolver yields the registered starting
+# passives in stable order, each with a player/debug-readable explanation entry. Warrior's class passive
+# declares before_attack; its equipment-synergy passive declares run_started.
+func _seated_resolver_resolves_declared_windows_with_explanations() -> void:
+	var started: ActionResult = RunStartCommand.new(42, false, 1, &"warrior").execute(null)
+	var run: RunState = started.metadata.get("run") as RunState
+	var resolver: RulesResolver = run.rules_resolver
+	assert_true(resolver != null, "A warrior start must seat a resolver.")
+
+	# before_attack -> the warrior class passive, with its explanation.
+	var before_attack: Array[PassiveDefinition] = resolver.resolve(RuleTrigger.BEFORE_ATTACK)
+	assert_equal(before_attack.size(), 1, "AC2: before_attack should resolve the warrior class passive.")
+	assert_equal(before_attack[0].passive_id, &"warrior_unbreakable_guard", "AC2: before_attack should resolve warrior_unbreakable_guard.")
+	var before_attack_explanations: Array[String] = resolver.explain(RuleTrigger.BEFORE_ATTACK)
+	assert_equal(before_attack_explanations.size(), 1, "AC2: before_attack should surface one explanation entry.")
+	assert_false(before_attack_explanations[0].strip_edges().is_empty(), "AC2: the resolved passive must surface a readable explanation.")
+
+	# run_started -> the warrior equipment-synergy passive.
+	var run_started: Array[PassiveDefinition] = resolver.resolve(RuleTrigger.RUN_STARTED)
+	assert_equal(run_started.size(), 1, "AC2: run_started should resolve the warrior equipment-synergy passive.")
+	assert_equal(run_started[0].passive_id, &"warrior_blade_and_board", "AC2: run_started should resolve warrior_blade_and_board.")
+
+	# A window no starting passive declares resolves empty (deterministic, not an error).
+	assert_true(resolver.resolve(RuleTrigger.LEVEL_COMPLETED).is_empty(), "AC2: an undeclared window resolves empty.")
+
+	# Determinism: a second identical start yields a byte-identical resolved id + explanation output.
+	var second: ActionResult = RunStartCommand.new(42, false, 1, &"warrior").execute(null)
+	var second_resolver: RulesResolver = (second.metadata.get("run") as RunState).rules_resolver
+	assert_equal(resolver.registered_passive_ids(), second_resolver.registered_passive_ids(), "AC2: same run -> byte-identical resolver registration.")
+	assert_equal(resolver.explain(RuleTrigger.BEFORE_ATTACK), second_resolver.explain(RuleTrigger.BEFORE_ATTACK), "AC2: same run + same window -> byte-identical explanation output.")
+
+
+# AC1: a class whose class_passive_id does NOT resolve against PassiveRepository rejects fail-closed in BOTH
+# validate() and execute() with the stable unknown_class_passive code, ZERO events, NO run built, no resolver
+# seated. The offending passive id rides metadata. Uses a fixture class with a real (resolvable) kit but an
+# unregistered class_passive_id, injected via a fixture ClassRepository; the baseline PassiveRepository is
+# injected by default so the bogus passive id resolves to null there.
+func _start_with_unknown_class_passive_rejects_fail_closed() -> void:
+	var class_repo: ClassRepository = _class_repo_with_bogus_passives(&"bogus_class_passive_class", &"not_a_real_passive", &"warrior_blade_and_board")
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"bogus_class_passive_class", class_repo)
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC1: an unresolvable class passive should be rejected by validate().")
+	assert_equal(validation.error_code, &"unknown_class_passive", "An unresolvable class passive should use the stable unknown_class_passive code.")
+	assert_equal(String(validation.metadata.get("passive_id", "")), "not_a_real_passive", "The reject metadata should carry the offending passive id.")
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC1: an unresolvable class passive should be rejected by execute().")
+	assert_equal(started.error_code, &"unknown_class_passive", "execute() should reject an unresolvable class passive with unknown_class_passive.")
+	assert_true(started.events.is_empty(), "A rejected unknown-class-passive start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC1: a rejected unknown-class-passive start must build NO run.")
+	assert_false(started.metadata.has("registered_passive_ids"), "A rejected start must surface no registered passives.")
+
+
+# AC1: a class whose equipment_synergy_passive_id does NOT resolve rejects fail-closed with the stable
+# unknown_equipment_synergy_passive code (the class passive DOES resolve, so the synergy passive is the sole
+# failure — proving the class passive is checked first and the synergy passive second).
+func _start_with_unknown_equipment_synergy_passive_rejects_fail_closed() -> void:
+	var class_repo: ClassRepository = _class_repo_with_bogus_passives(&"bogus_synergy_passive_class", &"warrior_unbreakable_guard", &"not_a_real_synergy")
+	var command: RunStartCommand = RunStartCommand.new(42, false, 1, &"bogus_synergy_passive_class", class_repo)
+	var validation: ActionResult = command.validate(null)
+	assert_true(validation.is_error(), "AC1: an unresolvable equipment-synergy passive should be rejected by validate().")
+	assert_equal(validation.error_code, &"unknown_equipment_synergy_passive", "An unresolvable equipment-synergy passive should use the stable code.")
+	assert_equal(String(validation.metadata.get("passive_id", "")), "not_a_real_synergy", "The reject metadata should carry the offending passive id.")
+	var started: ActionResult = command.execute(null)
+	assert_true(started.is_error(), "AC1: an unresolvable equipment-synergy passive should be rejected by execute().")
+	assert_equal(started.error_code, &"unknown_equipment_synergy_passive", "execute() should reject with unknown_equipment_synergy_passive.")
+	assert_true(started.events.is_empty(), "A rejected unknown-synergy-passive start must emit zero events.")
+	assert_false(started.metadata.has("run"), "AC1: a rejected unknown-synergy-passive start must build NO run.")
+
+
+# AC1 back-compat: an EMPTY class start seats NO resolver (run.rules_resolver == null) AND its
+# run.to_dictionary() is byte-identical to a seed-only start of the same seed (the resolver is NOT serialized,
+# so it cannot perturb the dict regardless). The 4.6 seed-only path stays exactly as it was.
+func _empty_class_start_seats_no_resolver_and_stays_byte_identical() -> void:
+	var empty_class: ActionResult = RunStartCommand.new(42, false, 1, &"").execute(null)
+	assert_true(empty_class.succeeded, "An empty-class start should succeed.")
+	var empty_run: RunState = empty_class.metadata.get("run") as RunState
+	assert_true(empty_run.rules_resolver == null, "AC1 back-compat: an empty-class start must seat NO resolver (rules_resolver == null).")
+	assert_false(empty_class.metadata.has("registered_passive_ids"), "An empty-class start must surface no registered passives.")
+	assert_false(empty_class.metadata.has("class_passive_id"), "An empty-class start must surface no passive metadata.")
+
+	var seed_only: ActionResult = RunStartCommand.new(42).execute(null)
+	var seed_only_run: RunState = seed_only.metadata.get("run") as RunState
+	assert_true(seed_only_run.rules_resolver == null, "A seed-only start must seat NO resolver.")
+	# The full run dict is byte-identical (the resolver is not serialized; neither is a class/kit for an empty start).
+	assert_equal(JSON.stringify(empty_run.to_dictionary()), JSON.stringify(seed_only_run.to_dictionary()), "An empty-class start must be byte-identical to a seed-only start (no serialized resolver).")
+
+
+# AC3: the 5.2 fail-closed class gate is PRESERVED — a locked/unknown class still rejects BEFORE any passive
+# resolution (the reject is the class code, never a passive code; no resolver surfaced). This proves passive
+# resolution runs ONLY for a confirmed-selectable class.
+func _locked_and_unknown_class_reject_before_passive_resolution() -> void:
+	var locked: ActionResult = RunStartCommand.new(42, false, 1, &"necromancer").execute(null)
+	assert_true(locked.is_error(), "A locked class must still reject.")
+	assert_equal(locked.error_code, &"class_not_selectable", "A locked class rejects with class_not_selectable (BEFORE passive resolution).")
+	assert_false(locked.metadata.has("registered_passive_ids"), "A locked-class reject surfaces no passives (resolution never ran).")
+
+	var unknown: ActionResult = RunStartCommand.new(42, false, 1, &"does_not_exist").execute(null)
+	assert_true(unknown.is_error(), "An unknown class must still reject.")
+	assert_equal(unknown.error_code, &"unknown_class", "An unknown class rejects with unknown_class (BEFORE passive resolution).")
+	assert_false(unknown.metadata.has("registered_passive_ids"), "An unknown-class reject surfaces no passives (resolution never ran).")
+
+
+# AC1/AC2: a class start WITH passives is deterministic — same inputs -> byte-identical run.to_dictionary()
+# (the resolver is not serialized, so the dict matches a seed-only start's run/route fields) + the same
+# run_started event + byte-identical resolver registration. The passive registration adds no RNG.
+func _start_with_passives_is_deterministic_for_same_inputs() -> void:
+	var first: ActionResult = RunStartCommand.new(777, false, 1, &"ranger").execute(null)
+	var second: ActionResult = RunStartCommand.new(777, false, 1, &"ranger").execute(null)
+	assert_true(first.succeeded and second.succeeded, "Both deterministic passive starts should succeed.")
+	var first_run: RunState = first.metadata.get("run") as RunState
+	var second_run: RunState = second.metadata.get("run") as RunState
+	assert_equal(JSON.stringify(first_run.to_dictionary()), JSON.stringify(second_run.to_dictionary()), "Same inputs (with passives) must produce a byte-identical run.to_dictionary().")
+	assert_equal(JSON.stringify(first.events[0].to_dictionary()), JSON.stringify(second.events[0].to_dictionary()), "Same inputs (with passives) must produce a byte-identical run_started event.")
+	assert_equal(first_run.rules_resolver.registered_passive_ids(), second_run.rules_resolver.registered_passive_ids(), "Same inputs must produce a byte-identical resolver registration.")
+
+
+# AC3: the seated resolver holds ONLY PassiveDefinition rule-benders and exposes no active-skill activation —
+# the started run registers only PASSIVE rule-benders (no level-1 active class skill).
+func _seated_resolver_holds_only_passives_no_active_skill() -> void:
+	var started: ActionResult = RunStartCommand.new(42, false, 1, &"pyromancer").execute(null)
+	var resolver: RulesResolver = (started.metadata.get("run") as RunState).rules_resolver
+	assert_true(resolver != null, "A pyromancer start must seat a resolver.")
+	for window_id: StringName in [RuleTrigger.BEFORE_ATTACK, RuleTrigger.RUN_STARTED]:
+		for definition: PassiveDefinition in resolver.resolve(window_id):
+			assert_true(definition is PassiveDefinition, "AC3: the resolver must hold only PassiveDefinition rule-benders (no active skill).")
+			assert_true(definition.passive_kind == PassiveDefinition.KIND_CLASS or definition.passive_kind == PassiveDefinition.KIND_EQUIPMENT_SYNERGY, "AC3: every registered passive is a class or equipment-synergy PASSIVE (never an active skill).")
+	for forbidden: String in ["activate", "use_skill", "trigger_active_skill"]:
+		assert_false(resolver.has_method(forbidden), "AC3: the resolver must not expose an active-skill activation method '%s'." % forbidden)
+
+
 # ---- Story 5.3 fixture helpers -------------------------------------------------------------------
 
 # Build a fixture ClassRepository containing the five baseline classes PLUS one extra SELECTABLE class whose
@@ -439,4 +623,28 @@ func _class_repo_with_bogus_kit(class_id: StringName, weapon_id: StringName, sup
 	)
 	var registered: ActionResult = repo.register_class(fixture)
 	assert_true(registered.succeeded, "Fixture class registration should succeed: %s" % registered.metadata)
+	return repo
+
+
+# Story 5.4: build a fixture ClassRepository containing the five baseline classes PLUS one extra SELECTABLE
+# class whose kit (sword/shield) RESOLVES but whose passive ids are the supplied class/equipment-synergy ids.
+# The passive ids must be lower_snake (so ClassDefinition.validate() passes) but may be NON-EXISTENT passive
+# ids (so the passive gate fails closed). The baseline PassiveRepository is NOT modified — it is injected with
+# defaults by RunStartCommand, so a bogus passive id resolves to null there. The kit (sword/shield) is real so
+# the kit gate passes and the passive gate is the sole failure. No duplicate ids are registered.
+func _class_repo_with_bogus_passives(class_id: StringName, class_passive_id: StringName, equipment_synergy_passive_id: StringName) -> ClassRepository:
+	var repo: ClassRepository = ClassRepository.create_baseline_repository()
+	var fixture: ClassDefinition = ClassDefinition.new(
+		class_id,
+		"Fixture Passive Class",
+		ClassDefinition.LOCK_STATE_SELECTABLE,
+		"",
+		&"sword",
+		&"shield",
+		18,
+		class_passive_id,
+		equipment_synergy_passive_id
+	)
+	var registered: ActionResult = repo.register_class(fixture)
+	assert_true(registered.succeeded, "Fixture passive-class registration should succeed: %s" % registered.metadata)
 	return repo
