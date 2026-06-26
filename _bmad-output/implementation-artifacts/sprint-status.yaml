@@ -103,7 +103,7 @@ development_status:
   epic-5-retrospective: done
   epic-6: in-progress
   6-1-item-loot-and-reward-definitions: done
-  6-2-small-inventory-and-equipment-model: review
+  6-2-small-inventory-and-equipment-model: done
   6-3-reward-offer-flow: backlog
   6-4-passive-reward-modal-data-contract: backlog
   6-5-consume-passive-command: backlog

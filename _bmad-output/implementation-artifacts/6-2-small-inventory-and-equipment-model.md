@@ -8,7 +8,7 @@ baseline_commit: e04fc45ff07a094446c6c0e478ea574b6b86e7ec
 
 # Story 6.2: Small Inventory and Equipment Model
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
