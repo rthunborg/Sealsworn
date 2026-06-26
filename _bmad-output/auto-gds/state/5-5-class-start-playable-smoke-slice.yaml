@@ -3,10 +3,10 @@ epic_num: 5
 story_num: 5
 branch: story/5-5-class-start-playable-smoke-slice
 status: in-progress
-updated_at: "2026-06-26T11:23:00Z"
+updated_at: "2026-06-26T11:31:24Z"
 started_at: "2026-06-26T10:40:18Z"
 completed_at: null
-active_seconds: 2100
+active_seconds: 2500
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -30,7 +30,7 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["f636ab4", "5e43677", "a0f432a"]
+commits: ["f636ab4", "5e43677", "a0f432a", "7fc4373"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

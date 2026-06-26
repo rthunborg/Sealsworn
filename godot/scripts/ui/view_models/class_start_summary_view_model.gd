@@ -13,10 +13,11 @@ extends RefCounted
 #     weapon_id, support_id, baseline_hp, class_passive_id, equipment_synergy_passive_id, passive_explanations
 #     (the class passive THEN the equipment-synergy passive, the stable resolver order), run_started_explanations
 #     (the equipment-synergy passive's window — AC2 "surfaces AT START"), and before_attack_explanations (the
-#     class passive's window — AC2 "surfaces when an attack window resolves"). It reads class/passive content
-#     ONLY through get_class_definition / get_passive (NEVER the reserved-native get_class) and resolves the
-#     per-window explanations through the run's rules_resolver (a PURE read — the resolver draws NO RNG, mutates
-#     nothing; 5.4).
+#     class passive's window — AC2 "surfaces when an attack window resolves"). It reads the display_name through
+#     get_class_definition (NEVER the reserved-native get_class) and derives ALL explanation fields — the two
+#     per-window lists AND the flat passive_explanations — from the run's seated rules_resolver (a PURE read —
+#     the resolver draws NO RNG, mutates nothing; 5.4), so the resolver is the SINGLE source of truth for every
+#     surfaced explanation (no re-resolution from a separately-injected PassiveRepository).
 #   - re_derive_kit(class_id) / re_derive_resolver(class_id) [STATIC]: the ONE canonical place a resumer
 #     re-derives BOTH live services after a route-position resume (restored_run.starting_kit AND
 #     restored_run.rules_resolver are NULL by design — the 4.6 inert-RngStreamSet precedent). They are
@@ -61,16 +62,18 @@ const SUMMARY_KEYS: Array[String] = [
 ]
 
 var _class_repository: ClassRepository = null
-var _passive_repository: PassiveRepository = null
 
 func _init(
 	new_class_repository: ClassRepository = null,
-	new_passive_repository: PassiveRepository = null
+	_new_passive_repository: PassiveRepository = null
 ) -> void:
-	# Default to the baseline repositories (the HeroSelectViewModel / RunStartCommand injection posture). Tests
-	# inject fixture repositories.
+	# Default to the baseline class repository (the HeroSelectViewModel / RunStartCommand injection posture; tests
+	# inject a fixture repository). The class repository resolves the display_name. The passive-repository
+	# parameter is RETAINED for constructor-signature stability but is no longer stored or read by summarize():
+	# passive_explanations is now derived from the run's seated rules_resolver (the SAME single source of truth as
+	# the per-window explanation fields), so the projection needs no passive repository. The static re-derive
+	# helpers take their own passive-repository argument.
 	_class_repository = new_class_repository if new_class_repository != null else ClassRepository.create_baseline_repository()
-	_passive_repository = new_passive_repository if new_passive_repository != null else PassiveRepository.create_baseline_repository()
 
 
 # Project the class-start identity of a STARTED run. A run carrying a non-empty selected_class_id + a kit + a
@@ -78,7 +81,11 @@ func _init(
 # identity-ABSENT surface (the SAME key set, empty/default values, NO explanations) — fail-closed, NOT a crash,
 # NOT a half-entry (the HeroSelectViewModel fail-closed-skip discipline). PURE read: no RNG, no mutation.
 func summarize(run: RunState) -> Dictionary:
-	if run == null or String(run.selected_class_id).is_empty():
+	# Identity is absent (and the projection is identity-absent) unless the run carries the FULL started-class
+	# shape: a non-empty selected_class_id, a resolving class definition, AND the authoritative 5.3 starting_kit.
+	# A started selectable-class run always seats all three; a kit-absent class run is treated as identity-absent
+	# (fail-closed — never a half-entry, never a crash, and never a def-sourced/resolver-sourced field mix).
+	if run == null or String(run.selected_class_id).is_empty() or run.starting_kit == null:
 		return _identity_absent_summary()
 
 	# Resolve the class definition through the accessor (NEVER get_class). A class id that somehow does not
@@ -88,14 +95,14 @@ func summarize(run: RunState) -> Dictionary:
 	if def == null:
 		return _identity_absent_summary()
 
-	# Prefer the recorded kit (the authoritative 5.3 record). Fall back to the definition's configured kit fields
-	# if a class run somehow carries no kit (defensive — a started selectable-class run always has one).
+	# The recorded kit is the authoritative 5.3 record of the resolved weapon/support/baseline_hp + the two
+	# passive ids (a started selectable-class run always has one — the guard above ensures it is non-null here).
 	var kit: StartingKit = run.starting_kit
-	var weapon_id: String = String(kit.weapon_id) if kit != null else String(def.starting_weapon_id)
-	var support_id: String = String(kit.support_id) if kit != null else String(def.starting_support_id)
-	var baseline_hp: int = kit.baseline_hp if kit != null else def.baseline_hp
-	var class_passive_id: String = String(kit.class_passive_id) if kit != null else String(def.class_passive_id)
-	var equip_passive_id: String = String(kit.equipment_synergy_passive_id) if kit != null else String(def.equipment_synergy_passive_id)
+	var weapon_id: String = String(kit.weapon_id)
+	var support_id: String = String(kit.support_id)
+	var baseline_hp: int = kit.baseline_hp
+	var class_passive_id: String = String(kit.class_passive_id)
+	var equip_passive_id: String = String(kit.equipment_synergy_passive_id)
 
 	# Surface the per-window explanations by RESOLVING the declared windows on the run's resolver (the AC2
 	# explanation surface). A class run with no resolver surfaces empty lists (defensive — a started
@@ -104,8 +111,12 @@ func summarize(run: RunState) -> Dictionary:
 	var run_started_explanations: Array[String] = _explain_window(run, RuleTrigger.RUN_STARTED)
 	var before_attack_explanations: Array[String] = _explain_window(run, RuleTrigger.BEFORE_ATTACK)
 	# The flat all-explanations field is the class passive THEN the equipment-synergy passive (the stable
-	# registration order RunStartCommand uses), derived from the resolver's registered passives.
-	var passive_explanations: Array[String] = _ordered_passive_explanations(run, class_passive_id, equip_passive_id)
+	# registration order RunStartCommand uses), derived from the SAME source as the per-window fields above — the
+	# run's seated resolver — so there is ONE source of truth (the class passive fires before_attack and is
+	# registered first; the equipment-synergy passive fires run_started and is registered second).
+	var passive_explanations: Array[String] = []
+	passive_explanations.append_array(before_attack_explanations)
+	passive_explanations.append_array(run_started_explanations)
 
 	return {
 		"has_class_identity": true,
@@ -148,21 +159,6 @@ func _explain_window(run: RunState, window_id: StringName) -> Array[String]:
 		var empty: Array[String] = []
 		return empty
 	return run.rules_resolver.explain(window_id)
-
-
-# The two passive explanations in stable registration order (class passive THEN equipment-synergy passive),
-# resolved through the PassiveRepository accessor (get_passive, NEVER get_class). This mirrors the order
-# RunStartCommand registers them, so passive_explanations is the deterministic flat surface. A missing passive
-# (defensive — the start gate already proved both resolve) is skipped rather than surfacing an empty line.
-func _ordered_passive_explanations(_run: RunState, class_passive_id: String, equip_passive_id: String) -> Array[String]:
-	var explanations: Array[String] = []
-	var class_passive: PassiveDefinition = _passive_repository.get_passive(StringName(class_passive_id))
-	if class_passive != null:
-		explanations.append(class_passive.explanation)
-	var equip_passive: PassiveDefinition = _passive_repository.get_passive(StringName(equip_passive_id))
-	if equip_passive != null:
-		explanations.append(equip_passive.explanation)
-	return explanations
 
 
 # ---- the consolidated 5.4 RE-DERIVE-BOTH obligation (the ONE canonical re-derive) ----------------
