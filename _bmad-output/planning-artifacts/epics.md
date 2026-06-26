@@ -1595,6 +1595,8 @@ So that class identity appears early while MVP combat stays focused.
 **Then** the outcome emits deterministic events or explanation entries as appropriate
 **And** the passive effect is testable without UI scenes.
 
+> **v0 scope clarification (Epic 5 as-built, re-synced from the Epic 5 retrospective 2026-06-26):** Epic 5 starting passives are **EXPLANATION-ONLY** — they register against explicit trigger windows and emit player-readable explanation entries; the felt per-effect *mutation* of movement/targeting/damage/healing/preview (the effect-operation + combat-hook side) is intentionally deferred to **Epic 6**. The "modifies ... output" wording above describes the eventual capability, not Epic 5's deliverable. The `scripts/rules/{conditions,operations}` kernel slots ship empty in Epic 5 and are filled in Epic 6.
+
 **Given** level-1 class active skills are out of scope
 **When** class definitions are validated
 **Then** active skill fields are absent, empty, or disabled for MVP starting classes
@@ -1623,10 +1625,7 @@ So that class choice matters before deeper talent systems exist.
 **Then** the run remains deterministic under the same seed
 **And** the build remains playable after the class story is complete.
 
-**Given** an internal tester plays the first tactical loop with Warrior, Pyromancer, and Ranger
-**When** they compare the class starts
-**Then** each class must change at least one combat decision through equipment, passive, or preview behavior
-**And** any class that feels like a stat-only reskin is flagged before more class content is added.
+> **Relocated to Epic 10 — Playtest Tuning (moved 2026-06-26):** the original human-felt acceptance check for this story — an internal tester playing Warrior/Pyromancer/Ranger and confirming each class changes at least one combat decision (i.e. is not a stat-only reskin) — was **moved to Story 10.4 (Gameplay Comprehension and Playtest Checklist)** so it runs during the dedicated MVP playtest phase rather than gating the Epic 5 smoke slice. Epic 5 proves the class start is *playable, deterministic, and surfaces class identity data + passive explanations*; the subjective "does class choice change a felt decision?" judgment belongs to the cross-class MVP playtest. The headless smoke ACs above remain Epic 5's bar.
 
 ## Epic 6: Loot, Passives, and Consume/Destroy
 
@@ -1665,12 +1664,18 @@ So that runs can offer readable build choices without hardcoded item logic.
 **Then** the data model uses roll ranges, affix/enhancement ids, and affinity tags rather than fixed item levels
 **And** any advanced roll family not implemented for MVP is explicitly deferred while preserving the repository/data boundary for later rollout.
 
+**Given** two content definitions are registered under the same id in ANY content repository (carried cross-cutting hardening item from Epic 5 — see `deferred-work.md`)
+**When** the repository ingests them
+**Then** registration fails loud with a structured `duplicate_*` error instead of silently last-write-wins (where the id list keeps the first and the lookup returns the second)
+**And** the guard is applied uniformly, retrofitting the six existing repositories that currently accept duplicates (class, enemy, level-recipe, weapon, support, passive) as well as the new Epic 6 loot/reward repositories — done before/with the first new data-pipeline content so a duplicate id can never silently shadow another.
+
 **Implementation Task Checklist:**
 
 - [ ] 6.1.1 Define loot, reward, consumable, passive, gold, pickup, and equipment definition schemas.
 - [ ] 6.1.2 Add repository lookup and validation errors for missing ids, unsupported categories, invalid ranges, and invalid character-level requirement fields.
 - [ ] 6.1.3 Add item roll model data for ranges, affixes, affinities, and enhancements, or explicit MVP deferral markers for each advanced roll family.
 - [ ] 6.1.4 Add deterministic reward offer fixtures that prove `rewards`/`loot` stream use and reproduce offers from the same seed and state.
+- [ ] 6.1.5 Retrofit duplicate-id fail-loud rejection across ALL content repositories — the six existing ones (class, enemy, level-recipe, weapon, support, passive) plus the new Epic 6 loot/reward repositories — with negative tests; closes the cross-cutting duplicate-id hardening item carried from Epic 5 (`deferred-work.md`). Sequence this before/with the first new data-pipeline content so duplicates cannot silently shadow.
 
 ### Story 6.2: Small Inventory and Equipment Model
 
@@ -2459,6 +2464,11 @@ So that tuning focuses on real friction rather than guesswork.
 **When** frequency, use rate, and player-perceived value are reviewed
 **Then** consumables are flagged for tuning if they appear too often, never appear across the approved sample, are ignored in three or more relevant sessions, or are described as not worth using by repeated testers
 **And** tuning notes reference reward tables, consumable definitions, and observed context.
+
+**Given** a playtester plays the first tactical loop with each MVP class — Warrior, Pyromancer, and Ranger — and (once Epic 6+ ships them) any additional class/build content (relocated from Story 5.5, 2026-06-26)
+**When** they compare the class starts
+**Then** each class must change at least one combat decision through equipment, passive, or preview behavior
+**And** any class that feels like a stat-only reskin is flagged for tuning before more class content is added, referencing the relevant class definition, starting kit, and passive explanation surface.
 
 ### Story 10.5: Accessibility and Readability Audit
 
