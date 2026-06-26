@@ -6,7 +6,7 @@ baseline_commit: b46d767f7cfc8072be2133bdedafafc4e6de4570
 
 # Story 5.4: Starting Passive Rule Integration
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
