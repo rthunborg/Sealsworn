@@ -8,7 +8,7 @@ baseline_commit: 7c61eb519d8c5892106b24e5bdab111d8f7d2f69
 
 # Story 6.3: Reward Offer Flow
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

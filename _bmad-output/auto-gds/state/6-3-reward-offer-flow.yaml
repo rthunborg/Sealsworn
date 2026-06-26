@@ -2,11 +2,11 @@ story_key: 6-3-reward-offer-flow
 epic_num: 6
 story_num: 3
 branch: story/6-3-reward-offer-flow
-status: in-progress
-updated_at: "2026-06-26T16:19:37Z"
+status: done
+updated_at: "2026-06-26T16:22:35Z"
 started_at: "2026-06-26T15:35:24Z"
-completed_at: null
-active_seconds: 0
+completed_at: "2026-06-26T16:22:35Z"
+active_seconds: 2520
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -22,9 +22,9 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 7
-completed_phases: [0, 1, 3, 5]
+completed_phases: [0, 1, 3, 5, 7, 9]
 code_review_iterations: 1
-code_review_loop_done: false
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 code_review_round_1: "agds-xhigh (Opus 4.8) — APPROVE; Critical 0 / High 0 / Med 0 / Low 0 blocking; 2 [Review][Decision] (forward-looking, owned downstream); 0 patch; 0 defer; suite re-verified green 105 PASS; T2 fix + 23-key gate + validated-tables confirmed"
@@ -37,12 +37,13 @@ commits:
   - a424f95
   - 7c61eb5
   - 8b74800
+  - 24206da
 open_questions_note: "Multiple [Decision] items folded into story 6-3 with recommended defaults (offer value-object vs dict; generate site; stream-per-category; AC4 distinct-pick + MVP-exception marker; gold-no-wallet residual; persist-offer-in-save recommended no; whether to also do level-gen RngStreamSet-injection half of T2); non-blocking."
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
