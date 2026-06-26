@@ -6,7 +6,7 @@ baseline_commit: f636ab485c839dfb6cfa117b10a8b0e940fc8696
 
 # Story 5.5: Class Start Playable Smoke Slice
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
