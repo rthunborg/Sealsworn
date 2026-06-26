@@ -25,7 +25,8 @@ enum Type {
 	NODE_EXITED,
 	ROUTE_SEALED,
 	NODE_PLACEHOLDER_RESOLVED,
-	RUN_COMPLETED
+	RUN_COMPLETED,
+	ITEM_GAINED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -50,6 +51,20 @@ const EVENT_ID_NODE_EXITED := &"node_exited"
 const EVENT_ID_ROUTE_SEALED := &"route_sealed"
 const EVENT_ID_NODE_PLACEHOLDER_RESOLVED := &"node_placeholder_resolved"
 const EVENT_ID_RUN_COMPLETED := &"run_completed"
+const EVENT_ID_ITEM_GAINED := &"item_gained"
+
+# The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
+# InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
+# const) so the validator has no cross-script dependency on the run-domain model — the value sets are pinned to
+# match by test. A category outside this set is rejected as a malformed payload.
+const ITEM_GAINED_CATEGORIES: Array[StringName] = [
+	&"weapon",
+	&"armor",
+	&"jewelry",
+	&"support",
+	&"consumable",
+	&"pickup"
+]
 
 # The stable placeholder markers carried by the two Story 4.5 events (lower_snake). RESOLUTION_PLACEHOLDER
 # is the node_placeholder_resolved.resolution value for EVERY placeholder node (the five non-combat types
@@ -184,6 +199,22 @@ static func run_completed(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))
 	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_COMPLETED, sequence_id, &"", payload_value)
+
+
+static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 6.2): a backpack item PICKUP record emitted by PickupItemCommand AFTER the
+	# (infallible) slot append. NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays
+	# empty). UNLIKE the route node ids of the run/route events, item ids are Story-6.1 CONTENT ids — they are
+	# lower_snake (no hyphens), so item_id + category use the lower_snake helpers (NOT the plain hyphen-tolerant
+	# string helpers). backpack_size_after is the backpack slot count AFTER the append (a small non-negative
+	# bounded int <= the capacity, well under 2^53); slot_index is the 0-based index of the appended slot (==
+	# the prior backpack size). Normalize/duplicate the payload defensively (mirroring run_completed).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["item_id"] = String(payload.get("item_id", ""))
+	payload_value["category"] = String(payload.get("category", ""))
+	payload_value["backpack_size_after"] = int(payload.get("backpack_size_after", 0))
+	payload_value["slot_index"] = int(payload.get("slot_index", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.ITEM_GAINED, sequence_id, &"", payload_value)
 
 
 static func board_created(sequence_id: int, width: int, height: int) -> DomainEvent:
@@ -520,6 +551,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_node_placeholder_resolved_payload(payload_value)
 		Type.RUN_COMPLETED:
 			return _validate_run_completed_payload(payload_value)
+		Type.ITEM_GAINED:
+			return _validate_item_gained_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -658,6 +691,23 @@ static func _validate_run_completed_payload(payload_value: Dictionary) -> Action
 		return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
 	if not _has_nonnegative_integral_payload(payload_value, &"cleared_node_count"):
 		return _error_result(&"invalid_event_payload", {"field": "cleared_node_count"})
+	return _ok_result()
+
+
+static func _validate_item_gained_payload(payload_value: Dictionary) -> ActionResult:
+	# A backpack item PICKUP record (Story 6.2). item_id is a Story-6.1 CONTENT id — lower_snake (no hyphens),
+	# so it is validated via _has_lower_snake_payload (UNLIKE the hyphenated route node ids). category is
+	# lower_snake AND in the allowlist (mirroring InventoryState.BACKPACK_CATEGORIES; the value sets are pinned
+	# to match by test). backpack_size_after + slot_index are non-negative integral (small bounded counts).
+	if not _has_lower_snake_payload(payload_value, &"item_id"):
+		return _error_result(&"invalid_event_payload", {"field": "item_id"})
+	if not _has_lower_snake_payload(payload_value, &"category") \
+			or not ITEM_GAINED_CATEGORIES.has(StringName(String(payload_value.get("category")))):
+		return _error_result(&"invalid_event_payload", {"field": "category"})
+	if not _has_nonnegative_integral_payload(payload_value, &"backpack_size_after"):
+		return _error_result(&"invalid_event_payload", {"field": "backpack_size_after"})
+	if not _has_nonnegative_integral_payload(payload_value, &"slot_index"):
+		return _error_result(&"invalid_event_payload", {"field": "slot_index"})
 	return _ok_result()
 
 
@@ -1210,6 +1260,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_NODE_PLACEHOLDER_RESOLVED
 		Type.RUN_COMPLETED:
 			return EVENT_ID_RUN_COMPLETED
+		Type.ITEM_GAINED:
+			return EVENT_ID_ITEM_GAINED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1258,6 +1310,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.NODE_PLACEHOLDER_RESOLVED
 		EVENT_ID_RUN_COMPLETED:
 			return Type.RUN_COMPLETED
+		EVENT_ID_ITEM_GAINED:
+			return Type.ITEM_GAINED
 		_:
 			return Type.UNKNOWN
 

@@ -18,6 +18,8 @@ func run() -> Dictionary:
 	_node_placeholder_resolved_rejects_malformed_payloads()
 	_run_completed_serializes_and_parses_stable_payload()
 	_run_completed_rejects_malformed_payloads()
+	_item_gained_serializes_and_parses_stable_payload()
+	_item_gained_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -712,6 +714,102 @@ func _run_completed_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_count.is_error(), "run_completed with a negative cleared_node_count should be rejected.")
 	assert_equal(bad_count.metadata.get("field"), "cleared_node_count", "run_completed should require a non-negative cleared_node_count.")
+
+
+func _item_gained_serializes_and_parses_stable_payload() -> void:
+	# Story 6.2 (AC2): an item_gained SYSTEM event (no actor) — a backpack item pickup record. item_id is a
+	# Story-6.1 content id (lower_snake, NO hyphens — unlike route node ids); category is lower_snake AND in the
+	# allowlist; backpack_size_after + slot_index are non-negative integral.
+	var event: DomainEvent = DomainEvent.item_gained(5, {
+		"item_id": "minor_healing_draught",
+		"category": "consumable",
+		"backpack_size_after": 1,
+		"slot_index": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "item_gained", "item_gained should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "item_gained is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "item_gained should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.ITEM_GAINED, "item_gained should parse back to ITEM_GAINED.")
+	assert_equal(restored.payload.get("item_id"), "minor_healing_draught", "The item_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("category"), "consumable", "The category must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("backpack_size_after"), 1, "backpack_size_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("slot_index"), 0, "slot_index must survive a JSON round-trip.")
+	# Every allowlisted category is accepted (the four equippable + the two backpack-only).
+	for category: String in ["weapon", "armor", "jewelry", "support", "consumable", "pickup"]:
+		var per_category: ActionResult = DomainEvent.try_from_dictionary(DomainEvent.item_gained(1, {
+			"item_id": "some_item",
+			"category": category,
+			"backpack_size_after": 1,
+			"slot_index": 0
+		}).to_dictionary())
+		assert_true(per_category.succeeded, "item_gained should accept the allowlisted category '%s'." % category)
+
+
+func _item_gained_rejects_malformed_payloads() -> void:
+	# A missing item_id is rejected.
+	var missing_item: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"category": "consumable", "backpack_size_after": 1, "slot_index": 0}
+	})
+	assert_true(missing_item.is_error(), "item_gained missing item_id should be rejected.")
+	assert_equal(missing_item.error_code, &"invalid_event_payload", "Malformed item_gained should use the stable code.")
+	assert_equal(missing_item.metadata.get("field"), "item_id", "item_gained should name the missing item_id field.")
+
+	# A hyphenated (non-lower_snake) item_id is rejected (item ids are lower_snake, UNLIKE route node ids).
+	var hyphen_item: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"item_id": "not-snake", "category": "consumable", "backpack_size_after": 1, "slot_index": 0}
+	})
+	assert_true(hyphen_item.is_error(), "item_gained with a hyphenated item_id should be rejected.")
+	assert_equal(hyphen_item.metadata.get("field"), "item_id", "item_gained should reject a non-lower_snake item_id.")
+
+	# A missing category is rejected.
+	var missing_category: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"item_id": "minor_healing_draught", "backpack_size_after": 1, "slot_index": 0}
+	})
+	assert_true(missing_category.is_error(), "item_gained missing category should be rejected.")
+	assert_equal(missing_category.metadata.get("field"), "category", "item_gained should name the missing category field.")
+
+	# An OFF-allowlist category (lower_snake but not a backpack category) is rejected.
+	var bad_category: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"item_id": "some_gold", "category": "gold_reward", "backpack_size_after": 1, "slot_index": 0}
+	})
+	assert_true(bad_category.is_error(), "item_gained with an off-allowlist category should be rejected.")
+	assert_equal(bad_category.metadata.get("field"), "category", "item_gained should pin the category to the allowlist.")
+
+	# A negative backpack_size_after is rejected.
+	var bad_size: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"item_id": "minor_healing_draught", "category": "consumable", "backpack_size_after": -1, "slot_index": 0}
+	})
+	assert_true(bad_size.is_error(), "item_gained with a negative backpack_size_after should be rejected.")
+	assert_equal(bad_size.metadata.get("field"), "backpack_size_after", "item_gained should require a non-negative backpack_size_after.")
+
+	# A negative slot_index is rejected.
+	var bad_index: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_gained",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"item_id": "minor_healing_draught", "category": "consumable", "backpack_size_after": 1, "slot_index": -1}
+	})
+	assert_true(bad_index.is_error(), "item_gained with a negative slot_index should be rejected.")
+	assert_equal(bad_index.metadata.get("field"), "slot_index", "item_gained should require a non-negative slot_index.")
 
 
 func _board_created_serializes_stable_event_id() -> void:
