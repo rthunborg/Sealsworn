@@ -22,6 +22,7 @@ const RouteState = preload("res://scripts/run/route_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
+const InventoryState = preload("res://scripts/run/inventory_state.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -78,6 +79,17 @@ var starting_kit: StartingKit = null
 # to_dictionary() / to_run_snapshot_fields() / the 23-key RunSnapshot. copy() carries the reference (a live
 # re-derivable service; a copied run keeps the same registered passives — the resolver is immutable content).
 var rules_resolver: RulesResolver = null
+# The run's small inventory + equipment domain model (Story 6.2). An ADDITIVE + LENIENT run-progression field:
+# it defaults to a fresh EMPTY InventoryState (never null), so a legacy / seed-only / empty-class run carries an
+# empty backpack rather than a null — the pickup command never needs a null guard. PickupItemCommand mutates it
+# (records a gained item + emits item_gained). It is DELIBERATELY NOT a required validate() field (an empty
+# inventory is a valid run; a pre-6.2 run dict with no inventory key parses to a fresh empty one). It rides
+# to_dictionary()/try_from_dictionary (the FULL run dict, NOT the 23-key RunSnapshot) lenient-read so a copied/
+# round-tripped run preserves the backpack/equipment. It is DELIBERATELY NOT serialized into the route-position
+# save (the RunSnapshot.inventory/equipment placeholders stay EMPTY this story — there is no live in-node
+# inventory save yet; a later story that owns the in-node save wires the model into those existing fields).
+# copy() DEEP-copies it (the backpack slot list must not be shared by reference).
+var inventory: InventoryState = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -87,7 +99,8 @@ func _init(
 	new_route: RouteState = null,
 	new_selected_class_id: StringName = &"",
 	new_starting_kit: StartingKit = null,
-	new_rules_resolver: RulesResolver = null
+	new_rules_resolver: RulesResolver = null,
+	new_inventory: InventoryState = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -97,6 +110,8 @@ func _init(
 	selected_class_id = new_selected_class_id
 	starting_kit = new_starting_kit
 	rules_resolver = new_rules_resolver
+	# Default to a fresh EMPTY inventory (never null) so the backpack is always present.
+	inventory = new_inventory if new_inventory != null else load("res://scripts/run/inventory_state.gd").new()
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -185,7 +200,12 @@ func to_dictionary() -> Dictionary:
 		# Story 5.3: the applied kit rides the FULL run dict too (NOT the 23-key RunSnapshot). null (a legacy/
 		# empty-class run) serializes as a JSON null; a recorded kit serializes via its exact-key to_dictionary().
 		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-5.3 run dict still parses.
-		"starting_kit": null if starting_kit == null else starting_kit.to_dictionary()
+		"starting_kit": null if starting_kit == null else starting_kit.to_dictionary(),
+		# Story 6.2: the inventory/equipment model rides the FULL run dict (NOT the 23-key RunSnapshot — the
+		# RunSnapshot.inventory/equipment placeholders stay empty this story). It is never null (a default-empty
+		# InventoryState), so it always serializes via its exact-key to_dictionary(). try_from_dictionary reads it
+		# back leniently (absent -> a fresh empty model) so every pre-6.2 run dict still parses.
+		"inventory": _inventory_or_new().to_dictionary()
 	}
 
 
@@ -202,7 +222,10 @@ func copy() -> RunState:
 		# content (registered PassiveDefinition resources), so sharing the reference is safe — a copied run
 		# resolves the SAME registered passives. It is NOT in to_dictionary(), so a copy()'s to_dictionary()
 		# stays byte-identical to the source's regardless (the round-trip tests rely on this).
-		rules_resolver
+		rules_resolver,
+		# Story 6.2: DEEP-copy the inventory (the backpack slot list must not be shared by reference, so a
+		# mutation of the copy's backpack never perturbs the source — mirroring the starting_kit deep copy).
+		_inventory_or_new().copy()
 	)
 
 
@@ -269,7 +292,14 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		_string_name_or_empty(_field(data, &"selected_class_id") if _has_field(data, &"selected_class_id") else &""),
 		# Lenient: a pre-5.3 run dict has no starting_kit key (or null) -> default null (legacy no-kit run); a
 		# present kit dict is reconstructed leniently via StartingKit.try_from_dictionary.
-		_starting_kit_or_null(_field(data, &"starting_kit") if _has_field(data, &"starting_kit") else null)
+		_starting_kit_or_null(_field(data, &"starting_kit") if _has_field(data, &"starting_kit") else null),
+		# Story 5.4: the rules resolver is a LIVE re-derivable service, NOT serialized -> not read back here
+		# (the _init default null is correct; a restored run re-derives it from selected_class_id).
+		null,
+		# Story 6.2: lenient inventory decode. A pre-6.2 run dict has no inventory key -> _init defaults a fresh
+		# empty InventoryState (never null). A present inventory dict is reconstructed leniently via
+		# InventoryState.try_from_dictionary so a partial/legacy inventory dict still parses.
+		_inventory_or_new_from(_field(data, &"inventory") if _has_field(data, &"inventory") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -346,6 +376,14 @@ func _route_or_new() -> RouteState:
 	if route == null:
 		route = load("res://scripts/run/route_state.gd").new()
 	return route
+
+
+# Story 6.2: the inventory is never null in practice (the _init default), but guard defensively against a
+# direct null assignment so to_dictionary()/copy() always have a model.
+func _inventory_or_new() -> InventoryState:
+	if inventory == null:
+		inventory = load("res://scripts/run/inventory_state.gd").new()
+	return inventory
 
 
 static func _legal_next_phases(from_phase: StringName) -> Array[StringName]:
@@ -430,6 +468,15 @@ static func _starting_kit_or_null(value: Variant) -> StartingKit:
 	if value is Dictionary:
 		return StartingKit.try_from_dictionary(value)
 	return null
+
+
+# Lenient InventoryState decode for the additive inventory field: a Dictionary is reconstructed via
+# InventoryState.try_from_dictionary; anything else (null / absent / non-dict) -> a fresh EMPTY InventoryState
+# (never null, mirroring the _init default), so every pre-6.2 run dict still parses to a usable empty backpack.
+static func _inventory_or_new_from(value: Variant) -> InventoryState:
+	if value is Dictionary:
+		return InventoryState.try_from_dictionary(value)
+	return load("res://scripts/run/inventory_state.gd").new()
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:

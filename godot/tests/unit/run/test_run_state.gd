@@ -7,6 +7,7 @@ const RouteState = preload("res://scripts/run/route_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
+const InventoryState = preload("res://scripts/run/inventory_state.gd")
 
 func run() -> Dictionary:
 	_new_run_initializes_ac1_fields()
@@ -26,6 +27,11 @@ func run() -> Dictionary:
 	_kit_less_run_validates_and_round_trips_with_null_kit()
 	_run_with_kit_round_trips_through_dictionary_and_copy()
 	_selected_class_id_nests_in_the_snapshot_bridge_and_round_trips()
+	# Story 6.2 — the additive inventory field.
+	_fresh_run_has_an_empty_inventory_and_validates()
+	_run_with_inventory_round_trips_through_dictionary_and_copy()
+	_pre_6_2_run_dict_without_inventory_key_parses_to_empty_inventory()
+	_inventory_stays_out_of_the_run_snapshot_bridge()
 	return result()
 
 
@@ -414,6 +420,85 @@ func _selected_class_id_nests_in_the_snapshot_bridge_and_round_trips() -> void:
 	var legacy_rebuilt: ActionResult = RunState.try_from_run_snapshot_fields(legacy_fields)
 	assert_true(legacy_rebuilt.succeeded, "A pre-5.3 snapshot bridge (no nested class key) must reconstruct: %s" % legacy_rebuilt.metadata)
 	assert_equal((legacy_rebuilt.metadata.get("run_state") as RunState).selected_class_id, &"", "A pre-5.3 bridge restores the legacy empty class default.")
+
+
+# Story 6.2: a fresh run carries a non-null EMPTY inventory and still validates (the inventory is additive, NOT
+# a required validate() field).
+func _fresh_run_has_an_empty_inventory_and_validates() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	assert_true(run.inventory != null, "A fresh run has a non-null inventory (default-empty, never null).")
+	assert_equal(run.inventory.size(), 0, "A fresh run's backpack is empty.")
+	assert_equal(run.inventory.capacity, 6, "A fresh run's backpack defaults to capacity 6.")
+	assert_true(run.validate().succeeded, "A run with an empty inventory must validate (the inventory is not a required field).")
+	# The full run dict carries the empty inventory projection.
+	var data: Dictionary = run.to_dictionary()
+	assert_true(data.has("inventory"), "The full run dict carries an inventory key.")
+	assert_equal((data.get("inventory") as Dictionary).get("backpack"), [], "A fresh run serializes an empty backpack.")
+
+
+# Story 6.2: a run WITH backpack items round-trips through to_dictionary()/try_from_dictionary (lenient) and
+# copy() deep-copies the inventory (a distinct instance; mutating the copy does not perturb the source).
+func _run_with_inventory_round_trips_through_dictionary_and_copy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.inventory.append_slot(&"minor_healing_draught", &"consumable")
+	run.inventory.append_slot(&"padded_vest", &"armor")
+	run.inventory.equipment = InventoryState._normalize_equipment({"weapon": "practice_blade"})
+	assert_true(run.validate().succeeded, "A run with an inventory must validate.")
+	# Round-trip the full run dict.
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with an inventory must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_equal(restored.inventory.size(), 2, "The round-tripped run must preserve the backpack slot count.")
+	assert_equal(restored.inventory.backpack[0].get("item_id"), "minor_healing_draught", "The round-tripped backpack must preserve slot 0.")
+	assert_equal(restored.inventory.equipped_in(&"weapon"), &"practice_blade", "The round-tripped run must preserve the equipped weapon.")
+	# copy() preserves the inventory byte-for-byte AND is a distinct deep instance.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the inventory byte-for-byte.")
+	assert_true(copied.inventory != run.inventory, "copy() must produce a distinct inventory instance (deep copy).")
+	copied.inventory.append_slot(&"ember_flask", &"consumable")
+	assert_equal(run.inventory.size(), 2, "Mutating the copy's backpack must NOT perturb the source.")
+
+
+# Story 6.2: a pre-6.2 run dict (no inventory key at all) parses with a fresh empty inventory (lenient decode).
+func _pre_6_2_run_dict_without_inventory_key_parses_to_empty_inventory() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	var legacy_dict: Dictionary = run.to_dictionary()
+	legacy_dict.erase("inventory")
+	var legacy_parsed: ActionResult = RunState.try_from_dictionary(legacy_dict)
+	assert_true(legacy_parsed.succeeded, "A pre-6.2 run dict (no inventory key) must parse: %s" % legacy_parsed.metadata)
+	var restored: RunState = legacy_parsed.metadata.get("run_state") as RunState
+	assert_true(restored.inventory != null, "A pre-6.2 run dict restores a non-null inventory.")
+	assert_equal(restored.inventory.size(), 0, "A pre-6.2 run dict restores an empty backpack.")
+	assert_equal(restored.inventory.capacity, 6, "A pre-6.2 run dict restores the default capacity.")
+
+
+# Story 6.2: the inventory rides the FULL run dict ONLY — it is DELIBERATELY NOT in to_run_snapshot_fields(),
+# and composing a route-position snapshot adds NO inventory content + NO surprise top-level key. The existing
+# RunSnapshot.inventory/equipment placeholder fields stay EMPTY this story.
+func _inventory_stays_out_of_the_run_snapshot_bridge() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.inventory.append_slot(&"minor_healing_draught", &"consumable")
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	# The bridge produces NO inventory/equipment field (the route-position save leaves them to the placeholders).
+	assert_false(fields.has("inventory"), "to_run_snapshot_fields() must NOT carry an inventory field (it rides the full run dict only).")
+	assert_false(fields.has("equipment"), "to_run_snapshot_fields() must NOT carry an equipment field.")
+	# The nested route_state payload must not smuggle the backpack either.
+	var route_state: Dictionary = fields.get("route_state")
+	assert_false(route_state.has("inventory"), "The nested route_state payload must not carry an inventory.")
+	# Composing the snapshot keeps the placeholders empty + adds no surprise top-level key.
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.route_state = fields.get("route_state")
+	snapshot.current_route_node_id = fields.get("current_route_node_id")
+	snapshot.revealed_route_node_ids = fields.get("revealed_route_node_ids")
+	assert_equal(snapshot.inventory, [], "The RunSnapshot.inventory placeholder stays empty this story.")
+	assert_equal(snapshot.equipment, {}, "The RunSnapshot.equipment placeholder stays empty this story.")
+	var data: Dictionary = snapshot.to_dictionary()
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	for key: Variant in data.keys():
+		assert_true(allowed.has(key), "Composing a run with an inventory must not add a surprise top-level RunSnapshot key (%s)." % str(key))
 
 
 func _allowed_run_snapshot_keys() -> Dictionary:

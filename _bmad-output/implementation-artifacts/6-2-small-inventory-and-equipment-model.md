@@ -8,7 +8,7 @@ baseline_commit: e04fc45ff07a094446c6c0e478ea574b6b86e7ec
 
 # Story 6.2: Small Inventory and Equipment Model
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -69,50 +69,50 @@ Source: `_bmad-output/planning-artifacts/epics.md` -> Epic 6 -> Story 6.2 (verba
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Pre-implementation gate + FAILING tests first (TDD red) (AC: 1-3)**
-  - [ ] 1.1 Confirm in `_bmad-output/implementation-artifacts/sprint-status.yaml` that `epic-1`..`epic-5` are `done`, `epic-6` is `in-progress`, `6-1-item-loot-and-reward-definitions` is `done`, and this story (`6-2-small-inventory-and-equipment-model`) is `ready-for-dev`. If any earlier Epic 1-6.1 status regressed, STOP and restore the boundary first. (The orchestrator owns the `epic-6` closeout — do NOT flip `epic-6`.)
-  - [ ] 1.2 Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is NOT your change.
-  - [ ] 1.3 Add focused FAILING tests before any production edit. New test files: `godot/tests/unit/run/test_<inventory-model>.gd` (the backpack/equipment model — capacity, no-stacking, append, full-detection, exact-key `to_dictionary()` — alongside `test_run_state.gd`/`test_starting_kit.gd`, the run-domain MODEL test home), and `godot/tests/unit/core/test_<pickup-command>.gd` (the run-domain COMMAND test home — ALL run/tactical command tests live under `tests/unit/core/`: `test_route_advance_command.gd`, `test_run_start_command.gd`, `test_node_enter_command.gd`, etc. — NOT under `tests/unit/run/`), and EXTEND `godot/tests/unit/core/test_domain_event.gd` with the `item_gained` round-trip + malformed-payload negatives. The headless runner auto-discovers `test_*.gd` under `godot/tests/unit` + `godot/tests/integration` ONLY. Confirm RED (compile-fail / fail) before implementing.
-  - [ ] 1.4 Reuse existing primitives — `ActionResult` (`scripts/core/results/action_result.gd`), the run-command idiom (`game_command.gd` + `route_advance_command.gd`), `DomainEvent` (`scripts/core/events/domain_event.gd`) for the new `item_gained` event, the additive-`RunState`-field precedent (`starting_kit`/`rules_resolver`), and the exact-key `to_dictionary()` discipline (`StartingKit`). Story 6.1's `ConsumableRepository`/`ArmorRepository`/`PickupRepository` etc. resolve an item id to a definition IF you need to validate a category at pickup. Do NOT invent a new result type, a parallel command base, a second event system, or a parallel run-state field shape.
-  - [ ] 1.5 Do NOT in this story: build the live reward-offer flow (6.3), the modal (6.4), Consume/Destroy (6.5/6.6), the smoke run (6.7); re-author 6.1 content; add a new top-level `RunSnapshot` key or change the 23-key gate / `_allowed_run_snapshot_keys()` / `RngStreamSet.required_streams()`; draw RNG; touch the generators / reward markers / fingerprints; build a `Control`/`.tscn` scene; add a difficulty knob or any cloud/telemetry/.NET/new-framework dependency.
+- [x] **Task 1 — Pre-implementation gate + FAILING tests first (TDD red) (AC: 1-3)**
+  - [x] 1.1 Confirm in `_bmad-output/implementation-artifacts/sprint-status.yaml` that `epic-1`..`epic-5` are `done`, `epic-6` is `in-progress`, `6-1-item-loot-and-reward-definitions` is `done`, and this story (`6-2-small-inventory-and-equipment-model`) is `ready-for-dev`. If any earlier Epic 1-6.1 status regressed, STOP and restore the boundary first. (The orchestrator owns the `epic-6` closeout — do NOT flip `epic-6`.)
+  - [x] 1.2 Confirm the working tree is clean or that dirty files are intentional user work; preserve unrelated changes. The untracked orchestrator-owned `_bmad-output/auto-gds/` directory is expected and is NOT your change.
+  - [x] 1.3 Add focused FAILING tests before any production edit. New test files: `godot/tests/unit/run/test_<inventory-model>.gd` (the backpack/equipment model — capacity, no-stacking, append, full-detection, exact-key `to_dictionary()` — alongside `test_run_state.gd`/`test_starting_kit.gd`, the run-domain MODEL test home), and `godot/tests/unit/core/test_<pickup-command>.gd` (the run-domain COMMAND test home — ALL run/tactical command tests live under `tests/unit/core/`: `test_route_advance_command.gd`, `test_run_start_command.gd`, `test_node_enter_command.gd`, etc. — NOT under `tests/unit/run/`), and EXTEND `godot/tests/unit/core/test_domain_event.gd` with the `item_gained` round-trip + malformed-payload negatives. The headless runner auto-discovers `test_*.gd` under `godot/tests/unit` + `godot/tests/integration` ONLY. Confirm RED (compile-fail / fail) before implementing.
+  - [x] 1.4 Reuse existing primitives — `ActionResult` (`scripts/core/results/action_result.gd`), the run-command idiom (`game_command.gd` + `route_advance_command.gd`), `DomainEvent` (`scripts/core/events/domain_event.gd`) for the new `item_gained` event, the additive-`RunState`-field precedent (`starting_kit`/`rules_resolver`), and the exact-key `to_dictionary()` discipline (`StartingKit`). Story 6.1's `ConsumableRepository`/`ArmorRepository`/`PickupRepository` etc. resolve an item id to a definition IF you need to validate a category at pickup. Do NOT invent a new result type, a parallel command base, a second event system, or a parallel run-state field shape.
+  - [x] 1.5 Do NOT in this story: build the live reward-offer flow (6.3), the modal (6.4), Consume/Destroy (6.5/6.6), the smoke run (6.7); re-author 6.1 content; add a new top-level `RunSnapshot` key or change the 23-key gate / `_allowed_run_snapshot_keys()` / `RngStreamSet.required_streams()`; draw RNG; touch the generators / reward markers / fingerprints; build a `Control`/`.tscn` scene; add a difficulty knob or any cloud/telemetry/.NET/new-framework dependency.
 
-- [ ] **Task 2 — Implement the inventory/equipment domain model (scene-free `RefCounted`, exact-key serialization) (AC: 1, 3)**
-  - [ ] 2.1 Add the model under `godot/scripts/run/` (alongside `starting_kit.gd` — the run-domain value-object home), e.g. `inventory_state.gd` (`class_name InventoryState extends RefCounted`). Mirror `StartingKit`'s discipline EXACTLY: a `DICTIONARY_KEYS` const pinning the exact `to_dictionary()` key set (a key never silently appears/vanishes — a test pins it), `_init(...)` in field-declaration order with defaulted args, a `to_dictionary()` returning a fresh dict each call, a lenient `try_from_dictionary(...)` (a value object, no reject path — defaults a partial/legacy dict), and a `copy()` (deep — the backpack list must not be shared by reference).
-  - [ ] 2.2 BACKPACK CAPACITY (AC1): a named `const DEFAULT_BACKPACK_CAPACITY := 6` + a `capacity: int` field (defaulting to 6, a small bounded POSITIVE int — NOT a difficulty knob). The backpack holds an ordered list of slot entries (one item per slot; v0 NO stacking). `is_full()` returns `slots.size() >= capacity`. `has_capacity()` is the inverse.
-  - [ ] 2.3 SLOT SHAPE (AC1 no-stacking): each slot entry holds ONE item — at minimum the item id (lower_snake) + its category (lower_snake, allowlist). [Decision] whether a slot carries a `quantity` field (recommended: yes, defaulting to `1`, validated `>= 1`, so the later stackable opt-in is a marker flip — mirror the existing `RunSnapshot` placeholder `{"definition_id": ..., "quantity": 1}` shape for forward-compat). v0 NEVER sets `quantity > 1`. Record the slot dict shape + whether `quantity` is carried.
-  - [ ] 2.4 EQUIPMENT MODEL (title — "and Equipment Model"): a small fixed set of NAMED equip slots (e.g. `weapon`/`armor`/`jewelry`/`support`), each holding zero-or-one equipped item id, structured as a Dictionary keyed by slot (mirroring the existing `RunSnapshot.equipment` placeholder `{"weapon": "practice_blade"}` forward-shape). [Decision] model-only (a tracked equipment structure on the model, NO equip command this story) vs model+equip-command. Recommended: build the equipment STRUCTURE so the title is satisfied, keep the equip-gate ENFORCEMENT (character-level check) DEFERRED (no hero character-level system exists yet — only `starting_kit.baseline_hp`), and record the deferral. If you DO add an equip path, it is validate-then-mutate and NEVER gates on run-depth (character level only — the 6.1 AC4 rule).
-  - [ ] 2.5 No-RNG / no-mutation discipline: the model draws NO RNG, owns no truth beyond the recorded items, instantiates NO tactical board entity, and submits no commands (mirror `StartingKit`). `to_dictionary()` is a pure read (a fresh dict; no shared mutable state).
+- [x] **Task 2 — Implement the inventory/equipment domain model (scene-free `RefCounted`, exact-key serialization) (AC: 1, 3)**
+  - [x] 2.1 Add the model under `godot/scripts/run/` (alongside `starting_kit.gd` — the run-domain value-object home), e.g. `inventory_state.gd` (`class_name InventoryState extends RefCounted`). Mirror `StartingKit`'s discipline EXACTLY: a `DICTIONARY_KEYS` const pinning the exact `to_dictionary()` key set (a key never silently appears/vanishes — a test pins it), `_init(...)` in field-declaration order with defaulted args, a `to_dictionary()` returning a fresh dict each call, a lenient `try_from_dictionary(...)` (a value object, no reject path — defaults a partial/legacy dict), and a `copy()` (deep — the backpack list must not be shared by reference).
+  - [x] 2.2 BACKPACK CAPACITY (AC1): a named `const DEFAULT_BACKPACK_CAPACITY := 6` + a `capacity: int` field (defaulting to 6, a small bounded POSITIVE int — NOT a difficulty knob). The backpack holds an ordered list of slot entries (one item per slot; v0 NO stacking). `is_full()` returns `slots.size() >= capacity`. `has_capacity()` is the inverse.
+  - [x] 2.3 SLOT SHAPE (AC1 no-stacking): each slot entry holds ONE item — at minimum the item id (lower_snake) + its category (lower_snake, allowlist). [Decision] whether a slot carries a `quantity` field (recommended: yes, defaulting to `1`, validated `>= 1`, so the later stackable opt-in is a marker flip — mirror the existing `RunSnapshot` placeholder `{"definition_id": ..., "quantity": 1}` shape for forward-compat). v0 NEVER sets `quantity > 1`. Record the slot dict shape + whether `quantity` is carried.
+  - [x] 2.4 EQUIPMENT MODEL (title — "and Equipment Model"): a small fixed set of NAMED equip slots (e.g. `weapon`/`armor`/`jewelry`/`support`), each holding zero-or-one equipped item id, structured as a Dictionary keyed by slot (mirroring the existing `RunSnapshot.equipment` placeholder `{"weapon": "practice_blade"}` forward-shape). [Decision] model-only (a tracked equipment structure on the model, NO equip command this story) vs model+equip-command. Recommended: build the equipment STRUCTURE so the title is satisfied, keep the equip-gate ENFORCEMENT (character-level check) DEFERRED (no hero character-level system exists yet — only `starting_kit.baseline_hp`), and record the deferral. If you DO add an equip path, it is validate-then-mutate and NEVER gates on run-depth (character level only — the 6.1 AC4 rule).
+  - [x] 2.5 No-RNG / no-mutation discipline: the model draws NO RNG, owns no truth beyond the recorded items, instantiates NO tactical board entity, and submits no commands (mirror `StartingKit`). `to_dictionary()` is a pure read (a fresh dict; no shared mutable state).
 
-- [ ] **Task 3 — Record the model on `RunState` (additive + lenient, mirroring `starting_kit`) (AC: 2, 3)**
-  - [ ] 3.1 Add a NEW additive field on `RunState` (e.g. `var inventory: InventoryState = null` OR a default-empty model) the SAME way as `starting_kit`/`rules_resolver`: NOT a required `validate()` field (a legacy run has none and must still validate), the new constructor param LAST (after `rules_resolver`), and `copy()` deep-copies it (`null if inventory == null else inventory.copy()`).
-  - [ ] 3.2 Serialize it on the FULL `to_dictionary()`/`try_from_dictionary` (NOT `to_run_snapshot_fields()` / the 23-key gate) — lenient-read (a pre-6.2 run dict has no inventory key -> default null/empty), exactly as `starting_kit` rides the full run dict. A round-trip of a run WITH an inventory preserves it; a pre-6.2 run dict still parses. Add this to `test_run_state.gd`'s round-trip coverage.
-  - [ ] 3.3 [Decision] Do NOT add inventory/equipment to `to_run_snapshot_fields()` / the 23-key `RunSnapshot` gate this story (recommended — the `RunSnapshot.inventory`/`equipment` placeholder fields stay EMPTY; the live in-node inventory save is a later story). Record this. If you choose otherwise, serialize INTO the EXISTING `RunSnapshot.inventory`/`equipment` fields (compose, don't fork) and keep `_allowed_run_snapshot_keys()` + the 23-key gate UNCHANGED.
+- [x] **Task 3 — Record the model on `RunState` (additive + lenient, mirroring `starting_kit`) (AC: 2, 3)**
+  - [x] 3.1 Add a NEW additive field on `RunState` (e.g. `var inventory: InventoryState = null` OR a default-empty model) the SAME way as `starting_kit`/`rules_resolver`: NOT a required `validate()` field (a legacy run has none and must still validate), the new constructor param LAST (after `rules_resolver`), and `copy()` deep-copies it (`null if inventory == null else inventory.copy()`).
+  - [x] 3.2 Serialize it on the FULL `to_dictionary()`/`try_from_dictionary` (NOT `to_run_snapshot_fields()` / the 23-key gate) — lenient-read (a pre-6.2 run dict has no inventory key -> default null/empty), exactly as `starting_kit` rides the full run dict. A round-trip of a run WITH an inventory preserves it; a pre-6.2 run dict still parses. Add this to `test_run_state.gd`'s round-trip coverage.
+  - [x] 3.3 [Decision] Do NOT add inventory/equipment to `to_run_snapshot_fields()` / the 23-key `RunSnapshot` gate this story (recommended — the `RunSnapshot.inventory`/`equipment` placeholder fields stay EMPTY; the live in-node inventory save is a later story). Record this. If you choose otherwise, serialize INTO the EXISTING `RunSnapshot.inventory`/`equipment` fields (compose, don't fork) and keep `_allowed_run_snapshot_keys()` + the 23-key gate UNCHANGED.
 
-- [ ] **Task 4 — Add the `item_gained` SYSTEM `DomainEvent` (append-at-end, wired end-to-end) (AC: 2)**
-  - [ ] 4.1 In `godot/scripts/core/events/domain_event.gd`: append `ITEM_GAINED` to the END of the `Type` enum (NEVER renumber existing members), add `const EVENT_ID_ITEM_GAINED := &"item_gained"`, add a `static func item_gained(sequence_id, payload)` factory that `duplicate(true)`s + defensively normalizes the payload fields, add `_validate_item_gained_payload(...)` and wire it into `_validate_payload_for_event`, add the `id_for_type`/`type_for_id` map entries. It is a SYSTEM event (no actor) -> do NOT add it to `_event_requires_actor`.
-  - [ ] 4.2 Payload validator: `item_id` lower_snake (`_has_lower_snake_payload`), `category` lower_snake + allowlist (`weapon`/`armor`/`jewelry`/`support`/`consumable`/`pickup`), `backpack_size_after` (or `slot_index`) non-negative integral. Item ids are lower_snake (Story 6.1 content ids), so they pass `_is_lower_snake_id` (no hyphen problem — UNLIKE route node ids). Record the exact payload field set.
-  - [ ] 4.3 In `test_domain_event.gd`: add an `item_gained` round-trip test (build via the factory -> `to_dictionary()` -> JSON.stringify -> parse_string -> `try_from_dictionary` succeeds, payload stable) + a malformed-payload negative per field (bad/absent `item_id`/`category`/size). Mirror the existing per-event coverage.
+- [x] **Task 4 — Add the `item_gained` SYSTEM `DomainEvent` (append-at-end, wired end-to-end) (AC: 2)**
+  - [x] 4.1 In `godot/scripts/core/events/domain_event.gd`: append `ITEM_GAINED` to the END of the `Type` enum (NEVER renumber existing members), add `const EVENT_ID_ITEM_GAINED := &"item_gained"`, add a `static func item_gained(sequence_id, payload)` factory that `duplicate(true)`s + defensively normalizes the payload fields, add `_validate_item_gained_payload(...)` and wire it into `_validate_payload_for_event`, add the `id_for_type`/`type_for_id` map entries. It is a SYSTEM event (no actor) -> do NOT add it to `_event_requires_actor`.
+  - [x] 4.2 Payload validator: `item_id` lower_snake (`_has_lower_snake_payload`), `category` lower_snake + allowlist (`weapon`/`armor`/`jewelry`/`support`/`consumable`/`pickup`), `backpack_size_after` (or `slot_index`) non-negative integral. Item ids are lower_snake (Story 6.1 content ids), so they pass `_is_lower_snake_id` (no hyphen problem — UNLIKE route node ids). Record the exact payload field set.
+  - [x] 4.3 In `test_domain_event.gd`: add an `item_gained` round-trip test (build via the factory -> `to_dictionary()` -> JSON.stringify -> parse_string -> `try_from_dictionary` succeeds, payload stable) + a malformed-payload negative per field (bad/absent `item_id`/`category`/size). Mirror the existing per-event coverage.
 
-- [ ] **Task 5 — Implement the pickup command (run-command idiom, validate-then-mutate) (AC: 2, 3)**
-  - [ ] 5.1 Add the command under `godot/scripts/core/commands/` (e.g. `pickup_item_command.gd`, `class_name PickupItemCommand extends "res://scripts/core/commands/game_command.gd"`). Constructor takes the item id (+ category, + the caller-supplied `sequence_id`, default 1). `validate(state)` rejects `sequence_id <= 0` FIRST (`invalid_event_sequence_id`), then rejects a non-`RunState` / structurally-invalid run (`invalid_context`, attaching the inner validate error), then checks the backpack: if full, return the stable `inventory_full` error (carrying the capacity + the rejected item id in metadata) — ZERO mutation. (Optionally also validate the item id resolves to a real Story-6.1 definition through the matching repo + the category is in the allowlist; record whether you do — recommended: validate the category allowlist + a lower_snake id shape; resolving against the repo is OPTIONAL since the offer flow (6.3) hands a real id.)
-  - [ ] 5.2 `execute(state)` re-runs `validate`, then (on success) appends ONE slot to the backpack (validate-then-mutate — the mutation is infallible once validated), builds the `item_gained` event AFTER the mutation, and returns `ActionResult.ok([event], metadata)` with the new backpack size + slot index in metadata. On any reject: structured error, ZERO events, byte-identical `RunState` (no slot overwritten/dropped — the AC3 "no silent delete" guarantee). Draws ZERO RNG.
-  - [ ] 5.3 [Decision] AC3 shape: `inventory_full` ERROR (recommended v0 — simplest, defers the replacement-choice UX) vs a structured replacement-CHOICE result state. Record which. Either way: no existing item is silently deleted (the rejected/unresolved pickup mutates nothing).
+- [x] **Task 5 — Implement the pickup command (run-command idiom, validate-then-mutate) (AC: 2, 3)**
+  - [x] 5.1 Add the command under `godot/scripts/core/commands/` (e.g. `pickup_item_command.gd`, `class_name PickupItemCommand extends "res://scripts/core/commands/game_command.gd"`). Constructor takes the item id (+ category, + the caller-supplied `sequence_id`, default 1). `validate(state)` rejects `sequence_id <= 0` FIRST (`invalid_event_sequence_id`), then rejects a non-`RunState` / structurally-invalid run (`invalid_context`, attaching the inner validate error), then checks the backpack: if full, return the stable `inventory_full` error (carrying the capacity + the rejected item id in metadata) — ZERO mutation. (Optionally also validate the item id resolves to a real Story-6.1 definition through the matching repo + the category is in the allowlist; record whether you do — recommended: validate the category allowlist + a lower_snake id shape; resolving against the repo is OPTIONAL since the offer flow (6.3) hands a real id.)
+  - [x] 5.2 `execute(state)` re-runs `validate`, then (on success) appends ONE slot to the backpack (validate-then-mutate — the mutation is infallible once validated), builds the `item_gained` event AFTER the mutation, and returns `ActionResult.ok([event], metadata)` with the new backpack size + slot index in metadata. On any reject: structured error, ZERO events, byte-identical `RunState` (no slot overwritten/dropped — the AC3 "no silent delete" guarantee). Draws ZERO RNG.
+  - [x] 5.3 [Decision] AC3 shape: `inventory_full` ERROR (recommended v0 — simplest, defers the replacement-choice UX) vs a structured replacement-CHOICE result state. Record which. Either way: no existing item is silently deleted (the rejected/unresolved pickup mutates nothing).
 
-- [ ] **Task 6 — Tests: model + command (valid + invalid/no-mutation) + event (AC: 1-3)**
-  - [ ] 6.1 Model tests (`test_<inventory-model>.gd`): default capacity 6; `is_full()` at capacity; append increments slot count by one; NO stacking (a second pickup of the same id is a SECOND slot, not a `quantity++` — unless you deliberately built stacking, which v0 must not); the exact `DICTIONARY_KEYS` `to_dictionary()` key set (a key never silently appears/vanishes — the `StartingKit` precedent); `copy()` is a deep copy (mutating the copy's backpack does not perturb the source); a lenient `try_from_dictionary` round-trip (incl. a partial/legacy dict).
-  - [ ] 6.2 Command tests (`godot/tests/unit/core/test_<pickup-command>.gd` — the run-command test home; mirror `tests/unit/core/test_route_advance_command.gd`): a valid pickup on a run with capacity records the slot + emits ONE `item_gained` event + returns ok; `sequence_id <= 0` rejects FIRST (`invalid_event_sequence_id`) with no mutation; a non-`RunState`/invalid run rejects (`invalid_context`); a FULL backpack rejects (`inventory_full`) with ZERO mutation + NO event + NO silent delete (assert the backpack is byte-identical and no slot was overwritten); ZERO RNG drawn (no stream advance — assert via the no-RNG discipline, e.g. there is no `RngStreamSet` in the command at all).
-  - [ ] 6.3 Event tests (`test_domain_event.gd` extension): `item_gained` round-trips through real JSON; each payload field has a malformed-input negative; the event enum/id maps round-trip (`id_for_type`/`type_for_id`).
+- [x] **Task 6 — Tests: model + command (valid + invalid/no-mutation) + event (AC: 1-3)**
+  - [x] 6.1 Model tests (`test_<inventory-model>.gd`): default capacity 6; `is_full()` at capacity; append increments slot count by one; NO stacking (a second pickup of the same id is a SECOND slot, not a `quantity++` — unless you deliberately built stacking, which v0 must not); the exact `DICTIONARY_KEYS` `to_dictionary()` key set (a key never silently appears/vanishes — the `StartingKit` precedent); `copy()` is a deep copy (mutating the copy's backpack does not perturb the source); a lenient `try_from_dictionary` round-trip (incl. a partial/legacy dict).
+  - [x] 6.2 Command tests (`godot/tests/unit/core/test_<pickup-command>.gd` — the run-command test home; mirror `tests/unit/core/test_route_advance_command.gd`): a valid pickup on a run with capacity records the slot + emits ONE `item_gained` event + returns ok; `sequence_id <= 0` rejects FIRST (`invalid_event_sequence_id`) with no mutation; a non-`RunState`/invalid run rejects (`invalid_context`); a FULL backpack rejects (`inventory_full`) with ZERO mutation + NO event + NO silent delete (assert the backpack is byte-identical and no slot was overwritten); ZERO RNG drawn (no stream advance — assert via the no-RNG discipline, e.g. there is no `RngStreamSet` in the command at all).
+  - [x] 6.3 Event tests (`test_domain_event.gd` extension): `item_gained` round-trips through real JSON; each payload field has a malformed-input negative; the event enum/id maps round-trip (`id_for_type`/`type_for_id`).
 
-- [ ] **Task 7 — Run the full headless suite + diff check (gate before review) (AC: 1-3)**
-  - [ ] 7.1 Run through PowerShell / the console binary: `godot --version`, then the headless runner, then `git diff --check`. The bare `godot` is NOT on the Bash PATH — run via PowerShell (`powershell.exe -NoProfile -Command "..."`) or the console binary `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe`.
-  - [ ] 7.2 Expect: Godot `4.6.3.stable.official...`; the full headless runner exits code `0`, final line `Headless tests passed.`; ALL prior Epic 1-6.1 tests stay green — ESPECIALLY `test_run_state.gd` (the new additive field), `test_domain_event.gd` (the appended event — assert NO existing event renumbered), `test_run_snapshot.gd` (the 23-key gate + the inventory/equipment placeholder defaults — UNCHANGED if you took the recommended no-save scope), and `test_run_start_command.gd` / `test_run_orchestrator.gd` (the new LAST `RunState` constructor param must not break their `RunState.new(...)` calls). `test_project_structure.gd` stays green (new files inside already-required roots). `git diff --check` exit 0.
-  - [ ] 7.3 **Heavy/cross-domain false-PASS guard (Epic-5-retro P2 — standing gate):** grep the raw run output for `SCRIPT ERROR`/`Parse Error`/`Compile Error` attributable to any new/modified file — expect ZERO. The only stderr `ERROR:` lines are the documented-expected `Parse JSON failed` (save/settings) + `invalid_node_type` (route-node) negative-path diagnostics from OTHER suites — NOT failures. Do NOT trust the summary PASS line alone.
+- [x] **Task 7 — Run the full headless suite + diff check (gate before review) (AC: 1-3)**
+  - [x] 7.1 Run through PowerShell / the console binary: `godot --version`, then the headless runner, then `git diff --check`. The bare `godot` is NOT on the Bash PATH — run via PowerShell (`powershell.exe -NoProfile -Command "..."`) or the console binary `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe`.
+  - [x] 7.2 Expect: Godot `4.6.3.stable.official...`; the full headless runner exits code `0`, final line `Headless tests passed.`; ALL prior Epic 1-6.1 tests stay green — ESPECIALLY `test_run_state.gd` (the new additive field), `test_domain_event.gd` (the appended event — assert NO existing event renumbered), `test_run_snapshot.gd` (the 23-key gate + the inventory/equipment placeholder defaults — UNCHANGED if you took the recommended no-save scope), and `test_run_start_command.gd` / `test_run_orchestrator.gd` (the new LAST `RunState` constructor param must not break their `RunState.new(...)` calls). `test_project_structure.gd` stays green (new files inside already-required roots). `git diff --check` exit 0.
+  - [x] 7.3 **Heavy/cross-domain false-PASS guard (Epic-5-retro P2 — standing gate):** grep the raw run output for `SCRIPT ERROR`/`Parse Error`/`Compile Error` attributable to any new/modified file — expect ZERO. The only stderr `ERROR:` lines are the documented-expected `Parse JSON failed` (save/settings) + `invalid_node_type` (route-node) negative-path diagnostics from OTHER suites — NOT failures. Do NOT trust the summary PASS line alone.
 
-- [ ] **Task 8 — Update story records (AC: 1-3)**
-  - [ ] 8.1 Update this story's Dev Agent Record, Completion Notes (record EVERY `[Decision]`: inventory-full-error-vs-replacement-choice, slot `quantity` field, equipment model-only-vs-command, equip-gate deferral, no-save-this-story), File List, Change Log, and Status (-> `review`).
-  - [ ] 8.2 Keep `sprint-status.yaml` synchronized with this story's status. The orchestrator owns the `epic-6` closeout — do NOT flip `epic-6`.
-  - [ ] 8.3 Record any newly-discovered forward residual in `deferred-work.md` (with the originating story/date) — e.g. the equip-gate enforcement deferral (no hero character-level system yet), or the inventory-save-into-`RunSnapshot.inventory`/`equipment` wiring if you deferred it. Do NOT reopen unrelated ledger items.
-  - [ ] 8.4 Clean up any `user://` artifact. This story should write no `user://` (no save work in the recommended scope); verify the user data dir contains no test JSON.
+- [x] **Task 8 — Update story records (AC: 1-3)**
+  - [x] 8.1 Update this story's Dev Agent Record, Completion Notes (record EVERY `[Decision]`: inventory-full-error-vs-replacement-choice, slot `quantity` field, equipment model-only-vs-command, equip-gate deferral, no-save-this-story), File List, Change Log, and Status (-> `review`).
+  - [x] 8.2 Keep `sprint-status.yaml` synchronized with this story's status. The orchestrator owns the `epic-6` closeout — do NOT flip `epic-6`.
+  - [x] 8.3 Record any newly-discovered forward residual in `deferred-work.md` (with the originating story/date) — e.g. the equip-gate enforcement deferral (no hero character-level system yet), or the inventory-save-into-`RunSnapshot.inventory`/`equipment` wiring if you deferred it. Do NOT reopen unrelated ledger items.
+  - [x] 8.4 Clean up any `user://` artifact. This story should write no `user://` (no save work in the recommended scope); verify the user data dir contains no test JSON.
 
 ## Dev Notes
 
@@ -354,8 +354,101 @@ Expected final result:
 
 ### Agent Model Used
 
+Opus 4.8 (claude-opus-4-8[1m]) via the auto-gds dev-story delegate.
+
 ### Debug Log References
+
+- Full headless suite (Godot 4.6.3.stable.official): `Headless tests passed.`, exit code 0, 102 PASS / 0 FAIL. The four
+  relevant suites all PASS: `test_inventory_state.gd`, `test_pickup_item_command.gd`, `test_domain_event.gd`
+  (extended), `test_run_state.gd` (extended).
+- False-PASS grep guard (Epic-5-retro P2): zero `SCRIPT ERROR`/`Parse Error`/`Compile Error`; the only `ERROR:` stderr
+  lines are the documented-expected negative-path diagnostics from OTHER suites (int64-overflow `Cannot represent
+  99999999999999999999`, `Parse JSON failed` x2 from settings/resume, `RouteNode parse failed: invalid_node_type`).
+  None attributable to any new/modified file.
+- `git diff --check` exit 0 (no whitespace errors). No new `user://` artifact written.
 
 ### Completion Notes List
 
+Built the small inventory + equipment DOMAIN MODEL (FR51), a validate-then-mutate pickup command, and the new
+`item_gained` SYSTEM event — a pure domain-model/command/event story over the existing run-domain primitives. No content
+re-authored, no RNG, no UI scene, no new top-level `RunSnapshot` key, no generator/fingerprint/stream changes.
+
+Decisions recorded (every `[Decision]` the story called for):
+
+- **[Decision] AC3 shape = `inventory_full` ERROR** (the recommended v0). A full backpack returns the stable lower_snake
+  `inventory_full` `ActionResult.error` (capacity + rejected item id in metadata); the replacement-choice UX defers to a
+  later story. The load-bearing "no silent delete" guarantee holds: a rejected pickup leaves the run byte-identical, emits
+  NO `item_gained`, and overwrites/drops no slot (asserted directly in the full-backpack test).
+- **[Decision] slot carries a `quantity` field, defaulting to 1, clamped `>= 1`.** Each backpack slot is
+  `{"item_id": <lower_snake>, "category": <lower_snake>, "quantity": 1}`. v0 NEVER sets `quantity > 1` (no stacking — the
+  pickup command always appends a fresh quantity-1 slot; a repeat pickup of the same id is a SECOND slot, asserted). The
+  `quantity` field makes a later "stackable" opt-in a marker flip, not a schema fork (the 6.1 `*_mvp_deferred` posture).
+  Naming note: the slot key is `item_id` (NOT the `RunSnapshot.inventory` placeholder's `definition_id`) so the slot key
+  matches the `item_gained` event payload + the equipment `{slot: item_id}` shape; the placeholder save fields are
+  untouched this story, so the two shapes do not need to agree yet.
+- **[Decision] equipment = model-only (structure, no equip command).** `InventoryState` carries a named-slot
+  `equipment` Dictionary over the four equippable categories (`weapon`/`armor`/`jewelry`/`support`, mirroring the
+  `RunSnapshot.equipment` `{slot: item_id}` forward-shape) with an `equipped_in(slot)` accessor. NO equip/unequip command
+  this story (the three ACs are all about the BACKPACK; the title's "equipment model" is satisfied as a tracked structure).
+- **[Decision] equip-gate enforcement DEFERRED.** The character-level equip-gate CHECK (compare an item's
+  `character_level_requirement` to the hero's character level) is deferred — there is NO hero character-level system yet
+  (the run carries `starting_kit.baseline_hp`, not a character level). Recorded in `deferred-work.md`. Run-depth is never
+  an equip gate (the 6.1 AC4 rule).
+- **[Decision] NO save wiring this story.** The model rides ONLY the FULL `RunState.to_dictionary()`/`try_from_dictionary`
+  (lenient-read, like `starting_kit`); it is DELIBERATELY NOT in `to_run_snapshot_fields()` / the 23-key gate. The
+  `RunSnapshot.inventory`/`equipment` placeholders stay EMPTY (asserted) — there is no live in-node inventory save yet; a
+  later story that owns the in-node save wires the model into those existing fields. Recorded in `deferred-work.md`.
+- **[Decision] category validated by allowlist + lower_snake shape; NO repo-existence check.** The pickup command rejects
+  a non-lower_snake item id (`invalid_item_id`) and an off-allowlist / wrong-shape category (`invalid_item_category`), but
+  does NOT resolve the id against a Story-6.1 repository — the offer flow (6.3) hands a real rolled id, and a repo lookup
+  here would couple the command to the content layer for no v0 benefit. Recorded as a forward option in `deferred-work.md`.
+- **[Decision] single file** `inventory_state.gd` holding both the backpack + the equipment structure (one cohesive
+  run-domain DTO mirroring `StartingKit`), not a split `inventory_state.gd` + `equipment_state.gd`.
+
+Implementation specifics:
+
+- `RunState.inventory` is an additive field defaulting to a fresh EMPTY `InventoryState` (never null), so the backpack is
+  always present and the pickup command needs no null guard. It is NOT a required `validate()` field (a legacy/empty run
+  validates), the new constructor param is LAST (every existing `RunState.new(...)` call site — all internal to
+  `run_state.gd` — compiles unchanged; `RunStartCommand` seats `starting_kit`/`rules_resolver` as properties, so it needs
+  no change), `copy()` DEEP-copies it, and it rides the full run dict lenient-read (a pre-6.2 dict with no `inventory` key
+  parses to a fresh empty model — asserted). `try_from_dictionary` now passes an explicit `null` for the non-serialized
+  `rules_resolver` param before the inventory arg (behavior-preserving — it was already defaulting to null).
+- `item_gained` is appended at the END of the `DomainEvent.Type` enum (no member renumbered), with
+  `EVENT_ID_ITEM_GAINED`, a normalizing factory, `_validate_item_gained_payload` (wired into
+  `_validate_payload_for_event`), and the two id-map entries. It is a SYSTEM event (NOT in `_event_requires_actor`,
+  actor_id empty). Payload: `item_id` (lower_snake), `category` (lower_snake + allowlist, the allowlist pinned LOCAL to
+  `domain_event.gd` to avoid a cross-script dependency on the run model — value sets pinned to match by test),
+  `backpack_size_after` (non-negative integral), `slot_index` (non-negative integral). Item ids are lower_snake (Story 6.1
+  content ids) so they pass the lower_snake helpers — unlike the hyphenated route node ids.
+- `PickupItemCommand` follows the run-command idiom verbatim: extends `game_command.gd`, takes `RunState` directly,
+  rejects `sequence_id <= 0` FIRST (`invalid_event_sequence_id`), then `invalid_context` (not-a-RunState / structurally
+  invalid run, surfacing the inner validate error), then `invalid_item_id` / `invalid_item_category` / `inventory_full`;
+  validate-then-mutate (zero events + byte-identical run on reject); builds the `item_gained` event AFTER the infallible
+  slot append; draws ZERO RNG (asserted — a held `RngStreamSet` is byte-identical after a success and a reject).
+
 ### File List
+
+New:
+- `godot/scripts/run/inventory_state.gd` — `InventoryState` (the backpack + equipment model).
+- `godot/scripts/core/commands/pickup_item_command.gd` — `PickupItemCommand` (validate-then-mutate pickup).
+- `godot/tests/unit/run/test_inventory_state.gd` — model tests.
+- `godot/tests/unit/core/test_pickup_item_command.gd` — command tests.
+
+Modified:
+- `godot/scripts/run/run_state.gd` — additive `inventory` field (LAST ctor param, full-dict serialization, deep copy,
+  lenient decode); not in the 23-key snapshot gate.
+- `godot/scripts/core/events/domain_event.gd` — appended `ITEM_GAINED` event (enum + id const + category allowlist +
+  factory + validator + id maps), end-to-end.
+- `godot/tests/unit/run/test_run_state.gd` — extended with the additive-inventory round-trip / copy / pre-6.2 / snapshot-
+  bridge coverage.
+- `godot/tests/unit/core/test_domain_event.gd` — extended with the `item_gained` round-trip + per-field malformed negatives.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `6-2-small-inventory-and-equipment-model: review`.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — recorded the equip-gate / inventory-save / repo-existence
+  forward residuals (dev of 6-2).
+
+### Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-06-26 | 0.1 | dev-story: implemented `InventoryState` (backpack + equipment model), `PickupItemCommand` (validate-then-mutate, `inventory_full` fail-closed, no silent delete), the appended `item_gained` SYSTEM event, the additive `RunState.inventory` field, and model/command/event tests. Full headless suite green (102 PASS / 0 FAIL). Status -> review. | Opus 4.8 (auto-gds dev delegate) |
