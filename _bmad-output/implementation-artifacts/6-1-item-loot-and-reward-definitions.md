@@ -8,7 +8,7 @@ baseline_commit: 36f8599f771e6b90b1d4be29aa413a653c99a0ff
 
 # Story 6.1: Item, Loot, and Reward Definitions
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
