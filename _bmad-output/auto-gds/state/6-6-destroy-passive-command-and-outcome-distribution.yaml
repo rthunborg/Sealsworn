@@ -3,7 +3,7 @@ epic_num: 6
 story_num: 6
 branch: story/6-6-destroy-passive-command-and-outcome-distribution
 status: in-progress
-updated_at: "2026-06-29T13:22:45Z"
+updated_at: "2026-06-29T13:31:06Z"
 started_at: "2026-06-29T12:08:00Z"
 completed_at: null
 active_seconds: 0
@@ -20,13 +20,13 @@ base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
 code_review_iterations: 2
-code_review_loop_done: false
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["fc5fca4", "304e30e", "5108fc1", "c2ee68f"]
+commits: ["fc5fca4", "304e30e", "5108fc1", "c2ee68f", "0bbac1f"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
