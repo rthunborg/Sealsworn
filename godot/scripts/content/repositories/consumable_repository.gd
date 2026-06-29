@@ -92,24 +92,35 @@ func content_repository() -> ContentRepository:
 
 
 static func _baseline_definitions() -> Array[ConsumableDefinition]:
+	# Story 6.7: each baseline now carries the additive outcome_effect (the lower_snake OUTCOME-RECORD effect
+	# marker the item_consumed event records) + explanation (the player/debug-readable known result). v0 is
+	# OUTCOME-RECORD-ONLY: the effect string describes the INTENDED deterministic heal/ward/ember effect — there is
+	# no live HP/wallet field, so using a consumable RECORDS this effect; it does NOT mutate a felt resource (the
+	# live heal/ward/burn mutation is Epic 7's risk-economy state, wired off the recorded outcome_effect).
 	return [
 		ConsumableDefinition.new(
 			&"minor_healing_draught",
 			ConsumableDefinition.RARITY_COMMON,
 			10,
-			"Restores a little health — the common field draught."
+			"Restores a little health — the common field draught.",
+			"restore_minor_health",
+			"Using the draught restores a small measure of the hero's health."
 		),
 		ConsumableDefinition.new(
 			&"warding_salve",
 			ConsumableDefinition.RARITY_UNCOMMON,
 			25,
-			"A semi-rare salve worth saving for a hard fight."
+			"A semi-rare salve worth saving for a hard fight.",
+			"apply_protective_ward",
+			"Using the salve applies a protective ward that braces the hero against the next bout of harm."
 		),
 		ConsumableDefinition.new(
 			&"ember_flask",
 			ConsumableDefinition.RARITY_RARE,
 			50,
-			"A rare flask of bottled ember — genuinely worth using."
+			"A rare flask of bottled ember — genuinely worth using.",
+			"unleash_ember_burst",
+			"Using the flask unleashes a burst of bottled ember, scorching the hero's foes."
 		)
 	]
 

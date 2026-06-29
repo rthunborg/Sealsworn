@@ -30,7 +30,8 @@ enum Type {
 	REWARD_OFFERED,
 	REWARD_RESOLVED,
 	PASSIVE_CONSUMED,
-	PASSIVE_DESTROYED
+	PASSIVE_DESTROYED,
+	ITEM_CONSUMED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -60,6 +61,7 @@ const EVENT_ID_REWARD_OFFERED := &"reward_offered"
 const EVENT_ID_REWARD_RESOLVED := &"reward_resolved"
 const EVENT_ID_PASSIVE_CONSUMED := &"passive_consumed"
 const EVENT_ID_PASSIVE_DESTROYED := &"passive_destroyed"
+const EVENT_ID_ITEM_CONSUMED := &"item_consumed"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -314,6 +316,25 @@ static func passive_destroyed(sequence_id: int, payload: Dictionary = {}) -> Dom
 	payload_value["roll"] = int(payload.get("roll", 0))
 	payload_value["draw_index"] = int(payload.get("draw_index", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.PASSIVE_DESTROYED, sequence_id, &"", payload_value)
+
+
+static func item_consumed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 6.7): a backpack consumable USE record emitted by UseConsumableCommand AFTER the
+	# (infallible-once-validated) slot removal. NOT an entity action, so it is NOT in _event_requires_actor (actor_id
+	# stays empty). item_id is a Story-6.1 CONTENT id -> lower_snake (no hyphens), so it is validated via the
+	# lower_snake helper (UNLIKE the hyphenated route node ids). outcome_effect + explanation are the resolved
+	# ConsumableDefinition's OUTCOME-RECORD effect marker + the player/debug-readable known result (non-empty
+	# strings). backpack_size_after is the backpack slot count AFTER the removal; slot_index is the 0-based index the
+	# removed slot occupied. UNLIKE passive_destroyed (which DRAWS the 70/20/10 roll), Use draws ZERO RNG, so there is
+	# NO roll/draw_index on this payload — it is a deterministic content-lookup + slot-removal + record. Normalize/
+	# duplicate the payload defensively (mirroring item_gained).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["item_id"] = String(payload.get("item_id", ""))
+	payload_value["outcome_effect"] = String(payload.get("outcome_effect", ""))
+	payload_value["explanation"] = String(payload.get("explanation", ""))
+	payload_value["backpack_size_after"] = int(payload.get("backpack_size_after", 0))
+	payload_value["slot_index"] = int(payload.get("slot_index", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.ITEM_CONSUMED, sequence_id, &"", payload_value)
 
 
 # Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
@@ -678,6 +699,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_passive_consumed_payload(payload_value)
 		Type.PASSIVE_DESTROYED:
 			return _validate_passive_destroyed_payload(payload_value)
+		Type.ITEM_CONSUMED:
+			return _validate_item_consumed_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -915,6 +938,26 @@ static func _validate_passive_destroyed_payload(payload_value: Dictionary) -> Ac
 		return _error_result(&"invalid_event_payload", {"field": "roll"})
 	if not _has_nonnegative_integral_payload(payload_value, &"draw_index"):
 		return _error_result(&"invalid_event_payload", {"field": "draw_index"})
+	return _ok_result()
+
+
+static func _validate_item_consumed_payload(payload_value: Dictionary) -> ActionResult:
+	# A backpack consumable USE record (Story 6.7). item_id is a Story-6.1 CONTENT id -> lower_snake (no hyphens),
+	# validated via _has_lower_snake_payload (UNLIKE the hyphenated route node ids). outcome_effect + explanation are
+	# the resolved ConsumableDefinition's effect marker + known result -> non-empty strings (the Readability Rule).
+	# backpack_size_after + slot_index are non-negative integral (small bounded counts). UNLIKE passive_destroyed,
+	# Use draws ZERO RNG, so there is NO roll/draw_index field (mirroring the deterministic item_gained shell). A
+	# malformed/missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"item_id"):
+		return _error_result(&"invalid_event_payload", {"field": "item_id"})
+	if not _has_nonempty_string_payload(payload_value, &"outcome_effect"):
+		return _error_result(&"invalid_event_payload", {"field": "outcome_effect"})
+	if not _has_nonempty_string_payload(payload_value, &"explanation"):
+		return _error_result(&"invalid_event_payload", {"field": "explanation"})
+	if not _has_nonnegative_integral_payload(payload_value, &"backpack_size_after"):
+		return _error_result(&"invalid_event_payload", {"field": "backpack_size_after"})
+	if not _has_nonnegative_integral_payload(payload_value, &"slot_index"):
+		return _error_result(&"invalid_event_payload", {"field": "slot_index"})
 	return _ok_result()
 
 
@@ -1477,6 +1520,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_PASSIVE_CONSUMED
 		Type.PASSIVE_DESTROYED:
 			return EVENT_ID_PASSIVE_DESTROYED
+		Type.ITEM_CONSUMED:
+			return EVENT_ID_ITEM_CONSUMED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1535,6 +1580,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.PASSIVE_CONSUMED
 		EVENT_ID_PASSIVE_DESTROYED:
 			return Type.PASSIVE_DESTROYED
+		EVENT_ID_ITEM_CONSUMED:
+			return Type.ITEM_CONSUMED
 		_:
 			return Type.UNKNOWN
 

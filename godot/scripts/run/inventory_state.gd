@@ -139,6 +139,35 @@ func append_slot(item_id: StringName, category: StringName, quantity: int = DEFA
 	return slot_index
 
 
+# Story 6.7: the INVERSE of append_slot — find + REMOVE the FIRST backpack slot whose item_id matches and return
+# the removed index (or -1 if no matching slot exists, a no-op). UseConsumableCommand runs this AFTER it validates
+# the slot exists + is a consumable; it is the AC3 "the consumable is removed according to inventory rules"
+# mutation. v0 has NO stacking, so removal drops the WHOLE slot (each occupied slot is exactly one item — there is
+# no quantity-- path since no item ships with quantity > 1). It mutates only the ordered backpack array (the
+# inverse of append): it does NOT touch equipment, does NOT change capacity, and preserves the order of the
+# remaining slots. Returns the index the matching slot occupied (so the caller can record the slot_index
+# provenance), or -1 on a miss.
+func remove_first_slot_with_id(item_id: StringName) -> int:
+	var target_id: String = String(item_id)
+	for index: int in range(backpack.size()):
+		if String(backpack[index].get("item_id", "")) == target_id:
+			backpack.remove_at(index)
+			return index
+	return -1
+
+
+# Story 6.7: remove + return the backpack slot at `index` (a fresh deep copy of the removed slot dict), or an
+# EMPTY dict {} on an out-of-range index (a no-op). The companion to remove_first_slot_with_id for an index-keyed
+# removal; same contract (mutates only the ordered backpack array — never equipment/capacity; the remaining slots
+# keep their order). Returns the removed slot so a caller can inspect what was removed.
+func remove_slot_at(index: int) -> Dictionary:
+	if index < 0 or index >= backpack.size():
+		return {}
+	var removed: Dictionary = backpack[index].duplicate(true)
+	backpack.remove_at(index)
+	return removed
+
+
 # The equipped item id in a named slot, or &"" when the slot is empty/absent. (Equip/unequip is deferred; this
 # accessor lets a later story + tests read the equipment structure without poking the dict directly.)
 func equipped_in(slot_name: StringName) -> StringName:

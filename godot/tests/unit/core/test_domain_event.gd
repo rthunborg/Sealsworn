@@ -28,6 +28,8 @@ func run() -> Dictionary:
 	_passive_consumed_rejects_malformed_payloads()
 	_passive_destroyed_serializes_and_parses_stable_payload()
 	_passive_destroyed_rejects_malformed_payloads()
+	_item_consumed_serializes_and_parses_stable_payload()
+	_item_consumed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -1115,6 +1117,92 @@ func _try_passive_destroyed_with(valid_payload: Dictionary, field: String, value
 	})
 
 
+func _item_consumed_serializes_and_parses_stable_payload() -> void:
+	# Story 6.7 (AC3): an item_consumed SYSTEM event (no actor) — a backpack consumable USE record. item_id is a
+	# Story-6.1 content id (lower_snake, NO hyphens); outcome_effect + explanation are non-empty strings (the
+	# resolved effect marker + the known result); backpack_size_after + slot_index are non-negative integral. UNLIKE
+	# passive_destroyed there is NO roll/draw_index (Use draws ZERO RNG — the deterministic item_gained shell).
+	var event: DomainEvent = DomainEvent.item_consumed(7, {
+		"item_id": "minor_healing_draught",
+		"outcome_effect": "restore_minor_health",
+		"explanation": "Using the draught restores a small measure of the hero's health.",
+		"backpack_size_after": 0,
+		"slot_index": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "item_consumed", "item_consumed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "item_consumed is a system event with an empty actor id.")
+	# It carries NO draw provenance (Use is deterministic — no roll).
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "item_consumed carries NO roll (Use draws zero RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "item_consumed carries NO draw_index (Use draws zero RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "item_consumed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.ITEM_CONSUMED, "item_consumed should parse back to ITEM_CONSUMED.")
+	assert_equal(restored.payload.get("item_id"), "minor_healing_draught", "The item_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("outcome_effect"), "restore_minor_health", "The outcome_effect must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("explanation"), "Using the draught restores a small measure of the hero's health.", "The explanation must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("backpack_size_after"), 0, "backpack_size_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("slot_index"), 0, "slot_index must survive a JSON round-trip.")
+
+
+func _item_consumed_rejects_malformed_payloads() -> void:
+	# A baseline VALID payload to clone-and-perturb one field at a time.
+	var valid_payload: Dictionary = {
+		"item_id": "minor_healing_draught",
+		"outcome_effect": "restore_minor_health",
+		"explanation": "Using the draught restores a small measure of the hero's health.",
+		"backpack_size_after": 0,
+		"slot_index": 0
+	}
+
+	# A non-lower_snake item_id is rejected.
+	var bad_item: ActionResult = _try_item_consumed_with(valid_payload, "item_id", "Minor-Draught")
+	assert_true(bad_item.is_error(), "item_consumed with a non-lower_snake item_id should be rejected.")
+	assert_equal(bad_item.error_code, &"invalid_event_payload", "Malformed item_consumed should use the stable code.")
+	assert_equal(bad_item.metadata.get("field"), "item_id", "item_consumed should name the item_id field.")
+
+	# A blank outcome_effect is rejected.
+	var bad_effect: ActionResult = _try_item_consumed_with(valid_payload, "outcome_effect", "")
+	assert_true(bad_effect.is_error(), "item_consumed with a blank outcome_effect should be rejected.")
+	assert_equal(bad_effect.metadata.get("field"), "outcome_effect", "item_consumed should require a non-empty outcome_effect.")
+
+	# A blank explanation is rejected.
+	var bad_explanation: ActionResult = _try_item_consumed_with(valid_payload, "explanation", "")
+	assert_true(bad_explanation.is_error(), "item_consumed with a blank explanation should be rejected.")
+	assert_equal(bad_explanation.metadata.get("field"), "explanation", "item_consumed should require a non-empty explanation.")
+
+	# A negative backpack_size_after is rejected.
+	var bad_size: ActionResult = _try_item_consumed_with(valid_payload, "backpack_size_after", -1)
+	assert_true(bad_size.is_error(), "item_consumed with a negative backpack_size_after should be rejected.")
+	assert_equal(bad_size.metadata.get("field"), "backpack_size_after", "item_consumed should require a non-negative backpack_size_after.")
+
+	# A negative slot_index is rejected.
+	var bad_index: ActionResult = _try_item_consumed_with(valid_payload, "slot_index", -1)
+	assert_true(bad_index.is_error(), "item_consumed with a negative slot_index should be rejected.")
+	assert_equal(bad_index.metadata.get("field"), "slot_index", "item_consumed should require a non-negative slot_index.")
+
+	# A missing field (drop item_id) is rejected.
+	var missing: Dictionary = valid_payload.duplicate(true)
+	missing.erase("item_id")
+	var missing_result: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "item_consumed", "sequence_id": 1, "actor_id": "", "payload": missing
+	})
+	assert_true(missing_result.is_error(), "item_consumed missing item_id should be rejected.")
+	assert_equal(missing_result.metadata.get("field"), "item_id", "item_consumed should name the missing item_id field.")
+
+
+# Build an item_consumed dictionary from the valid baseline with ONE field overridden, then run it through
+# try_from_dictionary (the malformed-payload reject path). Keeps the per-field negatives terse.
+func _try_item_consumed_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "item_consumed", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1522,7 +1610,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# Story 6.5: the passive_consumed SYSTEM event appended at the enum end (never renumbered).
 		DomainEvent.Type.PASSIVE_CONSUMED: &"passive_consumed",
 		# Story 6.6: the passive_destroyed SYSTEM event appended at the enum end (never renumbered).
-		DomainEvent.Type.PASSIVE_DESTROYED: &"passive_destroyed"
+		DomainEvent.Type.PASSIVE_DESTROYED: &"passive_destroyed",
+		# Story 6.7: the item_consumed SYSTEM event appended at the enum end (never renumbered).
+		DomainEvent.Type.ITEM_CONSUMED: &"item_consumed"
 	}
 
 	for event_type: int in expected_ids.keys():

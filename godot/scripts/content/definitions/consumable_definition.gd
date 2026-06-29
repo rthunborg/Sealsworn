@@ -31,17 +31,33 @@ const RARITIES: Array[StringName] = [
 @export var rarity: StringName = &""
 @export var value: int = 0
 @export var tactical_identity: String = ""
+# Story 6.7 ADDITIVE FIELDS (new params LAST so the positional ConsumableDefinition.new(...) baseline calls are
+# extended, not reordered — the 6.4 PassiveDefinition additive-extension precedent). They mirror
+# DestroyOutcomeTableDefinition's effect/explanation pair: a machine-readable OUTCOME-RECORD effect marker the
+# item_consumed event records + a player/debug-readable description of the known result.
+#
+# outcome_effect: the deterministic OUTCOME-RECORD effect marker (a lower_snake-style stable string describing
+# the intended heal/ward/ember effect). v0 is OUTCOME-RECORD-ONLY — there is NO live HP/wallet domain field, so
+# UseConsumableCommand RECORDS this effect via the item_consumed event; it does NOT mutate an HP/wallet/curse
+# field because none exists (the live heal/cure mutation is Epic 7's risk-economy state, wired off the recorded
+# effect). explanation: the Readability-Rule player/debug-readable known result.
+@export var outcome_effect: String = ""
+@export var explanation: String = ""
 
 func _init(
 	new_consumable_id: StringName = &"",
 	new_rarity: StringName = &"",
 	new_value: int = 0,
-	new_tactical_identity: String = ""
+	new_tactical_identity: String = "",
+	new_outcome_effect: String = "",
+	new_explanation: String = ""
 ) -> void:
 	consumable_id = new_consumable_id
 	rarity = new_rarity
 	value = new_value
 	tactical_identity = new_tactical_identity
+	outcome_effect = new_outcome_effect
+	explanation = new_explanation
 
 
 func validate() -> ActionResult:
@@ -54,6 +70,12 @@ func validate() -> ActionResult:
 		return _invalid(&"value")
 	if tactical_identity.strip_edges().is_empty():
 		return _invalid(&"tactical_identity")
+	# Story 6.7: the additive OUTCOME-RECORD fields are required (a dedicated per-field negative each). A blank
+	# outcome_effect/explanation would leave the item_consumed event unable to record the effect / known result.
+	if outcome_effect.strip_edges().is_empty():
+		return _invalid(&"outcome_effect")
+	if explanation.strip_edges().is_empty():
+		return _invalid(&"explanation")
 	return ActionResult.ok()
 
 

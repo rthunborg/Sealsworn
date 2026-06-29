@@ -85,7 +85,8 @@ func _factory_fails_closed_on_invalid_definitions() -> void:
 	assert_equal(repository, null, "Repository factory should fail closed instead of returning partially registered consumable content.")
 
 	var shared_content_repository: ContentRepository = ContentRepository.new()
-	var valid_definition: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_COMMON, 10, "A draught.")
+	# Story 6.7: a VALID definition now also carries the additive outcome_effect + explanation.
+	var valid_definition: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_COMMON, 10, "A draught.", "restore_health", "Restores health.")
 	var partial_repository: ConsumableRepository = ConsumableRepository.create_repository_from_definitions(
 		[valid_definition, invalid_definition], shared_content_repository
 	)
@@ -102,8 +103,10 @@ func _baseline_ids_constant_matches_registered_ids() -> void:
 
 
 func _repository_rejects_duplicate_id_fail_loud() -> void:
-	var first: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_COMMON, 10, "First.")
-	var duplicate: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_RARE, 99, "Distinct duplicate.")
+	# Story 6.7: both definitions carry the additive outcome_effect + explanation so they pass validate() and the
+	# test reaches the duplicate-id guard (not the new per-field validate negatives).
+	var first: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_COMMON, 10, "First.", "restore_health", "Restores health.")
+	var duplicate: ConsumableDefinition = ConsumableDefinition.new(&"minor_healing_draught", ConsumableDefinition.RARITY_RARE, 99, "Distinct duplicate.", "burst", "Bursts.")
 	var repository: ConsumableRepository = ConsumableRepository.new()
 	assert_true(repository.register_consumable(first).succeeded, "The first consumable registration should succeed.")
 	var duplicate_result: ActionResult = repository.register_consumable(duplicate)

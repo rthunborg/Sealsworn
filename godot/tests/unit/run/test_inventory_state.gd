@@ -19,6 +19,13 @@ func run() -> Dictionary:
 	_is_full_and_has_capacity_track_the_boundary()
 	_append_adds_exactly_one_slot()
 	_no_stacking_a_repeat_pickup_is_a_second_slot()
+	# Story 6.7: the slot-removal helpers (the inverse of append_slot).
+	_remove_first_slot_with_id_removes_the_right_slot()
+	_remove_first_slot_with_id_is_a_no_op_on_a_miss()
+	_remove_first_slot_with_id_removes_only_the_first_match()
+	_remove_slot_at_removes_and_returns_the_slot()
+	_remove_slot_at_is_a_no_op_out_of_range()
+	_removal_keeps_the_exact_key_contracts_byte_identical()
 	_to_dictionary_emits_exactly_the_pinned_keys()
 	_slot_shape_carries_exactly_the_pinned_slot_keys()
 	_round_trips_through_real_json()
@@ -79,6 +86,89 @@ func _no_stacking_a_repeat_pickup_is_a_second_slot() -> void:
 	assert_equal(inventory.backpack[1].get("quantity"), 1, "The second same-id slot stays quantity 1 (no quantity++).")
 	assert_equal(inventory.backpack[0].get("item_id"), "health_morsel", "Both slots carry the same item id.")
 	assert_equal(inventory.backpack[1].get("item_id"), "health_morsel", "Both slots carry the same item id.")
+
+
+# ---- Story 6.7: the slot-removal helpers (the inverse of append_slot) ----------------------------
+
+func _remove_first_slot_with_id_removes_the_right_slot() -> void:
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"padded_vest", &"armor")            # index 0
+	inventory.append_slot(&"minor_healing_draught", &"consumable")  # index 1
+	inventory.append_slot(&"health_morsel", &"pickup")         # index 2
+	var removed_index: int = inventory.remove_first_slot_with_id(&"minor_healing_draught")
+	assert_equal(removed_index, 1, "remove_first_slot_with_id returns the removed slot's index.")
+	assert_equal(inventory.size(), 2, "Removal drops exactly one slot.")
+	# Order preserved + the OTHER slots untouched (no collateral damage).
+	assert_equal(inventory.backpack[0].get("item_id"), "padded_vest", "Slot 0 is untouched after the removal.")
+	assert_equal(inventory.backpack[1].get("item_id"), "health_morsel", "The slot after the removed one shifts down, order preserved.")
+
+
+func _remove_first_slot_with_id_is_a_no_op_on_a_miss() -> void:
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"padded_vest", &"armor")
+	var before: String = JSON.stringify(inventory.to_dictionary())
+	var removed_index: int = inventory.remove_first_slot_with_id(&"not_in_backpack")
+	assert_equal(removed_index, -1, "Removing a missing id returns -1.")
+	assert_equal(inventory.size(), 1, "Removing a missing id is a no-op (slot count unchanged).")
+	assert_equal(JSON.stringify(inventory.to_dictionary()), before, "Removing a missing id leaves the backpack byte-identical.")
+
+
+func _remove_first_slot_with_id_removes_only_the_first_match() -> void:
+	# v0 has no stacking, so two pickups of the same id are two slots; removal drops only the FIRST match.
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"health_morsel", &"pickup")
+	inventory.append_slot(&"health_morsel", &"pickup")
+	var removed_index: int = inventory.remove_first_slot_with_id(&"health_morsel")
+	assert_equal(removed_index, 0, "The FIRST matching slot (index 0) is removed.")
+	assert_equal(inventory.size(), 1, "Only one of the two same-id slots is removed.")
+	assert_equal(inventory.backpack[0].get("item_id"), "health_morsel", "The second same-id slot remains.")
+
+
+func _remove_slot_at_removes_and_returns_the_slot() -> void:
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"padded_vest", &"armor")
+	inventory.append_slot(&"ember_flask", &"consumable")
+	var removed: Dictionary = inventory.remove_slot_at(1)
+	assert_equal(removed.get("item_id"), "ember_flask", "remove_slot_at returns the removed slot dict.")
+	assert_equal(removed.get("category"), "consumable", "The returned slot carries its category.")
+	assert_equal(inventory.size(), 1, "remove_slot_at drops exactly one slot.")
+	assert_equal(inventory.backpack[0].get("item_id"), "padded_vest", "The remaining slot is intact.")
+	# The returned dict is a copy: mutating it does not perturb the inventory (already removed, but proves no shared ref).
+	removed["item_id"] = "tampered"
+	assert_equal(inventory.size(), 1, "Mutating the returned removed slot does not perturb the inventory.")
+
+
+func _remove_slot_at_is_a_no_op_out_of_range() -> void:
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"padded_vest", &"armor")
+	var before: String = JSON.stringify(inventory.to_dictionary())
+	assert_equal(inventory.remove_slot_at(-1), {}, "A negative index returns an empty dict.")
+	assert_equal(inventory.remove_slot_at(5), {}, "An out-of-range index returns an empty dict.")
+	assert_equal(JSON.stringify(inventory.to_dictionary()), before, "An out-of-range remove_slot_at is a no-op (byte-identical).")
+
+
+func _removal_keeps_the_exact_key_contracts_byte_identical() -> void:
+	# After a removal the exact-key to_dictionary()/copy()/round-trip contracts stay byte-identical — the backpack
+	# just shortens; no key appears/vanishes, equipment + capacity are untouched.
+	var inventory: InventoryState = InventoryState.new()
+	inventory.append_slot(&"padded_vest", &"armor")
+	inventory.append_slot(&"minor_healing_draught", &"consumable")
+	inventory.equipment = InventoryState._normalize_equipment({"weapon": "practice_blade"})
+	inventory.remove_first_slot_with_id(&"minor_healing_draught")
+	# to_dictionary() still emits exactly the pinned keys (capacity/backpack/equipment unchanged in shape).
+	var data: Dictionary = inventory.to_dictionary()
+	assert_equal(data.size(), InventoryState.DICTIONARY_KEYS.size(), "to_dictionary() must still emit exactly the pinned keys after a removal.")
+	assert_equal(data.get("capacity"), 6, "Removal does NOT change capacity.")
+	assert_equal((data.get("backpack") as Array).size(), 1, "The backpack shortened to one slot.")
+	assert_true((data.get("equipment") as Dictionary).has("weapon"), "Removal does NOT touch equipment.")
+	# The surviving slot still carries exactly the pinned slot keys.
+	var slot: Dictionary = (data.get("backpack") as Array)[0]
+	assert_equal(slot.size(), InventoryState.SLOT_KEYS.size(), "The surviving slot keeps exactly the pinned slot keys.")
+	# A JSON round-trip after the removal is byte-identical.
+	var restored: InventoryState = InventoryState.try_from_dictionary(JSON.parse_string(JSON.stringify(data)))
+	assert_equal(JSON.stringify(restored.to_dictionary()), JSON.stringify(data), "A round-trip after a removal must be byte-identical.")
+	# copy() after the removal is byte-identical.
+	assert_equal(JSON.stringify(inventory.copy().to_dictionary()), JSON.stringify(data), "copy() after a removal must be byte-identical.")
 
 
 func _to_dictionary_emits_exactly_the_pinned_keys() -> void:
