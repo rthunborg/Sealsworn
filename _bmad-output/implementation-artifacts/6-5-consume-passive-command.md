@@ -8,7 +8,7 @@ baseline_commit: 4917b5fd5d449ea63d5e3df10d5222f0fa527077
 
 # Story 6.5: Consume Passive Command
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
