@@ -8,7 +8,7 @@ baseline_commit: bb194de2ef0584ea999704faec5e3edff8abf70a
 
 # Story 6.7: Loot and Passive Build Smoke Run
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
