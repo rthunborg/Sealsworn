@@ -4,6 +4,7 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
@@ -260,13 +261,14 @@ static func from_route_position(
 	# inside route_state (try_from_run_snapshot_fields reads that); these top-level fields are a read-only mirror.
 	# RiskEconomyState models corruption as a single count + curses as a count (curse_count); the RunSnapshot.curses
 	# array placeholder stays EMPTY in v0 (the curse-id LIST is Story 7.2's — 7.1 tracks only the count), so curses
-	# is NOT populated here (the curse-id content does not exist yet). gold/oath_shards/corruption ARE mirrored.
-	var economy = source_run.risk_economy
+	# is NOT populated here (the curse-id content does not exist yet). Only gold and corruption ARE mirrored.
+	# oath_shards is the AWARDED meta count (Epic 8), NOT the eligibility gate, so it is INTENTIONALLY left at its 0
+	# default here (v0 awards none); the eligibility gate rides meta_progression_eligible (already a top-level snapshot
+	# field) + the nested economy.
+	var economy: RiskEconomyState = source_run.risk_economy
 	if economy != null:
 		snapshot.gold = economy.gold
 		snapshot.corruption = economy.corruption
-		# oath_shards is the AWARDED meta count (Epic 8) — NOT the eligibility gate. v0 awards none, so it stays 0; the
-		# eligibility gate rides meta_progression_eligible (already a top-level snapshot field) + the nested economy.
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 
