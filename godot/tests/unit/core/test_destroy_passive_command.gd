@@ -30,6 +30,7 @@ func run() -> Dictionary:
 	_destroys_a_passive_rolls_an_outcome_flips_the_offer_and_emits_one_event()
 	_destroy_does_not_register_the_passive_into_the_resolver()
 	_destroy_is_deterministic_per_seed_and_advances_only_the_rewards_stream()
+	_pick_outcome_maps_each_roll_value_to_its_cumulative_weight_boundary()
 	_rejects_non_positive_sequence_id_first_with_no_mutation()
 	_rejects_a_missing_or_incomplete_rng_stream_set()
 	_rejects_invalid_context()
@@ -160,6 +161,49 @@ func _destroy_once_with_seed(seed_value: int) -> DomainEvent:
 	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams).execute(run)
 	assert_true(destroyed.succeeded, "Destroying with seed %d should succeed: %s" % [seed_value, destroyed.metadata])
 	return destroyed.events[0]
+
+
+# ---- AC2/AC3: weighted-pick cumulative-boundary coverage -----------------------------------------
+
+# Pin the cumulative-weight boundaries of the 70/20/10 pick. The baseline table's stable entry order is
+# small_immediate_benefit (weight 7) -> progress_unlock_hidden_flag (weight 2) -> no_obvious_reward_avoids_danger
+# (weight 1), so the cumulative thresholds are 7, 9, 10. The command draws rand_int(STREAM_REWARDS, 0,
+# total_weight - 1) = [0, 9] (randi_range is inclusive both ends), and _pick_outcome walks the cumulative weights:
+# roll < 7 -> small, 7 <= roll < 9 -> progress, 9 <= roll < 10 -> no_obvious. This exercises the
+# rolled_value < cumulative walk at and around every 7/2/1 boundary (incl. the non-dominant 20%/10% bands the
+# seed-based determinism test only hits indirectly), feeding the roll value directly into _pick_outcome.
+func _pick_outcome_maps_each_roll_value_to_its_cumulative_weight_boundary() -> void:
+	var table: DestroyOutcomeTableDefinition = DestroyOutcomeTableDefinition.create_baseline_table()
+	assert_true(table.validate().succeeded, "Setup: the baseline table must validate.")
+	assert_equal(table.total_weight(), 10, "Setup: the baseline table total weight should be 10 (7+2+1).")
+	# A command instance carrying the baseline table; _pick_outcome is a pure function of the rolled value (no RNG,
+	# no state read), so we exercise it directly across the full reachable roll range [0, total_weight - 1].
+	var command: DestroyPassiveCommand = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, RngStreamSet.new(0), table)
+
+	# The exhaustive roll-value -> category map across and around each cumulative threshold (7, 9, 10).
+	var expected_by_roll: Dictionary = {
+		0: DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+		1: DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+		5: DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+		6: DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,  # last value in the 70% band
+		7: DestroyOutcomeTableDefinition.OUTCOME_PROGRESS_UNLOCK_HIDDEN_FLAG,  # first value in the 20% band
+		8: DestroyOutcomeTableDefinition.OUTCOME_PROGRESS_UNLOCK_HIDDEN_FLAG,  # last value in the 20% band
+		9: DestroyOutcomeTableDefinition.OUTCOME_NO_OBVIOUS_REWARD_AVOIDS_DANGER  # the single value in the 10% band
+	}
+	for roll_value: int in expected_by_roll:
+		var outcome: Dictionary = command._pick_outcome(roll_value)
+		assert_equal(
+			StringName(String(outcome.get("outcome_category"))),
+			expected_by_roll[roll_value],
+			"Roll %d should map to the %s cumulative band." % [roll_value, String(expected_by_roll[roll_value])]
+		)
+		# The picked entry is a real, non-empty outcome entry (never the defensive empty-dict fail-safe).
+		assert_false(String(outcome.get("outcome_id")).is_empty(), "Roll %d should pick a real entry with a non-empty outcome_id." % roll_value)
+
+	# Each cumulative band picks the entry's own stable outcome_id (the baseline 7/2/1 entry ids).
+	assert_equal(String(command._pick_outcome(6).get("outcome_id")), "minor_restoration", "The 70% band should pick the small_immediate_benefit entry id.")
+	assert_equal(String(command._pick_outcome(7).get("outcome_id")), "quiet_progress", "The 20% band should pick the progress_unlock_hidden_flag entry id.")
+	assert_equal(String(command._pick_outcome(9).get("outcome_id")), "sealed_danger", "The 10% band should pick the no_obvious_reward_avoids_danger entry id.")
 
 
 # ---- AC4: no-mutation rejections -----------------------------------------------------------------
