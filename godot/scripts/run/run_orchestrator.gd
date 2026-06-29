@@ -41,6 +41,8 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const GenerationResult = preload("res://scripts/generation/level/generation_result.gd")
+const GoldRewardDefinition = preload("res://scripts/content/definitions/gold_reward_definition.gd")
+const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
 const NodeEnterCommand = preload("res://scripts/core/commands/node_enter_command.gd")
@@ -81,6 +83,11 @@ var _enemy_repository: EnemyRepository = null
 # [Review][Decision]) is satisfied by routing every draw through this repo (validated tables only) + the builder
 # (which re-validates before drawing).
 var _reward_table_repository: RewardTableRepository = null
+# Story 7.1: the gold-reward repository for the GENERATE-time gold roll (the T1 wire-off). Default to the baseline
+# repository; injectable for tests (mirrors the reward-table injection). Resolves a gold-reward content id (the
+# offered gold entry's content_id) to its typed GoldRewardDefinition so the orchestrator can roll gold_min..gold_max
+# within the BAND. The roll routes through the run-level streams (the named-RNG rule); fail-closed on a repo miss.
+var _gold_reward_repository: GoldRewardRepository = null
 # Last composed route-position snapshot (set when persistence is requested at a between-node boundary).
 var _last_route_position_snapshot: RunSnapshot = null
 
@@ -88,11 +95,13 @@ var _last_route_position_snapshot: RunSnapshot = null
 func _init(
 	recipe_repository: LevelRecipeRepository = null,
 	enemy_repository: EnemyRepository = null,
-	reward_table_repository: RewardTableRepository = null
+	reward_table_repository: RewardTableRepository = null,
+	gold_reward_repository: GoldRewardRepository = null
 ) -> void:
 	_recipe_repository = recipe_repository if recipe_repository != null else LevelRecipeRepository.create_baseline_repository()
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
 	_reward_table_repository = reward_table_repository if reward_table_repository != null else RewardTableRepository.create_baseline_repository()
+	_gold_reward_repository = gold_reward_repository if gold_reward_repository != null else GoldRewardRepository.create_baseline_repository()
 
 
 # Start a fresh run from (root_seed, is_manual_seed[, class_id]) via RunStartCommand. Seats the live RunState
@@ -308,7 +317,21 @@ func generate_reward_offer(table_id: StringName, stream_name: StringName = RngSt
 		"category": String(selected.get("category")),
 		"content_id": String(selected.get("content_id"))
 	}]
-	return _store_offer_and_emit(table, offered_entries, draw, stream_name)
+
+	# Story 7.1 (the T1 wire-off, GENERATE half): when the drawn entry is a GOLD reward, roll the CONCRETE gold amount
+	# within the GoldRewardDefinition's gold_min..gold_max BAND NOW (a SECOND draw on the SAME run-level stream — the
+	# named-RNG rule + deterministic/reproducible from the seed/state), so RESOLVE stays purely deterministic (it
+	# credits the already-rolled amount, drawing ZERO new RNG — the Epic-6 zero-new-RNG-on-resolve invariant). A
+	# non-gold entry rolls no gold (gold_amount stays 0). A gold entry whose definition does not resolve is a
+	# fail-closed error (never a fabricated amount).
+	var gold_amount: int = 0
+	if StringName(String(selected.get("category"))) == RewardTableDefinition.CATEGORY_GOLD:
+		var gold_result: ActionResult = _roll_gold_amount(StringName(String(selected.get("content_id"))), stream_name)
+		if gold_result.is_error():
+			return gold_result
+		gold_amount = int(gold_result.metadata.get("gold_amount"))
+
+	return _store_offer_and_emit(table, offered_entries, draw, stream_name, gold_amount)
 
 
 # GENERATE a deterministic AC4 3-CHOICE PASSIVE reward offer from `table_id`, drawing THREE DISTINCT passive
@@ -364,7 +387,8 @@ func generate_passive_reward_offer(table_id: StringName, stream_name: StringName
 			"command": "run_orchestrator",
 			"table_id": String(table_id)
 		})
-	return _store_offer_and_emit(table, offered_entries, last_draw, stream_name)
+	# A passive 3-choice offer never offers gold (the choices are all passives), so gold_amount stays 0.
+	return _store_offer_and_emit(table, offered_entries, last_draw, stream_name, 0)
 
 
 # Shared GENERATE precheck: the orchestrator must be seated (a non-null run), no offer may already be pending
@@ -389,10 +413,32 @@ func _reward_generate_precheck(table_id: StringName) -> ActionResult:
 	return ActionResult.ok([], {"table": table})
 
 
+# Story 7.1 (the T1 wire-off, GENERATE half): resolve `gold_reward_id` to its GoldRewardDefinition through the
+# gold-reward repository and roll a CONCRETE amount in [gold_min, gold_max] through the RUN-LEVEL streams on
+# `stream_name` (the SAME stream the offer drew through — a SECOND named-stream draw, deterministic + reproducible).
+# Returns ok with metadata.gold_amount, or a fail-closed error (never a fabricated amount): unknown_gold_reward on a
+# repo miss, or the stream's error VERBATIM. The roll is the ONLY new RNG site this story adds, and it routes
+# EXCLUSIVELY through the run-level set (NEVER randi/randf/a new RandomNumberGenerator).
+func _roll_gold_amount(gold_reward_id: StringName, stream_name: StringName) -> ActionResult:
+	var definition: GoldRewardDefinition = _gold_reward_repository.get_gold_reward(gold_reward_id)
+	if definition == null:
+		return ActionResult.error(&"unknown_gold_reward", {
+			"command": "run_orchestrator",
+			"gold_reward_id": String(gold_reward_id)
+		})
+	# Roll within the inclusive band [gold_min, gold_max] (validate() guarantees 0 <= gold_min <= gold_max). A
+	# collapsed band (min == max) draws the count anyway so the stream advances identically (mirroring the generator's
+	# always-fire count-draw discipline).
+	var draw: ActionResult = streams.rand_int(stream_name, definition.gold_min, definition.gold_max, {"consumer": "gold_reward_roll", "gold_reward_id": String(gold_reward_id)})
+	if draw.is_error():
+		return draw
+	return ActionResult.ok([], {"gold_amount": int(draw.metadata.get("value"))})
+
+
 # Store the generated offer on RunState as `pending`, emit the reward_offered event, advance the sequence counter,
 # and return ok with the offer + event. `provenance_draw` is the builder ActionResult whose metadata carries the
 # roll/draw_index/state_after (the last draw for a multi-pick). Shared by the single + multi pick paths.
-func _store_offer_and_emit(table: RewardTableDefinition, offered_entries: Array, provenance_draw: ActionResult, stream_name: StringName) -> ActionResult:
+func _store_offer_and_emit(table: RewardTableDefinition, offered_entries: Array, provenance_draw: ActionResult, stream_name: StringName, gold_amount: int) -> ActionResult:
 	var offer: RewardOffer = RewardOffer.new(
 		table.table_id,
 		RewardOffer.STATUS_PENDING,
@@ -401,7 +447,8 @@ func _store_offer_and_emit(table: RewardTableDefinition, offered_entries: Array,
 		String(stream_name),
 		int(provenance_draw.metadata.get("offer").get("roll")),
 		int(provenance_draw.metadata.get("draw_index")),
-		int(provenance_draw.metadata.get("state_after"))
+		int(provenance_draw.metadata.get("state_after")),
+		gold_amount
 	)
 	run.pending_reward_offer = offer
 

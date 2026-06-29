@@ -9,6 +9,7 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
 
 func run() -> Dictionary:
 	_new_run_initializes_ac1_fields()
@@ -38,6 +39,13 @@ func run() -> Dictionary:
 	_run_with_pending_offer_round_trips_through_dictionary_and_copy()
 	_pre_6_3_run_dict_without_offer_key_parses_to_null()
 	_pending_offer_stays_out_of_the_run_snapshot_bridge()
+	# Story 7.1 — the additive risk-economy field + its eligibility invariant + the route-position bridge.
+	_fresh_run_has_a_default_economy_eligible_for_a_non_manual_run()
+	_fresh_manual_run_economy_is_ineligible_and_validates()
+	_run_with_economy_round_trips_through_dictionary_and_copy()
+	_pre_7_1_run_dict_without_economy_key_parses_to_default_economy()
+	_economy_eligibility_mismatch_fails_run_validate()
+	_economy_nests_in_the_snapshot_bridge_and_round_trips()
 	return result()
 
 
@@ -582,6 +590,136 @@ func _pending_offer_stays_out_of_the_run_snapshot_bridge() -> void:
 	var allowed: Dictionary = _allowed_run_snapshot_keys()
 	for key: Variant in data.keys():
 		assert_true(allowed.has(key), "Composing a run with a pending offer must not add a surprise top-level RunSnapshot key (%s)." % str(key))
+
+
+# Story 7.1: a fresh NON-manual run carries a non-null default economy that is Oath-Shard eligible (the eligibility
+# derives from is_manual_seed at init, in lockstep with meta_progression_eligible) and validates.
+func _fresh_run_has_a_default_economy_eligible_for_a_non_manual_run() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	assert_true(run.risk_economy != null, "AC1: a fresh run has a non-null economy (default, never null).")
+	assert_equal(run.risk_economy.gold, 0, "AC1: a fresh run's wallet is empty.")
+	assert_equal(run.risk_economy.healing_charges, 0, "AC1: a fresh run's healing availability is 0.")
+	assert_equal(run.risk_economy.risk_flags, [], "AC1: a fresh run has no risk flags (7.3 populates them).")
+	assert_true(run.risk_economy.oath_shard_eligible, "AC1: a non-manual run's economy is Oath-Shard eligible (lockstep with meta_progression_eligible).")
+	assert_equal(run.risk_economy.oath_shard_eligible, run.meta_progression_eligible, "AC1: oath_shard_eligible tracks meta_progression_eligible.")
+	assert_true(run.validate().succeeded, "A run with a default economy must validate.")
+	# The full run dict carries the economy projection.
+	var data: Dictionary = run.to_dictionary()
+	assert_true(data.has("risk_economy"), "The full run dict carries a risk_economy key.")
+	assert_equal((data.get("risk_economy") as Dictionary).get("gold"), 0, "A fresh run serializes an empty wallet.")
+
+
+# Story 7.1: a fresh MANUAL-seed run's economy is NEVER Oath-Shard eligible (the GDD invariant) and still validates.
+func _fresh_manual_run_economy_is_ineligible_and_validates() -> void:
+	var run: RunState = RunState.new_run(7, true, _build_route())
+	assert_false(run.risk_economy.oath_shard_eligible, "AC1: a manual-seed run's economy is NEVER Oath-Shard eligible.")
+	assert_equal(run.risk_economy.oath_shard_eligible, run.meta_progression_eligible, "AC1: the economy eligibility tracks meta_progression_eligible for a manual run too.")
+	assert_true(run.validate().succeeded, "A manual-seed run with an ineligible economy must validate (the invariant holds).")
+
+
+# Story 7.1: a run with a mutated economy round-trips through to_dictionary()/try_from_dictionary (lenient) and copy()
+# deep-copies the economy (a distinct instance; mutating the copy does not perturb the source).
+func _run_with_economy_round_trips_through_dictionary_and_copy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.risk_economy.apply_gold_delta(25)
+	run.risk_economy.apply_healing_delta(2)
+	run.risk_economy.set_curse_count(1)
+	run.risk_economy.add_risk_flag(&"salt_marked")
+	assert_true(run.validate().succeeded, "A run with a mutated economy must validate.")
+	# Round-trip the full run dict.
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with an economy must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_equal(restored.risk_economy.gold, 25, "The round-tripped run must preserve the wallet.")
+	assert_equal(restored.risk_economy.healing_charges, 2, "The round-tripped run must preserve healing availability.")
+	assert_equal(restored.risk_economy.curse_count, 1, "The round-tripped run must preserve the curse count.")
+	assert_equal(restored.risk_economy.risk_flags, ["salt_marked"], "The round-tripped run must preserve risk flags.")
+	# copy() preserves the economy byte-for-byte AND is a distinct deep instance.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the economy byte-for-byte.")
+	assert_true(copied.risk_economy != run.risk_economy, "copy() must produce a distinct economy instance (deep copy).")
+	copied.risk_economy.apply_gold_delta(100)
+	copied.risk_economy.add_risk_flag(&"blood_debt")
+	assert_equal(run.risk_economy.gold, 25, "Mutating the copy's wallet must NOT perturb the source.")
+	assert_equal(run.risk_economy.risk_flags, ["salt_marked"], "Mutating the copy's risk_flags must NOT perturb the source.")
+
+
+# Story 7.1: a pre-7.1 run dict (no risk_economy key at all) parses with a fresh default economy (lenient decode),
+# whose eligibility derives from the run's is_manual_seed.
+func _pre_7_1_run_dict_without_economy_key_parses_to_default_economy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	var legacy_dict: Dictionary = run.to_dictionary()
+	legacy_dict.erase("risk_economy")
+	var legacy_parsed: ActionResult = RunState.try_from_dictionary(legacy_dict)
+	assert_true(legacy_parsed.succeeded, "A pre-7.1 run dict (no economy key) must parse: %s" % legacy_parsed.metadata)
+	var restored: RunState = legacy_parsed.metadata.get("run_state") as RunState
+	assert_true(restored.risk_economy != null, "A pre-7.1 run dict restores a non-null economy.")
+	assert_equal(restored.risk_economy.gold, 0, "A pre-7.1 run dict restores an empty wallet.")
+	assert_true(restored.risk_economy.oath_shard_eligible, "A pre-7.1 non-manual run dict restores an eligible economy.")
+	# A pre-7.1 MANUAL run dict restores an INELIGIBLE economy (the invariant is re-derived from is_manual_seed).
+	var manual_run: RunState = RunState.new_run(7, true, _build_route())
+	var manual_legacy: Dictionary = manual_run.to_dictionary()
+	manual_legacy.erase("risk_economy")
+	var manual_parsed: ActionResult = RunState.try_from_dictionary(manual_legacy)
+	assert_true(manual_parsed.succeeded, "A pre-7.1 manual run dict must parse: %s" % manual_parsed.metadata)
+	assert_false((manual_parsed.metadata.get("run_state") as RunState).risk_economy.oath_shard_eligible, "A pre-7.1 manual run dict restores an ineligible economy.")
+
+
+# Story 7.1: a run whose economy eligibility DIVERGES from its manual-seed flag fails validate() (the invariant is
+# enforced at the RunState level, surfacing the economy's stable code).
+func _economy_eligibility_mismatch_fails_run_validate() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	# Force a divergence: a non-manual run whose economy claims ineligibility.
+	run.risk_economy.oath_shard_eligible = false
+	var validation: ActionResult = run.validate()
+	assert_true(validation.is_error(), "A run whose economy eligibility diverges from its seed mode must fail validate().")
+	assert_equal(validation.error_code, &"invalid_oath_shard_eligibility", "The mismatch must surface the economy's stable invariant code.")
+
+
+# Story 7.1: the economy NESTS inside the route_state payload of to_run_snapshot_fields() and round-trips back through
+# try_from_run_snapshot_fields() — WITHOUT adding a top-level RunSnapshot key (the AC1 "and save snapshots", the same
+# nested mechanism as the class id). A payload with no nested economy key restores with the default economy.
+func _economy_nests_in_the_snapshot_bridge_and_round_trips() -> void:
+	var run: RunState = RunState.new_run(2026, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.risk_economy.apply_gold_delta(42)
+	run.risk_economy.set_corruption(2)
+
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	var route_state: Dictionary = fields.get("route_state")
+	# The economy is nested INSIDE route_state (the same mechanism as run_phase/selected_class_id), NOT a top-level field.
+	assert_true(route_state.has(String(RunState.RISK_ECONOMY_KEY)), "the economy must nest inside the route_state payload.")
+	assert_equal((route_state.get(String(RunState.RISK_ECONOMY_KEY)) as Dictionary).get("gold"), 42, "the nested economy must carry the wallet.")
+	assert_false(fields.has(String(RunState.RISK_ECONOMY_KEY)), "the economy must NOT be a top-level snapshot field.")
+	# The composed snapshot must stay within the 23-key gate (no new top-level key).
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.route_state = fields.get("route_state")
+	snapshot.current_route_node_id = fields.get("current_route_node_id")
+	snapshot.revealed_route_node_ids = fields.get("revealed_route_node_ids")
+	var data: Dictionary = snapshot.to_dictionary()
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	for key: Variant in data.keys():
+		assert_true(allowed.has(key), "Composing a run with an economy must not add a surprise top-level RunSnapshot key (%s)." % str(key))
+
+	# Round-trip back: the nested economy rehydrates.
+	var rebuilt: ActionResult = RunState.try_from_run_snapshot_fields(fields)
+	assert_true(rebuilt.succeeded, "An economy-carrying snapshot bridge must reconstruct: %s" % rebuilt.metadata)
+	var rebuilt_run: RunState = rebuilt.metadata.get("run_state") as RunState
+	assert_equal(rebuilt_run.risk_economy.gold, 42, "The nested economy wallet must rehydrate through the snapshot bridge.")
+	assert_equal(rebuilt_run.risk_economy.corruption, 2, "The nested economy corruption must rehydrate through the snapshot bridge.")
+
+	# A payload with NO nested economy key restores with the default economy (lenient — a pre-7.1 route-position save).
+	var legacy_fields: Dictionary = run.to_run_snapshot_fields()
+	var legacy_route_state: Dictionary = legacy_fields.get("route_state")
+	legacy_route_state.erase(String(RunState.RISK_ECONOMY_KEY))
+	legacy_fields["route_state"] = legacy_route_state
+	var legacy_rebuilt: ActionResult = RunState.try_from_run_snapshot_fields(legacy_fields)
+	assert_true(legacy_rebuilt.succeeded, "A pre-7.1 snapshot bridge (no nested economy key) must reconstruct: %s" % legacy_rebuilt.metadata)
+	var legacy_run: RunState = legacy_rebuilt.metadata.get("run_state") as RunState
+	assert_equal(legacy_run.risk_economy.gold, 0, "A pre-7.1 bridge restores the default empty economy.")
+	assert_true(legacy_run.risk_economy.oath_shard_eligible, "A pre-7.1 bridge restores an eligible economy for a non-manual run.")
 
 
 func _allowed_run_snapshot_keys() -> Dictionary:

@@ -33,7 +33,9 @@ func _sample_offer() -> RewardOffer:
 		"rewards",
 		3,
 		0,
-		123456789
+		123456789,
+		# Story 7.1: the rolled concrete gold amount (a small bounded int).
+		11
 	)
 
 
@@ -62,6 +64,12 @@ func _round_trips_through_real_json() -> void:
 	assert_equal(restored.roll, 3, "The roll must survive JSON.")
 	assert_equal(restored.draw_index, 0, "The draw index must survive JSON.")
 	assert_equal(restored.state_after, 123456789, "state_after must survive JSON (decoded back to int).")
+	# Story 7.1: the rolled gold amount survives JSON (a small bounded int, stays numeric).
+	assert_equal(restored.gold_amount, 11, "Story 7.1: the rolled gold_amount must survive JSON (small bounded int, numeric).")
+	# A pre-7.1 offer dict (no gold_amount key) decodes gold_amount to 0 (lenient).
+	var legacy_dict: Dictionary = offer.to_dictionary()
+	legacy_dict.erase("gold_amount")
+	assert_equal(RewardOffer.try_from_dictionary(legacy_dict).gold_amount, 0, "A pre-7.1 offer dict (no gold_amount) decodes to 0.")
 	# A round-tripped offer re-serializes byte-identically.
 	assert_equal(JSON.stringify(restored.to_dictionary()), JSON.stringify(offer.to_dictionary()), "A round-tripped offer must re-serialize byte-identically.")
 

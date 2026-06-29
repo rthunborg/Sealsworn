@@ -30,6 +30,8 @@ func run() -> Dictionary:
 	_passive_destroyed_rejects_malformed_payloads()
 	_item_consumed_serializes_and_parses_stable_payload()
 	_item_consumed_rejects_malformed_payloads()
+	_economy_changed_serializes_and_parses_stable_payload()
+	_economy_changed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -1203,6 +1205,106 @@ func _try_item_consumed_with(valid_payload: Dictionary, field: String, value: Va
 	})
 
 
+func _economy_changed_serializes_and_parses_stable_payload() -> void:
+	# Story 7.1 (AC2): an economy_changed SYSTEM event (no actor) — a currency/healing-change record. `reason` is a
+	# lower_snake marker; gold_before/after + healing_before/after are non-negative integral; gold_delta/healing_delta
+	# are SIGNED integral (a credit positive, a spend negative). UNLIKE passive_destroyed there is NO roll/draw_index
+	# (an economy change is a recorded amount, not a roll — deterministic).
+	var event: DomainEvent = DomainEvent.economy_changed(9, {
+		"reason": "gold_reward_resolved",
+		"gold_before": 5,
+		"gold_after": 17,
+		"gold_delta": 12,
+		"healing_before": 0,
+		"healing_after": 0,
+		"healing_delta": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "economy_changed", "economy_changed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "economy_changed is a system event with an empty actor id.")
+	# It carries NO draw provenance (an economy change is deterministic — no roll).
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "economy_changed carries NO roll (deterministic — zero RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "economy_changed carries NO draw_index (deterministic — zero RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "economy_changed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.ECONOMY_CHANGED, "economy_changed should parse back to ECONOMY_CHANGED.")
+	assert_equal(restored.payload.get("reason"), "gold_reward_resolved", "The reason must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("gold_before"), 5, "gold_before must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("gold_after"), 17, "gold_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("gold_delta"), 12, "gold_delta must survive a JSON round-trip.")
+
+	# A healing SPEND (a NEGATIVE delta) is valid — the signed-delta path.
+	var heal_event: DomainEvent = DomainEvent.economy_changed(10, {
+		"reason": "heal_spent",
+		"gold_before": 0, "gold_after": 0, "gold_delta": 0,
+		"healing_before": 3, "healing_after": 1, "healing_delta": -2
+	})
+	var heal_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(heal_event.to_dictionary())))
+	assert_true(heal_parse.succeeded, "A healing-spend economy_changed (negative delta) should parse: %s" % heal_parse.metadata)
+	assert_equal((heal_parse.metadata.get("event") as DomainEvent).payload.get("healing_delta"), -2, "A negative healing_delta must survive the round-trip (signed).")
+
+
+func _economy_changed_rejects_malformed_payloads() -> void:
+	# A baseline VALID payload to clone-and-perturb one field at a time.
+	var valid_payload: Dictionary = {
+		"reason": "gold_reward_resolved",
+		"gold_before": 5,
+		"gold_after": 17,
+		"gold_delta": 12,
+		"healing_before": 0,
+		"healing_after": 0,
+		"healing_delta": 0
+	}
+
+	# A non-lower_snake reason is rejected.
+	var bad_reason: ActionResult = _try_economy_changed_with(valid_payload, "reason", "Gold-Reward")
+	assert_true(bad_reason.is_error(), "economy_changed with a non-lower_snake reason should be rejected.")
+	assert_equal(bad_reason.error_code, &"invalid_event_payload", "Malformed economy_changed should use the stable code.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "economy_changed should name the reason field.")
+
+	# A blank reason is rejected.
+	var blank_reason: ActionResult = _try_economy_changed_with(valid_payload, "reason", "")
+	assert_true(blank_reason.is_error(), "economy_changed with a blank reason should be rejected.")
+	assert_equal(blank_reason.metadata.get("field"), "reason", "economy_changed should require a non-empty reason.")
+
+	# A NEGATIVE gold_before/gold_after is rejected (a wallet count is never negative). The delta MAY be negative.
+	var neg_before: ActionResult = _try_economy_changed_with(valid_payload, "gold_before", -1)
+	assert_true(neg_before.is_error(), "economy_changed with a negative gold_before should be rejected.")
+	assert_equal(neg_before.metadata.get("field"), "gold_before", "economy_changed should require a non-negative gold_before.")
+	# (gold_after must stay consistent with before+delta; perturbing before alone breaks arithmetic, so name before.)
+
+	# A non-integral gold_delta is rejected.
+	var bad_delta: ActionResult = _try_economy_changed_with(valid_payload, "gold_delta", "lots")
+	assert_true(bad_delta.is_error(), "economy_changed with a non-integral gold_delta should be rejected.")
+	assert_equal(bad_delta.metadata.get("field"), "gold_delta", "economy_changed should name the gold_delta field.")
+
+	# An ARITHMETIC inconsistency (gold_after != gold_before + gold_delta) is rejected (the record must be honest).
+	var inconsistent: ActionResult = _try_economy_changed_with(valid_payload, "gold_after", 99)
+	assert_true(inconsistent.is_error(), "economy_changed whose gold_after diverges from before+delta should be rejected.")
+	assert_equal(inconsistent.metadata.get("field"), "gold_after", "economy_changed should reject an inconsistent gold_after.")
+
+	# A missing field (drop reason) is rejected.
+	var missing: Dictionary = valid_payload.duplicate(true)
+	missing.erase("reason")
+	var missing_result: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "economy_changed", "sequence_id": 1, "actor_id": "", "payload": missing
+	})
+	assert_true(missing_result.is_error(), "economy_changed missing reason should be rejected.")
+	assert_equal(missing_result.metadata.get("field"), "reason", "economy_changed should name the missing reason field.")
+
+
+# Build an economy_changed dictionary from the valid baseline with ONE field overridden, then run it through
+# try_from_dictionary (the malformed-payload reject path).
+func _try_economy_changed_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "economy_changed", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1612,7 +1714,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# Story 6.6: the passive_destroyed SYSTEM event appended at the enum end (never renumbered).
 		DomainEvent.Type.PASSIVE_DESTROYED: &"passive_destroyed",
 		# Story 6.7: the item_consumed SYSTEM event appended at the enum end (never renumbered).
-		DomainEvent.Type.ITEM_CONSUMED: &"item_consumed"
+		DomainEvent.Type.ITEM_CONSUMED: &"item_consumed",
+		# Story 7.1: the economy_changed SYSTEM event appended at the enum end (never renumbered).
+		DomainEvent.Type.ECONOMY_CHANGED: &"economy_changed"
 	}
 
 	for event_type: int in expected_ids.keys():
@@ -1621,6 +1725,17 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		_assert_machine_id(String(event_id), "DomainEvent ids should be lower-snake machine ids.")
 		# Round-trip: the id maps back to the same enum member (the append did not break type_for_id).
 		assert_equal(DomainEvent.type_for_id(event_id), event_type, "DomainEvent id_for_type/type_for_id must round-trip.")
+
+	# Story 7.1 (the 6.7 Round-1 Low / retro T3 hardening): tie expected_ids' size to the DomainEvent.Type member
+	# count so a FUTURE appended event the author forgets to add here is caught (it would otherwise be silently
+	# un-pinned and the test would still pass). The map pins every member EXCEPT the UNKNOWN sentinel, so
+	# expected_ids.size() == Type.size() - 1; ADDITIONALLY iterate the enum asserting each non-UNKNOWN member is a
+	# pinned key (a precise per-member message on a miss).
+	assert_equal(expected_ids.size(), DomainEvent.Type.size() - 1, "expected_ids must pin EVERY DomainEvent.Type member except UNKNOWN (a future appended event must be added here).")
+	for type_value: int in DomainEvent.Type.values():
+		if type_value == DomainEvent.Type.UNKNOWN:
+			continue
+		assert_true(expected_ids.has(type_value), "Every non-UNKNOWN DomainEvent.Type member must be pinned in expected_ids (member %d is un-pinned)." % type_value)
 
 
 func _assert_machine_id(value: String, message: String) -> void:

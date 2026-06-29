@@ -47,7 +47,8 @@ const DICTIONARY_KEYS: Array[String] = [
 	"stream_name",
 	"roll",
 	"draw_index",
-	"state_after"
+	"state_after",
+	"gold_amount"
 ]
 
 # The reward table the offer was drawn from (lower_snake). A by-id reference only — the table itself is NOT stored.
@@ -68,6 +69,14 @@ var draw_index: int = 0
 # The post-draw stream state (the builder's state_after) — provenance only. A full int64 (decimal-string encoded
 # in to_dictionary() so it survives JSON, mirroring the RngStreamSet/RunState seed discipline).
 var state_after: int = 0
+# Story 7.1: the CONCRETE gold amount rolled at GENERATE time when this offer's selected entry is a GOLD reward (the
+# GoldRewardDefinition declares a gold_min..gold_max BAND, NOT a fixed amount — Epic 6 never rolled it, leaving gold
+# outcome-record-only). The orchestrator rolls gold_min..gold_max via the run-level rewards/loot stream ALONGSIDE the
+# offer draw and stores the concrete amount HERE, so ResolveRewardCommand credits the wallet by exactly this amount
+# DETERMINISTICALLY (drawing ZERO new RNG on resolve — the Epic-6 zero-new-RNG-on-resolve invariant holds). A
+# non-gold offer rolls no gold (this stays 0). A small bounded NON-NEGATIVE int (NOT a seed — no decimal-string
+# encoding; the 5.3/6.2 baseline_hp/capacity precedent).
+var gold_amount: int = 0
 
 func _init(
 	new_table_id: StringName = &"",
@@ -77,7 +86,8 @@ func _init(
 	new_stream_name: String = "",
 	new_roll: int = 0,
 	new_draw_index: int = 0,
-	new_state_after: int = 0
+	new_state_after: int = 0,
+	new_gold_amount: int = 0
 ) -> void:
 	table_id = new_table_id
 	status = new_status if STATUSES.has(new_status) else STATUS_PENDING
@@ -87,6 +97,7 @@ func _init(
 	roll = new_roll if new_roll >= 0 else 0
 	draw_index = new_draw_index if new_draw_index >= 0 else 0
 	state_after = new_state_after
+	gold_amount = new_gold_amount if new_gold_amount >= 0 else 0
 
 
 func is_pending() -> bool:
@@ -128,7 +139,10 @@ func to_dictionary() -> Dictionary:
 		"roll": roll,
 		"draw_index": draw_index,
 		# Full int64 -> decimal string (survives JSON; read back leniently as int / integral-float / string).
-		"state_after": str(state_after)
+		"state_after": str(state_after),
+		# Story 7.1: the rolled concrete gold amount (a small bounded int, NOT a seed — stays numeric, no
+		# decimal-string encoding). 0 for a non-gold offer.
+		"gold_amount": gold_amount
 	}
 
 
@@ -144,7 +158,9 @@ static func try_from_dictionary(data: Dictionary) -> RewardOffer:
 		String(data.get("stream_name", "")),
 		_int_or_zero(data.get("roll", 0)),
 		_int_or_zero(data.get("draw_index", 0)),
-		_int64_or_zero(data.get("state_after", 0))
+		_int64_or_zero(data.get("state_after", 0)),
+		# Story 7.1: lenient gold_amount decode (a small bounded int; a pre-7.1 offer dict has no gold_amount key -> 0).
+		_int_or_zero(data.get("gold_amount", 0))
 	)
 
 
@@ -159,7 +175,8 @@ func copy() -> RewardOffer:
 		stream_name,
 		roll,
 		draw_index,
-		state_after
+		state_after,
+		gold_amount
 	)
 
 

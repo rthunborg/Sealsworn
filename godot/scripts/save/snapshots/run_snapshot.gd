@@ -254,6 +254,19 @@ static func from_route_position(
 	snapshot.level_state = {}
 	snapshot.profile_id = str(options.get("profile_id", "default"))
 	snapshot.run_id = str(options.get("run_id", ""))
+	# Story 7.1: ALSO populate the EXISTING top-level economy placeholder keys from the run's risk-economy (these were
+	# inert 0/[] placeholders through Epic 6). This keeps the snapshot HUMAN-READABLE + lets an Epic-8 run-summary read
+	# them WITHOUT a new top-level key (the 23-key gate stays green). The SOURCE OF TRUTH on resume is the NESTED copy
+	# inside route_state (try_from_run_snapshot_fields reads that); these top-level fields are a read-only mirror.
+	# RiskEconomyState models corruption as a single count + curses as a count (curse_count); the RunSnapshot.curses
+	# array placeholder stays EMPTY in v0 (the curse-id LIST is Story 7.2's — 7.1 tracks only the count), so curses
+	# is NOT populated here (the curse-id content does not exist yet). gold/oath_shards/corruption ARE mirrored.
+	var economy = source_run.risk_economy
+	if economy != null:
+		snapshot.gold = economy.gold
+		snapshot.corruption = economy.corruption
+		# oath_shards is the AWARDED meta count (Epic 8) — NOT the eligibility gate. v0 awards none, so it stays 0; the
+		# eligibility gate rides meta_progression_eligible (already a top-level snapshot field) + the nested economy.
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 

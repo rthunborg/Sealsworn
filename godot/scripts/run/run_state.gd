@@ -24,6 +24,7 @@ const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -42,6 +43,16 @@ const RUN_PHASE_KEY := &"run_phase"
 # kit is NOT persisted — it is RE-DERIVED from the class id on restore (a deterministic pure function of the
 # class + the baseline repos), so this single nested id is the entire route-position persistence surface.
 const SELECTED_CLASS_ID_KEY := &"selected_class_id"
+
+# Story 7.1: key under which the risk-economy dict is NESTED inside the route_state payload of
+# to_run_snapshot_fields(), so a between-node route-position save carries the economy end-to-end (the AC1 "and save
+# snapshots") WITHOUT adding a new top-level RunSnapshot key (the pinned 23-key gate stays green) — the SAME proven
+# mechanism as run_phase (4.3) / selected_class_id (5.3). UNLIKE the Epic-6 inventory/offer (which ride only the
+# full run dict, NOT the route-position save), the economy IS persisted into the route-position save here because
+# AC1 requires economy in save snapshots. The top-level RunSnapshot.gold/curses/corruption/oath_shards MAY ALSO be
+# populated from this nested copy (human-readable + Epic-8 run-summary readable), but the SOURCE OF TRUTH on resume
+# is this nested copy.
+const RISK_ECONOMY_KEY := &"risk_economy"
 
 var phase: StringName = PHASE_NEW_RUN
 var root_seed: int = 0
@@ -104,6 +115,19 @@ var inventory: InventoryState = null
 # RunSnapshot 23-key gate stays untouched). copy() null-safe DEEP-copies it (the offered-entries list must not be
 # shared by reference).
 var pending_reward_offer: RewardOffer = null
+# The run's RISK-ECONOMY state (Story 7.1) — the live gold/healing/curse/corruption/Oath-Shard-eligibility/risk-flags
+# domain field (AC1). An ADDITIVE + LENIENT run-progression field: it defaults to a fresh RiskEconomyState whose
+# oath_shard_eligible derives from is_manual_seed (never null — the economy command never needs a null guard), so a
+# legacy / seed-only / pre-7.1 run carries an all-zero eligible-by-default economy. ApplyEconomyChangeCommand mutates
+# gold/healing (records a change + emits economy_changed); ResolveRewardCommand credits the rolled gold off a
+# reward_resolved gold outcome (the T1 wire-off). It is DELIBERATELY NOT a required validate() field (a pre-7.1 run
+# has no economy and must still validate) — but RunState.validate() DOES assert its Oath-Shard eligibility invariant
+# against this run's is_manual_seed (so the economy eligibility can never silently diverge from the run's). It rides
+# to_dictionary()/try_from_dictionary (the FULL run dict) lenient-read so a copied/round-tripped run preserves it,
+# AND — UNLIKE the Epic-6 inventory/offer — it rides the route-position save (nested under route_state via
+# RISK_ECONOMY_KEY; AC1 requires economy in save snapshots). copy() DEEP-copies it (the risk_flags list must not be
+# shared by reference).
+var risk_economy: RiskEconomyState = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -115,7 +139,8 @@ func _init(
 	new_starting_kit: StartingKit = null,
 	new_rules_resolver: RulesResolver = null,
 	new_inventory: InventoryState = null,
-	new_pending_reward_offer: RewardOffer = null
+	new_pending_reward_offer: RewardOffer = null,
+	new_risk_economy: RiskEconomyState = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -129,6 +154,10 @@ func _init(
 	inventory = new_inventory if new_inventory != null else load("res://scripts/run/inventory_state.gd").new()
 	# Default to null (no pending offer). Unlike the inventory, null is the meaningful "nothing to resolve" state.
 	pending_reward_offer = new_pending_reward_offer
+	# Story 7.1: default to a fresh economy whose Oath-Shard eligibility derives from this run's manual-seed flag (a
+	# manual-seed run is NEVER eligible — lockstep with meta_progression_eligible). Never null (the economy command
+	# never needs a null guard). A supplied economy (a decode / copy) is used verbatim.
+	risk_economy = new_risk_economy if new_risk_economy != null else load("res://scripts/run/risk_economy_state.gd").for_run(new_is_manual_seed)
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -188,6 +217,13 @@ func validate() -> ActionResult:
 		})
 	if route == null:
 		return ActionResult.error(&"invalid_run_route", {"field": "route"})
+	# Story 7.1: the economy is additive (a pre-7.1 run has none), but when present its Oath-Shard eligibility
+	# must stay in lockstep with this run's manual-seed flag (a manual-seed run is NEVER eligible). The economy
+	# defaults non-null, so this always runs for a 7.1+ run; it surfaces the economy's stable invariant code.
+	if risk_economy != null:
+		var economy_validation: ActionResult = risk_economy.validate(is_manual_seed)
+		if economy_validation.is_error():
+			return economy_validation
 	# Delegate route integrity to RouteState.validate().
 	return route.validate()
 
@@ -226,7 +262,12 @@ func to_dictionary() -> Dictionary:
 		# Story 6.3: the pending reward offer rides the FULL run dict (NOT the 23-key RunSnapshot). null (no pending
 		# offer) serializes as a JSON null; a pending offer serializes via its exact-key to_dictionary().
 		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-6.3 run dict still parses.
-		"pending_reward_offer": null if pending_reward_offer == null else pending_reward_offer.to_dictionary()
+		"pending_reward_offer": null if pending_reward_offer == null else pending_reward_offer.to_dictionary(),
+		# Story 7.1: the risk-economy rides the FULL run dict too. It is never null (a default RiskEconomyState), so it
+		# always serializes via its exact-key to_dictionary(). try_from_dictionary reads it back leniently (absent -> a
+		# fresh economy derived from is_manual_seed) so every pre-7.1 run dict still parses. (It ALSO rides the
+		# route-position save, nested under route_state — see to_run_snapshot_fields().)
+		"risk_economy": _risk_economy_or_new().to_dictionary()
 	}
 
 
@@ -250,7 +291,10 @@ func copy() -> RunState:
 		# Story 6.3: null-safe DEEP-copy the pending offer (the offered-entries list must not be shared by
 		# reference, so a mutation of the copy's offer never perturbs the source — mirroring the starting_kit
 		# deep copy; null stays null).
-		null if pending_reward_offer == null else pending_reward_offer.copy()
+		null if pending_reward_offer == null else pending_reward_offer.copy(),
+		# Story 7.1: DEEP-copy the economy (the risk_flags list must not be shared by reference, so a mutation of the
+		# copy's economy never perturbs the source — mirroring the inventory deep copy). It is never null.
+		_risk_economy_or_new().copy()
 	)
 
 
@@ -274,6 +318,14 @@ func to_run_snapshot_fields() -> Dictionary:
 	# of &"". The kit itself is NOT nested — it is re-derived from this id on restore. An empty class id nests
 	# "" (a legacy run carries no class, restores to &"").
 	route_payload[String(SELECTED_CLASS_ID_KEY)] = String(selected_class_id)
+	# Story 7.1: NEST the risk-economy dict inside the route payload too (the SAME mechanism as run_phase /
+	# selected_class_id), so a between-node route-position save carries the economy through the existing restore seam
+	# WITHOUT a new top-level RunSnapshot key (the pinned 23-key gate stays green). This threads economy through the
+	# route-position save/resume END-TO-END (the AC1 "and save snapshots") — UNLIKE the Epic-6 inventory/offer, which
+	# ride only the full run dict. The nested copy is the SOURCE OF TRUTH on resume (try_from_run_snapshot_fields
+	# reads it back); the top-level RunSnapshot.gold/curses/corruption/oath_shards may ALSO be populated from it
+	# (human-readable) by RunSnapshot.from_route_position.
+	route_payload[String(RISK_ECONOMY_KEY)] = _risk_economy_or_new().to_dictionary()
 
 	# Derive the revealed-node id list from the route nodes (reveal_state revealed OR cleared).
 	# Cleared nodes were necessarily revealed; both surface in revealed_route_node_ids for the
@@ -328,7 +380,11 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		# Story 6.3: lenient reward-offer decode. A pre-6.3 run dict has no pending_reward_offer key (or null) ->
 		# default null (no pending offer). A present offer dict is reconstructed leniently via
 		# RewardOffer.try_from_dictionary so a partial/legacy offer dict still parses.
-		_reward_offer_or_null(_field(data, &"pending_reward_offer") if _has_field(data, &"pending_reward_offer") else null)
+		_reward_offer_or_null(_field(data, &"pending_reward_offer") if _has_field(data, &"pending_reward_offer") else null),
+		# Story 7.1: lenient economy decode. A pre-7.1 run dict has no risk_economy key -> _init defaults a fresh
+		# economy derived from is_manual_seed (never null). A present economy dict is reconstructed leniently via
+		# RiskEconomyState.try_from_dictionary so a partial/legacy economy dict still parses.
+		_risk_economy_or_new_from(_field(data, &"risk_economy") if _has_field(data, &"risk_economy") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -387,13 +443,25 @@ static func try_from_run_snapshot_fields(fields: Dictionary) -> ActionResult:
 	# through the content repositories (a deterministic pure function of the class + the baseline repos).
 	var restored_class_id: StringName = _string_name_or_empty(route_payload.get(String(SELECTED_CLASS_ID_KEY), &""))
 
+	# Story 7.1: read the risk-economy back from the nested route_state key (lenient: a pre-7.1 route-position payload
+	# has no RISK_ECONOMY_KEY -> null, so the constructor defaults a fresh economy derived from is_manual_seed, which
+	# validates). This is the SOURCE OF TRUTH on resume (the AC1 "and save snapshots" — the economy survives a
+	# between-node resume the way the class id does). The kit/resolver/inventory/offer are NOT in the route-position
+	# save (their _init defaults apply); only the economy joins the class id as nested route-position state.
+	var restored_economy: RiskEconomyState = _risk_economy_or_new_from(route_payload.get(String(RISK_ECONOMY_KEY), null))
+
 	var run_state: RunState = load("res://scripts/run/run_state.gd").new(
 		StringName(String(phase_value)),
 		_int64_or_zero(fields.get("root_seed", 0)),
 		bool(fields.get("is_manual_seed", false)),
 		bool(fields.get("meta_progression_eligible", true)),
 		parsed_route,
-		restored_class_id
+		restored_class_id,
+		null,  # starting_kit — not in the route-position save (re-derived from the class id on restore)
+		null,  # rules_resolver — live re-derivable service, not serialized
+		null,  # inventory — _init defaults a fresh empty model (not in the route-position save)
+		null,  # pending_reward_offer — not in the route-position save
+		restored_economy  # Story 7.1: the nested economy IS in the route-position save (the source of truth on resume)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -413,6 +481,15 @@ func _inventory_or_new() -> InventoryState:
 	if inventory == null:
 		inventory = load("res://scripts/run/inventory_state.gd").new()
 	return inventory
+
+
+# Story 7.1: the economy is never null in practice (the _init default), but guard defensively against a direct null
+# assignment so to_dictionary()/copy()/to_run_snapshot_fields() always have a model. The defensive default derives
+# eligibility from this run's manual-seed flag (consistent with the _init default).
+func _risk_economy_or_new() -> RiskEconomyState:
+	if risk_economy == null:
+		risk_economy = load("res://scripts/run/risk_economy_state.gd").for_run(is_manual_seed)
+	return risk_economy
 
 
 static func _legal_next_phases(from_phase: StringName) -> Array[StringName]:
@@ -514,6 +591,17 @@ static func _inventory_or_new_from(value: Variant) -> InventoryState:
 static func _reward_offer_or_null(value: Variant) -> RewardOffer:
 	if value is Dictionary:
 		return RewardOffer.try_from_dictionary(value)
+	return null
+
+
+# Lenient RiskEconomyState decode for the additive risk_economy field: a Dictionary is reconstructed via
+# RiskEconomyState.try_from_dictionary; anything else (null / absent / non-dict) -> null, so the _init default (a
+# fresh economy derived from is_manual_seed, never null) takes over and every pre-7.1 run dict still parses to a
+# usable economy. Mirrors _inventory_or_new_from but returns null-for-default (the _init keys eligibility off
+# is_manual_seed, which a static helper here cannot see).
+static func _risk_economy_or_new_from(value: Variant) -> RiskEconomyState:
+	if value is Dictionary:
+		return RiskEconomyState.try_from_dictionary(value)
 	return null
 
 
