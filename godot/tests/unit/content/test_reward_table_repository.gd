@@ -18,6 +18,8 @@ const ConsumableRepository = preload("res://scripts/content/repositories/consuma
 const PickupRepository = preload("res://scripts/content/repositories/pickup_repository.gd")
 const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
 const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
+const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
+const PassiveRewardModalViewModel = preload("res://scripts/ui/view_models/passive_reward_modal_view_model.gd")
 
 const EXPECTED_TABLE_IDS: Array[StringName] = [
 	&"standard_combat_reward",
@@ -36,6 +38,10 @@ func run() -> Dictionary:
 	_baseline_ids_constant_matches_registered_ids()
 	_repository_rejects_duplicate_id_fail_loud()
 	_baseline_table_entries_reference_real_content_ids()
+	# Story 6.4 — the passive_reward_choice table's six passive entries still resolve to VALID extended passives
+	# (the table references the six baselines, which now carry the modal fields), and the AC3 enforcement proof
+	# (an invalid passive is never a resolvable table entry — it fails the fail-closed load).
+	_passive_reward_choice_entries_resolve_to_valid_extended_passives()
 	return result()
 
 
@@ -164,3 +170,31 @@ func _baseline_table_entries_reference_real_content_ids() -> void:
 					assert_true(gold_ids.has(content_id), "Table %s gold entry %s should be a real gold-reward baseline id." % [String(table_id), String(content_id)])
 				RewardTableDefinition.CATEGORY_PASSIVE:
 					assert_true(passive_ids.has(content_id), "Table %s passive entry %s should be a real passive baseline id." % [String(table_id), String(content_id)])
+
+
+# Story 6.4 — every passive entry in the passive_reward_choice table resolves through PassiveRepository to a
+# VALID extended passive (carrying the FR47 modal fields), and the modal projects it with a passive present.
+# AC3 enforcement: an UNREGISTERED passive id (the kind an invalid passive would be, since it can't load) is
+# NOT a resolvable table entry — the modal fail-closes (has_passive == false), proving an invalid passive can
+# never surface as an approved-table choice (no separate table-rejects-invalid mechanism is needed — the
+# validated-only repository load IS the gate).
+func _passive_reward_choice_entries_resolve_to_valid_extended_passives() -> void:
+	var passive_repository: PassiveRepository = PassiveRepository.create_baseline_repository()
+	var table_repository: RewardTableRepository = RewardTableRepository.create_baseline_repository()
+	var modal: PassiveRewardModalViewModel = PassiveRewardModalViewModel.new(passive_repository)
+	var table: RewardTableDefinition = table_repository.get_reward_table(&"passive_reward_choice")
+	assert_true(table != null, "The passive_reward_choice table should resolve.")
+	for entry_value: Variant in table.reward_entries():
+		var entry: Dictionary = entry_value
+		var content_id: StringName = StringName(str(entry.get("content_id")))
+		var definition: PassiveDefinition = passive_repository.get_passive(content_id)
+		assert_true(definition != null, "Passive entry %s should resolve to a registered passive." % String(content_id))
+		assert_true(definition.validate().succeeded, "Resolved passive %s should be a valid extended passive." % String(content_id))
+		var projection: Dictionary = modal.project_passive(content_id)
+		assert_true(bool(projection.get("has_passive")), "The modal should project a present passive for table entry %s." % String(content_id))
+		assert_false(String(projection.get("exact_mechanical_effects")).strip_edges().is_empty(), "The projected passive %s should surface explicit mechanics." % String(content_id))
+
+	# AC3: an UNREGISTERED passive id (what an invalid, never-loaded passive would be) is not a resolvable entry.
+	assert_true(passive_repository.get_passive(&"never_registered_passive") == null, "An unregistered passive id must not resolve (fail-closed load).")
+	var absent: Dictionary = modal.project_passive(&"never_registered_passive")
+	assert_false(bool(absent.get("has_passive")), "The modal must fail-close (has_passive false) on an unresolved passive id (AC3).")

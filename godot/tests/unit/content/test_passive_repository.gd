@@ -34,7 +34,29 @@ func run() -> Dictionary:
 	_factory_fails_closed_on_invalid_definitions()
 	_baseline_passive_ids_constant_matches_registered_ids()
 	_passive_repository_rejects_duplicate_id_fail_loud()
+	# Story 6.4 — the six baselines stay VALID + loadable after the tightened validation, each carrying the new
+	# FR47 modal fields + >=1 served pillar; and the AC3 enforcement proof (an invalid passive cannot register).
+	_baseline_repository_builds_with_the_extended_validation()
+	_each_baseline_carries_the_modal_fields_and_a_served_pillar()
+	_an_invalid_extended_passive_cannot_register()
 	return result()
+
+
+# Story 6.4 — a helper building a FULLY VALID extended passive (all the FR47 modal fields + a served pillar)
+# so a fixture that needs to PASS the tightened validation (e.g. the duplicate-id guard, which validates
+# before checking the duplicate) does not trip the new required fields.
+func _valid_passive(passive_id: StringName, display_name: String, kind: StringName, window: StringName, explanation: String) -> PassiveDefinition:
+	return PassiveDefinition.new(
+		passive_id, display_name, kind, [window], explanation,
+		PassiveDefinition.ICON_PLACEHOLDER,
+		"A test flavor line.",
+		"A test explicit mechanics line.",
+		"Consume test text.",
+		"Destroy test text.",
+		false,
+		"No hidden cost.",
+		[PassiveDefinition.PILLAR_TACTICAL_CLARITY]
+	)
 
 
 func _baseline_registers_exactly_the_six_starting_passives() -> void:
@@ -91,13 +113,7 @@ func _factory_fails_closed_on_invalid_definitions() -> void:
 	assert_equal(repository, null, "The factory should fail closed instead of returning partially registered passive content.")
 
 	var shared_content_repository: ContentRepository = ContentRepository.new()
-	var valid_definition: PassiveDefinition = PassiveDefinition.new(
-		&"warrior_unbreakable_guard",
-		"Unbreakable Guard",
-		PassiveDefinition.KIND_CLASS,
-		[RuleTrigger.BEFORE_ATTACK],
-		"Unbreakable Guard steels the hero before an incoming attack."
-	)
+	var valid_definition: PassiveDefinition = _valid_passive(&"warrior_unbreakable_guard", "Unbreakable Guard", PassiveDefinition.KIND_CLASS, RuleTrigger.BEFORE_ATTACK, "Unbreakable Guard steels the hero before an incoming attack.")
 	var partial_repository: PassiveRepository = PassiveRepository.create_repository_from_definitions(
 		[valid_definition, invalid_definition],
 		shared_content_repository
@@ -118,14 +134,8 @@ func _baseline_passive_ids_constant_matches_registered_ids() -> void:
 # duplicate_passive error, leaving passive_ids() + get_passive consistent (closes the carried Epic-5
 # cross-cutting [Review][Defer] for this repo). A duplicate in a batch fails closed.
 func _passive_repository_rejects_duplicate_id_fail_loud() -> void:
-	var first: PassiveDefinition = PassiveDefinition.new(
-		&"warrior_unbreakable_guard", "Unbreakable Guard", PassiveDefinition.KIND_CLASS,
-		[RuleTrigger.BEFORE_ATTACK], "First definition."
-	)
-	var duplicate: PassiveDefinition = PassiveDefinition.new(
-		&"warrior_unbreakable_guard", "Distinct Duplicate", PassiveDefinition.KIND_EQUIPMENT_SYNERGY,
-		[RuleTrigger.RUN_STARTED], "Distinct second definition under the same id."
-	)
+	var first: PassiveDefinition = _valid_passive(&"warrior_unbreakable_guard", "Unbreakable Guard", PassiveDefinition.KIND_CLASS, RuleTrigger.BEFORE_ATTACK, "First definition.")
+	var duplicate: PassiveDefinition = _valid_passive(&"warrior_unbreakable_guard", "Distinct Duplicate", PassiveDefinition.KIND_EQUIPMENT_SYNERGY, RuleTrigger.RUN_STARTED, "Distinct second definition under the same id.")
 	var repository: PassiveRepository = PassiveRepository.new()
 	assert_true(repository.register_passive(first).succeeded, "The first passive registration should succeed.")
 	var duplicate_result: ActionResult = repository.register_passive(duplicate)
@@ -137,3 +147,50 @@ func _passive_repository_rejects_duplicate_id_fail_loud() -> void:
 
 	var batch_repository: PassiveRepository = PassiveRepository.create_repository_from_definitions([first, duplicate])
 	assert_equal(batch_repository, null, "A definitions batch carrying a duplicate id must fail closed (null).")
+
+
+# ---- Story 6.4: the extended baselines stay loadable + the AC3 fail-closed-load proof ----------------
+
+# The LOAD-BEARING regression: with PassiveDefinition.validate() tightened (the FR47 modal fields + the FR77
+# served pillar), create_baseline_repository() must STILL be non-null — i.e. every baseline passive was
+# extended with the new required fields. If a baseline is missing a new field the whole baseline repo returns
+# null and the class-start + reward-table paths break.
+func _baseline_repository_builds_with_the_extended_validation() -> void:
+	var repository: PassiveRepository = PassiveRepository.create_baseline_repository()
+	assert_true(repository != null, "create_baseline_repository() must stay non-null after the tightened validation (every baseline carries the new fields).")
+	assert_equal(repository.passive_ids().size(), 6, "All six baseline passives must still register.")
+
+
+# Each baseline passive resolves through get_passive(id) carrying non-empty FR47 modal fields + a consistent
+# honest-unknown contract + at least one allowlisted served pillar (the FR77 pillar gate).
+func _each_baseline_carries_the_modal_fields_and_a_served_pillar() -> void:
+	var repository: PassiveRepository = PassiveRepository.create_baseline_repository()
+	for passive_id: StringName in EXPECTED_PASSIVES.keys():
+		var definition: PassiveDefinition = repository.get_passive(passive_id)
+		assert_true(definition != null, "Baseline passive %s should resolve." % String(passive_id))
+		assert_false(String(definition.icon).strip_edges().is_empty(), "Baseline passive %s should carry a non-empty icon id." % String(passive_id))
+		assert_false(definition.flavor.strip_edges().is_empty(), "Baseline passive %s should carry a flavor line." % String(passive_id))
+		assert_false(definition.exact_mechanical_effects.strip_edges().is_empty(), "Baseline passive %s should carry an explicit mechanics string." % String(passive_id))
+		assert_false(definition.consume_text.strip_edges().is_empty(), "Baseline passive %s should carry Consume text." % String(passive_id))
+		assert_false(definition.destroy_text.strip_edges().is_empty(), "Baseline passive %s should carry Destroy text." % String(passive_id))
+		assert_false(definition.consequences_text.strip_edges().is_empty(), "Baseline passive %s should carry a consequences line (known or honest-unknown)." % String(passive_id))
+		assert_false(definition.served_pillars.is_empty(), "Baseline passive %s should serve at least one pillar." % String(passive_id))
+		for pillar: StringName in definition.served_pillars:
+			assert_true(PassiveDefinition.SERVED_PILLARS.has(pillar), "Baseline passive %s pillar %s must be in the fixed allowlist." % [String(passive_id), String(pillar)])
+
+
+# AC3 enforcement proof: a PassiveDefinition that fails the TIGHTENED validate() (here: missing the new modal
+# fields + pillar) is REJECTED at repository load — it can never be a registered passive a `passive`
+# reward-table entry resolves to. A definition built with ONLY the Story-5.4 args (no modal fields, no pillar)
+# now fails the extended validation, so the factory fails closed.
+func _an_invalid_extended_passive_cannot_register() -> void:
+	var pre_extension_passive: PassiveDefinition = PassiveDefinition.new(
+		&"legacy_shaped_passive",
+		"Legacy Shaped",
+		PassiveDefinition.KIND_CLASS,
+		[RuleTrigger.BEFORE_ATTACK],
+		"A passive missing the Story-6.4 modal fields + served pillar."
+	)
+	assert_true(pre_extension_passive.validate().is_error(), "A passive missing the new required modal/pillar fields must fail the tightened validation.")
+	var repository: PassiveRepository = PassiveRepository.create_repository_from_definitions([pre_extension_passive])
+	assert_equal(repository, null, "A passive that fails the tightened validation cannot register (fail-closed load — AC3).")

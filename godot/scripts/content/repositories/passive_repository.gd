@@ -114,6 +114,16 @@ func content_repository() -> ContentRepository:
 # passive (the *_blade_and_board / *_arcane_conduit / *_hunters_quiver id) is KIND_EQUIPMENT_SYNERGY. The
 # class passives declare BEFORE_ATTACK (they bend an incoming/outgoing attack); the equipment-synergy
 # passives declare RUN_STARTED (the kit synergy is established when the run begins).
+#
+# STORY 6.4 — each baseline now carries the FR47 reward-modal fields + the FR77 served pillars. This is
+# human-reviewable content (project-context.md "Human review decides whether ... a passive ... belongs in
+# Sealsworn"): a real evocative flavor line, an EXPLICIT exact_mechanical_effects string (v0 passives are
+# explanation-only, so the mechanics string describes the intended bend in player-readable terms — but it is
+# EXPLICIT, not mysterious; GDD line 340), real Consume (power / build-identity) + Destroy (safety /
+# purification / resources / refusal) text, the honest-unknown downside contract (these baselines have KNOWN
+# effects -> has_unknown_consequences = false + a concrete consequences_text), the ICON_PLACEHOLDER sentinel
+# (no icon art is authored this story), and at least one genuinely-fitting served pillar each. The pillar
+# vocabulary is the fixed GDD four: tactical_clarity / build_synergy / risk / mystery.
 static func _baseline_definitions() -> Array[PassiveDefinition]:
 	return [
 		PassiveDefinition.new(
@@ -121,42 +131,90 @@ static func _baseline_definitions() -> Array[PassiveDefinition]:
 			"Unbreakable Guard",
 			PassiveDefinition.KIND_CLASS,
 			[RuleTrigger.BEFORE_ATTACK],
-			"Unbreakable Guard (warrior class passive) steels the hero before an incoming attack."
+			"Unbreakable Guard (warrior class passive) steels the hero before an incoming attack.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"An oath sworn over a shield-wall that never broke, and never will.",
+			"Before an incoming attack resolves, braces the hero to reduce the damage about to be taken.",
+			"Consume to carry the guard for the rest of the run as standing damage reduction against incoming blows.",
+			"Destroy to release the oath, cleansing a measure of corruption from the hero.",
+			false,
+			"No hidden cost: the guard reduces incoming damage exactly as stated.",
+			[PassiveDefinition.PILLAR_TACTICAL_CLARITY, PassiveDefinition.PILLAR_RISK]
 		),
 		PassiveDefinition.new(
 			&"warrior_blade_and_board",
 			"Blade and Board",
 			PassiveDefinition.KIND_EQUIPMENT_SYNERGY,
 			[RuleTrigger.RUN_STARTED],
-			"Blade and Board (warrior equipment synergy) pairs sword and shield as the run begins."
+			"Blade and Board (warrior equipment synergy) pairs sword and shield as the run begins.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"Steel in one hand, oak in the other; a soldier's whole world in two weights.",
+			"When the run begins, links the equipped sword and shield so the pairing reinforces the warrior's stance.",
+			"Consume to lock in the sword-and-shield pairing as a lasting part of your build identity.",
+			"Destroy to dissolve the pairing, recovering salvage worth a small handful of gold.",
+			false,
+			"No hidden cost: the synergy only strengthens an already-equipped sword and shield.",
+			[PassiveDefinition.PILLAR_BUILD_SYNERGY, PassiveDefinition.PILLAR_TACTICAL_CLARITY]
 		),
 		PassiveDefinition.new(
 			&"pyromancer_kindling_focus",
 			"Kindling Focus",
 			PassiveDefinition.KIND_CLASS,
 			[RuleTrigger.BEFORE_ATTACK],
-			"Kindling Focus (pyromancer class passive) gathers flame before an attack."
+			"Kindling Focus (pyromancer class passive) gathers flame before an attack.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"The first spark is always the hungriest; she has learned to feed it slowly.",
+			"Before an attack resolves, gathers flame so the pyromancer's outgoing strike carries added fire damage.",
+			"Consume to keep the kindling as a permanent edge of bonus fire damage on your attacks.",
+			"Destroy to smother the flame, banking the heat as a temporary burst of resolve.",
+			false,
+			"No hidden cost: the gathered flame adds to your own outgoing damage, not the enemy's.",
+			[PassiveDefinition.PILLAR_BUILD_SYNERGY, PassiveDefinition.PILLAR_RISK]
 		),
 		PassiveDefinition.new(
 			&"pyromancer_arcane_conduit",
 			"Arcane Conduit",
 			PassiveDefinition.KIND_EQUIPMENT_SYNERGY,
 			[RuleTrigger.RUN_STARTED],
-			"Arcane Conduit (pyromancer equipment synergy) channels staff and tome as the run begins."
+			"Arcane Conduit (pyromancer equipment synergy) channels staff and tome as the run begins.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"Staff and tome speak to one another in a tongue older than the Labyrinth.",
+			"When the run begins, channels the equipped staff and tome together so the pairing amplifies arcane output.",
+			"Consume to bind the staff-and-tome conduit into your build as a lasting amplifier.",
+			"Destroy to sever the conduit, reclaiming a charge of arcane essence for later use.",
+			false,
+			"No hidden cost: the conduit amplifies your own arcane output and nothing else.",
+			[PassiveDefinition.PILLAR_BUILD_SYNERGY]
 		),
 		PassiveDefinition.new(
 			&"ranger_steady_aim",
 			"Steady Aim",
 			PassiveDefinition.KIND_CLASS,
 			[RuleTrigger.BEFORE_ATTACK],
-			"Steady Aim (ranger class passive) settles the shot before an attack."
+			"Steady Aim (ranger class passive) settles the shot before an attack.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"Breath held, world narrowed to a single line; only the shot remains.",
+			"Before an attack resolves, settles the ranger's aim to improve the outgoing shot's accuracy and reach.",
+			"Consume to keep the steadied aim as a permanent accuracy bonus on your ranged attacks.",
+			"Destroy to loose the held breath, granting a brief surge of focus for the next encounter.",
+			false,
+			"No hidden cost: the steadier aim improves only your own shots.",
+			[PassiveDefinition.PILLAR_TACTICAL_CLARITY, PassiveDefinition.PILLAR_BUILD_SYNERGY]
 		),
 		PassiveDefinition.new(
 			&"ranger_hunters_quiver",
 			"Hunter's Quiver",
 			PassiveDefinition.KIND_EQUIPMENT_SYNERGY,
 			[RuleTrigger.RUN_STARTED],
-			"Hunter's Quiver (ranger equipment synergy) readies the bow's arrows as the run begins."
+			"Hunter's Quiver (ranger equipment synergy) readies the bow's arrows as the run begins.",
+			PassiveDefinition.ICON_PLACEHOLDER,
+			"Every arrow is fletched for a different death; the hunter knows each one by touch.",
+			"When the run begins, readies the equipped bow's quiver so the pairing keeps a fuller supply of arrows on hand.",
+			"Consume to keep the readied quiver as a lasting part of your ranged build.",
+			"Destroy to break down the quiver, recovering its arrows as a small cache of resources.",
+			false,
+			"No hidden cost: the readied quiver only benefits an already-equipped bow.",
+			[PassiveDefinition.PILLAR_BUILD_SYNERGY]
 		)
 	]
 
