@@ -8,7 +8,7 @@ baseline_commit: fb1f0b272f6b51f5414136c0e670de5727a644ff
 
 # Story 6.4: Passive Reward Modal Data Contract
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
