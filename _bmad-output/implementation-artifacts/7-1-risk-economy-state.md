@@ -4,7 +4,7 @@ baseline_commit: 4408c785af65e19bebf79b9e41d06669c3455a6d
 
 # Story 7.1: Risk Economy State
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
