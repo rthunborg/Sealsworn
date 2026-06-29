@@ -34,3 +34,30 @@ Archived 1 resolved entry → `deferred-work-resolved.md` (the duplicate-id all-
 **Needs human:** (none) — clean completion; story flipped to `done`. Merging the open PR is optional and on your own time.
 
 **Next:** `7-1-risk-economy-state` (Epic 7, backlog) — the first story of Epic 7; preview only, not started.
+
+## Report — 2026-06-29T19:40:33Z (final — external review round 2)
+
+**Story:** `6-7-loot-and-passive-build-smoke-run` (epic 6, story 7) — last-in-epic.
+**Branch:** `story/6-7-loot-and-passive-build-smoke-run` (HEAD `db64298` + this round's docs commit).
+**Pipeline status:** clean — external (Codex) review of PR #33 surfaced 3 P2 test-rigor findings on the smoke test; all fixed test-only and confirmed by a secondary re-review (Approve). Story remains `done`.
+**Continues:** the 2026-06-29T16:02:03Z (final) section above (post-finalize PR-feedback round).
+
+**Timing:** external-review round started after PR #33 feedback; ≈12m AI-run (fix `agds-high` + re-review `agds-alt-xhigh`).
+
+**Phases run:** post-finalize external-review round — fix (agds-high, gds-dev-story, test-only) + secondary re-review (agds-alt-xhigh, gds-code-review). No production code touched.
+
+**Overrides:** none.
+
+**Testing:** disabled in V0. Full headless suite independently re-run by the orchestrator, the fix delegate, and the re-review delegate: 114 PASS / 0 FAIL, "Headless tests passed.", exit 0, false-PASS grep clean, deterministic.
+
+**Code review:** external-review round (code_review_iterations now 2, external_review_iterations 1). Codex (external) Round: 3 P2 test-rigor findings on the smoke test (pickup not proven from the offer; no node-completion driven before reward generation; a backpack resolve mislabeled "skip/decline") — all verified valid by the orchestrator, fixed test-only (`db64298`). Round 2 secondary re-review (agds-alt-xhigh): verdict **Approve** — Critical 0 / High 0 / Med 0 / Low 0, 0 new findings, 0 open decisions; independently verified all 3 fixes genuine and the new test logic free of regression/non-determinism/flakiness (bounded seed loops probed guaranteed-terminating). User decision: **fix now via Auto-GDS**.
+
+**Open questions:** (none).
+
+**Deferred work:** (none new) — the 3 Round-1 Low `[Review][Defer]` items remain open as previously recorded; none reopened.
+
+**Planning drift:** (none — not epic-end work).
+
+**Needs human:** (none) — story stays `done`; PR #33 updated with the fix, still open for your review/merge.
+
+**Next:** `7-1-risk-economy-state` (Epic 7, backlog) — preview only, not started.

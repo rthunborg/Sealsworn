@@ -3,10 +3,10 @@ epic_num: 6
 story_num: 7
 branch: story/6-7-loot-and-passive-build-smoke-run
 status: done
-updated_at: "2026-06-29T16:05:15Z"
+updated_at: "2026-06-29T19:40:33Z"
 started_at: "2026-06-29T13:35:15Z"
 completed_at: "2026-06-29T16:05:15Z"
-active_seconds: 2714
+active_seconds: 3417
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -19,14 +19,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5, 7, 8, 9]
-code_review_iterations: 1
+code_review_iterations: 2
 code_review_loop_done: true
-external_review_iterations: 0
+external_review_iterations: 1
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: [bb194de, 4bfff90, 83ccb42, b50cfb8, 5e87b59, 6cb51a1]
+commits: [bb194de, 4bfff90, 83ccb42, b50cfb8, 5e87b59, 6cb51a1, ec354f4, db64298]
 deferred_work_archived: 1
 planning_drift:
   - "epics.md (Epic 6 / Story 6.6 convention): defaulted DestroyOutcomeTableDefinition with NO repository diverges from the prior table-with-repository pattern (RewardTableRepository). Detail-level; build matched the 6.6 recommendation. Re-sync = convention note only."
