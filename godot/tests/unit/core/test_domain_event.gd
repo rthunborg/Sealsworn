@@ -26,6 +26,8 @@ func run() -> Dictionary:
 	_reward_resolved_rejects_malformed_payloads()
 	_passive_consumed_serializes_and_parses_stable_payload()
 	_passive_consumed_rejects_malformed_payloads()
+	_passive_destroyed_serializes_and_parses_stable_payload()
+	_passive_destroyed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -1007,6 +1009,112 @@ func _passive_consumed_rejects_malformed_payloads() -> void:
 	assert_equal(bad_table.metadata.get("field"), "table_id", "passive_consumed should reject a non-lower_snake table_id.")
 
 
+func _passive_destroyed_serializes_and_parses_stable_payload() -> void:
+	# Story 6.6 (AC1/AC4): a passive_destroyed SYSTEM event (no actor) — the destroy-specific resolution record
+	# emitted by DestroyPassiveCommand AFTER the 70/20/10 outcome is rolled + the offer flips to `resolved`.
+	# passive_id/table_id/outcome_category/outcome_id are lower_snake content ids; outcome_category is in the
+	# DESTROY_OUTCOME_CATEGORIES allowlist; outcome_effect/explanation are non-empty; roll/draw_index are the draw
+	# provenance (non-negative integral) because Destroy DRAWS RNG (unlike passive_consumed).
+	var event: DomainEvent = DomainEvent.passive_destroyed(11, {
+		"passive_id": "warrior_unbreakable_guard",
+		"table_id": "destroy_outcome_baseline",
+		"outcome_category": "small_immediate_benefit",
+		"outcome_id": "minor_restoration",
+		"outcome_effect": "destroy_outcome_small_immediate_benefit",
+		"explanation": "Destroying the passive releases a small immediate benefit.",
+		"roll": 3,
+		"draw_index": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "passive_destroyed", "passive_destroyed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "passive_destroyed is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "passive_destroyed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.PASSIVE_DESTROYED, "passive_destroyed should parse back to PASSIVE_DESTROYED.")
+	assert_equal(restored.payload.get("passive_id"), "warrior_unbreakable_guard", "The passive_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("table_id"), "destroy_outcome_baseline", "The table_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("outcome_category"), "small_immediate_benefit", "The outcome_category must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("outcome_id"), "minor_restoration", "The outcome_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("outcome_effect"), "destroy_outcome_small_immediate_benefit", "The outcome_effect must survive a JSON round-trip.")
+	assert_equal(int(restored.payload.get("roll")), 3, "The roll must survive a JSON round-trip.")
+	assert_equal(int(restored.payload.get("draw_index")), 0, "The draw_index must survive a JSON round-trip.")
+
+
+func _passive_destroyed_rejects_malformed_payloads() -> void:
+	# A baseline VALID payload to clone-and-perturb one field at a time.
+	var valid_payload: Dictionary = {
+		"passive_id": "warrior_unbreakable_guard",
+		"table_id": "destroy_outcome_baseline",
+		"outcome_category": "small_immediate_benefit",
+		"outcome_id": "minor_restoration",
+		"outcome_effect": "destroy_outcome_small_immediate_benefit",
+		"explanation": "Destroying the passive releases a small immediate benefit.",
+		"roll": 3,
+		"draw_index": 0
+	}
+
+	# A non-lower_snake passive_id is rejected.
+	var bad_passive: ActionResult = _try_passive_destroyed_with(valid_payload, "passive_id", "Warrior-Guard")
+	assert_true(bad_passive.is_error(), "passive_destroyed with a non-lower_snake passive_id should be rejected.")
+	assert_equal(bad_passive.metadata.get("field"), "passive_id", "passive_destroyed should name the passive_id field.")
+
+	# A non-lower_snake table_id is rejected.
+	var bad_table: ActionResult = _try_passive_destroyed_with(valid_payload, "table_id", "Destroy-Table")
+	assert_true(bad_table.is_error(), "passive_destroyed with a non-lower_snake table_id should be rejected.")
+	assert_equal(bad_table.metadata.get("field"), "table_id", "passive_destroyed should name the table_id field.")
+
+	# An off-allowlist outcome_category is rejected (even though it is lower_snake).
+	var bad_category: ActionResult = _try_passive_destroyed_with(valid_payload, "outcome_category", "jackpot")
+	assert_true(bad_category.is_error(), "passive_destroyed with an off-allowlist outcome_category should be rejected.")
+	assert_equal(bad_category.metadata.get("field"), "outcome_category", "passive_destroyed should pin outcome_category to the allowlist.")
+
+	# A non-lower_snake outcome_id is rejected.
+	var bad_outcome_id: ActionResult = _try_passive_destroyed_with(valid_payload, "outcome_id", "Minor-Restoration")
+	assert_true(bad_outcome_id.is_error(), "passive_destroyed with a non-lower_snake outcome_id should be rejected.")
+	assert_equal(bad_outcome_id.metadata.get("field"), "outcome_id", "passive_destroyed should reject a non-lower_snake outcome_id.")
+
+	# A blank outcome_effect is rejected.
+	var bad_effect: ActionResult = _try_passive_destroyed_with(valid_payload, "outcome_effect", "")
+	assert_true(bad_effect.is_error(), "passive_destroyed with a blank outcome_effect should be rejected.")
+	assert_equal(bad_effect.metadata.get("field"), "outcome_effect", "passive_destroyed should require a non-empty outcome_effect.")
+
+	# A blank explanation is rejected.
+	var bad_explanation: ActionResult = _try_passive_destroyed_with(valid_payload, "explanation", "")
+	assert_true(bad_explanation.is_error(), "passive_destroyed with a blank explanation should be rejected.")
+	assert_equal(bad_explanation.metadata.get("field"), "explanation", "passive_destroyed should require a non-empty explanation.")
+
+	# A negative roll is rejected.
+	var bad_roll: ActionResult = _try_passive_destroyed_with(valid_payload, "roll", -1)
+	assert_true(bad_roll.is_error(), "passive_destroyed with a negative roll should be rejected.")
+	assert_equal(bad_roll.metadata.get("field"), "roll", "passive_destroyed should require a non-negative roll.")
+
+	# A negative draw_index is rejected.
+	var bad_index: ActionResult = _try_passive_destroyed_with(valid_payload, "draw_index", -1)
+	assert_true(bad_index.is_error(), "passive_destroyed with a negative draw_index should be rejected.")
+	assert_equal(bad_index.metadata.get("field"), "draw_index", "passive_destroyed should require a non-negative draw_index.")
+
+	# A missing field (drop outcome_category) is rejected.
+	var missing: Dictionary = valid_payload.duplicate(true)
+	missing.erase("outcome_category")
+	var missing_result: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "passive_destroyed", "sequence_id": 1, "actor_id": "", "payload": missing
+	})
+	assert_true(missing_result.is_error(), "passive_destroyed missing outcome_category should be rejected.")
+	assert_equal(missing_result.metadata.get("field"), "outcome_category", "passive_destroyed should name the missing outcome_category field.")
+
+
+# Build a passive_destroyed dictionary from the valid baseline with ONE field overridden, then run it through
+# try_from_dictionary (the malformed-payload reject path). Keeps the per-field negatives terse.
+func _try_passive_destroyed_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "passive_destroyed", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1412,7 +1520,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.REWARD_OFFERED: &"reward_offered",
 		DomainEvent.Type.REWARD_RESOLVED: &"reward_resolved",
 		# Story 6.5: the passive_consumed SYSTEM event appended at the enum end (never renumbered).
-		DomainEvent.Type.PASSIVE_CONSUMED: &"passive_consumed"
+		DomainEvent.Type.PASSIVE_CONSUMED: &"passive_consumed",
+		# Story 6.6: the passive_destroyed SYSTEM event appended at the enum end (never renumbered).
+		DomainEvent.Type.PASSIVE_DESTROYED: &"passive_destroyed"
 	}
 
 	for event_type: int in expected_ids.keys():
