@@ -8,7 +8,7 @@ baseline_commit: fc5fca4ba44d8a663a4217a7b7acb571c38a7fac
 
 # Story 6.6: Destroy Passive Command and Outcome Distribution
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
