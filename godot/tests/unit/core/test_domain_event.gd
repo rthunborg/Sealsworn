@@ -24,6 +24,8 @@ func run() -> Dictionary:
 	_reward_offered_rejects_malformed_payloads()
 	_reward_resolved_serializes_and_parses_stable_payload()
 	_reward_resolved_rejects_malformed_payloads()
+	_passive_consumed_serializes_and_parses_stable_payload()
+	_passive_consumed_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -951,6 +953,60 @@ func _reward_resolved_rejects_malformed_payloads() -> void:
 	assert_equal(bad_content.metadata.get("field"), "content_id", "reward_resolved should reject a non-lower_snake content_id.")
 
 
+func _passive_consumed_serializes_and_parses_stable_payload() -> void:
+	# Story 6.5 (AC1): a passive_consumed SYSTEM event (no actor) — the consume-specific resolution record emitted
+	# by ConsumePassiveCommand AFTER the passive is registered + the offer flips to `resolved`. passive_id + table_id
+	# are Story-5.4/6.1 content ids -> lower_snake.
+	var event: DomainEvent = DomainEvent.passive_consumed(9, {
+		"passive_id": "warrior_unbreakable_guard",
+		"table_id": "passive_reward_choice"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "passive_consumed", "passive_consumed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "passive_consumed is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "passive_consumed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.PASSIVE_CONSUMED, "passive_consumed should parse back to PASSIVE_CONSUMED.")
+	assert_equal(restored.payload.get("passive_id"), "warrior_unbreakable_guard", "The passive_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("table_id"), "passive_reward_choice", "The table_id must survive a JSON round-trip.")
+
+
+func _passive_consumed_rejects_malformed_payloads() -> void:
+	# A missing passive_id is rejected.
+	var missing_passive: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "passive_consumed", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "passive_reward_choice"}
+	})
+	assert_true(missing_passive.is_error(), "passive_consumed missing passive_id should be rejected.")
+	assert_equal(missing_passive.metadata.get("field"), "passive_id", "passive_consumed should name the passive_id field.")
+
+	# A non-lower_snake passive_id is rejected.
+	var bad_passive: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "passive_consumed", "sequence_id": 1, "actor_id": "",
+		"payload": {"passive_id": "Warrior-Guard", "table_id": "passive_reward_choice"}
+	})
+	assert_true(bad_passive.is_error(), "passive_consumed with a non-lower_snake passive_id should be rejected.")
+	assert_equal(bad_passive.metadata.get("field"), "passive_id", "passive_consumed should reject a non-lower_snake passive_id.")
+
+	# A missing table_id is rejected.
+	var missing_table: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "passive_consumed", "sequence_id": 1, "actor_id": "",
+		"payload": {"passive_id": "warrior_unbreakable_guard"}
+	})
+	assert_true(missing_table.is_error(), "passive_consumed missing table_id should be rejected.")
+	assert_equal(missing_table.metadata.get("field"), "table_id", "passive_consumed should name the table_id field.")
+
+	# A non-lower_snake table_id is rejected.
+	var bad_table: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "passive_consumed", "sequence_id": 1, "actor_id": "",
+		"payload": {"passive_id": "warrior_unbreakable_guard", "table_id": "Passive-Choice"}
+	})
+	assert_true(bad_table.is_error(), "passive_consumed with a non-lower_snake table_id should be rejected.")
+	assert_equal(bad_table.metadata.get("field"), "table_id", "passive_consumed should reject a non-lower_snake table_id.")
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1354,7 +1410,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.ITEM_GAINED: &"item_gained",
 		# Story 6.3: the two new SYSTEM events appended at the enum end (never renumbered).
 		DomainEvent.Type.REWARD_OFFERED: &"reward_offered",
-		DomainEvent.Type.REWARD_RESOLVED: &"reward_resolved"
+		DomainEvent.Type.REWARD_RESOLVED: &"reward_resolved",
+		# Story 6.5: the passive_consumed SYSTEM event appended at the enum end (never renumbered).
+		DomainEvent.Type.PASSIVE_CONSUMED: &"passive_consumed"
 	}
 
 	for event_type: int in expected_ids.keys():

@@ -28,7 +28,8 @@ enum Type {
 	RUN_COMPLETED,
 	ITEM_GAINED,
 	REWARD_OFFERED,
-	REWARD_RESOLVED
+	REWARD_RESOLVED,
+	PASSIVE_CONSUMED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -56,6 +57,7 @@ const EVENT_ID_RUN_COMPLETED := &"run_completed"
 const EVENT_ID_ITEM_GAINED := &"item_gained"
 const EVENT_ID_REWARD_OFFERED := &"reward_offered"
 const EVENT_ID_REWARD_RESOLVED := &"reward_resolved"
+const EVENT_ID_PASSIVE_CONSUMED := &"passive_consumed"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -266,6 +268,19 @@ static func reward_resolved(sequence_id: int, payload: Dictionary = {}) -> Domai
 	payload_value["category"] = String(payload.get("category", ""))
 	payload_value["content_id"] = String(payload.get("content_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.REWARD_RESOLVED, sequence_id, &"", payload_value)
+
+
+static func passive_consumed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 6.5): the passive-CONSUMED record emitted by ConsumePassiveCommand AFTER the
+	# offered passive is REGISTERED into the run's RulesResolver (the real adoption) and the offer flips to
+	# `resolved`. NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays empty). passive_id is
+	# a Story-5.4 passive id and table_id is the offer's table id — both Story-5.4/6.1 CONTENT ids -> lower_snake
+	# (no hyphens). Normalize/duplicate the payload defensively (mirroring reward_resolved). The command draws ZERO
+	# RNG — Consume is deterministic, so there is NO roll/draw_index on this payload (unlike reward_offered).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["passive_id"] = String(payload.get("passive_id", ""))
+	payload_value["table_id"] = String(payload.get("table_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.PASSIVE_CONSUMED, sequence_id, &"", payload_value)
 
 
 # Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
@@ -626,6 +641,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_reward_offered_payload(payload_value)
 		Type.REWARD_RESOLVED:
 			return _validate_reward_resolved_payload(payload_value)
+		Type.PASSIVE_CONSUMED:
+			return _validate_passive_consumed_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -824,6 +841,17 @@ static func _validate_reward_resolved_payload(payload_value: Dictionary) -> Acti
 		return _error_result(&"invalid_event_payload", {"field": "category"})
 	if not _has_lower_snake_payload(payload_value, &"content_id"):
 		return _error_result(&"invalid_event_payload", {"field": "content_id"})
+	return _ok_result()
+
+
+static func _validate_passive_consumed_payload(payload_value: Dictionary) -> ActionResult:
+	# A passive-CONSUMED record (Story 6.5). passive_id is a Story-5.4 passive id and table_id is the offer's table
+	# id — both Story-5.4/6.1 content ids -> lower_snake. A malformed/non-lower_snake/missing field is rejected
+	# per-field (mirroring _validate_reward_resolved_payload).
+	if not _has_lower_snake_payload(payload_value, &"passive_id"):
+		return _error_result(&"invalid_event_payload", {"field": "passive_id"})
+	if not _has_lower_snake_payload(payload_value, &"table_id"):
+		return _error_result(&"invalid_event_payload", {"field": "table_id"})
 	return _ok_result()
 
 
@@ -1382,6 +1410,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_REWARD_OFFERED
 		Type.REWARD_RESOLVED:
 			return EVENT_ID_REWARD_RESOLVED
+		Type.PASSIVE_CONSUMED:
+			return EVENT_ID_PASSIVE_CONSUMED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1436,6 +1466,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.REWARD_OFFERED
 		EVENT_ID_REWARD_RESOLVED:
 			return Type.REWARD_RESOLVED
+		EVENT_ID_PASSIVE_CONSUMED:
+			return Type.PASSIVE_CONSUMED
 		_:
 			return Type.UNKNOWN
 
