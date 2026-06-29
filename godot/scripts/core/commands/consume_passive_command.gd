@@ -153,6 +153,12 @@ func execute(state: Variant) -> ActionResult:
 	# (2) ADOPT into the run: create + seat a fresh RulesResolver when the run has none (the legacy/empty-class-run
 	# case — mirror RunStartCommand.execute), then register the consumed passive in stable registration order
 	# (appended AFTER any starting passives the resolver already holds).
+	# Round-1 [Review][Patch] Low (defense-in-depth observation): there is deliberately NO second
+	# `run.rules_resolver == null` re-guard after this block — the subsequent register + the
+	# registered_passive_count() read at step (5) are safe by construction: `passive_def` is proven non-null by
+	# validate()'s unknown_passive gate, and RulesResolver.register_passive is a pure append (rules_resolver.gd)
+	# that ignores null and never reassigns run.rules_resolver, so the field stays the non-null resolver seated
+	# immediately above. Correct as written; no re-check added.
 	if run.rules_resolver == null:
 		run.rules_resolver = RulesResolver.new()
 	run.rules_resolver.register_passive(passive_def)
@@ -173,6 +179,11 @@ func execute(state: Variant) -> ActionResult:
 	})
 
 	# (5) Return ok with the single passive_consumed event + diagnostics.
+	# Round-1 [Review][Patch] Low (metadata-key naming): the present-tense `consumes_passive` flag intentionally
+	# mirrors the sibling run-command convention (ResolveRewardCommand returns `resolves_reward`) — each command
+	# names its own success flag in present tense. Left as-is by design: no caller wires this flag yet (the HUD
+	# wiring is a deferred residual), so there is no shared consumer to unify a single flag name across commands; a
+	# future shared consumer, if one ever wants one spelling, owns that alignment. No behavioral change.
 	return ActionResult.ok([consumed_event], {
 		"consumes_passive": true,
 		"passive_id": String(passive_content_id),

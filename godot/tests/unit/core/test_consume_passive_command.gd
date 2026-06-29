@@ -265,6 +265,16 @@ func _duplicate_consume_against_a_resolved_offer_rejects_no_double_consume() -> 
 func _consume_draws_no_rng_on_success_and_reject() -> void:
 	# Consume is deterministic (a content lookup + a register + a field set). Hold a stream set, snapshot it, run a
 	# SUCCESSFUL consume and a REJECTED consume, and assert the streams are byte-identical in both cases.
+	#
+	# NOTE (Round-1 [Review][Patch] Med — defense-in-depth, NOT a behavioral check): this held RngStreamSet is
+	# INDEPENDENT of the command — ConsumePassiveCommand takes no RngStreamSet and never constructs one (see the
+	# command's public API + the Task 6.3 randi/randf/RandomNumberGenerator grep on consume_passive_command.gd),
+	# so this snapshot is physically unreachable by the command and the assertion is structurally tautological for
+	# any implementation of THIS command. It is kept deliberately as a regression sentinel: it documents the
+	# zero-RNG contract at the test layer and would start to bite if a future change wired an RNG stream INTO the
+	# command (at which point this test would need to hold the run's own stream set and assert it). It is the
+	# standalone twin of the load-bearing no-double-consume RNG assertion below, which is co-located with the real
+	# no-double-consume property.
 	var streams: RngStreamSet = RngStreamSet.new(24680)
 	var before: Dictionary = streams.to_snapshot()
 
