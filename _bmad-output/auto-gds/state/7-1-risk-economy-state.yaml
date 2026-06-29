@@ -1,0 +1,43 @@
+story_key: 7-1-risk-economy-state
+epic_num: 7
+story_num: 1
+branch: story/7-1-risk-economy-state
+status: in-progress
+updated_at: "2026-06-29T20:03:15Z"
+started_at: "2026-06-29T20:03:15Z"
+completed_at: null
+active_seconds: 0
+is_first_in_epic: true
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform: godot
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 6
+completed_phases: [0, 1]
+code_review_iterations: 0
+code_review_loop_done: false
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: []
+deferred_work_archived: 0
+planning_drift: []
+pr_url: null
+ci_run_url: null
+ci_status: unknown
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []
