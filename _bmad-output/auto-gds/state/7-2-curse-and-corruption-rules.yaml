@@ -3,10 +3,10 @@ epic_num: 7
 story_num: 2
 branch: story/7-2-curse-and-corruption-rules
 status: in-progress
-updated_at: "2026-06-30T10:13:10Z"
+updated_at: "2026-06-30T10:21:09Z"
 started_at: "2026-06-30T09:24:53Z"
 completed_at: null
-active_seconds: 2897
+active_seconds: 3373
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,6 +30,7 @@ commits:
   - "37309af"
   - "e7412e0"
   - "bbccac4"
+  - "50e350c"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -39,8 +40,9 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions:
-  - "[Review][Decision] round 1 (Low): AC3 source-identifying check uses CurseDefinition.validate() -> explanation.contains(String(curse_source)), a SUBSTRING match. Reviewer resolved ACCEPT AS-IS for v0 (the sole producer, the for_cursed_reward factory, always embeds the full source id, so it is correct for every real input) but flagged the tighten-to-explicit-marker-token question as a human design call. HALTED for user resolution per loop protocol."
+open_questions: []
+resolved_review_items:
+  - "[Review][Decision] round 1 (AC3 source-identifying substring check): RESOLVED by user direction = TIGHTEN to explicit marker. Fix round (agds-high) removed the explanation.contains(String(curse_source)) cross-check; curse_source is now the explicit first-class source-of-truth validated via _is_lower_snake_id (codebase id convention); explanation is display-only. Test strengthened to the explicit-marker contract. This also substantively satisfies the round-1 [Review][Defer] 'substring-check hardening candidate'."
 deferred_work:
   - "Seated curse rule source must be re-derivable after a route-position resume (live re-derivable resolver, not serialized — same class as the 6.5 consumed-passive residual). The curse_count/corruption COUNT does survive the save. Owner: later in-node-save / live-resume story."
   - "RunSnapshot.curses curse-id LIST left [] (7.2 tracks a curse COUNT, not a per-curse list). Owner: a later story if a per-curse list is needed."

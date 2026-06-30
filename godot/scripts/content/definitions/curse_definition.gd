@@ -34,14 +34,17 @@ const DEFINITION_TYPE := &"curse"
 
 @export var curse_id: StringName = &""
 # The SOURCE this curse originates from (AC3) — a lower_snake marker id (e.g. the originating cursed_reward_id, or a
-# cleanse marker). The explanation must name this so AC3's "identifies the curse or corruption source" holds; the
-# command also carries it into the curse-change event's curse_source field.
+# cleanse marker). This is the EXPLICIT, first-class source marker validate() checks directly (present / non-empty /
+# well-formed lower_snake) — it is THE source-of-truth for "identifies the curse or corruption source" (AC3); the
+# command also carries it into the curse-change event's curse_source field. (Source identity is NOT inferred from the
+# explanation prose — Story 7.2 review: tightened to this explicit marker.)
 @export var curse_source: StringName = &""
 @export var display_name: String = ""
 @export var trigger_windows: Array[StringName] = []
-# The player/debug-readable line the resolver surfaces (the architecture's Readability Rule). REQUIRED non-empty AND
-# REQUIRED to NAME the source (validate() asserts the explanation contains the curse_source marker text) so a curse can
-# never resolve with a source-anonymous explanation (AC3).
+# The player/debug-readable line the resolver surfaces (the architecture's Readability Rule). REQUIRED non-empty.
+# DISPLAY-ONLY: source identity (AC3) is carried by the EXPLICIT `curse_source` marker field, not by this prose —
+# validate() no longer cross-checks the explanation against the source (Story 7.2 review: tightened to an explicit
+# marker). The factory still mentions the source in the text for readability, but the text is not load-bearing.
 @export var explanation: String = ""
 
 func _init(
@@ -72,10 +75,10 @@ func validate() -> ActionResult:
 			return _invalid(&"trigger_windows")
 	if explanation.strip_edges().is_empty():
 		return _invalid(&"explanation")
-	# AC3: the explanation MUST identify the source. A curse that resolves with an explanation that does not name its
-	# source marker would silently violate AC3 — reject it (the source id text must appear in the explanation).
-	if not explanation.contains(String(curse_source)):
-		return _invalid(&"explanation")
+	# AC3: source identity is carried by the EXPLICIT `curse_source` marker field (validated above as a first-class
+	# lower_snake id — present / non-empty / well-formed, exactly like every other *_id/source field in the codebase),
+	# NOT inferred from the human-readable `explanation` prose. `explanation` is display-only and must no longer be
+	# load-bearing for source identity (Story 7.2 review: tightened to an explicit marker per user direction).
 	return ActionResult.ok()
 
 
@@ -85,8 +88,9 @@ func fires_in_window(window_id: StringName) -> bool:
 	return trigger_windows.has(window_id)
 
 
-# Build a curse effect for an accepted cursed reward (AC3): the curse_id + the source marker derive from the
-# cursed_reward_id, the explanation names the source. It declares the LEVEL_ENTERED window (the curse's bite is felt as
+# Build a curse effect for an accepted cursed reward (AC3): the curse_id + the EXPLICIT curse_source marker derive
+# directly from the cursed_reward_id (the source-of-truth for AC3). The explanation mentions the source for display
+# readability only — it is no longer load-bearing for source identity. It declares the LEVEL_ENTERED window (the curse's bite is felt as
 # the run continues — a fixed, valid window from the RuleTrigger vocabulary; v0 is explanation-only, so the window
 # choice surfaces the curse without firing a combat operation). A single canonical factory keeps the seated curse
 # consistent between AcceptCursedRewardCommand and the tests.

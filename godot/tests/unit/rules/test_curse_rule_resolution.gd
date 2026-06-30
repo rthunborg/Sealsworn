@@ -34,7 +34,7 @@ func run() -> Dictionary:
 	_a_curse_resolves_only_in_its_declared_window()
 	_resolution_is_deterministic_for_the_same_accept_sequence()
 	_an_unregistered_window_returns_empty()
-	_curse_definition_validate_requires_a_source_identifying_explanation()
+	_curse_definition_validate_requires_an_explicit_source_marker()
 	return result()
 
 
@@ -138,25 +138,53 @@ func _an_unregistered_window_returns_empty() -> void:
 		assert_true(resolver.explain(window_id).is_empty(), "An empty resolver explains nothing in %s." % String(window_id))
 
 
-# ---- CurseDefinition validate: the source-identifying-explanation rule ----------------------------
+# ---- CurseDefinition validate: the EXPLICIT source-marker rule (Story 7.2 review — tightened) ------
+# Source identity (AC3) is carried by the EXPLICIT `curse_source` marker field, validated directly as a first-class
+# lower_snake id (present / non-empty / well-formed) — exactly like every other *_id/source field in the codebase. It
+# is NO LONGER inferred by substring-matching the human-readable `explanation` (which is display-only). These assert
+# the explicit-marker contract: a malformed/blank/missing `curse_source` is rejected; the `explanation` is no longer
+# load-bearing for source identity.
 
-func _curse_definition_validate_requires_a_source_identifying_explanation() -> void:
-	# A curse whose explanation does NOT name its source is rejected (AC3 — a curse can never resolve with a
-	# source-anonymous explanation).
-	var anonymous: CurseDefinition = CurseDefinition.new(
-		&"curse_anon", &"anon_source", "Anonymous Curse",
+func _curse_definition_validate_requires_an_explicit_source_marker() -> void:
+	# A curse with a NON-lower_snake explicit source marker is rejected, naming the curse_source field (AC3 — the
+	# source must be a clean, first-class marker, not free-text).
+	var bad_marker: CurseDefinition = CurseDefinition.new(
+		&"curse_bad", &"Anon-Source", "Bad Marker Curse",
+		[RuleTrigger.LEVEL_ENTERED],
+		"A curse whose source marker is malformed."
+	)
+	var bad_validation: ActionResult = bad_marker.validate()
+	assert_true(bad_validation.is_error(), "A curse with a non-lower_snake curse_source must be rejected.")
+	assert_equal(bad_validation.error_code, &"invalid_curse_definition", "A bad-source-marker curse uses the stable code.")
+	assert_equal(String(bad_validation.metadata.get("field")), "curse_source", "The reject names the curse_source field (the explicit marker).")
+
+	# A curse with a BLANK explicit source marker is rejected, naming the curse_source field.
+	var blank_marker: CurseDefinition = CurseDefinition.new(
+		&"curse_blank", &"", "Blank Marker Curse",
+		[RuleTrigger.LEVEL_ENTERED],
+		"A curse with no source marker at all."
+	)
+	var blank_validation: ActionResult = blank_marker.validate()
+	assert_true(blank_validation.is_error(), "A curse with a blank curse_source must be rejected.")
+	assert_equal(String(blank_validation.metadata.get("field")), "curse_source", "A blank curse_source reject names the curse_source field.")
+
+	# A curse with a VALID explicit source marker whose explanation does NOT mention the source text is now VALID:
+	# the explanation is display-only and is NO LONGER cross-checked against the source (the tightening — the brittle
+	# substring inference is gone; source identity rides the explicit marker).
+	var explicit_only: CurseDefinition = CurseDefinition.new(
+		&"curse_explicit", &"some_source_marker", "Explicit Marker Curse",
 		[RuleTrigger.LEVEL_ENTERED],
 		"This explanation never names where it came from."
 	)
-	var validation: ActionResult = anonymous.validate()
-	assert_true(validation.is_error(), "A curse whose explanation omits its source must be rejected.")
-	assert_equal(validation.error_code, &"invalid_curse_definition", "A source-anonymous curse uses the stable code.")
-	assert_equal(String(validation.metadata.get("field")), "explanation", "The reject names the explanation field.")
+	assert_true(explicit_only.validate().succeeded, "A curse with a valid explicit curse_source validates even when the explanation omits the source (explanation is display-only).")
+	assert_equal(String(explicit_only.curse_source), "some_source_marker", "The explicit curse_source marker is the source-of-truth (AC3).")
 
-	# The factory-built curse names its source and validates.
+	# The factory-built curse sets the explicit marker DIRECTLY from the cursed_reward_id and validates; its explain()
+	# surface still identifies the source for display readability.
 	var named: CurseDefinition = CurseDefinition.for_cursed_reward(&"cursed_blade_of_the_forsaken", "Cursed Blade")
-	assert_true(named.validate().succeeded, "A factory-built curse names its source and validates.")
-	assert_true(named.explanation.contains("cursed_blade_of_the_forsaken"), "The factory-built curse's explanation identifies its source.")
+	assert_true(named.validate().succeeded, "A factory-built curse sets the explicit source marker and validates.")
+	assert_equal(String(named.curse_source), "cursed_blade_of_the_forsaken", "The factory sets curse_source DIRECTLY to the cursed_reward_id (the explicit marker).")
+	assert_true(named.explanation.contains("cursed_blade_of_the_forsaken"), "The factory-built curse's explanation still mentions the source for display (not load-bearing).")
 
 
 # A valid PassiveDefinition declaring the level_entered window (for the alongside-passives order test).
