@@ -4,7 +4,7 @@ baseline_commit: 37309af311680febdcd89d3de9d4ff99b1437e9c
 
 # Story 7.2: Curse and Corruption Rules
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
