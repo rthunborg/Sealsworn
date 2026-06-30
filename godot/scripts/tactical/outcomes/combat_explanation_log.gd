@@ -36,6 +36,16 @@ func _entry_for_event(event: DomainEvent) -> Dictionary:
 				String(event.payload.get("weapon_id", "unknown"))
 			])
 		DomainEvent.Type.DAMAGE_APPLIED:
+			# Story 7.5 (AC1 "explainable in logs") — a Scorched affinity hazard DoT carries a `source` marker
+			# (scorched_hazard) and is self-inflicted by occupancy (actor == target). Render it as an environmental
+			# hazard line rather than the "from <attacker>" weapon line, so the affinity-effect event reads honestly in
+			# the log. All other DAMAGE_APPLIED events (the attack-command shape) keep the existing "from <actor>" line.
+			if _is_affinity_hazard_damage(event):
+				return _entry(event, "%s took %s %s damage from a Scorched fire hazard." % [
+					String(event.payload.get("target_entity_id", "")),
+					int(event.payload.get("final_damage", event.payload.get("amount", 0))),
+					String(event.payload.get("damage_type", "unknown"))
+				])
 			return _entry(event, "%s took %s %s damage from %s." % [
 				String(event.payload.get("target_entity_id", "")),
 				int(event.payload.get("final_damage", event.payload.get("amount", 0))),
@@ -90,6 +100,12 @@ func _entry(event: DomainEvent, summary: String) -> Dictionary:
 		"summary": summary,
 		"details": event.payload.duplicate(true)
 	}
+
+
+# Story 7.5: a DAMAGE_APPLIED event is a Scorched affinity hazard tick when its payload carries the scorched_hazard
+# source marker. (Robust to the field being absent on a normal attack event — only the affinity command sets it.)
+func _is_affinity_hazard_damage(event: DomainEvent) -> bool:
+	return String(event.payload.get("source", "")) == "scorched_hazard"
 
 
 func _cell_text(value: Variant) -> String:
