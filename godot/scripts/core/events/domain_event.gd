@@ -32,7 +32,8 @@ enum Type {
 	PASSIVE_CONSUMED,
 	PASSIVE_DESTROYED,
 	ITEM_CONSUMED,
-	ECONOMY_CHANGED
+	ECONOMY_CHANGED,
+	CURSE_APPLIED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -64,6 +65,7 @@ const EVENT_ID_PASSIVE_CONSUMED := &"passive_consumed"
 const EVENT_ID_PASSIVE_DESTROYED := &"passive_destroyed"
 const EVENT_ID_ITEM_CONSUMED := &"item_consumed"
 const EVENT_ID_ECONOMY_CHANGED := &"economy_changed"
+const EVENT_ID_CURSE_APPLIED := &"curse_applied"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -359,6 +361,30 @@ static func economy_changed(sequence_id: int, payload: Dictionary = {}) -> Domai
 	payload_value["healing_after"] = int(payload.get("healing_after", 0))
 	payload_value["healing_delta"] = int(payload.get("healing_delta", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.ECONOMY_CHANGED, sequence_id, &"", payload_value)
+
+
+static func curse_applied(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 7.2): the deterministic CURSE/CORRUPTION-change record emitted by
+	# AcceptCursedRewardCommand (a curse/corruption INCREMENT — positive delta) AND by DestroyPassiveCommand's cleanse
+	# branch (a curse/corruption REDUCTION — negative delta). NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty). `curse_source` is the AC3 source-identifying marker (a lower_snake
+	# id naming the curse/corruption SOURCE — e.g. the originating cursed_reward_id, or a cleanse marker). `reason` is
+	# the AC2 explanation-log reason (a lower_snake marker id). curse_before/curse_after + corruption_before/
+	# corruption_after are NON-NEGATIVE integral (a curse/corruption count is never negative); curse_delta/
+	# corruption_delta are SIGNED integral (an increment is positive, a cleanse negative — the SIGNED delta is what lets
+	# ONE event serve both the curse-APPLY and the CLEANSE-REDUCE paths). UNLIKE passive_destroyed there is NO
+	# roll/draw_index: a curse change is a RECORDED amount, not a roll (the command draws ZERO RNG — deterministic, the
+	# economy_changed shell). Normalize/duplicate the payload defensively (mirroring economy_changed).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["curse_source"] = String(payload.get("curse_source", ""))
+	payload_value["reason"] = String(payload.get("reason", ""))
+	payload_value["curse_before"] = int(payload.get("curse_before", 0))
+	payload_value["curse_after"] = int(payload.get("curse_after", 0))
+	payload_value["curse_delta"] = int(payload.get("curse_delta", 0))
+	payload_value["corruption_before"] = int(payload.get("corruption_before", 0))
+	payload_value["corruption_after"] = int(payload.get("corruption_after", 0))
+	payload_value["corruption_delta"] = int(payload.get("corruption_delta", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.CURSE_APPLIED, sequence_id, &"", payload_value)
 
 
 # Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
@@ -727,6 +753,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_item_consumed_payload(payload_value)
 		Type.ECONOMY_CHANGED:
 			return _validate_economy_changed_payload(payload_value)
+		Type.CURSE_APPLIED:
+			return _validate_curse_applied_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -1014,6 +1042,41 @@ static func _validate_economy_changed_payload(payload_value: Dictionary) -> Acti
 		return _error_result(&"invalid_event_payload", {"field": "gold_after"})
 	if int(payload_value.get("healing_before")) + int(payload_value.get("healing_delta")) != int(payload_value.get("healing_after")):
 		return _error_result(&"invalid_event_payload", {"field": "healing_after"})
+	return _ok_result()
+
+
+static func _validate_curse_applied_payload(payload_value: Dictionary) -> ActionResult:
+	# A curse/corruption-change record (Story 7.2). `curse_source` is the AC3 source-identifying marker -> a lower_snake
+	# marker id (e.g. the originating cursed_reward_id, or a cleanse marker). `reason` is the AC2 explanation-log reason
+	# -> a lower_snake marker id. curse_before/curse_after + corruption_before/corruption_after are NON-NEGATIVE
+	# integral (a curse/corruption count is never negative). curse_delta/corruption_delta are SIGNED integral (an
+	# increment is positive, a cleanse negative — so they are validated as integral, NOT non-negative; the SIGNED delta
+	# lets ONE event serve both the apply and the cleanse paths). UNLIKE passive_destroyed there is NO roll/draw_index
+	# (a curse change is a recorded amount, not a roll — the deterministic economy_changed shell). A malformed/missing
+	# field is rejected per-field. The before+delta==after arithmetic consistency is enforced for EACH of
+	# curse/corruption (a fabricated/hand-edited payload whose after diverges from before+delta is rejected — the record
+	# must be honest, the 7.1 economy_changed precedent).
+	if not _has_lower_snake_payload(payload_value, &"curse_source"):
+		return _error_result(&"invalid_event_payload", {"field": "curse_source"})
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	if not _has_nonnegative_integral_payload(payload_value, &"curse_before"):
+		return _error_result(&"invalid_event_payload", {"field": "curse_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"curse_after"):
+		return _error_result(&"invalid_event_payload", {"field": "curse_after"})
+	if not _has_integral_payload(payload_value, &"curse_delta"):
+		return _error_result(&"invalid_event_payload", {"field": "curse_delta"})
+	if not _has_nonnegative_integral_payload(payload_value, &"corruption_before"):
+		return _error_result(&"invalid_event_payload", {"field": "corruption_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"corruption_after"):
+		return _error_result(&"invalid_event_payload", {"field": "corruption_after"})
+	if not _has_integral_payload(payload_value, &"corruption_delta"):
+		return _error_result(&"invalid_event_payload", {"field": "corruption_delta"})
+	# Arithmetic consistency (the record must be honest): before + delta == after for each of curse/corruption.
+	if int(payload_value.get("curse_before")) + int(payload_value.get("curse_delta")) != int(payload_value.get("curse_after")):
+		return _error_result(&"invalid_event_payload", {"field": "curse_after"})
+	if int(payload_value.get("corruption_before")) + int(payload_value.get("corruption_delta")) != int(payload_value.get("corruption_after")):
+		return _error_result(&"invalid_event_payload", {"field": "corruption_after"})
 	return _ok_result()
 
 
@@ -1589,6 +1652,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_ITEM_CONSUMED
 		Type.ECONOMY_CHANGED:
 			return EVENT_ID_ECONOMY_CHANGED
+		Type.CURSE_APPLIED:
+			return EVENT_ID_CURSE_APPLIED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1651,6 +1716,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.ITEM_CONSUMED
 		EVENT_ID_ECONOMY_CHANGED:
 			return Type.ECONOMY_CHANGED
+		EVENT_ID_CURSE_APPLIED:
+			return Type.CURSE_APPLIED
 		_:
 			return Type.UNKNOWN
 

@@ -32,6 +32,8 @@ func run() -> Dictionary:
 	_item_consumed_rejects_malformed_payloads()
 	_economy_changed_serializes_and_parses_stable_payload()
 	_economy_changed_rejects_malformed_payloads()
+	_curse_applied_serializes_and_parses_stable_payload()
+	_curse_applied_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -1305,6 +1307,115 @@ func _try_economy_changed_with(valid_payload: Dictionary, field: String, value: 
 	})
 
 
+func _curse_applied_serializes_and_parses_stable_payload() -> void:
+	# Story 7.2 (AC2/AC3): a curse_applied SYSTEM event (no actor) — a curse/corruption-change record. `curse_source` is
+	# the AC3 source-identifying lower_snake marker; `reason` is a lower_snake marker; curse_before/after +
+	# corruption_before/after are non-negative integral; curse_delta/corruption_delta are SIGNED integral (an increment
+	# positive, a cleanse negative). UNLIKE passive_destroyed there is NO roll/draw_index (a curse change is a recorded
+	# amount, not a roll — deterministic).
+	var event: DomainEvent = DomainEvent.curse_applied(9, {
+		"curse_source": "cursed_blade_of_the_forsaken",
+		"reason": "cursed_reward_accepted",
+		"curse_before": 0,
+		"curse_after": 1,
+		"curse_delta": 1,
+		"corruption_before": 0,
+		"corruption_after": 0,
+		"corruption_delta": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "curse_applied", "curse_applied should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "curse_applied is a system event with an empty actor id.")
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "curse_applied carries NO roll (deterministic — zero RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "curse_applied carries NO draw_index (deterministic — zero RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "curse_applied should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.CURSE_APPLIED, "curse_applied should parse back to CURSE_APPLIED.")
+	assert_equal(restored.payload.get("curse_source"), "cursed_blade_of_the_forsaken", "The curse_source (AC3) must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("curse_after"), 1, "curse_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("curse_delta"), 1, "curse_delta must survive a JSON round-trip.")
+
+	# The CLEANSE path: a NEGATIVE curse_delta (the signed-delta path that lets ONE event serve both apply + cleanse).
+	var cleanse_event: DomainEvent = DomainEvent.curse_applied(10, {
+		"curse_source": "passive_destroyed_cleanse",
+		"reason": "passive_destroyed_cleanse",
+		"curse_before": 2, "curse_after": 1, "curse_delta": -1,
+		"corruption_before": 0, "corruption_after": 0, "corruption_delta": 0
+	})
+	var cleanse_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(cleanse_event.to_dictionary())))
+	assert_true(cleanse_parse.succeeded, "A cleanse curse_applied (negative delta) should parse: %s" % cleanse_parse.metadata)
+	assert_equal((cleanse_parse.metadata.get("event") as DomainEvent).payload.get("curse_delta"), -1, "A negative curse_delta must survive the round-trip (the signed cleanse path).")
+
+
+func _curse_applied_rejects_malformed_payloads() -> void:
+	var valid_payload: Dictionary = {
+		"curse_source": "cursed_blade_of_the_forsaken",
+		"reason": "cursed_reward_accepted",
+		"curse_before": 0,
+		"curse_after": 1,
+		"curse_delta": 1,
+		"corruption_before": 0,
+		"corruption_after": 0,
+		"corruption_delta": 0
+	}
+
+	# A non-lower_snake / blank curse_source is rejected (AC3 — the source must be a clean marker).
+	var bad_source: ActionResult = _try_curse_applied_with(valid_payload, "curse_source", "Cursed-Blade")
+	assert_true(bad_source.is_error(), "curse_applied with a non-lower_snake curse_source should be rejected.")
+	assert_equal(bad_source.error_code, &"invalid_event_payload", "Malformed curse_applied should use the stable code.")
+	assert_equal(bad_source.metadata.get("field"), "curse_source", "curse_applied should name the curse_source field.")
+
+	var blank_source: ActionResult = _try_curse_applied_with(valid_payload, "curse_source", "")
+	assert_true(blank_source.is_error(), "curse_applied with a blank curse_source should be rejected.")
+	assert_equal(blank_source.metadata.get("field"), "curse_source", "curse_applied should require a non-empty curse_source.")
+
+	# A non-lower_snake reason is rejected.
+	var bad_reason: ActionResult = _try_curse_applied_with(valid_payload, "reason", "Bad Reason")
+	assert_true(bad_reason.is_error(), "curse_applied with a non-lower_snake reason should be rejected.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "curse_applied should name the reason field.")
+
+	# A NEGATIVE curse_before is rejected (a curse count is never negative). The delta MAY be negative.
+	var neg_before: ActionResult = _try_curse_applied_with(valid_payload, "curse_before", -1)
+	assert_true(neg_before.is_error(), "curse_applied with a negative curse_before should be rejected.")
+	assert_equal(neg_before.metadata.get("field"), "curse_before", "curse_applied should require a non-negative curse_before.")
+
+	# A non-integral curse_delta is rejected.
+	var bad_delta: ActionResult = _try_curse_applied_with(valid_payload, "curse_delta", "many")
+	assert_true(bad_delta.is_error(), "curse_applied with a non-integral curse_delta should be rejected.")
+	assert_equal(bad_delta.metadata.get("field"), "curse_delta", "curse_applied should name the curse_delta field.")
+
+	# An ARITHMETIC inconsistency (curse_after != curse_before + curse_delta) is rejected (the record must be honest).
+	var inconsistent: ActionResult = _try_curse_applied_with(valid_payload, "curse_after", 99)
+	assert_true(inconsistent.is_error(), "curse_applied whose curse_after diverges from before+delta should be rejected.")
+	assert_equal(inconsistent.metadata.get("field"), "curse_after", "curse_applied should reject an inconsistent curse_after.")
+
+	# A corruption arithmetic inconsistency is rejected too (both halves are checked).
+	var bad_corruption: ActionResult = _try_curse_applied_with(valid_payload, "corruption_after", 5)
+	assert_true(bad_corruption.is_error(), "curse_applied whose corruption_after diverges from before+delta should be rejected.")
+	assert_equal(bad_corruption.metadata.get("field"), "corruption_after", "curse_applied should reject an inconsistent corruption_after.")
+
+	# A missing field (drop curse_source) is rejected.
+	var missing: Dictionary = valid_payload.duplicate(true)
+	missing.erase("curse_source")
+	var missing_result: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "curse_applied", "sequence_id": 1, "actor_id": "", "payload": missing
+	})
+	assert_true(missing_result.is_error(), "curse_applied missing curse_source should be rejected.")
+	assert_equal(missing_result.metadata.get("field"), "curse_source", "curse_applied should name the missing curse_source field.")
+
+
+# Build a curse_applied dictionary from the valid baseline with ONE field overridden, then run it through
+# try_from_dictionary (the malformed-payload reject path).
+func _try_curse_applied_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "curse_applied", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1716,7 +1827,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# Story 6.7: the item_consumed SYSTEM event appended at the enum end (never renumbered).
 		DomainEvent.Type.ITEM_CONSUMED: &"item_consumed",
 		# Story 7.1: the economy_changed SYSTEM event appended at the enum end (never renumbered).
-		DomainEvent.Type.ECONOMY_CHANGED: &"economy_changed"
+		DomainEvent.Type.ECONOMY_CHANGED: &"economy_changed",
+		# Story 7.2: the curse_applied SYSTEM event appended at the enum end (never renumbered).
+		DomainEvent.Type.CURSE_APPLIED: &"curse_applied"
 	}
 
 	for event_type: int in expected_ids.keys():

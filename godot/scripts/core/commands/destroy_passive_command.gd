@@ -54,12 +54,28 @@ const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
 const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 
 # The category for a Destroy is ALWAYS `passive` — this command is passive-specific (it does not destroy a
 # weapon/gold reward). The offered-entry gate checks this category against the pending offer.
 const PASSIVE_CATEGORY := &"passive"
+
+# Story 7.2 — the CLEANSE hook (the GDD "Destroy a passive to cleanse or reduce curse", GDD lines 359 + 471). [Decision]
+# The cleanse keys off the already-machine-pinned outcome_id `minor_restoration` (the small_immediate_benefit baseline
+# outcome whose explanation already mentions "a cleansed wound" — destroy_outcome_table_definition.gd:164), NOT a new
+# free-text dependency and NOT a new outcome category (the 70/20/10 distribution + the three FR50 categories stay
+# UNCHANGED). This CLOSES the 6.6 Round-2 [Review][Decision] (outcome_effect free-text vs constrained marker) in favor
+# of keying off outcome_id/outcome_category (the recommended option — no new free-text dependency). When the rolled
+# Destroy outcome is this id AND the run carries curse/corruption to cleanse, the command REDUCES curse_count (or
+# corruption when no curse remains) by CLEANSE_AMOUNT via the 7.1 set_curse_count/set_corruption setter (floored at 0)
+# and records it via the curse_applied event (a NEGATIVE delta — the SIGNED-delta path; curse_source = the cleanse
+# marker). The reduction applies AFTER the existing 70/20/10 roll, drawing ZERO additional RNG. A non-cleanse outcome
+# reduces no curse (the existing behavior is unchanged).
+const CLEANSE_OUTCOME_ID := &"minor_restoration"
+const CLEANSE_SOURCE := &"passive_destroyed_cleanse"
+const CLEANSE_AMOUNT := 1
 
 var passive_content_id: StringName = &""
 var table_id: StringName = &""
@@ -234,13 +250,49 @@ func execute(state: Variant) -> ActionResult:
 		"draw_index": rolled_draw_index
 	})
 
-	# (5) Return ok with the single passive_destroyed event + diagnostics.
-	return ActionResult.ok([destroyed_event], {
+	var events: Array[DomainEvent] = [destroyed_event]
+
+	# (5) Story 7.2 — the CLEANSE hook. When the rolled outcome is the cleanse outcome (CLEANSE_OUTCOME_ID), REDUCE
+	# curse_count (or corruption when no curse remains) via the 7.1 setter (floored at 0) and record the reduction with
+	# a curse_applied event carrying a NEGATIVE delta. This applies AFTER the 70/20/10 roll, drawing ZERO additional RNG
+	# (a recorded reduction, not a roll). Guarded with a null-economy defensive guard (mirroring the gold-credit guard
+	# in ResolveRewardCommand) — a directly-nulled economy reduces nothing. The cleanse event uses sequence_id + 1 (a
+	# DISTINCT id from the passive_destroyed event at sequence_id) so the round-trip never collides. The cleanse event
+	# is emitted ONLY when a real reduction occurs (curse/corruption > 0 before) — cleansing nothing emits no event (the
+	# passive_destroyed outcome already records the cleanse outcome).
+	if StringName(String(outcome.get("outcome_id"))) == CLEANSE_OUTCOME_ID and run.risk_economy != null:
+		var economy: RiskEconomyState = run.risk_economy
+		var curse_before: int = economy.curse_count
+		var corruption_before: int = economy.corruption
+		# Reduce curse first; if there is no curse to reduce, reduce corruption instead (cleanse the deeper taint).
+		if curse_before > 0:
+			economy.set_curse_count(curse_before - CLEANSE_AMOUNT)
+		elif corruption_before > 0:
+			economy.set_corruption(corruption_before - CLEANSE_AMOUNT)
+		var curse_after: int = economy.curse_count
+		var corruption_after: int = economy.corruption
+		# Emit the cleanse record only when something was actually cleansed (a NEGATIVE delta).
+		if curse_after != curse_before or corruption_after != corruption_before:
+			events.append(DomainEvent.curse_applied(sequence_id + 1, {
+				"curse_source": String(CLEANSE_SOURCE),
+				"reason": "passive_destroyed_cleanse",
+				"curse_before": curse_before,
+				"curse_after": curse_after,
+				"curse_delta": curse_after - curse_before,
+				"corruption_before": corruption_before,
+				"corruption_after": corruption_after,
+				"corruption_delta": corruption_after - corruption_before
+			}))
+
+	# (6) Return ok with the passive_destroyed event (+ the cleanse curse_applied event when a cleanse occurred) +
+	# diagnostics.
+	return ActionResult.ok(events, {
 		"destroys_passive": true,
 		"passive_id": String(passive_content_id),
 		"table_id": String(offer.table_id),
 		"outcome_category": String(outcome.get("outcome_category")),
-		"outcome_id": String(outcome.get("outcome_id"))
+		"outcome_id": String(outcome.get("outcome_id")),
+		"cleansed": events.size() > 1
 	})
 
 
