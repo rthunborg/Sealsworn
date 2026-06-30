@@ -4,7 +4,7 @@ baseline_commit: cef43e318435ccd1fe8707e0c536c8255deb6a2b
 
 # Story 7.5: Tactical Affinity Effects
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
