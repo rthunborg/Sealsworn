@@ -47,6 +47,10 @@ func run() -> Dictionary:
 	_pre_5_3_route_position_payload_restores_with_legacy_empty_default()
 	_kit_re_derives_from_restored_class_id()
 	_composed_class_run_snapshot_stays_within_the_23_key_gate()
+	# Story 7.1 — the risk-economy survives a route-position resume + the top-level mirror + back-compat + migration.
+	_economy_survives_route_position_resume()
+	_economy_top_level_mirror_is_populated_within_the_23_key_gate()
+	_pre_7_1_route_position_payload_restores_with_default_economy()
 	_cleanup()
 	return result()
 
@@ -171,10 +175,12 @@ func _route_position_after_a_reward_draw_round_trips_the_advanced_stream() -> vo
 	var pre_rewards: Dictionary = (orchestrator.streams.to_snapshot().get("streams") as Dictionary).get("rewards")
 	assert_equal(int(pre_rewards.get("draw_index")), 0, "Setup: the rewards stream is inert (draw_index 0) before any reward roll.")
 
-	# Draw a reward through the RUN-LEVEL streams — this advances orchestrator.streams' rewards stream.
+	# Draw a reward through the RUN-LEVEL streams — this advances orchestrator.streams' rewards stream. Story 7.1: a
+	# GOLD offer rolls a SECOND draw on the same stream (the gold-amount roll), so the advance is by 2 for a gold
+	# offer, 1 otherwise — assert advancement (>= 1), not an exact count.
 	assert_true(orchestrator.generate_reward_offer(&"standard_combat_reward").succeeded, "The reward generate should succeed (the T2 advance).")
 	var post_snapshot: Dictionary = orchestrator.streams.to_snapshot()
-	assert_equal(int((post_snapshot.get("streams") as Dictionary).get("rewards").get("draw_index")), 1, "The reward roll must ADVANCE the run-level rewards stream (draw_index 0 -> 1).")
+	assert_true(int((post_snapshot.get("streams") as Dictionary).get("rewards").get("draw_index")) >= 1, "The reward roll must ADVANCE the run-level rewards stream (draw_index 0 -> >= 1; a gold offer rolls a second amount draw).")
 
 	# Peek the live post-draw next rewards draw from a restored copy (live streams untouched).
 	var expected_streams: RngStreamSet = RngStreamSet.new(0)
@@ -491,6 +497,100 @@ func _composed_class_run_snapshot_stays_within_the_23_key_gate() -> void:
 	var route_state: Dictionary = (json_data as Dictionary).get("route_state")
 	assert_true(route_state.has(String(RunState.SELECTED_CLASS_ID_KEY)), "The class id must be nested inside route_state.")
 	assert_equal(str(route_state.get(String(RunState.SELECTED_CLASS_ID_KEY))), "warrior", "The nested route_state must carry the selected class id.")
+
+
+# ---- Story 7.1: the risk-economy survives a route-position resume --------------------------------
+
+# AC1 ("and save snapshots"): a parked run whose economy carries gold/healing/curse/corruption, composed + WRITTEN +
+# READ through the REAL SaveRepository and restored via resume_route_position, rehydrates the SAME economy. The
+# economy is nested under route_state (no new top-level key) — the source of truth on resume.
+func _economy_survives_route_position_resume() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	# Seed a known economy (the orchestrator loop does not touch it).
+	orchestrator.run.risk_economy.apply_gold_delta(37)
+	orchestrator.run.risk_economy.apply_healing_delta(2)
+	orchestrator.run.risk_economy.set_curse_count(1)
+	orchestrator.run.risk_economy.set_corruption(3)
+	orchestrator.run.risk_economy.add_risk_flag(&"salt_marked")
+
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	assert_true(snapshot != null, "compose_route_position_snapshot should return a snapshot.")
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Resuming the route position should succeed: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_true(restored_run != null, "The route-position resume should return a restored RunState.")
+	# The economy rehydrates from the nested route_state copy.
+	assert_equal(restored_run.risk_economy.gold, 37, "AC1: the restored run must rehydrate the wallet.")
+	assert_equal(restored_run.risk_economy.healing_charges, 2, "AC1: the restored run must rehydrate healing availability.")
+	assert_equal(restored_run.risk_economy.curse_count, 1, "AC1: the restored run must rehydrate the curse count.")
+	assert_equal(restored_run.risk_economy.corruption, 3, "AC1: the restored run must rehydrate corruption.")
+	assert_equal(restored_run.risk_economy.risk_flags, ["salt_marked"], "AC1: the restored run must rehydrate risk flags.")
+	assert_true(restored_run.validate().succeeded, "The restored economy run must validate.")
+
+
+# Story 7.1: the EXISTING top-level RunSnapshot economy placeholder keys are populated from the run's economy (a
+# human-readable mirror) WITHOUT a new top-level key (the 23-key gate stays green; the COUNT stays 23). gold +
+# corruption are mirrored; curses stays empty (the curse-id LIST is 7.2's).
+func _economy_top_level_mirror_is_populated_within_the_23_key_gate() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	orchestrator.run.risk_economy.apply_gold_delta(50)
+	orchestrator.run.risk_economy.set_corruption(4)
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	# The top-level mirror reflects the economy.
+	assert_equal(snapshot.gold, 50, "Story 7.1: the top-level RunSnapshot.gold mirrors the economy wallet.")
+	assert_equal(snapshot.corruption, 4, "Story 7.1: the top-level RunSnapshot.corruption mirrors the economy.")
+	assert_equal(snapshot.curses, [], "Story 7.1: the curses array placeholder stays EMPTY (the curse-id list is 7.2's).")
+	# A real JSON round-trip preserves the mirror + stays within the 23-key gate (the COUNT stays 23).
+	var data: Dictionary = snapshot.to_dictionary()
+	var json_data: Variant = JSON.parse_string(JSON.stringify(data))
+	assert_true(json_data is Dictionary, "The economy snapshot must survive a JSON round-trip.")
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	assert_equal((json_data as Dictionary).keys().size(), allowed.size(), "Story 7.1: the snapshot key COUNT must stay 23 (no new top-level key).")
+	for key: Variant in (json_data as Dictionary).keys():
+		assert_true(allowed.has(key), "A populated-economy save must not introduce a surprise top-level key (%s)." % str(key))
+	# The re-parsed snapshot preserves the top-level mirror.
+	var reparsed: ActionResult = RunSnapshot.parse(json_data)
+	assert_true(reparsed.succeeded, "The economy snapshot must re-parse: %s" % reparsed.metadata)
+	assert_equal((reparsed.metadata.get("snapshot") as RunSnapshot).gold, 50, "The top-level gold mirror must survive JSON.")
+	# The NESTED economy (the source of truth) also survives + is the resume authority.
+	var restore: ActionResult = RunResumeService.new().resume_route_position(_write_and_path(snapshot))
+	assert_true(restore.succeeded, "Resuming the populated-economy save should succeed: %s" % restore.metadata)
+	assert_equal((restore.metadata.get("run_state") as RunState).risk_economy.gold, 50, "The NESTED economy (source of truth) must rehydrate the wallet on resume.")
+
+
+# Story 7.1 (the migration / back-compat guarantee): a PRE-7.1 route-position payload (no nested risk_economy key
+# under route_state) restores with the DEFAULT economy (derived from is_manual_seed) and still validates — proving the
+# nested read is lenient and every pre-7.1 save still resumes. Composes a real snapshot, STRIPS the nested key, writes
+# + reads through the real repository.
+func _pre_7_1_route_position_payload_restores_with_default_economy() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	orchestrator.run.risk_economy.apply_gold_delta(99)  # a value that should be LOST when the nested key is stripped
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	# Simulate a pre-7.1 save: remove the nested risk_economy key from route_state (the key 7.1 added). Also strip the
+	# top-level mirror so the on-disk save looks genuinely pre-7.1.
+	var legacy_route_state: Dictionary = snapshot.route_state.duplicate(true)
+	legacy_route_state.erase(String(RunState.RISK_ECONOMY_KEY))
+	assert_false(legacy_route_state.has(String(RunState.RISK_ECONOMY_KEY)), "The pre-7.1 fixture must have NO nested risk_economy key.")
+	snapshot.route_state = legacy_route_state
+	snapshot.gold = 0
+	snapshot.corruption = 0
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "A pre-7.1 route-position payload must still resume: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_equal(restored_run.risk_economy.gold, 0, "A pre-7.1 payload (no nested economy key) must restore the default empty economy (the stripped 99 is lost).")
+	assert_true(restored_run.risk_economy.oath_shard_eligible, "A pre-7.1 non-manual payload restores an eligible economy.")
+	assert_true(restored_run.validate().succeeded, "A pre-7.1 restored economy run must still validate.")
+
+
+# Write a snapshot through the repository and return the save path (a small helper so the populated-economy test can
+# write + resume inline).
+func _write_and_path(snapshot: RunSnapshot) -> String:
+	_write_through_repository(snapshot)
+	return SAVE_PATH
 
 
 # ---- utilities -----------------------------------------------------------------------------------

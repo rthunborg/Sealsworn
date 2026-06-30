@@ -25,7 +25,10 @@ const RunState = preload("res://scripts/run/run_state.gd")
 
 func run() -> Dictionary:
 	_resolves_a_backpack_reward_records_a_slot_and_two_events()
-	_resolves_a_gold_reward_as_a_resolution_outcome_only()
+	# Story 7.1 (the T1 wire-off): a gold reward now CREDITS the wallet + emits economy_changed.
+	_resolves_a_gold_reward_credits_the_wallet_and_emits_economy_changed()
+	_re_resolving_a_gold_offer_credits_no_second_gold()
+	_resolves_a_gold_reward_with_zero_rolled_amount_credits_nothing_but_still_records()
 	_resolves_a_passive_reward_as_a_resolution_outcome_only()
 	_rejects_non_positive_sequence_id_first_with_no_mutation()
 	_rejects_invalid_context()
@@ -39,13 +42,15 @@ func run() -> Dictionary:
 
 # ---- helpers -------------------------------------------------------------------------------------
 
-# A minimal valid run parked at a route choice WITH a pending offer carrying the given entries.
-func _run_with_offer(table_id: StringName, offered_entries: Array) -> RunState:
+# A minimal valid run parked at a route choice WITH a pending offer carrying the given entries. Story 7.1: an
+# optional gold_amount (the GENERATE-rolled concrete gold) is carried on the offer so a gold resolve can credit the
+# wallet by exactly that amount.
+func _run_with_offer(table_id: StringName, offered_entries: Array, gold_amount: int = 0) -> RunState:
 	var start: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["node-1-0"])
 	var boss: RouteNode = RouteNode.new("node-1-0", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_HIDDEN, [])
 	var route: RouteState = RouteState.new([start, boss], "", [])
 	var run: RunState = RunState.new_run(7, false, route)
-	run.pending_reward_offer = RewardOffer.new(table_id, RewardOffer.STATUS_PENDING, offered_entries, {}, "rewards", 1, 0, 42)
+	run.pending_reward_offer = RewardOffer.new(table_id, RewardOffer.STATUS_PENDING, offered_entries, {}, "rewards", 1, 0, 42, gold_amount)
 	assert_true(run.validate().succeeded, "Setup: the run with an offer should validate.")
 	return run
 
@@ -94,17 +99,72 @@ func _resolves_a_backpack_reward_records_a_slot_and_two_events() -> void:
 	assert_true(run.validate().succeeded, "A committed resolve should leave the run structurally valid.")
 
 
-func _resolves_a_gold_reward_as_a_resolution_outcome_only() -> void:
-	# A gold reward (no wallet domain field yet) applies as a reward_resolved outcome ONLY (no backpack mutation).
-	var run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "gold", "content_id": "small_gold_purse"}])
+func _resolves_a_gold_reward_credits_the_wallet_and_emits_economy_changed() -> void:
+	# Story 7.1 (the T1 wire-off): a GOLD reward CREDITS the wallet by the amount rolled at GENERATE (offer.gold_amount)
+	# and emits a SECOND event (economy_changed) alongside reward_resolved. It records NO backpack slot.
+	var run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "gold", "content_id": "small_gold_purse"}], 11)
+	assert_equal(run.risk_economy.gold, 0, "Setup: the wallet starts empty.")
 	var resolved: ActionResult = ResolveRewardCommand.new(&"gold", &"small_gold_purse").execute(run)
 	assert_true(resolved.succeeded, "Resolving a gold reward should succeed: %s" % resolved.metadata)
-	assert_equal(run.inventory.size(), 0, "A gold reward records NO backpack slot (no wallet yet).")
-	assert_equal(resolved.events.size(), 1, "A gold resolve emits ONLY the reward_resolved event (no item_gained).")
-	assert_equal(resolved.events[0].event_type, DomainEvent.Type.REWARD_RESOLVED, "A gold resolve emits a reward_resolved event.")
-	assert_equal(resolved.events[0].payload.get("category"), "gold", "The reward_resolved event carries the gold category.")
+	assert_equal(run.inventory.size(), 0, "A gold reward records NO backpack slot.")
+	assert_equal(run.risk_economy.gold, 11, "AC2/T1: the wallet is credited by exactly the rolled gold amount.")
+	# Two events: reward_resolved (the resolution) + economy_changed (the credit).
+	assert_equal(resolved.events.size(), 2, "A gold resolve emits TWO events (reward_resolved + economy_changed).")
+	var has_reward_resolved: bool = false
+	var economy_event: DomainEvent = null
+	for event: DomainEvent in resolved.events:
+		if event.event_type == DomainEvent.Type.REWARD_RESOLVED:
+			has_reward_resolved = true
+			assert_equal(event.payload.get("category"), "gold", "The reward_resolved event carries the gold category.")
+		if event.event_type == DomainEvent.Type.ECONOMY_CHANGED:
+			economy_event = event
+	assert_true(has_reward_resolved, "A gold resolve emits a reward_resolved event.")
+	assert_true(economy_event != null, "A gold resolve emits an economy_changed event.")
+	assert_equal(economy_event.payload.get("reason"), "gold_reward_resolved", "The economy_changed event records the gold-reward reason.")
+	assert_equal(economy_event.payload.get("gold_delta"), 11, "The economy_changed event records the credited amount.")
+	assert_equal(economy_event.payload.get("gold_after"), 11, "The economy_changed event records the post-credit wallet.")
+	# Both events carry DISTINCT sequence ids + pass payload validation (real JSON round-trip).
+	assert_true(resolved.events[0].sequence_id != resolved.events[1].sequence_id, "The two gold-resolve events must carry distinct sequence ids.")
+	for event: DomainEvent in resolved.events:
+		var parsed: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(event.to_dictionary())))
+		assert_true(parsed.succeeded, "The emitted %s event should pass payload validation: %s" % [event.event_type, parsed.metadata])
 	assert_true(run.pending_reward_offer.is_resolved(), "The gold offer must flip to resolved.")
 	assert_false(bool(resolved.metadata.get("applied_to_backpack")), "A gold reward is not applied to the backpack.")
+
+
+func _re_resolving_a_gold_offer_credits_no_second_gold() -> void:
+	# Story 7.1: a SECOND resolve against a `resolved` gold offer rejects at validate() BEFORE any credit — the wallet
+	# is credited exactly once (AC3 no-double-apply extended to the wallet).
+	var run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "gold", "content_id": "small_gold_purse"}], 11)
+	assert_true(ResolveRewardCommand.new(&"gold", &"small_gold_purse").execute(run).succeeded, "The first gold resolve should succeed.")
+	assert_equal(run.risk_economy.gold, 11, "The first resolve credits the wallet once.")
+	var before: Dictionary = run.to_dictionary()
+	var second: ActionResult = ResolveRewardCommand.new(&"gold", &"small_gold_purse").execute(run)
+	var after: Dictionary = run.to_dictionary()
+	assert_true(second.is_error(), "A second resolve against a resolved gold offer must fail closed.")
+	assert_equal(second.error_code, &"reward_offer_already_resolved", "The re-resolve should use the stable no-double-apply code.")
+	assert_equal(run.risk_economy.gold, 11, "A re-resolve must credit NO second gold (the wallet stays at 11).")
+	assert_false(second.has_events(), "A re-resolve must emit zero events (no second economy_changed).")
+	assert_equal(after, before, "A re-resolve must leave the run byte-identical (no second credit).")
+
+
+func _resolves_a_gold_reward_with_zero_rolled_amount_credits_nothing_but_still_records() -> void:
+	# Edge: a gold offer whose rolled amount is 0 (a collapsed band min==max==0, or a pre-7.1 offer) still flips +
+	# records, crediting 0. The economy_changed event is still emitted (delta 0 is a valid record on the gold path —
+	# the gold branch always credits; only the DIRECT economy command rejects a no-op).
+	var run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "gold", "content_id": "small_gold_purse"}], 0)
+	var resolved: ActionResult = ResolveRewardCommand.new(&"gold", &"small_gold_purse").execute(run)
+	assert_true(resolved.succeeded, "Resolving a zero-amount gold reward should still succeed: %s" % resolved.metadata)
+	assert_equal(run.risk_economy.gold, 0, "A zero-amount gold reward credits nothing.")
+	assert_true(run.pending_reward_offer.is_resolved(), "The zero-amount gold offer still flips to resolved.")
+	# The economy_changed event (delta 0) still round-trips (gold_after == gold_before + 0).
+	var economy_event: DomainEvent = null
+	for event: DomainEvent in resolved.events:
+		if event.event_type == DomainEvent.Type.ECONOMY_CHANGED:
+			economy_event = event
+	assert_true(economy_event != null, "A zero-amount gold resolve still emits economy_changed.")
+	var parsed: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(economy_event.to_dictionary())))
+	assert_true(parsed.succeeded, "A zero-delta economy_changed must still pass payload validation: %s" % parsed.metadata)
 
 
 func _resolves_a_passive_reward_as_a_resolution_outcome_only() -> void:
@@ -253,3 +313,8 @@ func _resolve_draws_no_rng_on_success_and_reject() -> void:
 	var reject_run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "weapon", "content_id": "sword"}])
 	ResolveRewardCommand.new(&"weapon", &"crossbow").execute(reject_run)
 	assert_equal(streams.to_snapshot(), before, "A rejected resolve must draw no RNG (stream set unchanged).")
+
+	# Story 7.1: a GOLD resolve (the credit path) also draws ZERO new RNG — the gold amount was rolled at GENERATE.
+	var gold_run: RunState = _run_with_offer(&"standard_combat_reward", [{"category": "gold", "content_id": "small_gold_purse"}], 11)
+	ResolveRewardCommand.new(&"gold", &"small_gold_purse").execute(gold_run)
+	assert_equal(streams.to_snapshot(), before, "A gold resolve (the wallet credit) must draw NO new RNG (the amount was rolled at GENERATE).")

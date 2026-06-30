@@ -31,7 +31,8 @@ enum Type {
 	REWARD_RESOLVED,
 	PASSIVE_CONSUMED,
 	PASSIVE_DESTROYED,
-	ITEM_CONSUMED
+	ITEM_CONSUMED,
+	ECONOMY_CHANGED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -62,6 +63,7 @@ const EVENT_ID_REWARD_RESOLVED := &"reward_resolved"
 const EVENT_ID_PASSIVE_CONSUMED := &"passive_consumed"
 const EVENT_ID_PASSIVE_DESTROYED := &"passive_destroyed"
 const EVENT_ID_ITEM_CONSUMED := &"item_consumed"
+const EVENT_ID_ECONOMY_CHANGED := &"economy_changed"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -335,6 +337,28 @@ static func item_consumed(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	payload_value["backpack_size_after"] = int(payload.get("backpack_size_after", 0))
 	payload_value["slot_index"] = int(payload.get("slot_index", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.ITEM_CONSUMED, sequence_id, &"", payload_value)
+
+
+static func economy_changed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 7.1): the deterministic CURRENCY/HEALING-change record emitted by
+	# ApplyEconomyChangeCommand AFTER a gold/healing change is applied (AC2) AND by ResolveRewardCommand when a gold
+	# reward credits the wallet (the T1 wire-off). NOT an entity action, so it is NOT in _event_requires_actor
+	# (actor_id stays empty). `reason` is the AC2 explanation-log reason (a lower_snake marker id, e.g.
+	# gold_reward_resolved / heal_spent). gold_before/gold_after + healing_before/healing_after are non-negative
+	# integral (a wallet/charge count is never negative); gold_delta/healing_delta are SIGNED integral (a credit is
+	# positive, a spend negative — UNLIKE the always-non-negative roll/draw_index of the roll events). UNLIKE
+	# passive_destroyed there is NO roll/draw_index: an economy change is a RECORDED amount, not a roll (the command
+	# draws ZERO RNG — deterministic, the item_consumed shell). Normalize/duplicate the payload defensively (mirroring
+	# item_consumed).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["reason"] = String(payload.get("reason", ""))
+	payload_value["gold_before"] = int(payload.get("gold_before", 0))
+	payload_value["gold_after"] = int(payload.get("gold_after", 0))
+	payload_value["gold_delta"] = int(payload.get("gold_delta", 0))
+	payload_value["healing_before"] = int(payload.get("healing_before", 0))
+	payload_value["healing_after"] = int(payload.get("healing_after", 0))
+	payload_value["healing_delta"] = int(payload.get("healing_delta", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.ECONOMY_CHANGED, sequence_id, &"", payload_value)
 
 
 # Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
@@ -701,6 +725,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_passive_destroyed_payload(payload_value)
 		Type.ITEM_CONSUMED:
 			return _validate_item_consumed_payload(payload_value)
+		Type.ECONOMY_CHANGED:
+			return _validate_economy_changed_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -958,6 +984,36 @@ static func _validate_item_consumed_payload(payload_value: Dictionary) -> Action
 		return _error_result(&"invalid_event_payload", {"field": "backpack_size_after"})
 	if not _has_nonnegative_integral_payload(payload_value, &"slot_index"):
 		return _error_result(&"invalid_event_payload", {"field": "slot_index"})
+	return _ok_result()
+
+
+static func _validate_economy_changed_payload(payload_value: Dictionary) -> ActionResult:
+	# A currency/healing-change record (Story 7.1). `reason` is the AC2 explanation-log reason -> a lower_snake marker
+	# id (e.g. gold_reward_resolved). gold_before/gold_after + healing_before/healing_after are NON-NEGATIVE integral
+	# (a wallet/charge count is never negative). gold_delta/healing_delta are SIGNED integral (a credit is positive, a
+	# spend negative — so they are validated as integral, NOT non-negative). UNLIKE passive_destroyed there is NO
+	# roll/draw_index (an economy change is a recorded amount, not a roll — the deterministic item_gained shell). A
+	# malformed/missing field is rejected per-field. The before+delta==after arithmetic consistency is also enforced
+	# (a fabricated/hand-edited payload whose after diverges from before+delta is rejected — the record must be honest).
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	if not _has_nonnegative_integral_payload(payload_value, &"gold_before"):
+		return _error_result(&"invalid_event_payload", {"field": "gold_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"gold_after"):
+		return _error_result(&"invalid_event_payload", {"field": "gold_after"})
+	if not _has_integral_payload(payload_value, &"gold_delta"):
+		return _error_result(&"invalid_event_payload", {"field": "gold_delta"})
+	if not _has_nonnegative_integral_payload(payload_value, &"healing_before"):
+		return _error_result(&"invalid_event_payload", {"field": "healing_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"healing_after"):
+		return _error_result(&"invalid_event_payload", {"field": "healing_after"})
+	if not _has_integral_payload(payload_value, &"healing_delta"):
+		return _error_result(&"invalid_event_payload", {"field": "healing_delta"})
+	# Arithmetic consistency (the record must be honest): before + delta == after for each of gold/healing.
+	if int(payload_value.get("gold_before")) + int(payload_value.get("gold_delta")) != int(payload_value.get("gold_after")):
+		return _error_result(&"invalid_event_payload", {"field": "gold_after"})
+	if int(payload_value.get("healing_before")) + int(payload_value.get("healing_delta")) != int(payload_value.get("healing_after")):
+		return _error_result(&"invalid_event_payload", {"field": "healing_after"})
 	return _ok_result()
 
 
@@ -1351,6 +1407,15 @@ static func _has_nonnegative_integral_payload(payload_value: Dictionary, field_n
 	return _is_integral_number(value) and int(value) >= 0
 
 
+# A SIGNED integral payload field (Story 7.1 — the economy_changed gold_delta/healing_delta, where a credit is
+# positive and a spend negative). Unlike _has_nonnegative_integral_payload it imposes no sign constraint; it only
+# requires the field to be present and integral (int or integral-float, the JSON-safe forms).
+static func _has_integral_payload(payload_value: Dictionary, field_name: StringName) -> bool:
+	if not payload_value.has(String(field_name)):
+		return false
+	return _is_integral_number(payload_value.get(String(field_name)))
+
+
 static func _has_string_array_payload(payload_value: Dictionary, field_name: StringName, allow_empty: bool) -> bool:
 	if not payload_value.has(String(field_name)):
 		return false
@@ -1522,6 +1587,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_PASSIVE_DESTROYED
 		Type.ITEM_CONSUMED:
 			return EVENT_ID_ITEM_CONSUMED
+		Type.ECONOMY_CHANGED:
+			return EVENT_ID_ECONOMY_CHANGED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1582,6 +1649,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.PASSIVE_DESTROYED
 		EVENT_ID_ITEM_CONSUMED:
 			return Type.ITEM_CONSUMED
+		EVENT_ID_ECONOMY_CHANGED:
+			return Type.ECONOMY_CHANGED
 		_:
 			return Type.UNKNOWN
 

@@ -4,6 +4,7 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
@@ -254,6 +255,20 @@ static func from_route_position(
 	snapshot.level_state = {}
 	snapshot.profile_id = str(options.get("profile_id", "default"))
 	snapshot.run_id = str(options.get("run_id", ""))
+	# Story 7.1: ALSO populate the EXISTING top-level economy placeholder keys from the run's risk-economy (these were
+	# inert 0/[] placeholders through Epic 6). This keeps the snapshot HUMAN-READABLE + lets an Epic-8 run-summary read
+	# them WITHOUT a new top-level key (the 23-key gate stays green). The SOURCE OF TRUTH on resume is the NESTED copy
+	# inside route_state (try_from_run_snapshot_fields reads that); these top-level fields are a read-only mirror.
+	# RiskEconomyState models corruption as a single count + curses as a count (curse_count); the RunSnapshot.curses
+	# array placeholder stays EMPTY in v0 (the curse-id LIST is Story 7.2's — 7.1 tracks only the count), so curses
+	# is NOT populated here (the curse-id content does not exist yet). Only gold and corruption ARE mirrored.
+	# oath_shards is the AWARDED meta count (Epic 8), NOT the eligibility gate, so it is INTENTIONALLY left at its 0
+	# default here (v0 awards none); the eligibility gate rides meta_progression_eligible (already a top-level snapshot
+	# field) + the nested economy.
+	var economy: RiskEconomyState = source_run.risk_economy
+	if economy != null:
+		snapshot.gold = economy.gold
+		snapshot.corruption = economy.corruption
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 
