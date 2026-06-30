@@ -78,6 +78,13 @@ const _CUE_CATALOG: Dictionary = {
 	"affinity_scorched_hazard": {"channels": [CHANNEL_ICON, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
 	"affinity_conductive_danger_placeholder": {"channels": [CHANNEL_SHAPE, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
 	"affinity_pathing_pressure": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL], "severity": SEVERITY_WARNING},
+	# Story 7.6 — Darkness affinity visibility/memory-pressure cues (FR58). Darkness's reduced-visibility + uncertain-
+	# memory state is CRITICAL tactical information, so each cue carries a NON-COLOR channel (AC2 + NFR9 + the Epic-2 +
+	# 7.5 color-independence contract). These are FINAL ids (Darkness is fully realized — NOT a tracked placeholder).
+	# reduced_visibility uses icon+label+text (the shrunk sight radius is shown as an icon/label, not a colour); the
+	# memory-uncertainty cue uses a dashed/stale pattern + label + text so a stale-memory cell reads with colour stripped.
+	"affinity_darkness_reduced_visibility": {"channels": [CHANNEL_ICON, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_WARNING},
+	"affinity_darkness_memory_uncertain": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_WARNING},
 	# Inspect visibility tiers.
 	"inspect_visible": {"channels": [CHANNEL_LABEL], "severity": SEVERITY_INFO},
 	"inspect_memory": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL], "severity": SEVERITY_INFO},

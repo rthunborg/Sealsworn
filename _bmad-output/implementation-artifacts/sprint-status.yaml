@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-06-30T14:46:00+00:00
+last_updated: 2026-06-30T18:48:13+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -110,14 +110,14 @@ development_status:
   6-6-destroy-passive-command-and-outcome-distribution: done
   6-7-loot-and-passive-build-smoke-run: done
   epic-6-retrospective: done
-  epic-7: in-progress
+  epic-7: done
   7-1-risk-economy-state: done
   7-2-curse-and-corruption-rules: done
   7-3-risk-reward-event-choices: done
   7-4-affinity-definitions-and-assignment: done
   7-5-tactical-affinity-effects: done
-  7-6-darkness-fairness-and-memory-pressure: backlog
-  epic-7-retrospective: optional
+  7-6-darkness-fairness-and-memory-pressure: done
+  epic-7-retrospective: done
   epic-8: backlog
   8-1-run-completion-and-return-to-outpost-flow: backlog
   8-2-run-summary-snapshot: backlog
