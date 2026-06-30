@@ -25,6 +25,7 @@ const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
+const EventOffer = preload("res://scripts/run/event_offer.gd")
 
 # Phase machine ([game-architecture.md] line 330). lower_snake wire ids held in UPPER_SNAKE consts.
 const PHASE_NEW_RUN := &"new_run"
@@ -128,6 +129,17 @@ var pending_reward_offer: RewardOffer = null
 # RISK_ECONOMY_KEY; AC1 requires economy in save snapshots). copy() DEEP-copies it (the risk_flags list must not be
 # shared by reference).
 var risk_economy: RiskEconomyState = null
+# The run's PENDING risk/reward EVENT offer (Story 7.3). An ADDITIVE + LENIENT run-progression field: default null is
+# "no pending event offer" (most of the time there is none — a legacy / pre-7.3 / between-event run carries null). The
+# event GENERATE path (RunOrchestrator.generate_event_offer) ROLLS a deterministic offer through the run-level
+# RngStreamSet on the `events` stream and STORES it here as `pending`; ChooseEventOptionCommand applies the chosen
+# choice and flips it to `resolved`. It is DELIBERATELY NOT a required validate() field (a run with no event offer is
+# valid; a pre-7.3 run dict with no key parses to null). It is SERIALIZABLE DATA ONLY (an EventOffer value object —
+# NEVER a live EventDefinition/RngStreamSet). It rides to_dictionary()/try_from_dictionary (the FULL run dict, NOT the
+# 23-key RunSnapshot) lenient-read so a copied/round-tripped run preserves a pending event offer. It is DELIBERATELY
+# NOT serialized into the route-position save (the 6.3 RewardOffer posture VERBATIM — the live in-node offer is a later
+# story; the RunSnapshot 23-key gate stays untouched). copy() null-safe DEEP-copies it.
+var pending_event_offer: EventOffer = null
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -140,7 +152,8 @@ func _init(
 	new_rules_resolver: RulesResolver = null,
 	new_inventory: InventoryState = null,
 	new_pending_reward_offer: RewardOffer = null,
-	new_risk_economy: RiskEconomyState = null
+	new_risk_economy: RiskEconomyState = null,
+	new_pending_event_offer: EventOffer = null
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -158,6 +171,9 @@ func _init(
 	# manual-seed run is NEVER eligible — lockstep with meta_progression_eligible). Never null (the economy command
 	# never needs a null guard). A supplied economy (a decode / copy) is used verbatim.
 	risk_economy = new_risk_economy if new_risk_economy != null else load("res://scripts/run/risk_economy_state.gd").for_run(new_is_manual_seed)
+	# Story 7.3: default to null (no pending event offer). Like the reward offer, null is the meaningful "nothing to
+	# choose" state. A supplied offer (a decode / copy) is used verbatim.
+	pending_event_offer = new_pending_event_offer
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -267,7 +283,11 @@ func to_dictionary() -> Dictionary:
 		# always serializes via its exact-key to_dictionary(). try_from_dictionary reads it back leniently (absent -> a
 		# fresh economy derived from is_manual_seed) so every pre-7.1 run dict still parses. (It ALSO rides the
 		# route-position save, nested under route_state — see to_run_snapshot_fields().)
-		"risk_economy": _risk_economy_or_new().to_dictionary()
+		"risk_economy": _risk_economy_or_new().to_dictionary(),
+		# Story 7.3: the pending event offer rides the FULL run dict (NOT the 23-key RunSnapshot). null (no pending
+		# event offer) serializes as a JSON null; a pending offer serializes via its exact-key to_dictionary().
+		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-7.3 run dict still parses.
+		"pending_event_offer": null if pending_event_offer == null else pending_event_offer.to_dictionary()
 	}
 
 
@@ -294,7 +314,10 @@ func copy() -> RunState:
 		null if pending_reward_offer == null else pending_reward_offer.copy(),
 		# Story 7.1: DEEP-copy the economy (the risk_flags list must not be shared by reference, so a mutation of the
 		# copy's economy never perturbs the source — mirroring the inventory deep copy). It is never null.
-		_risk_economy_or_new().copy()
+		_risk_economy_or_new().copy(),
+		# Story 7.3: null-safe DEEP-copy the pending event offer (the offered-choice-ids list must not be shared by
+		# reference; null stays null — mirroring the reward-offer deep copy).
+		null if pending_event_offer == null else pending_event_offer.copy()
 	)
 
 
@@ -384,7 +407,11 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		# Story 7.1: lenient economy decode. A pre-7.1 run dict has no risk_economy key -> _init defaults a fresh
 		# economy derived from is_manual_seed (never null). A present economy dict is reconstructed leniently via
 		# RiskEconomyState.try_from_dictionary so a partial/legacy economy dict still parses.
-		_risk_economy_or_new_from(_field(data, &"risk_economy") if _has_field(data, &"risk_economy") else null)
+		_risk_economy_or_new_from(_field(data, &"risk_economy") if _has_field(data, &"risk_economy") else null),
+		# Story 7.3: lenient event-offer decode. A pre-7.3 run dict has no pending_event_offer key (or null) -> default
+		# null (no pending event offer). A present offer dict is reconstructed leniently via
+		# EventOffer.try_from_dictionary so a partial/legacy offer dict still parses.
+		_event_offer_or_null(_field(data, &"pending_event_offer") if _has_field(data, &"pending_event_offer") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -591,6 +618,15 @@ static func _inventory_or_new_from(value: Variant) -> InventoryState:
 static func _reward_offer_or_null(value: Variant) -> RewardOffer:
 	if value is Dictionary:
 		return RewardOffer.try_from_dictionary(value)
+	return null
+
+
+# Story 7.3: Lenient EventOffer decode for the additive pending_event_offer field: a Dictionary is reconstructed via
+# EventOffer.try_from_dictionary; anything else (null / absent / non-dict) -> null (no pending event offer). Mirrors
+# _reward_offer_or_null so every pre-7.3 run dict still parses.
+static func _event_offer_or_null(value: Variant) -> EventOffer:
+	if value is Dictionary:
+		return EventOffer.try_from_dictionary(value)
 	return null
 
 
