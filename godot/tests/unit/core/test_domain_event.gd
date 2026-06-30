@@ -34,6 +34,10 @@ func run() -> Dictionary:
 	_economy_changed_rejects_malformed_payloads()
 	_curse_applied_serializes_and_parses_stable_payload()
 	_curse_applied_rejects_malformed_payloads()
+	_event_offered_serializes_and_parses_stable_payload()
+	_event_offered_rejects_malformed_payloads()
+	_event_resolved_serializes_and_parses_stable_payload()
+	_event_resolved_rejects_malformed_payloads()
 	_board_created_serializes_stable_event_id()
 	_entity_moved_serializes_stable_payload()
 	_event_dictionary_uses_deterministic_fields_and_copies_payload()
@@ -1416,6 +1420,153 @@ func _try_curse_applied_with(valid_payload: Dictionary, field: String, value: Va
 	})
 
 
+func _event_offered_serializes_and_parses_stable_payload() -> void:
+	# Story 7.3 (AC1): an event_offered SYSTEM event (no actor) — a risk/reward EVENT-OFFER record. event_id is a
+	# lower_snake content id; offered_choice_ids is a NON-EMPTY Array of lower_snake choice ids; roll + draw_index are
+	# non-negative integral (the OFFER was rolled — the GENERATE provenance, mirroring reward_offered).
+	var event: DomainEvent = DomainEvent.event_offered(9, {
+		"event_id": "smugglers_cache",
+		"offered_choice_ids": ["take_the_gold", "leave_the_cache"],
+		"roll": 1,
+		"draw_index": 1
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "event_offered", "event_offered should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "event_offered is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "event_offered should parse: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.EVENT_OFFERED, "event_offered should parse back to EVENT_OFFERED.")
+	assert_equal(restored.payload.get("event_id"), "smugglers_cache", "The offered event_id must survive a JSON round-trip.")
+	assert_equal((restored.payload.get("offered_choice_ids") as Array).size(), 2, "The offered choice ids must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("roll"), 1, "The roll must survive a JSON round-trip.")
+
+
+func _event_offered_rejects_malformed_payloads() -> void:
+	var valid_payload: Dictionary = {
+		"event_id": "smugglers_cache",
+		"offered_choice_ids": ["take_the_gold", "leave_the_cache"],
+		"roll": 1,
+		"draw_index": 1
+	}
+	# A non-lower_snake event_id is rejected.
+	var bad_id: ActionResult = _try_event_offered_with(valid_payload, "event_id", "Smugglers-Cache")
+	assert_true(bad_id.is_error(), "event_offered with a non-lower_snake event_id should be rejected.")
+	assert_equal(bad_id.error_code, &"invalid_event_payload", "Malformed event_offered should use the stable code.")
+	assert_equal(bad_id.metadata.get("field"), "event_id", "event_offered should name the event_id field.")
+
+	# An EMPTY offered_choice_ids list is rejected (an offer with no choices is meaningless).
+	var empty_choices: ActionResult = _try_event_offered_with(valid_payload, "offered_choice_ids", [])
+	assert_true(empty_choices.is_error(), "event_offered with an empty offered_choice_ids should be rejected.")
+	assert_equal(empty_choices.metadata.get("field"), "offered_choice_ids", "event_offered should name the offered_choice_ids field.")
+
+	# A non-lower_snake choice id in the list is rejected.
+	var bad_choice: ActionResult = _try_event_offered_with(valid_payload, "offered_choice_ids", ["Take-The-Gold"])
+	assert_true(bad_choice.is_error(), "event_offered with a non-lower_snake choice id should be rejected.")
+	assert_equal(bad_choice.metadata.get("field"), "offered_choice_ids", "event_offered should reject a non-lower_snake choice id.")
+
+	# A negative roll is rejected.
+	var bad_roll: ActionResult = _try_event_offered_with(valid_payload, "roll", -1)
+	assert_true(bad_roll.is_error(), "event_offered with a negative roll should be rejected.")
+	assert_equal(bad_roll.metadata.get("field"), "roll", "event_offered should name the roll field.")
+
+
+func _try_event_offered_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "event_offered", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
+func _event_resolved_serializes_and_parses_stable_payload() -> void:
+	# Story 7.3 (AC2): an event_resolved SYSTEM event (no actor) — a risk/reward EVENT-CHOICE-RESOLUTION record. event_id
+	# + choice_id are lower_snake content ids; risk_flags is a (possibly EMPTY) Array of lower_snake risk-flag ids the
+	# choice RAISED (the AC2 "future systems can query the resulting risk flags" record); reason is a lower_snake marker.
+	# UNLIKE event_offered there is NO roll/draw_index (the choice is a recorded tradeoff, not a roll — deterministic).
+	var event: DomainEvent = DomainEvent.event_resolved(9, {
+		"event_id": "smugglers_cache",
+		"choice_id": "take_the_gold",
+		"risk_flags": ["elite_chance"],
+		"reason": "event_choice_resolved"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "event_resolved", "event_resolved should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "event_resolved is a system event with an empty actor id.")
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "event_resolved carries NO roll (deterministic — zero RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "event_resolved carries NO draw_index (deterministic — zero RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "event_resolved should parse: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.EVENT_RESOLVED, "event_resolved should parse back to EVENT_RESOLVED.")
+	assert_equal(restored.payload.get("event_id"), "smugglers_cache", "The resolved event_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("choice_id"), "take_the_gold", "The resolved choice_id must survive a JSON round-trip.")
+	assert_equal((restored.payload.get("risk_flags") as Array).size(), 1, "The raised risk_flags must survive a JSON round-trip.")
+
+	# A SAFE choice raises NO risk flag: an EMPTY risk_flags list is valid (the AC2 record for a decline).
+	var safe_event: DomainEvent = DomainEvent.event_resolved(10, {
+		"event_id": "smugglers_cache",
+		"choice_id": "leave_the_cache",
+		"risk_flags": [],
+		"reason": "event_choice_resolved"
+	})
+	var safe_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(safe_event.to_dictionary())))
+	assert_true(safe_parse.succeeded, "A safe-choice event_resolved (empty risk_flags) should parse: %s" % safe_parse.metadata)
+	assert_equal(((safe_parse.metadata.get("event") as DomainEvent).payload.get("risk_flags") as Array).size(), 0, "An empty risk_flags list survives the round-trip (a safe choice raises none).")
+
+
+func _event_resolved_rejects_malformed_payloads() -> void:
+	var valid_payload: Dictionary = {
+		"event_id": "smugglers_cache",
+		"choice_id": "take_the_gold",
+		"risk_flags": ["elite_chance"],
+		"reason": "event_choice_resolved"
+	}
+	# A non-lower_snake event_id is rejected.
+	var bad_event_id: ActionResult = _try_event_resolved_with(valid_payload, "event_id", "Smugglers Cache")
+	assert_true(bad_event_id.is_error(), "event_resolved with a non-lower_snake event_id should be rejected.")
+	assert_equal(bad_event_id.error_code, &"invalid_event_payload", "Malformed event_resolved should use the stable code.")
+	assert_equal(bad_event_id.metadata.get("field"), "event_id", "event_resolved should name the event_id field.")
+
+	# A non-lower_snake / blank choice_id is rejected.
+	var bad_choice: ActionResult = _try_event_resolved_with(valid_payload, "choice_id", "Take-Gold")
+	assert_true(bad_choice.is_error(), "event_resolved with a non-lower_snake choice_id should be rejected.")
+	assert_equal(bad_choice.metadata.get("field"), "choice_id", "event_resolved should name the choice_id field.")
+
+	var blank_choice: ActionResult = _try_event_resolved_with(valid_payload, "choice_id", "")
+	assert_true(blank_choice.is_error(), "event_resolved with a blank choice_id should be rejected.")
+	assert_equal(blank_choice.metadata.get("field"), "choice_id", "event_resolved should require a non-empty choice_id.")
+
+	# A non-lower_snake risk flag in the list is rejected.
+	var bad_flag: ActionResult = _try_event_resolved_with(valid_payload, "risk_flags", ["Elite-Chance"])
+	assert_true(bad_flag.is_error(), "event_resolved with a non-lower_snake risk flag should be rejected.")
+	assert_equal(bad_flag.metadata.get("field"), "risk_flags", "event_resolved should reject a non-lower_snake risk flag.")
+
+	# A non-lower_snake reason is rejected.
+	var bad_reason: ActionResult = _try_event_resolved_with(valid_payload, "reason", "Bad Reason")
+	assert_true(bad_reason.is_error(), "event_resolved with a non-lower_snake reason should be rejected.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "event_resolved should name the reason field.")
+
+	# A missing field (drop choice_id) is rejected.
+	var missing: Dictionary = valid_payload.duplicate(true)
+	missing.erase("choice_id")
+	var missing_result: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "event_resolved", "sequence_id": 1, "actor_id": "", "payload": missing
+	})
+	assert_true(missing_result.is_error(), "event_resolved missing choice_id should be rejected.")
+	assert_equal(missing_result.metadata.get("field"), "choice_id", "event_resolved should name the missing choice_id field.")
+
+
+func _try_event_resolved_with(valid_payload: Dictionary, field: String, value: Variant) -> ActionResult:
+	var payload: Dictionary = valid_payload.duplicate(true)
+	payload[field] = value
+	return DomainEvent.try_from_dictionary({
+		"event_id": "event_resolved", "sequence_id": 1, "actor_id": "", "payload": payload
+	})
+
+
 func _board_created_serializes_stable_event_id() -> void:
 	var event: DomainEvent = DomainEvent.board_created(4, 5, 6)
 	var serialized: Dictionary = event.to_dictionary()
@@ -1829,7 +1980,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# Story 7.1: the economy_changed SYSTEM event appended at the enum end (never renumbered).
 		DomainEvent.Type.ECONOMY_CHANGED: &"economy_changed",
 		# Story 7.2: the curse_applied SYSTEM event appended at the enum end (never renumbered).
-		DomainEvent.Type.CURSE_APPLIED: &"curse_applied"
+		DomainEvent.Type.CURSE_APPLIED: &"curse_applied",
+		# Story 7.3: the event_offered + event_resolved SYSTEM events appended at the enum end (never renumbered).
+		DomainEvent.Type.EVENT_OFFERED: &"event_offered",
+		DomainEvent.Type.EVENT_RESOLVED: &"event_resolved"
 	}
 
 	for event_type: int in expected_ids.keys():

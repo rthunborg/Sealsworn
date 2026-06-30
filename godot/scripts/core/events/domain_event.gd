@@ -33,7 +33,9 @@ enum Type {
 	PASSIVE_DESTROYED,
 	ITEM_CONSUMED,
 	ECONOMY_CHANGED,
-	CURSE_APPLIED
+	CURSE_APPLIED,
+	EVENT_OFFERED,
+	EVENT_RESOLVED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -66,6 +68,8 @@ const EVENT_ID_PASSIVE_DESTROYED := &"passive_destroyed"
 const EVENT_ID_ITEM_CONSUMED := &"item_consumed"
 const EVENT_ID_ECONOMY_CHANGED := &"economy_changed"
 const EVENT_ID_CURSE_APPLIED := &"curse_applied"
+const EVENT_ID_EVENT_OFFERED := &"event_offered"
+const EVENT_ID_EVENT_RESOLVED := &"event_resolved"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -385,6 +389,54 @@ static func curse_applied(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	payload_value["corruption_after"] = int(payload.get("corruption_after", 0))
 	payload_value["corruption_delta"] = int(payload.get("corruption_delta", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.CURSE_APPLIED, sequence_id, &"", payload_value)
+
+
+static func event_offered(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 7.3): the deterministic risk/reward EVENT-OFFER record emitted by
+	# RunOrchestrator.generate_event_offer AFTER a deterministic offer is rolled through the run-level RngStreamSet on
+	# the `events` stream (AC1 — the FIRST `events`-stream consumer). NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty). `event_id` is the offered event's lower_snake content id.
+	# `offered_choice_ids` is a NON-EMPTY Array of lower_snake choice ids the player may pick from. roll + draw_index are
+	# non-negative integral (the draw provenance — the OFFER was rolled, mirroring reward_offered). Normalize/duplicate
+	# the payload defensively (mirroring reward_offered), reshaping offered_choice_ids to a clean plain-string Array.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["event_id"] = String(payload.get("event_id", ""))
+	payload_value["offered_choice_ids"] = _normalize_choice_id_list(payload.get("offered_choice_ids", []))
+	payload_value["roll"] = int(payload.get("roll", 0))
+	payload_value["draw_index"] = int(payload.get("draw_index", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.EVENT_OFFERED, sequence_id, &"", payload_value)
+
+
+static func event_resolved(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 7.3): the deterministic risk/reward EVENT-CHOICE-RESOLUTION record emitted by
+	# ChooseEventOptionCommand AFTER a choice is applied (AC2 "both the reward and the risk are recorded through domain
+	# events"). NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays empty). `event_id` +
+	# `choice_id` are the chosen event/choice lower_snake ids. `risk_flags` is the (possibly empty) Array of lower_snake
+	# risk-flag ids the choice RAISED (the AC2 "future systems can query the resulting risk flags" record). `reason` is
+	# the AC2 explanation-log reason (a lower_snake marker id). UNLIKE event_offered there is NO roll/draw_index: the
+	# choice amounts are AUTHORED on the definition and applied deterministically (the command draws ZERO RNG — the
+	# curse_applied/economy_changed deterministic shell). Normalize/duplicate the payload defensively (mirroring
+	# curse_applied), reshaping risk_flags to a clean plain-string Array.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["event_id"] = String(payload.get("event_id", ""))
+	payload_value["choice_id"] = String(payload.get("choice_id", ""))
+	payload_value["risk_flags"] = _normalize_choice_id_list(payload.get("risk_flags", []))
+	payload_value["reason"] = String(payload.get("reason", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.EVENT_RESOLVED, sequence_id, &"", payload_value)
+
+
+# Normalize an arbitrary lower_snake-id list (the event_offered offered_choice_ids / the event_resolved risk_flags) into
+# a clean Array of plain Strings (drop non-strings; KEEP raw values verbatim otherwise so the validator can REJECT a
+# bad one — do NOT silently drop a malformed id here). Deep-copies (no shared reference with the input).
+static func _normalize_choice_id_list(raw: Variant) -> Array:
+	var result: Array = []
+	if not raw is Array:
+		return result
+	for value: Variant in (raw as Array):
+		if not (value is String or value is StringName):
+			continue
+		result.append(String(value))
+	return result
 
 
 # Normalize an arbitrary offered-entries input into a clean Array of plain {category, content_id} dicts (the
@@ -755,6 +807,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_economy_changed_payload(payload_value)
 		Type.CURSE_APPLIED:
 			return _validate_curse_applied_payload(payload_value)
+		Type.EVENT_OFFERED:
+			return _validate_event_offered_payload(payload_value)
+		Type.EVENT_RESOLVED:
+			return _validate_event_resolved_payload(payload_value)
 		Type.ENTITY_MOVED:
 			return _validate_entity_moved_payload(payload_value)
 		Type.VISIBILITY_UPDATED:
@@ -1077,6 +1133,43 @@ static func _validate_curse_applied_payload(payload_value: Dictionary) -> Action
 		return _error_result(&"invalid_event_payload", {"field": "curse_after"})
 	if int(payload_value.get("corruption_before")) + int(payload_value.get("corruption_delta")) != int(payload_value.get("corruption_after")):
 		return _error_result(&"invalid_event_payload", {"field": "corruption_after"})
+	return _ok_result()
+
+
+static func _validate_event_offered_payload(payload_value: Dictionary) -> ActionResult:
+	# A deterministic risk/reward EVENT-OFFER record (Story 7.3). event_id is a Story-7.3 content id -> lower_snake.
+	# offered_choice_ids is a NON-EMPTY Array of lower_snake choice ids (each a real choice id on the offered event). roll
+	# + draw_index are non-negative integral (the draw provenance — the OFFER was rolled, mirroring reward_offered). A
+	# malformed entry, an empty list, or a non-lower_snake id is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"event_id"):
+		return _error_result(&"invalid_event_payload", {"field": "event_id"})
+	# offered_choice_ids: a NON-EMPTY Array of lower_snake ids (allow_empty == false — an offer with no choices is
+	# meaningless). _has_string_array_payload enforces lower_snake on every entry.
+	if not _has_string_array_payload(payload_value, &"offered_choice_ids", false):
+		return _error_result(&"invalid_event_payload", {"field": "offered_choice_ids"})
+	if not _has_nonnegative_integral_payload(payload_value, &"roll"):
+		return _error_result(&"invalid_event_payload", {"field": "roll"})
+	if not _has_nonnegative_integral_payload(payload_value, &"draw_index"):
+		return _error_result(&"invalid_event_payload", {"field": "draw_index"})
+	return _ok_result()
+
+
+static func _validate_event_resolved_payload(payload_value: Dictionary) -> ActionResult:
+	# A deterministic risk/reward EVENT-CHOICE-RESOLUTION record (Story 7.3). event_id + choice_id are Story-7.3 content
+	# ids -> lower_snake. risk_flags is a (POSSIBLY EMPTY) Array of lower_snake risk-flag ids the choice RAISED (the AC2
+	# "future systems can query the resulting risk flags" record — a safe/decline choice raises none, so the list may be
+	# empty; every present entry must be lower_snake). `reason` is the AC2 explanation-log reason -> a lower_snake marker
+	# id. UNLIKE event_offered there is NO roll/draw_index (the choice is a recorded tradeoff, not a roll — the
+	# deterministic curse_applied/economy_changed shell). A malformed/missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"event_id"):
+		return _error_result(&"invalid_event_payload", {"field": "event_id"})
+	if not _has_lower_snake_payload(payload_value, &"choice_id"):
+		return _error_result(&"invalid_event_payload", {"field": "choice_id"})
+	# risk_flags: a (possibly EMPTY) Array of lower_snake ids (allow_empty == true — a safe choice raises none).
+	if not _has_string_array_payload(payload_value, &"risk_flags", true):
+		return _error_result(&"invalid_event_payload", {"field": "risk_flags"})
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
 	return _ok_result()
 
 
@@ -1654,6 +1747,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_ECONOMY_CHANGED
 		Type.CURSE_APPLIED:
 			return EVENT_ID_CURSE_APPLIED
+		Type.EVENT_OFFERED:
+			return EVENT_ID_EVENT_OFFERED
+		Type.EVENT_RESOLVED:
+			return EVENT_ID_EVENT_RESOLVED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1718,6 +1815,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.ECONOMY_CHANGED
 		EVENT_ID_CURSE_APPLIED:
 			return Type.CURSE_APPLIED
+		EVENT_ID_EVENT_OFFERED:
+			return Type.EVENT_OFFERED
+		EVENT_ID_EVENT_RESOLVED:
+			return Type.EVENT_RESOLVED
 		_:
 			return Type.UNKNOWN
 

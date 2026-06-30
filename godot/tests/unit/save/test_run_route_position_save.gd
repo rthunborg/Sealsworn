@@ -17,6 +17,11 @@ extends "res://tests/unit/test_case.gd"
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AcceptCursedRewardCommand = preload("res://scripts/core/commands/accept_cursed_reward_command.gd")
+const ChooseEventOptionCommand = preload("res://scripts/core/commands/choose_event_option_command.gd")
+const EventChoiceDefinition = preload("res://scripts/content/definitions/event_choice_definition.gd")
+const EventDefinition = preload("res://scripts/content/definitions/event_definition.gd")
+const EventOffer = preload("res://scripts/run/event_offer.gd")
+const EventRepository = preload("res://scripts/content/repositories/event_repository.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const CursedRewardDefinition = preload("res://scripts/content/definitions/cursed_reward_definition.gd")
@@ -62,6 +67,10 @@ func run() -> Dictionary:
 	# top-level key — the 23-key gate stays 23).
 	_curse_change_via_accept_command_survives_route_position_resume()
 	_cleanse_change_survives_route_position_resume()
+	# Story 7.3 — a risk_flags change made by the CHOOSE-EVENT command rides the route-position save end-to-end (AC2
+	# "future systems can query the resulting risk flags"), through the EXISTING 7.1 nested plumbing (no new top-level
+	# key — the 23-key gate stays 23).
+	_risk_flag_change_via_choose_event_command_survives_route_position_resume()
 	_cleanup()
 	return result()
 
@@ -662,6 +671,46 @@ func _cleanse_change_survives_route_position_resume() -> void:
 	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
 	assert_true(restore.succeeded, "Resuming after a cleanse should succeed: %s" % restore.metadata)
 	assert_equal((restore.metadata.get("run_state") as RunState).risk_economy.curse_count, 2, "AC2: the cleansed (reduced) curse count survives the route-position resume.")
+
+
+# Story 7.3 — a risk_flags change made by the CHOOSE-EVENT command (the `risk_flags` PRODUCER) rides the route-position
+# save end-to-end. This proves AC2's "future systems can query the resulting risk flags" for the change-producing
+# command path, through the EXISTING 7.1 nested plumbing (no new save code; the 23-key gate stays 23). This is the
+# VERIFY-not-re-plumb proof (the 7.2 Task-7 pattern): the flag rides the save through the existing nested route_state
+# economy with NO new top-level key.
+func _risk_flag_change_via_choose_event_command_survives_route_position_resume() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	# Seat a pending event offer + choose an option that RAISES a risk flag (+1 curse, +25 gold, raises elite_chance).
+	var repository: EventRepository = EventRepository.create_repository_from_definitions([
+		EventDefinition.new(
+			&"save_test_event", "Save Test Event", "A risk/reward choice.",
+			[
+				EventChoiceDefinition.new(&"take_risk", "Take 25 gold, 1 curse, raise the elite flag.", 25, 0, 1, 0, 0, 0, ["elite_chance"]),
+				EventChoiceDefinition.new(&"decline", "Decline.", 0, 0, 0, 0, 0, 0, [])
+			]
+		)
+	])
+	orchestrator.run.pending_event_offer = EventOffer.new(&"save_test_event", EventOffer.STATUS_PENDING, ["take_risk", "decline"], &"", "events", 1, 1, 123)
+	var chosen: ActionResult = ChooseEventOptionCommand.new(&"take_risk", 1, repository).execute(orchestrator.run)
+	assert_true(chosen.succeeded, "Setup: the choose should succeed: %s" % chosen.metadata)
+	assert_true(orchestrator.run.risk_economy.has_risk_flag(&"elite_chance"), "Setup: the risk flag was raised.")
+
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	assert_true(snapshot != null, "compose_route_position_snapshot should return a snapshot.")
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Resuming after a choose-event should succeed: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	# AC2: the RAISED RISK FLAG survives the route-position resume (the nested source of truth — has_risk_flag true).
+	assert_true(restored_run.risk_economy.has_risk_flag(&"elite_chance"), "AC2: the risk flag raised by the choose-event command survives the route-position resume (queryable by future systems).")
+	assert_equal(restored_run.risk_economy.curse_count, 1, "AC2: the curse risk also survives the resume.")
+	assert_equal(restored_run.risk_economy.gold, 25, "AC2: the reward side survives the resume too.")
+	assert_true(restored_run.validate().succeeded, "The restored run must validate.")
+	# The 23-key gate stays green (no new top-level key for risk flags — they nest under route_state).
+	var json_data: Variant = JSON.parse_string(JSON.stringify(snapshot.to_dictionary()))
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	assert_equal((json_data as Dictionary).keys().size(), allowed.size(), "Story 7.3: the snapshot key COUNT must stay 23 (risk flags nest under route_state).")
 
 
 # Write a snapshot through the repository and return the save path (a small helper so the populated-economy test can

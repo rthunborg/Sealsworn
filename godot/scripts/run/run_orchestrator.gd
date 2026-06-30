@@ -40,6 +40,9 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
+const EventDefinition = preload("res://scripts/content/definitions/event_definition.gd")
+const EventOffer = preload("res://scripts/run/event_offer.gd")
+const EventRepository = preload("res://scripts/content/repositories/event_repository.gd")
 const GenerationResult = preload("res://scripts/generation/level/generation_result.gd")
 const GoldRewardDefinition = preload("res://scripts/content/definitions/gold_reward_definition.gd")
 const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
@@ -88,6 +91,12 @@ var _reward_table_repository: RewardTableRepository = null
 # offered gold entry's content_id) to its typed GoldRewardDefinition so the orchestrator can roll gold_min..gold_max
 # within the BAND. The roll routes through the run-level streams (the named-RNG rule); fail-closed on a repo miss.
 var _gold_reward_repository: GoldRewardRepository = null
+# Story 7.3: the risk/reward-EVENT repository for the GENERATE-time event offer (the FIRST `events`-stream consumer).
+# Default to the baseline repository; injectable for tests (mirrors the reward-table/gold-reward injection). Resolves an
+# event id to its typed EventDefinition (validated events only); fail-closed `unknown_event` on a repo miss. When the
+# caller supplies no specific event id, generate_event_offer SELECTS one from this repository's baseline deterministically
+# through the `events` stream.
+var _event_repository: EventRepository = null
 # Last composed route-position snapshot (set when persistence is requested at a between-node boundary).
 var _last_route_position_snapshot: RunSnapshot = null
 
@@ -96,12 +105,14 @@ func _init(
 	recipe_repository: LevelRecipeRepository = null,
 	enemy_repository: EnemyRepository = null,
 	reward_table_repository: RewardTableRepository = null,
-	gold_reward_repository: GoldRewardRepository = null
+	gold_reward_repository: GoldRewardRepository = null,
+	event_repository: EventRepository = null
 ) -> void:
 	_recipe_repository = recipe_repository if recipe_repository != null else LevelRecipeRepository.create_baseline_repository()
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
 	_reward_table_repository = reward_table_repository if reward_table_repository != null else RewardTableRepository.create_baseline_repository()
 	_gold_reward_repository = gold_reward_repository if gold_reward_repository != null else GoldRewardRepository.create_baseline_repository()
+	_event_repository = event_repository if event_repository != null else EventRepository.create_baseline_repository()
 
 
 # Start a fresh run from (root_seed, is_manual_seed[, class_id]) via RunStartCommand. Seats the live RunState
@@ -462,6 +473,104 @@ func _store_offer_and_emit(table: RewardTableDefinition, offered_entries: Array,
 		"reward_offered": true,
 		"table_id": String(table.table_id),
 		"offered_entries": offered_entries,
+		"stream_name": String(stream_name),
+		"offer": offer.to_dictionary()
+	})
+	_advance_sequence_past(result)
+	return result
+
+
+# GENERATE a deterministic risk/reward EVENT offer (Story 7.3, AC1), drawing through the RUN-LEVEL RngStreamSet
+# (`streams`) on the `events` stream (STREAM_EVENTS) — the FIRST `events`-stream consumer. The draw deterministically
+# SELECTS which approved EventDefinition to OFFER from `_event_repository` (or, when the caller supplies a specific
+# `event_id`, presents THAT event while still advancing the `events` stream for reproducible provenance), stores the
+# EventOffer on RunState as `pending`, emits an event_offered record, and advances the sequence counter. Deterministic +
+# reproducible from the seed/state (same seed + same pre-draw state -> same offered event/choices). The offer carries
+# the offered event's choice ids; ChooseEventOptionCommand later applies the player's pick (drawing ZERO new RNG — the
+# choice amounts are AUTHORED on the definition, so the OFFER roll here is the ONLY `events` draw). Fail-closed:
+# `no_active_run` (orchestrator unseated), `event_offer_pending` (an unresolved event offer is already open — never
+# silently overwrite it), `no_events_available` (an empty repository), `unknown_event` (a supplied id that does not
+# resolve through the validated-only repository — the validate-before-use gate). The draw routes EXCLUSIVELY through the
+# run-level set (NEVER randi/randf/a new RandomNumberGenerator).
+#
+# CALLER-DRIVEN (the 6.3 generate_reward_offer posture VERBATIM): this is NOT wired into _resolve_combat /
+# _resolve_non_combat_placeholder / run_to_completion — the `event` node still resolves through
+# NodeResolvePlaceholderCommand (the no-soft-lock partition). A later HUD/run-flow story owns the "enter event node ->
+# generate offer -> present choices -> choose" call site + the auto-resolution policy. Keeping it OFF the auto-resolve
+# loop means a route-position save composed in that loop is never perturbed by an `events` draw (interrupted ==
+# uninterrupted determinism holds).
+func generate_event_offer(event_id: StringName = &"", stream_name: StringName = RngStreamSet.STREAM_EVENTS) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if run.pending_event_offer != null and run.pending_event_offer.is_pending():
+		# An unresolved event offer is still open — generating a new one would silently drop it. Fail closed.
+		return ActionResult.error(&"event_offer_pending", {
+			"command": "run_orchestrator",
+			"event_id": String(run.pending_event_offer.event_id)
+		})
+
+	# The candidate event id set: a single explicit id (presented verbatim, fail-closed on a repo miss), or the whole
+	# repository baseline (the `events` draw SELECTS one). Resolving every candidate through the validated-only repo
+	# satisfies the validate-before-use gate (a fabricated/invalid event can never be offered).
+	var candidate_ids: Array[StringName] = []
+	if String(event_id).is_empty():
+		candidate_ids = _event_repository.event_ids()
+		if candidate_ids.is_empty():
+			return ActionResult.error(&"no_events_available", {"command": "run_orchestrator"})
+	else:
+		if _event_repository.get_event(event_id) == null:
+			return ActionResult.error(&"unknown_event", {
+				"command": "run_orchestrator",
+				"event_id": String(event_id)
+			})
+		candidate_ids = [event_id]
+
+	# The ONE RNG draw — through the RUN-LEVEL streams on the `events` stream. roll selects the offered event index over
+	# [0, candidate_ids.size() - 1] (a single-candidate roll still draws so the stream advances identically — the
+	# generator's always-fire count-draw discipline). Routes EXCLUSIVELY through streams.rand_int (never randi/randf).
+	var draw: ActionResult = streams.rand_int(stream_name, 0, candidate_ids.size() - 1, {"consumer": "event_offer_select", "candidate_count": candidate_ids.size()})
+	if draw.is_error():
+		return draw
+	var roll: int = int(draw.metadata.get("value"))
+	var selected_event_id: StringName = candidate_ids[roll]
+
+	# Resolve the SELECTED event (re-validate-before-use; it is in the repo, so this is non-null) and snapshot its
+	# offered choice ids.
+	var definition: EventDefinition = _event_repository.get_event(selected_event_id)
+	if definition == null:
+		# Defensive: a selected id is always in the repo; fail closed rather than store a fabricated offer.
+		return ActionResult.error(&"unknown_event", {
+			"command": "run_orchestrator",
+			"event_id": String(selected_event_id)
+		})
+	var offered_choice_ids: Array = []
+	for choice_id: StringName in definition.choice_ids():
+		offered_choice_ids.append(String(choice_id))
+
+	# Store the offer on RunState as pending.
+	var offer: EventOffer = EventOffer.new(
+		definition.event_id,
+		EventOffer.STATUS_PENDING,
+		offered_choice_ids,
+		&"",
+		String(stream_name),
+		roll,
+		int(draw.metadata.get("draw_index")),
+		int(draw.metadata.get("state_after"))
+	)
+	run.pending_event_offer = offer
+
+	# Emit the event_offered record (the GENERATE provenance — DOES carry roll/draw_index because the OFFER was rolled).
+	var offered_event: DomainEvent = DomainEvent.event_offered(_next_sequence_id, {
+		"event_id": String(definition.event_id),
+		"offered_choice_ids": offered_choice_ids,
+		"roll": offer.roll,
+		"draw_index": offer.draw_index
+	})
+	var result: ActionResult = ActionResult.ok([offered_event], {
+		"event_offered": true,
+		"event_id": String(definition.event_id),
+		"offered_choice_ids": offered_choice_ids,
 		"stream_name": String(stream_name),
 		"offer": offer.to_dictionary()
 	})

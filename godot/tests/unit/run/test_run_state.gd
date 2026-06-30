@@ -10,6 +10,7 @@ const StartingKit = preload("res://scripts/run/starting_kit.gd")
 const InventoryState = preload("res://scripts/run/inventory_state.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
+const EventOffer = preload("res://scripts/run/event_offer.gd")
 
 func run() -> Dictionary:
 	_new_run_initializes_ac1_fields()
@@ -46,6 +47,11 @@ func run() -> Dictionary:
 	_pre_7_1_run_dict_without_economy_key_parses_to_default_economy()
 	_economy_eligibility_mismatch_fails_run_validate()
 	_economy_nests_in_the_snapshot_bridge_and_round_trips()
+	# Story 7.3 — the additive pending_event_offer field.
+	_fresh_run_has_no_pending_event_offer_and_validates()
+	_run_with_pending_event_offer_round_trips_through_dictionary_and_copy()
+	_pre_7_3_run_dict_without_event_offer_key_parses_to_null()
+	_pending_event_offer_stays_out_of_the_run_snapshot_bridge()
 	return result()
 
 
@@ -733,3 +739,77 @@ func _allowed_run_snapshot_keys() -> Dictionary:
 	]:
 		keys[key] = true
 	return keys
+
+
+# Story 7.3: a fresh run carries NO pending event offer (null) and still validates (the offer is additive, NOT a
+# required validate() field).
+func _fresh_run_has_no_pending_event_offer_and_validates() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	assert_true(run.pending_event_offer == null, "A fresh run has no pending event offer (null).")
+	assert_true(run.validate().succeeded, "A run with no pending event offer must validate.")
+	var data: Dictionary = run.to_dictionary()
+	assert_true(data.has("pending_event_offer"), "The full run dict carries a pending_event_offer key.")
+	assert_equal(data.get("pending_event_offer"), null, "A fresh run serializes pending_event_offer as null.")
+
+
+# Story 7.3: a run WITH a pending event offer round-trips through to_dictionary()/try_from_dictionary (lenient) and
+# copy() deep-copies the offer (a distinct instance; mutating the copy does not perturb the source).
+func _run_with_pending_event_offer_round_trips_through_dictionary_and_copy() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.pending_event_offer = EventOffer.new(
+		&"smugglers_cache",
+		EventOffer.STATUS_PENDING,
+		["take_the_gold", "leave_the_cache"],
+		&"",
+		"events",
+		1,
+		1,
+		987654321
+	)
+	assert_true(run.validate().succeeded, "A run with a pending event offer must validate.")
+	var round_trip: Variant = JSON.parse_string(JSON.stringify(run.to_dictionary()))
+	var parsed: ActionResult = RunState.try_from_dictionary(round_trip)
+	assert_true(parsed.succeeded, "A run dict with a pending event offer must parse back: %s" % parsed.metadata)
+	var restored: RunState = parsed.metadata.get("run_state") as RunState
+	assert_true(restored.pending_event_offer != null, "The round-tripped run must preserve the pending event offer.")
+	assert_equal(restored.pending_event_offer.event_id, &"smugglers_cache", "The round-tripped offer event id must match.")
+	assert_equal(restored.pending_event_offer.offered_choice_ids.size(), 2, "The round-tripped offer choice ids must match.")
+	assert_equal(restored.pending_event_offer.state_after, 987654321, "The round-tripped offer state_after must match (int64-safe).")
+	# copy() preserves the offer byte-for-byte AND is a distinct deep instance.
+	var copied: RunState = run.copy()
+	assert_equal(JSON.stringify(copied.to_dictionary()), JSON.stringify(run.to_dictionary()), "copy() must preserve the pending event offer byte-for-byte.")
+	assert_true(copied.pending_event_offer != run.pending_event_offer, "copy() must produce a distinct event offer instance (deep copy).")
+	copied.pending_event_offer.offered_choice_ids.append("a_new_choice")
+	assert_equal(run.pending_event_offer.offered_choice_ids.size(), 2, "Mutating the copy's event offer must NOT perturb the source.")
+
+
+# Story 7.3: a pre-7.3 run dict (no pending_event_offer key at all) parses with a null offer (lenient decode).
+func _pre_7_3_run_dict_without_event_offer_key_parses_to_null() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	var legacy_dict: Dictionary = run.to_dictionary()
+	legacy_dict.erase("pending_event_offer")
+	var legacy_parsed: ActionResult = RunState.try_from_dictionary(legacy_dict)
+	assert_true(legacy_parsed.succeeded, "A pre-7.3 run dict (no event offer key) must parse: %s" % legacy_parsed.metadata)
+	assert_true((legacy_parsed.metadata.get("run_state") as RunState).pending_event_offer == null, "A pre-7.3 run dict restores a null event offer.")
+
+
+# Story 7.3: the pending event offer rides the FULL run dict ONLY — it is DELIBERATELY NOT in to_run_snapshot_fields() /
+# the 23-key gate (the 6.3 RewardOffer posture), and composing a route-position snapshot adds NO offer content + NO
+# surprise top-level key.
+func _pending_event_offer_stays_out_of_the_run_snapshot_bridge() -> void:
+	var run: RunState = RunState.new_run(7, false, _build_route())
+	run.transition_to(RunState.PHASE_ACTIVE_ROUTE)
+	run.pending_event_offer = EventOffer.new(&"smugglers_cache", EventOffer.STATUS_PENDING, ["take_the_gold"])
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	assert_false(fields.has("pending_event_offer"), "to_run_snapshot_fields() must NOT carry a pending_event_offer field (it rides the full run dict only).")
+	var route_state: Dictionary = fields.get("route_state")
+	assert_false(route_state.has("pending_event_offer"), "The nested route_state payload must not carry a pending event offer.")
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.route_state = fields.get("route_state")
+	snapshot.current_route_node_id = fields.get("current_route_node_id")
+	snapshot.revealed_route_node_ids = fields.get("revealed_route_node_ids")
+	var data: Dictionary = snapshot.to_dictionary()
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	for key: Variant in data.keys():
+		assert_true(allowed.has(key), "Composing a run with a pending event offer must not add a surprise top-level RunSnapshot key (%s)." % str(key))
