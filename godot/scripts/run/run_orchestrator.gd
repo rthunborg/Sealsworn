@@ -38,6 +38,8 @@ extends RefCounted
 # past the events that command emits, so every emitted event across the whole run has a unique id.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
+const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const EventDefinition = preload("res://scripts/content/definitions/event_definition.gd")
@@ -97,6 +99,11 @@ var _gold_reward_repository: GoldRewardRepository = null
 # caller supplies no specific event id, generate_event_offer SELECTS one from this repository's baseline deterministically
 # through the `events` stream.
 var _event_repository: EventRepository = null
+# Story 7.4: the AFFINITY repository for the deterministic affinity ASSIGNMENT (AC2). Default to the baseline
+# repository; injectable for tests (mirrors the event/reward-table/gold-reward injection). Resolves the SELECTED
+# affinity id to its typed AffinityDefinition (validated affinities only); fail-closed `unknown_affinity` on a repo
+# miss. assign_affinity SELECTS one from this repository's baseline deterministically through the `map` stream.
+var _affinity_repository: AffinityRepository = null
 # Last composed route-position snapshot (set when persistence is requested at a between-node boundary).
 var _last_route_position_snapshot: RunSnapshot = null
 
@@ -106,13 +113,15 @@ func _init(
 	enemy_repository: EnemyRepository = null,
 	reward_table_repository: RewardTableRepository = null,
 	gold_reward_repository: GoldRewardRepository = null,
-	event_repository: EventRepository = null
+	event_repository: EventRepository = null,
+	affinity_repository: AffinityRepository = null
 ) -> void:
 	_recipe_repository = recipe_repository if recipe_repository != null else LevelRecipeRepository.create_baseline_repository()
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
 	_reward_table_repository = reward_table_repository if reward_table_repository != null else RewardTableRepository.create_baseline_repository()
 	_gold_reward_repository = gold_reward_repository if gold_reward_repository != null else GoldRewardRepository.create_baseline_repository()
 	_event_repository = event_repository if event_repository != null else EventRepository.create_baseline_repository()
+	_affinity_repository = affinity_repository if affinity_repository != null else AffinityRepository.create_baseline_repository()
 
 
 # Start a fresh run from (root_seed, is_manual_seed[, class_id]) via RunStartCommand. Seats the live RunState
@@ -576,6 +585,97 @@ func generate_event_offer(event_id: StringName = &"", stream_name: StringName = 
 	})
 	_advance_sequence_past(result)
 	return result
+
+
+# ---- affinity assignment (Story 7.4 — the deterministic per-level affinity SELECT + RECORD, AC2) ----------------
+
+# ASSIGN a deterministic affinity to the given route node and RECORD it in the level snapshot (AC2). It draws ONE roll
+# through the RUN-LEVEL RngStreamSet (`streams`) on the `map` stream (STREAM_MAP — the route-structure stream
+# RouteGenerator already uses; GDD line 225 groups "affinity assignments" with the run map / node structure / level
+# layouts, so affinity is a ROUTE-STRUCTURE-level identity). The roll deterministically SELECTS an affinity id (incl.
+# the neutral `none`) from `_affinity_repository`'s baseline; the SELECTED id is resolved back through the validated-only
+# repository (fail-closed `unknown_affinity` on a miss — the validate-before-USE gate); and the id is RECORDED on
+# RunState.assigned_affinities keyed by the node id (the source of truth; RunSnapshot.from_route_position MIRRORS it into
+# the existing top-level RunSnapshot.affinities placeholder, so it is reproducibly readable from the recorded snapshot).
+#
+# DETERMINISTIC + REPRODUCIBLE (AC2; the GDD line 225 "Seeds reproduce ... affinity assignments" invariant): the node id
+# rides the draw `consumer_context`, and the roll keys off the `map` stream's state, so the SAME (root_seed, pre-draw map
+# state) -> the SAME selected affinity. Re-running for the same node re-draws (the map stream advances) and records the
+# same value for that pre-draw state — assignment is a pure deterministic function of the seed + route position.
+#
+# CALLER-DRIVEN (the 6.3 generate_reward_offer / 7.3 generate_event_offer posture VERBATIM): this is NOT wired into
+# _resolve_combat / _resolve_non_combat_placeholder / run_to_completion — a level still generates + auto-resolves without
+# an affinity. A later HUD/run-flow story owns the "enter node -> assign affinity -> apply effects" call site (the EFFECTS
+# are 7.5/7.6). Keeping it OFF the auto-resolve loop means a route-position save composed in that loop is never perturbed
+# by a `map`-stream affinity draw unless the caller explicitly assigned one.
+#
+# THE 4.6 inert run-level RngStreamSet INJECTION HALF (RE-AFFIRMED across 7.1/7.2/7.3 to "the later level-gen-RNG story
+# 7.4/7.5"): the affinity draw routes through the orchestrator's run-level `streams` (a run-level/route-structure draw),
+# NOT inside LevelGenerator.generate (which still mints its OWN level-stream RngStreamSet from request.level_seed()). So
+# 7.4 KNOWINGLY WORKS AROUND the injection half (adds NO new inert-stream exposure, regresses no determinism, perturbs no
+# generator/route fingerprint) and RE-AFFIRMS the injection-into-LevelGenerator.generate half to 7.5 (the affinity-EFFECTS
+# story that may need the run-level set INSIDE generation to apply hazard/terrain effects).
+#
+# Fail-closed: `no_active_run` (orchestrator unseated), `invalid_affinity_node` (a null/empty-id node — assignment must
+# key off a real node id), `no_affinities_available` (an empty repository), `unknown_affinity` (a selected id that does
+# not resolve — defensive, since the id came from the repository). The draw routes EXCLUSIVELY through the run-level set
+# (NEVER randi/randf/a new RandomNumberGenerator).
+func assign_affinity(node: RouteNode, stream_name: StringName = RngStreamSet.STREAM_MAP) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if node == null or String(node.id).is_empty():
+		return ActionResult.error(&"invalid_affinity_node", {"command": "run_orchestrator"})
+
+	# The candidate affinity ids: the whole repository baseline (incl. the neutral `none`). Resolving the SELECTED id
+	# through the validated-only repo satisfies the validate-before-USE gate (a fabricated/invalid affinity can never be
+	# assigned).
+	var candidate_ids: Array[StringName] = _affinity_repository.affinity_ids()
+	if candidate_ids.is_empty():
+		return ActionResult.error(&"no_affinities_available", {"command": "run_orchestrator"})
+
+	# The ONE RNG draw — through the RUN-LEVEL streams on the `map` stream. roll selects the assigned affinity index over
+	# [0, candidate_ids.size() - 1] (a single-candidate roll still draws so the stream advances identically — the
+	# generator's always-fire count-draw discipline). The node id rides the consumer_context so the assignment is a
+	# reproducible function of (root_seed, route position). Routes EXCLUSIVELY through streams.rand_int (never randi/randf).
+	var draw: ActionResult = streams.rand_int(stream_name, 0, candidate_ids.size() - 1, {"consumer": "affinity_assign", "node_id": String(node.id)})
+	if draw.is_error():
+		return draw
+	var roll: int = int(draw.metadata.get("value"))
+	var selected_affinity_id: StringName = candidate_ids[roll]
+
+	# Resolve the SELECTED affinity (re-validate-before-use; it is in the repo, so this is non-null) — fail closed rather
+	# than record a fabricated id.
+	var definition: AffinityDefinition = _affinity_repository.get_affinity(selected_affinity_id)
+	if definition == null:
+		return ActionResult.error(&"unknown_affinity", {
+			"command": "run_orchestrator",
+			"affinity_id": String(selected_affinity_id)
+		})
+
+	# RECORD the assigned affinity id on the run, keyed by node id (the AC2 "recorded in the level snapshot" source of
+	# truth — RunSnapshot.from_route_position mirrors it into the top-level affinities placeholder).
+	run.assigned_affinities[String(node.id)] = String(definition.affinity_id)
+
+	return ActionResult.ok([], {
+		"node_id": String(node.id),
+		"affinity_id": String(definition.affinity_id),
+		"is_neutral": definition.is_neutral(),
+		"stream_name": String(stream_name),
+		"roll": roll,
+		"draw_index": int(draw.metadata.get("draw_index"))
+	})
+
+
+# The recorded affinity id for a node (AC2 read-back), or the neutral `none` id when no affinity was assigned to it
+# (the AC3 no-affinity default — a node with no assigned affinity reads as `none`). A PURE READ (no RNG, no mutation).
+func assigned_affinity_for(node_id: String) -> StringName:
+	if run == null:
+		return AffinityDefinition.AFFINITY_NONE
+	return StringName(String(run.assigned_affinities.get(node_id, String(AffinityDefinition.AFFINITY_NONE))))
+
+
+func affinity_repository() -> AffinityRepository:
+	return _affinity_repository
 
 
 func run_started_event() -> DomainEvent:

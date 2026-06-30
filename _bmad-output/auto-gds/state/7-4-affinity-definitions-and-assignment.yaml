@@ -42,3 +42,4 @@ deferred_work: []
 blockers: []
 overrides: {}
 constraints: []
+resume_notes: "Phase 5 (dev-story) was INTERRUPTED by a Claude Code process exit on 2026-06-30 (~T11:5x). Partial, UNVERIFIED dev work was committed as a WIP checkpoint (see the `chore(story-7-4): WIP` commit): affinity_definition.gd, affinity_repository.gd, affinity_view_model.gd + 4 test files (content/run/ui), plus edits to run_orchestrator.gd / run_state.gd / run_snapshot.gd; story Status + sprint left at in-progress. completed_phases still [0,1,3] (Phase 5 NOT marked done). ON RESUME: do NOT assume Phase 5 is complete. Either (a) delegate a dev-story continuation that verifies all tasks/subtasks are done AND runs the full headless suite green before flipping to review, or (b) if state is uncertain, `git reset --hard dd39135` (the clean Phase-3 commit) and re-run Phase 5 fresh. Nothing is lost either way — the WIP is in git history and pushed to origin."

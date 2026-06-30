@@ -4,7 +4,7 @@ baseline_commit: b8a471ce35219e6c3546dbdda38d0a1e7e008376
 
 # Story 7.4: Affinity Definitions and Assignment
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

@@ -140,6 +140,17 @@ var risk_economy: RiskEconomyState = null
 # NOT serialized into the route-position save (the 6.3 RewardOffer posture VERBATIM — the live in-node offer is a later
 # story; the RunSnapshot 23-key gate stays untouched). copy() null-safe DEEP-copies it.
 var pending_event_offer: EventOffer = null
+# The run's ASSIGNED AFFINITIES (Story 7.4, AC2) — a Dictionary keyed by route node id (String) -> the deterministically
+# SELECTED affinity id (String, e.g. "scorched"/"none"). An ADDITIVE + LENIENT run-progression field: it defaults to a
+# fresh EMPTY Dictionary (never null) so a legacy / seed-only / pre-7.4 run carries no assigned affinities. The affinity
+# ASSIGNMENT path (RunOrchestrator.assign_affinity) DRAWS a deterministic affinity through the run-level RngStreamSet on
+# the `map` stream and RECORDS it here keyed by node id (the AC2 "recorded in the level snapshot" — this run-domain dict
+# is the source of truth; RunSnapshot.from_route_position MIRRORS it into the existing top-level RunSnapshot.affinities
+# placeholder). It is DELIBERATELY NOT a required validate() field (a run with no assigned affinities is valid; a
+# pre-7.4 run dict with no key parses to a fresh empty dict). It is SERIALIZABLE DATA ONLY (a String->String dict). It
+# rides to_dictionary()/try_from_dictionary (the FULL run dict) lenient-read so a copied/round-tripped run preserves the
+# assignments. copy() DEEP-copies it (the dict must not be shared by reference).
+var assigned_affinities: Dictionary = {}
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -153,7 +164,8 @@ func _init(
 	new_inventory: InventoryState = null,
 	new_pending_reward_offer: RewardOffer = null,
 	new_risk_economy: RiskEconomyState = null,
-	new_pending_event_offer: EventOffer = null
+	new_pending_event_offer: EventOffer = null,
+	new_assigned_affinities: Dictionary = {}
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -174,6 +186,9 @@ func _init(
 	# Story 7.3: default to null (no pending event offer). Like the reward offer, null is the meaningful "nothing to
 	# choose" state. A supplied offer (a decode / copy) is used verbatim.
 	pending_event_offer = new_pending_event_offer
+	# Story 7.4: default to a fresh EMPTY dict (never null) so the assigned-affinities record is always present. A
+	# supplied dict (a decode / copy) is DEEP-copied so the run never shares the caller's dict by reference.
+	assigned_affinities = new_assigned_affinities.duplicate(true)
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -287,7 +302,12 @@ func to_dictionary() -> Dictionary:
 		# Story 7.3: the pending event offer rides the FULL run dict (NOT the 23-key RunSnapshot). null (no pending
 		# event offer) serializes as a JSON null; a pending offer serializes via its exact-key to_dictionary().
 		# try_from_dictionary reads it back leniently (null/absent -> null) so every pre-7.3 run dict still parses.
-		"pending_event_offer": null if pending_event_offer == null else pending_event_offer.to_dictionary()
+		"pending_event_offer": null if pending_event_offer == null else pending_event_offer.to_dictionary(),
+		# Story 7.4: the assigned-affinities dict (node id -> affinity id) rides the FULL run dict (NOT the 23-key
+		# RunSnapshot — RunSnapshot.affinities is mirrored from this by from_route_position). It is never null (a
+		# default-empty dict), serialized as a plain String->String map. try_from_dictionary reads it back leniently
+		# (absent/non-dict -> a fresh empty dict) so every pre-7.4 run dict still parses.
+		"assigned_affinities": assigned_affinities.duplicate(true)
 	}
 
 
@@ -317,7 +337,11 @@ func copy() -> RunState:
 		_risk_economy_or_new().copy(),
 		# Story 7.3: null-safe DEEP-copy the pending event offer (the offered-choice-ids list must not be shared by
 		# reference; null stays null — mirroring the reward-offer deep copy).
-		null if pending_event_offer == null else pending_event_offer.copy()
+		null if pending_event_offer == null else pending_event_offer.copy(),
+		# Story 7.4: DEEP-copy the assigned-affinities dict (it must not be shared by reference, so a mutation of the
+		# copy's assignments never perturbs the source). The constructor deep-copies its argument too, but pass a
+		# fresh copy here for clarity/parity with the other deep-copied fields.
+		assigned_affinities.duplicate(true)
 	)
 
 
@@ -411,7 +435,11 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		# Story 7.3: lenient event-offer decode. A pre-7.3 run dict has no pending_event_offer key (or null) -> default
 		# null (no pending event offer). A present offer dict is reconstructed leniently via
 		# EventOffer.try_from_dictionary so a partial/legacy offer dict still parses.
-		_event_offer_or_null(_field(data, &"pending_event_offer") if _has_field(data, &"pending_event_offer") else null)
+		_event_offer_or_null(_field(data, &"pending_event_offer") if _has_field(data, &"pending_event_offer") else null),
+		# Story 7.4: lenient assigned-affinities decode. A pre-7.4 run dict has no assigned_affinities key -> a fresh
+		# empty dict (never null). A present dict is normalized to a String->String map (any non-string-keyable or
+		# non-string value is dropped) so a partial/legacy dict still parses to usable data.
+		_assigned_affinities_or_empty(_field(data, &"assigned_affinities") if _has_field(data, &"assigned_affinities") else null)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -639,6 +667,19 @@ static func _risk_economy_or_new_from(value: Variant) -> RiskEconomyState:
 	if value is Dictionary:
 		return RiskEconomyState.try_from_dictionary(value)
 	return null
+
+
+# Story 7.4: Lenient assigned-affinities decode for the additive assigned_affinities field. A Dictionary is normalized
+# to a String->String map (each key + value coerced to String); anything else (null / absent / non-dict) -> a fresh
+# EMPTY dict. Normalizing to String->String keeps the serialized record JSON-safe (node ids + affinity ids are short
+# strings, never seeds) and tolerant of a partial/legacy dict.
+static func _assigned_affinities_or_empty(value: Variant) -> Dictionary:
+	var result: Dictionary = {}
+	if value is Dictionary:
+		for key: Variant in (value as Dictionary).keys():
+			if key is String or key is StringName:
+				result[String(key)] = String((value as Dictionary)[key])
+	return result
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:
