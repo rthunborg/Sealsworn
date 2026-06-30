@@ -41,8 +41,9 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions:
-  - "Round 1 review (Approve, 0 Crit/High/Med, Low 3 next-touch fold-ins) persisted 11 [Review][Decision] bullets that are ALL positive confirmations of the story's ratified dispositions (operations/ opened to ONE narrow resolver, conditions/ empty, no run-loop, DAMAGE_APPLIED reuse, determinism/23-key/required_streams intact, inert-stream CLOSED, accessibility cue home correct) — reviewer states 0 genuinely need a human call. Machine state shows them OPEN. To be AFFIRMED by the user at the Phase 7 HITL halt (per the 7-3 precedent) before finalize."
+open_questions: []
+resolved_review_items:
+  - "11 [Review][Decision] confirmations (R1 primary + R2 independent secondary, both Approve) = the pivotal operations/-opening fences, all verified TRUE twice. User AFFIRMED accept-as-confirmed at the Phase 7 HITL halt (per the 7-3 precedent) — no code change; loop converged at Approve. HITL resolution recorded in the story's ### Review Findings."
 deferred_work:
   - "(Review) Scorched plan reuses pre-existing HAZARD cells for idempotency — could conflate a non-Scorched pre-existing hazard with a Scorched one IF a later story bakes hazards into generated terrain (inert in v0; all generated boards are all-FLOOR). Owner: the later generation-modifier / hazard-ownership story."
   - "Darkness affinity effect parked to 7.6 (FR58)."
