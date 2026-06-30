@@ -4,7 +4,7 @@ baseline_commit: c3e61e0c39c501b862584426a1e5ae40673ba86d
 
 # Story 7.6: Darkness Fairness and Memory Pressure
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
