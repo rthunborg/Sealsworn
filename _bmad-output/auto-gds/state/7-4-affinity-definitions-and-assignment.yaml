@@ -3,10 +3,10 @@ epic_num: 7
 story_num: 4
 branch: story/7-4-affinity-definitions-and-assignment
 status: in-progress
-updated_at: "2026-06-30T11:49:22Z"
+updated_at: "2026-06-30T12:44:34Z"
 started_at: "2026-06-30T11:29:01Z"
 completed_at: null
-active_seconds: 600
+active_seconds: 1680
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -18,7 +18,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 6
-completed_phases: [0, 1, 3]
+completed_phases: [0, 1, 3, 5]
 code_review_iterations: 0
 code_review_loop_done: false
 external_review_iterations: 0
@@ -28,6 +28,8 @@ testing:
   ran: []
 commits:
   - "b8a471c"
+  - "dd39135"
+  - "f7c3308"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -38,8 +40,11 @@ merge_method: null
 merge_commit: null
 branch_deleted: false
 open_questions: []
-deferred_work: []
+deferred_work:
+  - "LevelGenerator.generate-injection half of the 4.6 inert run-level RngStreamSet RE-AFFIRMED to 7.5 (7.4 knowingly worked around it via the run-level STREAM_MAP orchestrator draw; generator untouched)."
+  - "Assigned-affinity must be re-derivable on resume (top-level RunSnapshot.affinities mirror + seed re-derivation; NOT a route-position-save source of truth). Owner: later in-node-save / live-resume story."
+  - "7.5/7.6 live tactical effects + the affinity-driven generation-modifier CONSUMER are knowingly parked (7.4 is RECORD/EXPLANATION-ONLY)."
 blockers: []
 overrides: {}
 constraints: []
-resume_notes: "Phase 5 (dev-story) was INTERRUPTED by a Claude Code process exit on 2026-06-30 (~T11:5x). Partial, UNVERIFIED dev work was committed as a WIP checkpoint (see the `chore(story-7-4): WIP` commit): affinity_definition.gd, affinity_repository.gd, affinity_view_model.gd + 4 test files (content/run/ui), plus edits to run_orchestrator.gd / run_state.gd / run_snapshot.gd; story Status + sprint left at in-progress. completed_phases still [0,1,3] (Phase 5 NOT marked done). ON RESUME: do NOT assume Phase 5 is complete. Either (a) delegate a dev-story continuation that verifies all tasks/subtasks are done AND runs the full headless suite green before flipping to review, or (b) if state is uncertain, `git reset --hard dd39135` (the clean Phase-3 commit) and re-run Phase 5 fresh. Nothing is lost either way — the WIP is in git history and pushed to origin."
+resume_notes: "RESOLVED 2026-06-30T12:44Z. The interrupted Phase-5 WIP (commit f7c3308) was resumed in a fresh session and independently verified: all 6 tasks were already complete + correct (zero new code on resume), full headless suite green (131 PASS / 0 FAIL, guard clean), scope fences audited intact. Finalization completed (checkboxes, Dev Agent Record, deferred-work) and story flipped to review. Phase 5 done; proceeding to Phase 7 normally."
