@@ -35,7 +35,7 @@ func run() -> Dictionary:
 	_same_seed_same_node_reproduces_an_identical_assignment()
 	_assign_records_the_affinity_in_the_snapshot_and_route_position_save()
 	_assignment_is_re_derivable_from_the_seed_after_resume()
-	_neutral_none_is_a_selectable_outcome_over_the_seed_sample()
+	_neutral_none_is_a_selectable_outcome()
 	_assigned_affinity_for_defaults_to_none_for_an_unassigned_node()
 	_assigned_affinity_round_trips_through_the_full_run_dict()
 	_populated_affinities_keeps_the_23_key_gate()
@@ -192,21 +192,51 @@ func _assignment_is_re_derivable_from_the_seed_after_resume() -> void:
 	assert_equal(String(re_derived.metadata.get("affinity_id")), original_id, "The re-derived affinity (fresh run, same seed) must match the original — assignment is reproducible from the seed + route position.")
 
 
-func _neutral_none_is_a_selectable_outcome_over_the_seed_sample() -> void:
-	# `none` is one of the candidate ids, so over a sample of seeds at least one assignment can land on it (proving the
-	# neutral affinity is selectable like any other). We assert the assigned id is always a valid baseline id; the
-	# none-reachability is a softer check (the baseline set includes `none`).
-	var none_seen: bool = false
-	var sample: Array[int] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
-	for seed_value: int in sample:
+func _neutral_none_is_a_selectable_outcome() -> void:
+	# AC3 / neutral-selectability proof — the neutral `none` is a REAL selectable assignment outcome, like any other
+	# affinity. Proven two ways, NEITHER relying on the incidental hit rate of the live route-gen sequence (the Round-1
+	# review fold-in: a probabilistic "does `none` land within a fixed 20-seed sample" check passes only by a 2/20 margin
+	# and a future legitimate map-stream / candidate-count change could drop both hits and fail the suite for an unrelated
+	# reason). Both proofs here are DIRECT + deterministic and fail LOUD with a correctly-attributed message on a miss.
+	#
+	# PROOF 1 (direct, seed-independent) — a single-candidate (`none`-only) affinity repository. With exactly one candidate
+	# the assignment draws rand_int(map, 0, 0, ...) == 0 and MUST select `none` for EVERY seed (the only thing it can pick).
+	# This proves `none` is a fully selectable outcome of assign_affinity with NO dependence on the route-gen draw value.
+	var none_only_repository: AffinityRepository = AffinityRepository.create_repository_from_definitions(
+		[AffinityDefinition.neutral()]
+	)
+	assert_true(none_only_repository != null, "Setup: the single-candidate `none`-only repository should build.")
+	for seed_value: int in SEED_SAMPLE:
+		var orchestrator: RunOrchestrator = RunOrchestrator.new(null, null, null, null, null, none_only_repository)
+		assert_true(orchestrator.start(seed_value, false).succeeded, "Seed %d: start with the `none`-only repo should succeed." % seed_value)
+		var node: RouteNode = _first_node(orchestrator)
+		var assign: ActionResult = orchestrator.assign_affinity(node)
+		assert_true(assign.succeeded, "Seed %d: assigning from the `none`-only repo should succeed: %s" % [seed_value, assign.metadata])
+		assert_equal(
+			String(assign.metadata.get("affinity_id")),
+			String(AffinityDefinition.AFFINITY_NONE),
+			"Seed %d: a single-candidate `none`-only repository MUST select the neutral `none` (proving `none` is a selectable outcome)." % seed_value
+		)
+		assert_true(bool(assign.metadata.get("is_neutral")), "Seed %d: an assigned `none` must report is_neutral == true." % seed_value)
+		assert_equal(String(orchestrator.run.assigned_affinities.get(String(node.id))), String(AffinityDefinition.AFFINITY_NONE), "Seed %d: the recorded id must be `none`." % seed_value)
+
+	# PROOF 2 (bounded-seed search over the REAL baseline, fail-LOUD on miss) — `none` is one of the FULL baseline
+	# candidates, so it is reachable from the default repository via the route-gen-driven draw too. Search a bounded seed
+	# range for the FIRST seed whose assignment lands on `none` and STOP at the first hit; if the whole bounded range
+	# misses, FAIL with a clear message that names the real cause (none-unreachable-in-range) rather than passing by luck
+	# (the 6.7 bounded-seed-search pattern). This preserves the original test's intent — neutral is selectable from the
+	# full baseline alongside the other affinities — without the brittle 2/20-margin coupling.
+	var none_seen_from_baseline: bool = false
+	for seed_value: int in range(1, 201):
 		var orchestrator: RunOrchestrator = _started(seed_value)
 		var node: RouteNode = _first_node(orchestrator)
 		var assign: ActionResult = orchestrator.assign_affinity(node)
-		assert_true(assign.succeeded, "Seed %d: assign should succeed." % seed_value)
+		assert_true(assign.succeeded, "Seed %d: assign from the full baseline should succeed." % seed_value)
 		if String(assign.metadata.get("affinity_id")) == String(AffinityDefinition.AFFINITY_NONE):
-			none_seen = true
-			assert_true(bool(assign.metadata.get("is_neutral")), "An assigned `none` must report is_neutral == true.")
-	assert_true(none_seen, "Over a 20-seed sample, the neutral `none` should be a selectable assignment outcome at least once.")
+			assert_true(bool(assign.metadata.get("is_neutral")), "Seed %d: an assigned `none` must report is_neutral == true." % seed_value)
+			none_seen_from_baseline = true
+			break
+	assert_true(none_seen_from_baseline, "The neutral `none` must be a selectable assignment outcome from the full baseline within seeds 1..200 (it is one of the %d baseline candidates); a miss here means `none` is NOT reachable in range, NOT that the test is flaky." % AffinityRepository.BASELINE_AFFINITY_IDS.size())
 
 
 func _assigned_affinity_for_defaults_to_none_for_an_unassigned_node() -> void:
