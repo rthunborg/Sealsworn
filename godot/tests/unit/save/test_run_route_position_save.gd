@@ -16,8 +16,14 @@ extends "res://tests/unit/test_case.gd"
 #     key), and carries an EMPTY level_state (no embedded tactical board at a route choice).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AcceptCursedRewardCommand = preload("res://scripts/core/commands/accept_cursed_reward_command.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
+const CursedRewardDefinition = preload("res://scripts/content/definitions/cursed_reward_definition.gd")
+const CursedRewardRepository = preload("res://scripts/content/repositories/cursed_reward_repository.gd")
+const DestroyOutcomeTableDefinition = preload("res://scripts/content/definitions/destroy_outcome_table_definition.gd")
+const DestroyPassiveCommand = preload("res://scripts/core/commands/destroy_passive_command.gd")
+const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
@@ -51,6 +57,11 @@ func run() -> Dictionary:
 	_economy_survives_route_position_resume()
 	_economy_top_level_mirror_is_populated_within_the_23_key_gate()
 	_pre_7_1_route_position_payload_restores_with_default_economy()
+	# Story 7.2 — a curse/corruption change made by the 7.2 ACCEPT command rides the route-position save end-to-end
+	# (AC2 "curse/corruption state is updated in the run snapshot"), through the EXISTING 7.1 nested plumbing (no new
+	# top-level key — the 23-key gate stays 23).
+	_curse_change_via_accept_command_survives_route_position_resume()
+	_cleanse_change_survives_route_position_resume()
 	_cleanup()
 	return result()
 
@@ -584,6 +595,73 @@ func _pre_7_1_route_position_payload_restores_with_default_economy() -> void:
 	assert_equal(restored_run.risk_economy.gold, 0, "A pre-7.1 payload (no nested economy key) must restore the default empty economy (the stripped 99 is lost).")
 	assert_true(restored_run.risk_economy.oath_shard_eligible, "A pre-7.1 non-manual payload restores an eligible economy.")
 	assert_true(restored_run.validate().succeeded, "A pre-7.1 restored economy run must still validate.")
+
+
+# Story 7.2 — a curse/corruption change made by the ACCEPT command (NOT a direct setter) rides the route-position save
+# end-to-end. This proves AC2's "curse/corruption state is updated in the run snapshot" for the change-producing
+# command path, through the EXISTING 7.1 nested plumbing (no new save code; the 23-key gate stays 23).
+func _curse_change_via_accept_command_survives_route_position_resume() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	# Accept a cursed reward through the real command: +1 curse, +2 corruption, +5 gold.
+	var repository: CursedRewardRepository = CursedRewardRepository.create_repository_from_definitions([
+		CursedRewardDefinition.new(
+			&"save_test_curse", "Save Test Curse",
+			"Gain 5 gold.", "Take 1 curse and 2 corruption.",
+			5, 0, 1, 2, 0, 0, false, "A known cost."
+		)
+	])
+	var accepted: ActionResult = AcceptCursedRewardCommand.new(&"save_test_curse", 1, repository).execute(orchestrator.run)
+	assert_true(accepted.succeeded, "Setup: the accept should succeed: %s" % accepted.metadata)
+	assert_equal(orchestrator.run.risk_economy.curse_count, 1, "Setup: the curse was applied.")
+	assert_equal(orchestrator.run.risk_economy.corruption, 2, "Setup: the corruption was applied.")
+
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	assert_true(snapshot != null, "compose_route_position_snapshot should return a snapshot.")
+	# The top-level corruption mirror reflects the accept (within the 23-key gate).
+	assert_equal(snapshot.corruption, 2, "AC2: the top-level RunSnapshot.corruption mirror reflects the accepted curse change.")
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Resuming after an accept should succeed: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_equal(restored_run.risk_economy.curse_count, 1, "AC2: the curse change made by the accept command survives the route-position resume (the nested source of truth).")
+	assert_equal(restored_run.risk_economy.corruption, 2, "AC2: the corruption change survives the route-position resume.")
+	assert_equal(restored_run.risk_economy.gold, 5, "AC2: the economic side of the accept survives too.")
+	assert_true(restored_run.validate().succeeded, "The restored run must validate.")
+	# The 23-key gate stays green (no new top-level key for curse state).
+	var json_data: Variant = JSON.parse_string(JSON.stringify(snapshot.to_dictionary()))
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	assert_equal((json_data as Dictionary).keys().size(), allowed.size(), "Story 7.2: the snapshot key COUNT must stay 23 (curse state nests under route_state).")
+
+
+# Story 7.2 — a CLEANSE (a curse REDUCTION via DestroyPassiveCommand's cleanse outcome) also rides the route-position
+# save end-to-end (the reduced count is the persisted value).
+func _cleanse_change_survives_route_position_resume() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	orchestrator.run.risk_economy.set_curse_count(3)
+	# A pending passive offer so the Destroy can resolve, and an always-cleanse table so the cleanse fires.
+	orchestrator.run.pending_reward_offer = RewardOffer.new(&"passive_reward_choice", RewardOffer.STATUS_PENDING, [{"category": "passive", "content_id": "warrior_unbreakable_guard"}], {}, "rewards", 1, 0, 42)
+	var cleanse_table: DestroyOutcomeTableDefinition = DestroyOutcomeTableDefinition.new(
+		&"save_cleanse_table",
+		[{
+			"outcome_category": DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+			"outcome_id": DestroyPassiveCommand.CLEANSE_OUTCOME_ID,
+			"weight": 1,
+			"effect": "destroy_outcome_small_immediate_benefit",
+			"explanation": "A cleansed wound."
+		}],
+		true,
+		"Test-only single-entry cleanse table."
+	)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, RngStreamSet.new(13579), cleanse_table).execute(orchestrator.run)
+	assert_true(destroyed.succeeded, "Setup: the cleanse destroy should succeed: %s" % destroyed.metadata)
+	assert_equal(orchestrator.run.risk_economy.curse_count, 2, "Setup: the cleanse reduced the curse (3 -> 2).")
+
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	_write_through_repository(snapshot)
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Resuming after a cleanse should succeed: %s" % restore.metadata)
+	assert_equal((restore.metadata.get("run_state") as RunState).risk_economy.curse_count, 2, "AC2: the cleansed (reduced) curse count survives the route-position resume.")
 
 
 # Write a snapshot through the repository and return the save path (a small helper so the populated-economy test can

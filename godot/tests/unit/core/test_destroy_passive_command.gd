@@ -41,7 +41,140 @@ func run() -> Dictionary:
 	_duplicate_destroy_against_a_resolved_offer_rejects_no_double_destroy()
 	_consume_then_destroy_is_mutually_exclusive_on_one_offer()
 	_destroy_draws_no_rng_on_reject()
+	# Story 7.2 Task 6 — the CLEANSE hook (curse reduction off the cleanse outcome).
+	_cleanse_outcome_reduces_curse_and_emits_a_negative_delta_event()
+	_cleanse_reduces_corruption_when_no_curse_remains()
+	_cleanse_floors_at_zero_when_nothing_to_cleanse()
+	_a_non_cleanse_outcome_leaves_curse_and_corruption_unchanged()
+	_cleanse_draws_no_additional_rng()
 	return result()
+
+
+# ---- Story 7.2 Task 6: the CLEANSE hook helpers --------------------------------------------------
+
+# A single-entry outcome table that ALWAYS rolls the cleanse outcome (minor_restoration). It uses the sanctioned
+# mvp_distribution_exception marker (WITH a reason) so an off-70/20/10 single-entry test table is VALID — this makes
+# the cleanse deterministic without depending on which seed lands the 70% band.
+func _always_cleanse_table() -> DestroyOutcomeTableDefinition:
+	return DestroyOutcomeTableDefinition.new(
+		&"always_cleanse_test_table",
+		[
+			{
+				"outcome_category": DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+				"outcome_id": DestroyPassiveCommand.CLEANSE_OUTCOME_ID,
+				"weight": 1,
+				"effect": "destroy_outcome_small_immediate_benefit",
+				"explanation": "Destroying the passive releases its bound energy as a cleansed wound."
+			}
+		],
+		true,
+		"Test-only single-entry table to deterministically exercise the cleanse outcome."
+	)
+
+
+# A single-entry outcome table that NEVER rolls the cleanse outcome (a non-cleanse small_immediate_benefit id).
+func _never_cleanse_table() -> DestroyOutcomeTableDefinition:
+	return DestroyOutcomeTableDefinition.new(
+		&"never_cleanse_test_table",
+		[
+			{
+				"outcome_category": DestroyOutcomeTableDefinition.OUTCOME_SMALL_IMMEDIATE_BENEFIT,
+				"outcome_id": &"some_other_benefit",
+				"weight": 1,
+				"effect": "destroy_outcome_small_immediate_benefit",
+				"explanation": "Destroying the passive yields a small benefit that is not a cleanse."
+			}
+		],
+		true,
+		"Test-only single-entry non-cleanse table."
+	)
+
+
+func _cleanse_outcome_reduces_curse_and_emits_a_negative_delta_event() -> void:
+	# A run carrying a curse; a Destroy that lands the cleanse outcome REDUCES curse_count by 1 + emits a curse_applied
+	# event with a NEGATIVE delta (the signed-delta path), curse_source = the cleanse marker.
+	var run: RunState = _run_with_passive_offer(&"passive_reward_choice", _baseline_offered_entries())
+	run.risk_economy.set_curse_count(2)
+	var streams: RngStreamSet = RngStreamSet.new(13579)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams, _always_cleanse_table()).execute(run)
+	assert_true(destroyed.succeeded, "A cleanse-outcome destroy should succeed: %s" % destroyed.metadata)
+
+	assert_equal(run.risk_economy.curse_count, 1, "The cleanse REDUCES curse_count by 1 (2 -> 1).")
+	# Two events: passive_destroyed (the existing) + curse_applied (the cleanse record).
+	assert_equal(destroyed.events.size(), 2, "A cleanse emits the passive_destroyed event PLUS a curse_applied cleanse event.")
+	assert_equal(destroyed.events[0].event_type, DomainEvent.Type.PASSIVE_DESTROYED, "The first event stays passive_destroyed.")
+	var cleanse_event: DomainEvent = destroyed.events[1]
+	assert_equal(cleanse_event.event_type, DomainEvent.Type.CURSE_APPLIED, "The second event is the curse_applied cleanse record.")
+	assert_equal(String(cleanse_event.payload.get("curse_source")), "passive_destroyed_cleanse", "The cleanse event identifies the cleanse source.")
+	assert_equal(int(cleanse_event.payload.get("curse_before")), 2, "The cleanse event records curse_before.")
+	assert_equal(int(cleanse_event.payload.get("curse_after")), 1, "The cleanse event records curse_after.")
+	assert_equal(int(cleanse_event.payload.get("curse_delta")), -1, "The cleanse event records a NEGATIVE curse_delta (the signed-delta path).")
+	# Distinct sequence ids (passive_destroyed at 1, the cleanse at 2) so the round-trip never collides.
+	assert_equal(cleanse_event.sequence_id, 2, "The cleanse event uses sequence_id + 1 (unique).")
+	# The cleanse event passes a real JSON round-trip.
+	var parsed: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(cleanse_event.to_dictionary())))
+	assert_true(parsed.succeeded, "The cleanse curse_applied event should pass payload validation: %s" % parsed.metadata)
+	assert_true(bool(destroyed.metadata.get("cleansed")), "The metadata flags a cleanse.")
+
+
+func _cleanse_reduces_corruption_when_no_curse_remains() -> void:
+	# A run with NO curse but some corruption: the cleanse reduces corruption instead (cleanse the deeper taint).
+	var run: RunState = _run_with_passive_offer(&"passive_reward_choice", _baseline_offered_entries())
+	run.risk_economy.set_curse_count(0)
+	run.risk_economy.set_corruption(3)
+	var streams: RngStreamSet = RngStreamSet.new(13579)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams, _always_cleanse_table()).execute(run)
+	assert_true(destroyed.succeeded, "A cleanse-outcome destroy should succeed: %s" % destroyed.metadata)
+	assert_equal(run.risk_economy.curse_count, 0, "Curse stays 0 (none to reduce).")
+	assert_equal(run.risk_economy.corruption, 2, "The cleanse reduces corruption by 1 when no curse remains (3 -> 2).")
+	var cleanse_event: DomainEvent = destroyed.events[1]
+	assert_equal(int(cleanse_event.payload.get("corruption_delta")), -1, "The cleanse event records a negative corruption_delta.")
+	assert_equal(int(cleanse_event.payload.get("curse_delta")), 0, "The cleanse event records a zero curse_delta when only corruption was reduced.")
+
+
+func _cleanse_floors_at_zero_when_nothing_to_cleanse() -> void:
+	# A run with NO curse and NO corruption: the cleanse outcome reduces nothing (floored at 0) and emits NO curse_applied
+	# event (nothing was cleansed — only the passive_destroyed event).
+	var run: RunState = _run_with_passive_offer(&"passive_reward_choice", _baseline_offered_entries())
+	assert_equal(run.risk_economy.curse_count, 0, "Setup: no curse.")
+	assert_equal(run.risk_economy.corruption, 0, "Setup: no corruption.")
+	var streams: RngStreamSet = RngStreamSet.new(13579)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams, _always_cleanse_table()).execute(run)
+	assert_true(destroyed.succeeded, "A cleanse-outcome destroy with nothing to cleanse should still succeed: %s" % destroyed.metadata)
+	assert_equal(run.risk_economy.curse_count, 0, "Cleansing below 0 stays 0 (curse).")
+	assert_equal(run.risk_economy.corruption, 0, "Cleansing below 0 stays 0 (corruption).")
+	assert_equal(destroyed.events.size(), 1, "Cleansing nothing emits NO curse_applied event (only passive_destroyed).")
+	assert_false(bool(destroyed.metadata.get("cleansed")), "The metadata reflects no cleanse occurred.")
+
+
+func _a_non_cleanse_outcome_leaves_curse_and_corruption_unchanged() -> void:
+	# A Destroy whose rolled outcome is NOT the cleanse outcome reduces NO curse/corruption (the existing behavior is
+	# unchanged for non-cleanse outcomes) and emits ONLY the passive_destroyed event.
+	var run: RunState = _run_with_passive_offer(&"passive_reward_choice", _baseline_offered_entries())
+	run.risk_economy.set_curse_count(2)
+	run.risk_economy.set_corruption(2)
+	var streams: RngStreamSet = RngStreamSet.new(13579)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams, _never_cleanse_table()).execute(run)
+	assert_true(destroyed.succeeded, "A non-cleanse destroy should succeed: %s" % destroyed.metadata)
+	assert_equal(run.risk_economy.curse_count, 2, "A non-cleanse outcome leaves curse_count unchanged.")
+	assert_equal(run.risk_economy.corruption, 2, "A non-cleanse outcome leaves corruption unchanged.")
+	assert_equal(destroyed.events.size(), 1, "A non-cleanse outcome emits ONLY the passive_destroyed event.")
+	assert_false(bool(destroyed.metadata.get("cleansed")), "A non-cleanse outcome does not flag a cleanse.")
+
+
+func _cleanse_draws_no_additional_rng() -> void:
+	# The cleanse rides the EXISTING single 70/20/10 roll — it adds NO second RNG draw. The rewards stream advances
+	# exactly once (draw_index 0 -> 1), the same as a non-cleanse destroy.
+	var run: RunState = _run_with_passive_offer(&"passive_reward_choice", _baseline_offered_entries())
+	run.risk_economy.set_curse_count(2)
+	var streams: RngStreamSet = RngStreamSet.new(13579)
+	var destroyed: ActionResult = DestroyPassiveCommand.new(&"warrior_unbreakable_guard", &"passive_reward_choice", 1, streams, _always_cleanse_table()).execute(run)
+	assert_true(destroyed.succeeded, "The cleanse destroy should succeed: %s" % destroyed.metadata)
+	var snapshot: Dictionary = streams.to_snapshot()
+	var stream_states: Dictionary = snapshot.get("streams")
+	assert_equal(int((stream_states.get("rewards") as Dictionary).get("draw_index")), 1, "The cleanse adds NO second draw: the rewards stream advances exactly once (0 -> 1).")
+	for other_stream: String in ["map", "level", "combat", "loot", "events", "cosmetic"]:
+		assert_equal(int((stream_states.get(other_stream) as Dictionary).get("draw_index")), 0, "The cleanse touches no other stream (%s stays at 0)." % other_stream)
 
 
 # ---- helpers -------------------------------------------------------------------------------------

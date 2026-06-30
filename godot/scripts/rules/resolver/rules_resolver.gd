@@ -23,10 +23,19 @@ extends RefCounted
 # stay EMPTY scaffolding. It is a scene-free RefCounted service (no Node/scene/autoload).
 
 const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
+const CurseDefinition = preload("res://scripts/content/definitions/curse_definition.gd")
 
 # Registered passives in registration order (the stable resolution order). Holds PassiveDefinition resources
 # ONLY (AC3 — no active-skill activation; a passive is a passive rule-bender).
 var _registered_passives: Array[PassiveDefinition] = []
+
+# Story 7.2 (AC3): registered CURSE/CORRUPTION effects in registration order, the curse/corruption analogue of
+# _registered_passives. [Decision] Option A — a SEPARATE typed registry rather than broadening _registered_passives
+# to a shared base (which would force an ugly cast and risk the 5.4 typed-passive contract). A curse is a rule source
+# that satisfies the SAME fires_in_window(window_id) + explanation shape; resolve_curses(window) returns the matching
+# curses and explain(window) merges curse explanations AFTER the passive explanations in stable order, so resolve()
+# keeps its strict Array[PassiveDefinition] return untouched.
+var _registered_curses: Array[CurseDefinition] = []
 
 # Register a starting passive into the resolver. Registration order is the stable resolution order. A null
 # definition is ignored (defensive — the caller resolves through the fail-closed PassiveRepository first, so
@@ -35,6 +44,16 @@ func register_passive(definition: PassiveDefinition) -> void:
 	if definition == null:
 		return
 	_registered_passives.append(definition)
+
+
+# Story 7.2 (AC3): register a CURSE/CORRUPTION effect into the resolver. Registration order is the stable resolution
+# order (curses resolve AFTER passives in explain(); among curses, in registration order). A null definition is
+# ignored (defensive — the caller seats a validated curse). Draws no RNG, mutates no tactical state (the curse's
+# economy-side penalty is applied by the command, NOT here — the resolver is a PURE READ).
+func register_curse(definition: CurseDefinition) -> void:
+	if definition == null:
+		return
+	_registered_curses.append(definition)
 
 
 # Resolve a trigger window: return the registered passives whose trigger_windows contain `window_id`, in
@@ -47,13 +66,28 @@ func resolve(window_id: StringName) -> Array[PassiveDefinition]:
 	return matching
 
 
-# The readable explanation entries for a trigger window — each matching passive's explanation, in the same
-# STABLE order as resolve(). The architecture's Readability Rule surface (player/debug-readable). A
-# non-matching window returns an empty array. Pure read; deterministic.
+# Story 7.2 (AC3): resolve a trigger window for CURSE/CORRUPTION effects — return the registered curses whose
+# trigger_windows contain `window_id`, in STABLE registration order. An unregistered/non-matching window returns an
+# empty array. Pure read (mirrors resolve() for passives).
+func resolve_curses(window_id: StringName) -> Array[CurseDefinition]:
+	var matching: Array[CurseDefinition] = []
+	for definition: CurseDefinition in _registered_curses:
+		if definition.fires_in_window(window_id):
+			matching.append(definition)
+	return matching
+
+
+# The readable explanation entries for a trigger window — each matching passive's explanation FOLLOWED BY each
+# matching curse's explanation (Story 7.2 AC3), in the same STABLE order as resolve() / resolve_curses(). The
+# architecture's Readability Rule surface (player/debug-readable). The curse explanations IDENTIFY their source (AC3).
+# A non-matching window returns an empty array. Pure read; deterministic.
 func explain(window_id: StringName) -> Array[String]:
 	var explanations: Array[String] = []
 	for definition: PassiveDefinition in resolve(window_id):
 		explanations.append(definition.explanation)
+	# Story 7.2: append curse explanations AFTER passive explanations (stable order — curses resolve after passives).
+	for curse: CurseDefinition in resolve_curses(window_id):
+		explanations.append(curse.explanation)
 	return explanations
 
 
@@ -68,3 +102,16 @@ func registered_passive_ids() -> Array[StringName]:
 
 func registered_passive_count() -> int:
 	return _registered_passives.size()
+
+
+# Story 7.2: the ids of every registered curse, in registration order. Used to surface the registered curse set via
+# command metadata and to assert the resolver holds exactly the expected curses.
+func registered_curse_ids() -> Array[StringName]:
+	var ids: Array[StringName] = []
+	for definition: CurseDefinition in _registered_curses:
+		ids.append(definition.curse_id)
+	return ids
+
+
+func registered_curse_count() -> int:
+	return _registered_curses.size()
