@@ -269,6 +269,18 @@ static func from_route_position(
 	if economy != null:
 		snapshot.gold = economy.gold
 		snapshot.corruption = economy.corruption
+	# Story 7.4 (AC2 — "the affinity is recorded in the level snapshot"): MIRROR the run's assigned affinities (node id ->
+	# affinity id) into the EXISTING top-level `affinities` Dictionary placeholder (currently `{}` through Epic 6). This
+	# reuses an EXISTING top-level snapshot key (the 7.1 reuse-the-placeholder save discipline — the 23-key gate stays
+	# green, COUNT stays 23, NO new top-level key, NO migration). It is a READ-ONLY MIRROR: the SOURCE OF TRUTH is the
+	# run's assigned_affinities dict (which rides the full RunState.to_dictionary()); the assignment is also a DETERMINISTIC
+	# function of (root_seed, route position), so it is RE-DERIVABLE on resume (re-run assign_affinity for the node) even
+	# though the route-position resume path (try_from_run_snapshot_fields) reconstructs the run with an EMPTY
+	# assigned_affinities (only the economy + class id are nested route-position state). A normalized String->String copy
+	# keeps the placeholder JSON-safe (node ids + affinity ids are short strings, never seeds).
+	for node_id_key: Variant in source_run.assigned_affinities.keys():
+		if node_id_key is String or node_id_key is StringName:
+			snapshot.affinities[String(node_id_key)] = String(source_run.assigned_affinities[node_id_key])
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 

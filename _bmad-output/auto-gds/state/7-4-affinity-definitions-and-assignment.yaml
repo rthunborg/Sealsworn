@@ -1,0 +1,59 @@
+story_key: 7-4-affinity-definitions-and-assignment
+epic_num: 7
+story_num: 4
+branch: story/7-4-affinity-definitions-and-assignment
+status: done
+updated_at: "2026-06-30T13:05:00Z"
+started_at: "2026-06-30T11:29:01Z"
+completed_at: "2026-06-30T13:05:00Z"
+active_seconds: 2800
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform: godot
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 6
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 2
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits:
+  - "b8a471c"
+  - "dd39135"
+  - "f7c3308"
+  - "ef75e6e"
+  - "09c5757"
+  - "8286e45"
+  - "ce0f4e9"
+  - "dd636f5"
+deferred_work_archived: 0
+planning_drift: []
+pr_url: null
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+resolved_review_items:
+  - "[Review][Patch] #1 round 1 (brittle seed-coupled none-selectability assertion): FIXED in test_affinity_assignment.gd (agds-high) — direct deterministic proof via a single-candidate none-only repo (must select none, seed-independent) + a fail-loud bounded-seed search 1..200; no reliance on the incidental 2/20 hit rate. Coverage strengthened. 131 PASS / 0 FAIL."
+  - "[Review][Patch] #2 round 1 (no once-per-node idempotency guard on RunOrchestrator.assign_affinity): DEFERRED (no production code changed) — by-design + harmless in v0 (caller-driven, no live per-node assign call site). Logged to deferred-work.md; the run-flow / per-node-assign story decides the assign-if-absent guard."
+deferred_work:
+  - "[Review][Defer] assign_affinity once-per-node (assign-if-absent) idempotency guard — owner: the later run-flow / per-node-assign story."
+  - "LevelGenerator.generate-injection half of the 4.6 inert run-level RngStreamSet RE-AFFIRMED to 7.5 (7.4 knowingly worked around it via the run-level STREAM_MAP orchestrator draw; generator untouched)."
+  - "Assigned-affinity must be re-derivable on resume (top-level RunSnapshot.affinities mirror + seed re-derivation; NOT a route-position-save source of truth). Owner: later in-node-save / live-resume story."
+  - "7.5/7.6 live tactical effects + the affinity-driven generation-modifier CONSUMER are knowingly parked (7.4 is RECORD/EXPLANATION-ONLY)."
+blockers: []
+overrides: {}
+constraints: []
+resume_notes: "RESOLVED 2026-06-30T12:44Z. The interrupted Phase-5 WIP (commit f7c3308) was resumed in a fresh session and independently verified: all 6 tasks were already complete + correct (zero new code on resume), full headless suite green (131 PASS / 0 FAIL, guard clean), scope fences audited intact. Finalization completed (checkboxes, Dev Agent Record, deferred-work) and story flipped to review. Phase 5 done; proceeding to Phase 7 normally."
