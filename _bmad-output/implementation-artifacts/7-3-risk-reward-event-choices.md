@@ -4,7 +4,7 @@ baseline_commit: 7d7898fb9f279d68f391c35d8736072650388e71
 
 # Story 7.3: Risk/Reward Event Choices
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
