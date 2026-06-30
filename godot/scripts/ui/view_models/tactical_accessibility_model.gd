@@ -70,6 +70,14 @@ const _CUE_CATALOG: Dictionary = {
 	"telegraph_pending": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL], "severity": SEVERITY_WARNING},
 	"telegraph_due": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
 	"danger_damage": {"channels": [CHANNEL_ICON, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
+	# Story 7.5 — affinity tactical-effect danger cues (FR57). Each carries a non-color channel so the affinity's
+	# critical danger information is NOT color-only (AC2 + the Epic-2 color-independence contract). The Scorched
+	# hazard + Flooded pathing cues are FINAL ids; the conductive-danger cue is a TRACKED MVP PLACEHOLDER (AC4) — its
+	# id carries the `_placeholder` marker (distinct-from-final) and a shape channel so the placeholder danger still
+	# reads with color stripped. (Authored as a board-effect cue vocabulary, not a difficulty knob.)
+	"affinity_scorched_hazard": {"channels": [CHANNEL_ICON, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
+	"affinity_conductive_danger_placeholder": {"channels": [CHANNEL_SHAPE, CHANNEL_LABEL, CHANNEL_TEXT], "severity": SEVERITY_DANGER},
+	"affinity_pathing_pressure": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL], "severity": SEVERITY_WARNING},
 	# Inspect visibility tiers.
 	"inspect_visible": {"channels": [CHANNEL_LABEL], "severity": SEVERITY_INFO},
 	"inspect_memory": {"channels": [CHANNEL_PATTERN, CHANNEL_LABEL], "severity": SEVERITY_INFO},
