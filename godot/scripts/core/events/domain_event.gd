@@ -274,12 +274,20 @@ static func run_completed(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	# a non-negative integral. Normalize/duplicate defensively.
 	var payload_value: Dictionary = payload.duplicate(true)
 	payload_value["outcome"] = String(payload.get("outcome", ""))
-	payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))
+	# Story 8.1 (AC2): boss_node_id is set ONLY when the caller supplies it — the boss path (Story 4.5,
+	# NodeResolvePlaceholderCommand._resolve_boss) always passes it, so the boss payload stays byte-identical; a
+	# GENERIC completion (CompleteRunCommand._resolve_completed) omits it, so a non-boss completion carries NO
+	# boss_node_id key (the broadened validator requires it only for the boss_placeholder outcome). Injecting it
+	# unconditionally would leak an (empty) boss_node_id into every generic completion — the field must be absent for
+	# a non-boss completion, not present-but-empty.
+	if payload.has("boss_node_id"):
+		payload_value["boss_node_id"] = String(payload.get("boss_node_id"))
 	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
 	# Story 8.1 (AC2): the broadened run_completed ALSO carries the next-destination flow signal (= outpost) so a
 	# completion/victory routes to the outpost the way a death does (FR32). Defaults to the outpost marker. The boss
-	# placeholder path (Story 4.5) does NOT set it; the factory defaults it, and the validator does NOT require it for
-	# the boss outcome (the boss path's existing test stays byte-identical) — see _validate_run_completed_payload.
+	# placeholder path (Story 4.5) does NOT set it; the factory defaults it, and the validator DOES require it for
+	# both outcomes (the boss factory now supplies the default, so the boss path's existing test still passes) — see
+	# _validate_run_completed_payload.
 	payload_value["next_destination"] = String(payload.get("next_destination", String(RUN_END_DESTINATION_OUTPOST)))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_COMPLETED, sequence_id, &"", payload_value)
 

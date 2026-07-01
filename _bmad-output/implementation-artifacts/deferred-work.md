@@ -1,3 +1,64 @@
+## Tracked from: dev of 8-1-run-completion-and-return-to-outpost-flow (2026-07-01)
+
+Story 8.1 (FR32 — "MVP loss condition must be hero death ... followed by return to the last outpost") OPENS
+Epic 8. It closes the RUN-END boundary: a run the hero LOSES resolves to `PHASE_FAILED` with a new
+`run_failed` event carrying a lower_snake CAUSE (AC1); a run that COMPLETES resolves to `PHASE_COMPLETED` with
+the BROADENED `run_completed` outcome `completed` (AC2, the boss `boss_placeholder` path untouched); BOTH
+carry a `next_destination == outpost` domain flow signal (FR32); and a re-resolution of an already-terminal
+run is the stable `run_already_terminal` error with ZERO second event + ZERO mutation (AC3). Shipped: the
+outcome-parameterized `CompleteRunCommand`, the `RunEndOutcome` read DTO, the `run_failed` event wired
+end-to-end (incl. the Story-7.1 `expected_ids` exhaustiveness pin), and a thin caller-driven
+`RunOrchestrator.resolve_run_end` dispatch hook. Full headless suite green (Godot 4.6.3, "Headless tests
+passed.", exit 0, 142 PASS / 0 FAIL).
+
+**Cross-story `[Decision]`s recorded (the run-END vocabulary later stories consume):**
+- Command shape: ONE outcome-parameterized `CompleteRunCommand` (death cause → FAILED + run_failed; completion
+  marker → COMPLETED + run_completed; anything else → `unknown_run_end_outcome`).
+- run_failed cause shape: a pinned lower_snake ALLOWLIST `RUN_FAILED_CAUSES = [hero_death, level_defeat,
+  boss_defeat, abandoned]`.
+- run_completed outcome broadening: added `RUN_COMPLETED_OUTCOME_COMPLETED := "completed"` to the validator
+  allowlist alongside the UNTOUCHED `boss_placeholder`; `boss_node_id` required only for `boss_placeholder`,
+  tolerated absent for `completed`; `victory` deliberately left FREE for Epic 9's real boss victory.
+- Flow-signal placement: `next_destination == "outpost"` on the command result metadata + BOTH event payloads
+  + the `RunEndOutcome` DTO. `RUN_END_DESTINATION_OUTPOST := "outpost"`.
+- Idempotency: stable `run_already_terminal` error (not an idempotent no-op ok).
+
+**Deferred to the owning stories (8.1 ships only the run-END boundary INPUTS these consume):**
+- **[Defer] (8.2) The RUN SUMMARY snapshot** (cause of death/victory, nodes cleared, passives consumed/
+  destroyed, notable loot, Oath Shards earned, Echoes, unlock progress, seed) — 8.1 emits the run-END EVENT +
+  terminal phase; the `run_failed.cause` + `run_completed.outcome` are the INPUTS 8.2's summary reads. 8.1
+  builds no summary aggregation/DTO.
+- **[Defer] (8.3 award / 8.7 save-load tests) The META PROFILE + Oath-Shard AWARDING + the meta-save shape** —
+  8.1 awards NOTHING, creates no cross-run meta profile, decides no meta-save shape (likely its OWN snapshot,
+  NOT nested under `route_state` — the Epic-7 retro T2/§7 heads-up), and keeps `RunSnapshot.oath_shards` at 0
+  (the AWARDED count 8.3 owns). 8.1 READS `meta_progression_eligible` / `RiskEconomyState.oath_shard_eligible`
+  READ-ONLY for the flow signal ONLY. The AC3 idempotency guard (`run_already_terminal`, no second event, no
+  mutation) is the SEAM 8.3's awarding must run BEHIND — a re-completion must never re-award. This is the
+  project's FIRST persistent cross-run state; plan the meta-save shape + migration coverage early (retro T2).
+- **[Defer] (8.6) The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produces
+  the DOMAIN flow fact (`next_destination == outpost`); it builds no outpost `.tscn`, no `OutpostViewModel`, no
+  navigation. UI-scene-last. A later boot/app-flow layer reads the flow signal to perform the actual nav.
+- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
+  8.1 emits `run_failed`; it tracks no first-death flag and delivers no narrative. Keep narrative off the
+  run-end CRITICAL path (retro §7 risk 2).
+
+**Remain DEFERRED (out of 8.1's scope — knowingly NOT reopened; NOT an Epic-8 dependency):**
+- **[Defer] The LIVE tactical-play loop / real combat-death SOURCE / auto-wiring a death into
+  `run_to_completion`** — combat auto-resolves to success (no live `BoardState`, no turn loop, no
+  HP-reaches-zero detection). 8.1's failed path is COMMAND/CALLER-driven with an EXPLICIT cause; the
+  `resolve_run_end` hook is deliberately NOT wired into the auto-resolve loop, preserving the
+  interrupted==uninterrupted determinism + the v0 combat-auto-resolve posture. The "play a level → hero HP hits
+  0 → run fails" live wiring is the later HUD/run-flow / live-tactical-loop story (the Epic-7 retro Action T1
+  residual — explicitly NOT an Epic-8 dependency). Leave parked.
+- **[Note] The int64-overflow `root_seed` validator (`_has_decimal_string_payload`)** prints a benign
+  `String.to_int()` `ERROR: Cannot represent ... as a 64-bit signed integer` push_error on the pre-existing
+  Story-4.6 out-of-range-seed REJECTION test (Godot 4.6.3 pushes an error yet returns a saturated value; the
+  out-of-range seed is still correctly rejected). This is byte-identical to the green baseline, is a
+  documented-expected negative-path diagnostic (not caught by the false-PASS grep guard), and is NOT a
+  regression — left untouched (an out-of-scope tightening that fixes no failure + risks the max-int64 boundary
+  tests). If a future story wants to silence the ERROR line, guard the magnitude BEFORE `to_int()` and keep the
+  max-int64-round-trips / max+1-rejected boundary tests green.
+
 ## Tracked from: dev of 7-6-darkness-fairness-and-memory-pressure (2026-06-30)
 
 Story 7.6 (FR58 — "Darkness must create uncertainty through visibility or memory pressure WITHOUT unavoidable damage from unseen space") is the THIRD/FINAL affinity story and the FINAL story of Epic 7. It makes the DARKNESS affinity DO SOMETHING: a deterministic, explainable VISIBILITY/MEMORY-PRESSURE effect (reduced LoS radius + uncertain explored memory) PLUS the FR58 fairness guardrail. ⭐ THE PIVOTAL DECISION: Darkness's effect is a VISIBILITY/FOG/MEMORY effect, NOT a board-cell HAZARD effect — so it is built as a SEPARATE pure-domain layer (NOT an extension of the 7.5 hazard `AffinityEffectResolver`/`AffinityPreviewQuery`), which keeps the two existing Darkness-no-op tests (`test_affinity_effect_resolver.gd::_darkness_is_a_no_op_in_7_5` + `test_affinity_preview_query.gd` darkness branch) green BY CONSTRUCTION. New: `scripts/tactical/fog/darkness_visibility_layer.gd` (the NEW home for Darkness's effect — homed in `fog/` alongside `TacticalVisibilityQuery`, the visibility-domain home, NOT `rules/operations/`: `is_darkness`/`reduced_radius_for` (an AUTHORED bounded 4→2 reduction, floor 1, NEVER 0, a fail-SAFE read off the recorded `reduced_visibility` marker), `calculate_visible_cells` REUSING the existing LoS query at the reduced radius — no parallel algorithm, and `visible_facts_for_cell` ADDITIVELY annotating a `memory`-state cell as stale/uncertain off `fog_memory_pressure` — a READ-layer annotation that never touches the `visible` truth branch / never mutates stored cell state); `scripts/generation/level/darkness_fairness_query.gd` (the FR58 guardrail — a board-scoped, affinity-aware NEW query, NOT a `LevelValidator` wiring change: re-asserts safe-first-reveal at the reduced radius + a reachable HAZARD cell unseen from the entrance at the reduced radius FAILS LOUD with a stable `fairness_reason` code + the seed + the phase, AC3); `scripts/ui/view_models/darkness_read_view.gd` (AC1 explainability — a scene-free exact-key read mirroring `AffinityViewModel`, surfacing the reduced/baseline radius + memory uncertainty + the honest GDD-guardrail explanation + the non-color cue ids; NOT routed through the hazard preview); + an edit to `tactical_accessibility_model.gd` (2 FINAL Darkness cues — `affinity_darkness_reduced_visibility` + `affinity_darkness_memory_uncertain`, each with a non-color channel — AC2). All three ACs MET; full headless suite green (Godot 4.6.3, "Headless tests passed.", exit 0, **140 PASS / 0 FAIL**, all 4 new Darkness suites PASS, false-PASS grep `SCRIPT ERROR|Parse Error|Compile Error|Failed to load script` = NONE beyond the documented int64-overflow / `invalid_node_type` / `got 'this'` / `Expected key` negative-path diagnostics); ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code (grep-confirmed — v0 Darkness is fully deterministic, NO roll; any future roll must draw the EXISTING `combat` stream); `scripts/rules/conditions/` stays EMPTY (0 `.gd`); `scripts/rules/operations/` UNCHANGED (Darkness is NOT a hazard effect — it lives in `fog/`); `data/source`/`data/resources` stay EMPTY (the Darkness markers are the 7.4 code constant); no `.tscn`/asset; `RngStreamSet.required_streams()` UNCHANGED (7 streams — no new stream); the `DomainEvent.Type` enum UNCHANGED (NO new event — the visibility effect is a query-layer concern: a reduced radius simply produces a smaller `visible_cells` via the existing `visibility_updated`); the 23-key `RunSnapshot` gate COUNT stays 23 + NO migration (the reduced radius + memory flag are LIVE re-derivable from `(assigned affinity, board)`, NOT new persisted state — the memory distortion is a READ annotation, not stored `BoardCell`/snapshot state); `RunOrchestrator._resolve_combat`/`run_to_completion`/`assign_affinity`/`assigned_affinity_for` UNCHANGED (the layer is CALLER-DRIVEN/board-scoped, NOT auto-wired; 7.6 CONSUMES the 7.4 assignment); `AffinityEffectResolver`/`AffinityPreviewQuery` Darkness branches STAY no-op (the two existing tests green); `AffinityRepository`/`AffinityDefinition` UNCHANGED (the Darkness content already exists); `TacticalVisibilityQuery`'s DEFAULT/neutral output byte-identical (the layer wraps it additively — the Epic-1 visibility tests pin it); `scripts/generation/` generators/`LevelValidator` UNTOUCHED (the new fairness query is a SEPARATE additive file — every Small/Medium/route seed-regression fingerprint byte-identical, VERIFIED via the full suite); `BoardCell.Terrain.HAZARD` stays board-valid/walkable/sight-transparent (only WALL blocks — the 3.4 contract; Darkness touches no terrain). **Epic 7's affinity arc is now COMPLETE: all 4 MVP affinities have effects — Scorched/Flooded/Cursed via 7.5, Darkness via 7.6.** These are the dev-side forward residuals (no code review has run yet — that is the next pipeline phase).

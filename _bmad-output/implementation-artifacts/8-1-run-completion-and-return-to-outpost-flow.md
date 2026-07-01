@@ -1,6 +1,6 @@
 # Story 8.1: Run Completion and Return-to-Outpost Flow
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -103,44 +103,44 @@ If an AC seems to demand a LIVE combat death loop, re-read: AC1 demands "the her
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — The run-END resolution command (the 4.3 run-command idiom) (AC1, AC2, AC3)** — a run-domain `GameCommand` under `godot/scripts/core/commands/`
-  - [ ] **Resolve the ⭐ command-shape `[Decision]` first (see the scope boundary) and record it in Completion Notes:** a single outcome-parameterized `CompleteRunCommand` (RECOMMENDED) OR sibling fail/complete commands. Whichever: extend `res://scripts/core/commands/game_command.gd`, take the live `RunState` DIRECTLY as the `validate(state)`/`execute(state)` arg (NO `RunActionContext` wrapper — the 4.3 idiom), the CALLER supplies the run-level `sequence_id` via the constructor (default 1).
-  - [ ] **Validate-then-mutate, `sequence_id <= 0` FIRST (the 4.3 invalid_event_sequence_id guard):** `validate()` rejects `sequence_id <= 0` BEFORE reading/mutating state (so a success path can never emit an event its own validator would reject); then validates the run is a `RunState`, structurally sound (`run.validate()`), and the requested END transition is legal from the current phase. On any rejection: structured `ActionResult.error` with ZERO events and a byte-identical no-mutation `RunState`. Build the success event ONLY after the (legal) `transition_to` succeeds. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` lines 97-153 (the validate shape) + 211-279 (the boss mutate-then-event ordering)]
-  - [ ] **Death path → `PHASE_FAILED` + `run_failed` (AC1):** transition `→ PHASE_FAILED` (a legal edge from `ACTIVE_ROUTE` and `NODE_RESOLUTION` — already in `_legal_next_phases`), then emit `run_failed` carrying the CAUSE (supplied by the caller — an explicit lower_snake cause marker). Reject the transition fail-loud (a structured wrong-phase error, ZERO event) if the run is not in a phase that legally reaches `FAILED`.
-  - [ ] **Completion/victory path → `PHASE_COMPLETED` + `run_completed` (AC2):** transition `→ PHASE_COMPLETED` (legal from `NODE_RESOLUTION`; if the AC's "completion path" can be reached from `ACTIVE_ROUTE`, note that `_legal_next_phases` does NOT currently allow `ACTIVE_ROUTE → COMPLETED` — if 8.1's completion is driven from `ACTIVE_ROUTE`, either route it through `NODE_RESOLUTION` first like the boss does, OR add the edge with a recorded rationale + a transition-table test; PREFER mirroring the boss's `ACTIVE_ROUTE → NODE_RESOLUTION → COMPLETED` two-step to avoid changing the table). Emit `run_completed` with the BROADENED outcome (Task 3). [Source: `godot/scripts/run/run_state.gd` lines 550-565 (`_legal_next_phases`); `node_resolve_placeholder_command.gd` lines 234-252 (the boss two-step transition)]
-  - [ ] **The "next destination = outpost" flow signal (AC1/AC2):** surface a stable `next_destination`/`return_destination` = `outpost` (a lower_snake marker const) on the command `ActionResult.metadata` and/or the event payload (and/or a tiny scene-free read DTO — Task 5). Record the placement `[Decision]`. NOT a scene transition / `.tscn`.
-  - [ ] **ZERO RNG (named-RNG rule):** run-END resolution is a deterministic phase transition + event — it draws NO RNG (no `randi`/`randf`/`RandomNumberGenerator`, no stream advance). Assert named-stream isolation in tests (no stream advances).
-  - [ ] Tests (`godot/tests/unit/core/test_*_command.gd`): death → `FAILED` + `run_failed` + cause + outpost signal; completion → `COMPLETED` + `run_completed` + outpost signal; `sequence_id <= 0` rejected FIRST; an illegal-phase transition rejected with a stable code + ZERO mutation + ZERO events; ZERO RNG drawn.
+- [x] **Task 1 — The run-END resolution command (the 4.3 run-command idiom) (AC1, AC2, AC3)** — a run-domain `GameCommand` under `godot/scripts/core/commands/`
+  - [x] **Resolve the ⭐ command-shape `[Decision]` first (see the scope boundary) and record it in Completion Notes:** a single outcome-parameterized `CompleteRunCommand` (RECOMMENDED) OR sibling fail/complete commands. Whichever: extend `res://scripts/core/commands/game_command.gd`, take the live `RunState` DIRECTLY as the `validate(state)`/`execute(state)` arg (NO `RunActionContext` wrapper — the 4.3 idiom), the CALLER supplies the run-level `sequence_id` via the constructor (default 1).
+  - [x] **Validate-then-mutate, `sequence_id <= 0` FIRST (the 4.3 invalid_event_sequence_id guard):** `validate()` rejects `sequence_id <= 0` BEFORE reading/mutating state (so a success path can never emit an event its own validator would reject); then validates the run is a `RunState`, structurally sound (`run.validate()`), and the requested END transition is legal from the current phase. On any rejection: structured `ActionResult.error` with ZERO events and a byte-identical no-mutation `RunState`. Build the success event ONLY after the (legal) `transition_to` succeeds. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` lines 97-153 (the validate shape) + 211-279 (the boss mutate-then-event ordering)]
+  - [x] **Death path → `PHASE_FAILED` + `run_failed` (AC1):** transition `→ PHASE_FAILED` (a legal edge from `ACTIVE_ROUTE` and `NODE_RESOLUTION` — already in `_legal_next_phases`), then emit `run_failed` carrying the CAUSE (supplied by the caller — an explicit lower_snake cause marker). Reject the transition fail-loud (a structured wrong-phase error, ZERO event) if the run is not in a phase that legally reaches `FAILED`.
+  - [x] **Completion/victory path → `PHASE_COMPLETED` + `run_completed` (AC2):** transition `→ PHASE_COMPLETED` (legal from `NODE_RESOLUTION`; if the AC's "completion path" can be reached from `ACTIVE_ROUTE`, note that `_legal_next_phases` does NOT currently allow `ACTIVE_ROUTE → COMPLETED` — if 8.1's completion is driven from `ACTIVE_ROUTE`, either route it through `NODE_RESOLUTION` first like the boss does, OR add the edge with a recorded rationale + a transition-table test; PREFER mirroring the boss's `ACTIVE_ROUTE → NODE_RESOLUTION → COMPLETED` two-step to avoid changing the table). Emit `run_completed` with the BROADENED outcome (Task 3). [Source: `godot/scripts/run/run_state.gd` lines 550-565 (`_legal_next_phases`); `node_resolve_placeholder_command.gd` lines 234-252 (the boss two-step transition)]
+  - [x] **The "next destination = outpost" flow signal (AC1/AC2):** surface a stable `next_destination`/`return_destination` = `outpost` (a lower_snake marker const) on the command `ActionResult.metadata` and/or the event payload (and/or a tiny scene-free read DTO — Task 5). Record the placement `[Decision]`. NOT a scene transition / `.tscn`.
+  - [x] **ZERO RNG (named-RNG rule):** run-END resolution is a deterministic phase transition + event — it draws NO RNG (no `randi`/`randf`/`RandomNumberGenerator`, no stream advance). Assert named-stream isolation in tests (no stream advances).
+  - [x] Tests (`godot/tests/unit/core/test_*_command.gd`): death → `FAILED` + `run_failed` + cause + outpost signal; completion → `COMPLETED` + `run_completed` + outpost signal; `sequence_id <= 0` rejected FIRST; an illegal-phase transition rejected with a stable code + ZERO mutation + ZERO events; ZERO RNG drawn.
 
-- [ ] **Task 2 — The `run_failed` SYSTEM event (NEW, append-only, with CAUSE) (AC1)** — extend `godot/scripts/core/events/domain_event.gd` end-to-end
-  - [ ] **Append `RUN_FAILED` AFTER the last enum member (`EVENT_RESOLVED`), NEVER renumber.** Add `const EVENT_ID_RUN_FAILED := &"run_failed"`. [Source: `godot/scripts/core/events/domain_event.gd` lines 6-39 (the enum), 41-72 (the id consts)]
-  - [ ] **Factory `DomainEvent.run_failed(sequence_id, payload)`** — a SYSTEM event (no actor; `actor_id` stays empty — do NOT add it to `_event_requires_actor`). Defensively normalize/duplicate the payload (mirror `run_completed`, lines 232-246): the CAUSE (a stable lower_snake marker), plus any `node_id`/`node_type` (hyphenated → plain non-empty string) / `cleared_node_count` (non-negative integral) you carry. Decimal-string-encode NOTHING here unless a field can exceed 2^53 (the cause/markers are short strings, counts are bounded — no int64 encoding needed).
-  - [ ] **Payload validator `_validate_run_failed_payload`** — assert the CAUSE field (lower_snake; if you pin an allowlist of cause codes — e.g. `hero_death`/`level_defeat`/`boss_defeat`/`abandoned` — mirror the `*_CATEGORIES` allowlist-const pattern + pin it by test; otherwise require a non-empty lower_snake cause) + any other carried fields. Wire it into the `validate_payload` match (mirror line 792 `Type.RUN_COMPLETED → _validate_run_completed_payload`). [Source: `godot/scripts/core/events/domain_event.gd` lines 786-813 (the validator dispatch), 938-952 (`_validate_run_completed_payload` as the template)]
-  - [ ] **Both id maps + round-trip:** add `Type.RUN_FAILED → EVENT_ID_RUN_FAILED` to `id_for_type` (mirror line 1732) AND `EVENT_ID_RUN_FAILED → Type.RUN_FAILED` to `type_for_id` (mirror line 1800), so `id_for_type`/`type_for_id` round-trip.
-  - [ ] **⭐ UPDATE the `expected_ids` EXHAUSTIVENESS PIN (this WILL fail-loud until you do — by design):** add `DomainEvent.Type.RUN_FAILED: &"run_failed"` to the `expected_ids` map in `test_domain_event.gd::_event_identifiers_are_stable_machine_ids` (lines 1948-1987). The gate `expected_ids.size() == DomainEvent.Type.size() - 1` + the per-member iteration (lines 2001-2005) FAILS until the new member is pinned. Add it; do NOT loosen the assertion. [Source: `godot/tests/unit/core/test_domain_event.gd` lines 1947-2005 (the Story-7.1 / retro-T3 exhaustiveness hardening)]
-  - [ ] Tests (in `test_domain_event.gd`, mirroring the per-event pattern): `run_failed` constructs with the cause; the payload validator ACCEPTS a well-formed payload and REJECTS each malformed field (an invalid cause, a non-string `node_id`, a negative `cleared_node_count` — the per-field `invalid_event_payload` checks); the event survives a JSON `stringify`→`parse_string` round-trip; `id_for_type`/`type_for_id` round-trip; the `expected_ids` pin is green.
+- [x] **Task 2 — The `run_failed` SYSTEM event (NEW, append-only, with CAUSE) (AC1)** — extend `godot/scripts/core/events/domain_event.gd` end-to-end
+  - [x] **Append `RUN_FAILED` AFTER the last enum member (`EVENT_RESOLVED`), NEVER renumber.** Add `const EVENT_ID_RUN_FAILED := &"run_failed"`. [Source: `godot/scripts/core/events/domain_event.gd` lines 6-39 (the enum), 41-72 (the id consts)]
+  - [x] **Factory `DomainEvent.run_failed(sequence_id, payload)`** — a SYSTEM event (no actor; `actor_id` stays empty — do NOT add it to `_event_requires_actor`). Defensively normalize/duplicate the payload (mirror `run_completed`, lines 232-246): the CAUSE (a stable lower_snake marker), plus any `node_id`/`node_type` (hyphenated → plain non-empty string) / `cleared_node_count` (non-negative integral) you carry. Decimal-string-encode NOTHING here unless a field can exceed 2^53 (the cause/markers are short strings, counts are bounded — no int64 encoding needed).
+  - [x] **Payload validator `_validate_run_failed_payload`** — assert the CAUSE field (lower_snake; if you pin an allowlist of cause codes — e.g. `hero_death`/`level_defeat`/`boss_defeat`/`abandoned` — mirror the `*_CATEGORIES` allowlist-const pattern + pin it by test; otherwise require a non-empty lower_snake cause) + any other carried fields. Wire it into the `validate_payload` match (mirror line 792 `Type.RUN_COMPLETED → _validate_run_completed_payload`). [Source: `godot/scripts/core/events/domain_event.gd` lines 786-813 (the validator dispatch), 938-952 (`_validate_run_completed_payload` as the template)]
+  - [x] **Both id maps + round-trip:** add `Type.RUN_FAILED → EVENT_ID_RUN_FAILED` to `id_for_type` (mirror line 1732) AND `EVENT_ID_RUN_FAILED → Type.RUN_FAILED` to `type_for_id` (mirror line 1800), so `id_for_type`/`type_for_id` round-trip.
+  - [x] **⭐ UPDATE the `expected_ids` EXHAUSTIVENESS PIN (this WILL fail-loud until you do — by design):** add `DomainEvent.Type.RUN_FAILED: &"run_failed"` to the `expected_ids` map in `test_domain_event.gd::_event_identifiers_are_stable_machine_ids` (lines 1948-1987). The gate `expected_ids.size() == DomainEvent.Type.size() - 1` + the per-member iteration (lines 2001-2005) FAILS until the new member is pinned. Add it; do NOT loosen the assertion. [Source: `godot/tests/unit/core/test_domain_event.gd` lines 1947-2005 (the Story-7.1 / retro-T3 exhaustiveness hardening)]
+  - [x] Tests (in `test_domain_event.gd`, mirroring the per-event pattern): `run_failed` constructs with the cause; the payload validator ACCEPTS a well-formed payload and REJECTS each malformed field (an invalid cause, a non-string `node_id`, a negative `cleared_node_count` — the per-field `invalid_event_payload` checks); the event survives a JSON `stringify`→`parse_string` round-trip; `id_for_type`/`type_for_id` round-trip; the `expected_ids` pin is green.
 
-- [ ] **Task 3 — Broaden `run_completed.outcome` for a real completion/victory WITHOUT breaking the boss boundary (AC2)** — extend the `run_completed` validator
-  - [ ] **Resolve the ⭐ outcome `[Decision]` (see the scope boundary) and record it:** add a `victory`/`completed` lower_snake outcome marker (RECOMMENDED a `const RUN_COMPLETED_OUTCOME_VICTORY := &"victory"` or `..._COMPLETED := &"completed"` alongside `RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER`, the lockstep-marker pattern). Accept an ALLOWLIST of completion outcomes (boss_placeholder OR victory/completed) in `_validate_run_completed_payload` — do NOT replace the boss value. [Source: `godot/scripts/core/events/domain_event.gd` lines 116-121 (the marker consts), 938-952 (the validator)]
-  - [ ] **Keep the boss path byte-identical (the load-bearing regression guard):** the boss path emits `outcome == "boss_placeholder"` + `boss_node_id` + `cleared_node_count` (`node_resolve_placeholder_command.gd` `_resolve_boss`). After broadening, the boss event MUST still validate AND its existing test must stay green. For a NON-boss completion (no boss node), make `boss_node_id` TOLERANT (optional/absent) for the non-boss outcome WITHOUT making it optional for the boss outcome (e.g. require `boss_node_id` only when `outcome == boss_placeholder`). Record the field-shape decision. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` `_resolve_boss` (the boss event); `godot/tests/unit/core/test_domain_event.gd` (the existing run_completed test — keep green)]
-  - [ ] Tests: a completion/victory `run_completed` with the broadened outcome VALIDATES + round-trips; the boss `run_completed` (`boss_placeholder` + boss fields) STILL validates (the boss regression guard); an unknown/garbage outcome is still REJECTED (the allowlist did not become permissive); the boss command's existing behavior/tests stay green.
+- [x] **Task 3 — Broaden `run_completed.outcome` for a real completion/victory WITHOUT breaking the boss boundary (AC2)** — extend the `run_completed` validator
+  - [x] **Resolve the ⭐ outcome `[Decision]` (see the scope boundary) and record it:** add a `victory`/`completed` lower_snake outcome marker (RECOMMENDED a `const RUN_COMPLETED_OUTCOME_VICTORY := &"victory"` or `..._COMPLETED := &"completed"` alongside `RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER`, the lockstep-marker pattern). Accept an ALLOWLIST of completion outcomes (boss_placeholder OR victory/completed) in `_validate_run_completed_payload` — do NOT replace the boss value. [Source: `godot/scripts/core/events/domain_event.gd` lines 116-121 (the marker consts), 938-952 (the validator)]
+  - [x] **Keep the boss path byte-identical (the load-bearing regression guard):** the boss path emits `outcome == "boss_placeholder"` + `boss_node_id` + `cleared_node_count` (`node_resolve_placeholder_command.gd` `_resolve_boss`). After broadening, the boss event MUST still validate AND its existing test must stay green. For a NON-boss completion (no boss node), make `boss_node_id` TOLERANT (optional/absent) for the non-boss outcome WITHOUT making it optional for the boss outcome (e.g. require `boss_node_id` only when `outcome == boss_placeholder`). Record the field-shape decision. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` `_resolve_boss` (the boss event); `godot/tests/unit/core/test_domain_event.gd` (the existing run_completed test — keep green)]
+  - [x] Tests: a completion/victory `run_completed` with the broadened outcome VALIDATES + round-trips; the boss `run_completed` (`boss_placeholder` + boss fields) STILL validates (the boss regression guard); an unknown/garbage outcome is still REJECTED (the allowlist did not become permissive); the boss command's existing behavior/tests stay green.
 
-- [ ] **Task 4 — The idempotency / no-double-grant guard (AC3)** — the already-terminal guard
-  - [ ] **Re-resolving an ALREADY-terminal run** returns a stable error (RECOMMENDED `run_already_terminal`, mirroring the orchestrator's existing guard) OR an idempotent no-op ok carrying the existing terminal outcome (AC3 allows either — pick one + pin it). It emits NO second event + mutates the `RunState` NOT AT ALL (byte-identical) — so nothing can be granted twice. [Source: `godot/scripts/run/run_orchestrator.gd` lines 189-190 (`run_already_terminal`), 163-167 (`seated_run_terminal`)]
-  - [ ] **Structurally guarantee "not granted twice" (AC3):** v0 grants no reward/progression at run-END (awarding is 8.3) — so "not granted twice" is satisfied by the no-second-event + no-mutation guard. Build the guard so 8.3's awarding inherits it (the award must run BEHIND this guard, never on a re-completion). Note in Completion Notes that 8.1 has nothing to double-grant yet, but the guard is the seam 8.3 awarding sits behind.
-  - [ ] Tests: a first death/completion succeeds; a SECOND resolution on the now-terminal run returns the stable-error-OR-idempotent result; the second resolution emits ZERO new events + leaves the `RunState` byte-identical (assert `to_dictionary()` equality before/after the second call); a double-fail and a fail-then-complete are both blocked (terminal is terminal).
+- [x] **Task 4 — The idempotency / no-double-grant guard (AC3)** — the already-terminal guard
+  - [x] **Re-resolving an ALREADY-terminal run** returns a stable error (RECOMMENDED `run_already_terminal`, mirroring the orchestrator's existing guard) OR an idempotent no-op ok carrying the existing terminal outcome (AC3 allows either — pick one + pin it). It emits NO second event + mutates the `RunState` NOT AT ALL (byte-identical) — so nothing can be granted twice. [Source: `godot/scripts/run/run_orchestrator.gd` lines 189-190 (`run_already_terminal`), 163-167 (`seated_run_terminal`)]
+  - [x] **Structurally guarantee "not granted twice" (AC3):** v0 grants no reward/progression at run-END (awarding is 8.3) — so "not granted twice" is satisfied by the no-second-event + no-mutation guard. Build the guard so 8.3's awarding inherits it (the award must run BEHIND this guard, never on a re-completion). Note in Completion Notes that 8.1 has nothing to double-grant yet, but the guard is the seam 8.3 awarding sits behind.
+  - [x] Tests: a first death/completion succeeds; a SECOND resolution on the now-terminal run returns the stable-error-OR-idempotent result; the second resolution emits ZERO new events + leaves the `RunState` byte-identical (assert `to_dictionary()` equality before/after the second call); a double-fail and a fail-then-complete are both blocked (terminal is terminal).
 
-- [ ] **Task 5 — The run-END read surface / flow signal (AC1/AC2)** — scene-free, optional DTO
-  - [ ] IF you chose a read DTO for the flow signal (Task 1): a tiny scene-free `RefCounted` (mirror `affinity_view_model.gd`'s exact-key, fail-closed, no-live-handle discipline) surfacing `{ phase, outcome_or_cause, next_destination: "outpost", meta_progression_eligible }` — a PURE read (no mutation, no RNG, no events; repeated reads identical). It READS `run.meta_progression_eligible` / `RiskEconomyState.oath_shard_eligible` for the eligibility field; it does NOT award anything (8.3). [Source: `godot/scripts/ui/view_models/affinity_view_model.gd` (the scene-free read pattern); `godot/scripts/run/risk_economy_state.gd` `oath_shard_eligible`]
-  - [ ] **Keep the eligibility READ-ONLY:** the flow signal REPORTS `meta_progression_eligible` (already lockstep with `is_manual_seed`); it does NOT compute, grant, or deny an award (FR28 enforcement is 8.3). A manual-seed run's flow signal reports `meta_progression_eligible == false` but 8.1 takes no award action.
-  - [ ] Tests: the read DTO has an EXACT pinned key set (if you build one); `next_destination == outpost` for BOTH a failed and a completed run; the eligibility field mirrors `meta_progression_eligible` (true for a normal run, false for a manual-seed run); the read is pure (twice → identical).
+- [x] **Task 5 — The run-END read surface / flow signal (AC1/AC2)** — scene-free, optional DTO
+  - [x] IF you chose a read DTO for the flow signal (Task 1): a tiny scene-free `RefCounted` (mirror `affinity_view_model.gd`'s exact-key, fail-closed, no-live-handle discipline) surfacing `{ phase, outcome_or_cause, next_destination: "outpost", meta_progression_eligible }` — a PURE read (no mutation, no RNG, no events; repeated reads identical). It READS `run.meta_progression_eligible` / `RiskEconomyState.oath_shard_eligible` for the eligibility field; it does NOT award anything (8.3). [Source: `godot/scripts/ui/view_models/affinity_view_model.gd` (the scene-free read pattern); `godot/scripts/run/risk_economy_state.gd` `oath_shard_eligible`]
+  - [x] **Keep the eligibility READ-ONLY:** the flow signal REPORTS `meta_progression_eligible` (already lockstep with `is_manual_seed`); it does NOT compute, grant, or deny an award (FR28 enforcement is 8.3). A manual-seed run's flow signal reports `meta_progression_eligible == false` but 8.1 takes no award action.
+  - [x] Tests: the read DTO has an EXACT pinned key set (if you build one); `next_destination == outpost` for BOTH a failed and a completed run; the eligibility field mirrors `meta_progression_eligible` (true for a normal run, false for a manual-seed run); the read is pure (twice → identical).
 
-- [ ] **Task 6 — Full headless suite + diff hygiene + the scope-fence + the deferred-work dispositions**
-  - [ ] Run the FULL headless suite via PowerShell (`godot` is NOT on the Bash PATH — see Project Context Rules). Expect "Headless tests passed.", exit 0, ZERO FAIL. Apply the **false-PASS grep guard** (`SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`) — it must be clean beyond the documented-expected negative-path diagnostics (the int64-overflow `root_seed` boundary x2, `RouteNode parse failed: invalid_node_type`, the save/settings `Parse JSON failed`/`got 'this'`/`Expected key` negatives). Command: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` (or the console binary `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe` with the same args, since `godot` resolves only via PowerShell).
-  - [ ] `git diff --check` clean (working tree + the baseline..HEAD; ignore the benign LF→CRLF normalization warning on the `.md`).
-  - [ ] **Confirm the scope fences:** the `DomainEvent.Type` enum is APPEND-ONLY (`RUN_FAILED` appended at the end + wired end-to-end + added to `expected_ids`; NOTHING renumbered); the `run_completed` boss `boss_placeholder` outcome value UNCHANGED + the boss command/test green; `RngStreamSet.required_streams()` UNCHANGED (the 7 streams — run-END draws ZERO RNG, no new stream); the 23-key `RunSnapshot` COUNT STAYS 23 + the no-surprise-key gate UNCHANGED (no new save key — the terminal phase already persists via the nested `run_phase`); `RunSnapshot.oath_shards` STAYS the 0 AWARDED-count placeholder (no awarding — 8.3); `meta_progression_eligible` READ-ONLY (no award/deny — 8.3); the `RunState._legal_next_phases` transition table UNCHANGED unless an AC genuinely needs an edge (record WHY + add a table test if you do — PREFER the boss two-step over a new edge); `RunOrchestrator._resolve_combat`/`run_to_completion`/`_resolve_boss` boss-completion behavior UNCHANGED (no death auto-wired into the auto-resolve loop; the boss boundary Epic 9 reuses is untouched); `scripts/rules/{conditions,operations}` UNCHANGED (run-END is not a rules-kernel concern); `data/source`/`data/resources` STAY EMPTY (no content); no `.tscn`/new asset (UI-scene-last; the outpost scene is 8.6); ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code; **every Small/Medium/route seed-regression fingerprint byte-identical** (8.1 touches no `scripts/generation/`).
-  - [ ] **Update `deferred-work.md`** with the 8.1 dispositions (mirror the 7-6 entry structure): that the run-summary snapshot (8.2), the Oath-Shard awarding + meta profile + the meta-save shape (8.3/8.7), the outpost menu scene + named spaces + start-another-descent (8.6), and the first-death narrative line (8.5) are DEFERRED to their owning stories; that the LIVE tactical-loop / real combat-death source + auto-wiring a death into `run_to_completion` remain DEFERRED (the retro-T1 live-tactical-loop residual — explicitly NOT an Epic-8 dependency); that 8.1 emits the `run_failed` (with cause) + the broadened `run_completed` outcome + the `next_destination == outpost` flow signal as the run-END boundary INPUTS the 8.2 summary + 8.3 awarding consume; and that `meta_progression_eligible` / `oath_shard_eligible` are READ-ONLY at run-END in 8.1 (the actual meta gate + awarding is 8.3, the project's first persistent cross-run state). Note any new cross-story `[Decision]` (the command shape, the run-failed cause shape, the run-completed outcome shape, the flow-signal placement).
-  - [ ] Update story Status (→ review), `sprint-status.yaml` (`8-1-run-completion-and-return-to-outpost-flow: review`, refresh `last_updated`), the File List, and Completion Notes (incl. ALL `[Decision]`s — the command shape; the run-failed event + its cause shape/allowlist; the run-completed outcome broadening + the boss-field tolerance shape; the flow-signal placement; whether a read DTO was built; the idempotency-vs-stable-error choice; the transition-table decision if any edge was added). Note that 8.1 OPENS Epic 8 (the run-END boundary) and that the run-summary (8.2) + meta awarding (8.3) build on the events/phase it ships.
+- [x] **Task 6 — Full headless suite + diff hygiene + the scope-fence + the deferred-work dispositions**
+  - [x] Run the FULL headless suite via PowerShell (`godot` is NOT on the Bash PATH — see Project Context Rules). Expect "Headless tests passed.", exit 0, ZERO FAIL. Apply the **false-PASS grep guard** (`SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`) — it must be clean beyond the documented-expected negative-path diagnostics (the int64-overflow `root_seed` boundary x2, `RouteNode parse failed: invalid_node_type`, the save/settings `Parse JSON failed`/`got 'this'`/`Expected key` negatives). Command: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` (or the console binary `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe` with the same args, since `godot` resolves only via PowerShell).
+  - [x] `git diff --check` clean (working tree + the baseline..HEAD; ignore the benign LF→CRLF normalization warning on the `.md`).
+  - [x] **Confirm the scope fences:** the `DomainEvent.Type` enum is APPEND-ONLY (`RUN_FAILED` appended at the end + wired end-to-end + added to `expected_ids`; NOTHING renumbered); the `run_completed` boss `boss_placeholder` outcome value UNCHANGED + the boss command/test green; `RngStreamSet.required_streams()` UNCHANGED (the 7 streams — run-END draws ZERO RNG, no new stream); the 23-key `RunSnapshot` COUNT STAYS 23 + the no-surprise-key gate UNCHANGED (no new save key — the terminal phase already persists via the nested `run_phase`); `RunSnapshot.oath_shards` STAYS the 0 AWARDED-count placeholder (no awarding — 8.3); `meta_progression_eligible` READ-ONLY (no award/deny — 8.3); the `RunState._legal_next_phases` transition table UNCHANGED unless an AC genuinely needs an edge (record WHY + add a table test if you do — PREFER the boss two-step over a new edge); `RunOrchestrator._resolve_combat`/`run_to_completion`/`_resolve_boss` boss-completion behavior UNCHANGED (no death auto-wired into the auto-resolve loop; the boss boundary Epic 9 reuses is untouched); `scripts/rules/{conditions,operations}` UNCHANGED (run-END is not a rules-kernel concern); `data/source`/`data/resources` STAY EMPTY (no content); no `.tscn`/new asset (UI-scene-last; the outpost scene is 8.6); ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code; **every Small/Medium/route seed-regression fingerprint byte-identical** (8.1 touches no `scripts/generation/`).
+  - [x] **Update `deferred-work.md`** with the 8.1 dispositions (mirror the 7-6 entry structure): that the run-summary snapshot (8.2), the Oath-Shard awarding + meta profile + the meta-save shape (8.3/8.7), the outpost menu scene + named spaces + start-another-descent (8.6), and the first-death narrative line (8.5) are DEFERRED to their owning stories; that the LIVE tactical-loop / real combat-death source + auto-wiring a death into `run_to_completion` remain DEFERRED (the retro-T1 live-tactical-loop residual — explicitly NOT an Epic-8 dependency); that 8.1 emits the `run_failed` (with cause) + the broadened `run_completed` outcome + the `next_destination == outpost` flow signal as the run-END boundary INPUTS the 8.2 summary + 8.3 awarding consume; and that `meta_progression_eligible` / `oath_shard_eligible` are READ-ONLY at run-END in 8.1 (the actual meta gate + awarding is 8.3, the project's first persistent cross-run state). Note any new cross-story `[Decision]` (the command shape, the run-failed cause shape, the run-completed outcome shape, the flow-signal placement).
+  - [x] Update story Status (→ review), `sprint-status.yaml` (`8-1-run-completion-and-return-to-outpost-flow: review`, refresh `last_updated`), the File List, and Completion Notes (incl. ALL `[Decision]`s — the command shape; the run-failed event + its cause shape/allowlist; the run-completed outcome broadening + the boss-field tolerance shape; the flow-signal placement; whether a read DTO was built; the idempotency-vs-stable-error choice; the transition-table decision if any edge was added). Note that 8.1 OPENS Epic 8 (the run-END boundary) and that the run-summary (8.2) + meta awarding (8.3) build on the events/phase it ships.
 
 ## Dev Notes
 
@@ -234,8 +234,142 @@ The Epic-7 risk-economy state (7.1) is the run-end INPUT Epic 8 reads — and th
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — auto-gds dev-story delegate. Story implemented across two delegate runs: an
+initial `gds-dev-story` delegate that produced the bulk of the code but died to a Claude Code process
+exit mid-Phase-5 (WIP-checkpointed at git 4861a11), then a resume-verify continuation that diagnosed +
+fixed the two remaining suite failures and finalized the story.
+
 ### Debug Log References
+
+- Full headless suite (console binary, `--quit-after 10`): **"Headless tests passed."**, exit code 0,
+  142 test files PASS, ZERO FAIL. False-PASS grep guard (`SCRIPT ERROR|Parse Error|Compile Error|Failed
+  to load script`) clean.
+- The documented-expected negative-path diagnostics remain (non-failing, non-guarded): the int64-overflow
+  `root_seed` boundary `ERROR: Cannot represent 99999999999999999999 as a 64-bit signed integer` x2 (a
+  benign `String.to_int()` push_error on the pre-existing Story-4.6 out-of-range-seed REJECTION test — the
+  value is still correctly rejected; this diagnostic predates 8.1 and is byte-identical to the green
+  baseline `_has_decimal_string_payload`, NOT a regression), `RouteNode parse failed: invalid_node_type`,
+  and the save/settings `Parse JSON failed`/`got 'this'`/`Expected key` negatives.
 
 ### Completion Notes List
 
+**Resume-continuation fix (the 2 checkpoint failures).** The WIP checkpoint had exactly 2 suite failures,
+both from a SINGLE root cause: the `DomainEvent.run_completed(...)` factory unconditionally injected
+`payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))`, so EVERY generic (non-boss)
+completion payload carried a `boss_node_id: ""` key. That tripped the two `assert_false(...has("boss_node_id"))`
+assertions — one in `test_complete_run_command.gd` (the generic-completion path) and one in the new
+`_run_completed_completion_outcome_serializes_and_parses` test in `test_domain_event.gd`. **Fix:** made the
+factory set `boss_node_id` ONLY when the caller supplies the key (`if payload.has("boss_node_id")`). The
+boss path (`NodeResolvePlaceholderCommand._resolve_boss`) always passes `boss_node_id`, so the boss payload
+stays byte-identical; a generic completion omits it, so the key is absent (not present-but-empty). The
+second "failure" the resume brief flagged (the `to_int` overflow ERROR line in `test_domain_event.gd`) was a
+misdiagnosis: `_has_decimal_string_payload` is byte-identical to the green baseline (git-confirmed), the
+ERROR is a non-fatal `push_error` from Godot 4.6.3's `String.to_int()` that still returns a saturated value,
+the round-trip check correctly rejects the out-of-range seed, and the test's sole real failure was the
+shared `boss_node_id` assertion. No change was made to the pre-existing, baseline-green int64 seed validator
+(out of scope; it fixes no failure and risks the delicate max-int64 boundary tests).
+
+**[Decision] — Command shape (A, single outcome-parameterized command).** `CompleteRunCommand`
+(`godot/scripts/core/commands/complete_run_command.gd`) — one command that takes an explicit `outcome:
+StringName` classified at validate time: a death cause (in `DomainEvent.RUN_FAILED_CAUSES`) → `PHASE_FAILED`
++ `run_failed`; the completion marker (`DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED`) → `PHASE_COMPLETED` +
+`run_completed`; anything else → `unknown_run_end_outcome` fail-loud before any mutation. Follows the 4.3
+run-command idiom verbatim (takes the live `RunState` directly, rejects `sequence_id <= 0` FIRST, validate-
+then-mutate, byte-identical no-mutation + zero events on any reject, builds the event only after the legal
+transition). Draws ZERO RNG.
+
+**[Decision] — run_failed event + cause shape (allowlist).** New `DomainEvent.Type.RUN_FAILED` /
+`run_failed` SYSTEM event (no actor), appended at the enum END (never renumbered), wired end-to-end (factory
++ `_validate_run_failed_payload` + both id maps + JSON round-trip + per-field malformed negatives + the
+`expected_ids` exhaustiveness pin). Cause is a pinned lower_snake ALLOWLIST `RUN_FAILED_CAUSES = [hero_death,
+level_defeat, boss_defeat, abandoned]` (mirrors the `*_CATEGORIES` allowlist-const pattern). `node_id` is a
+plain hyphen-tolerant string, OPTIONAL/empty-tolerant (an abandoned-at-a-choice run has no node);
+`cleared_node_count` is non-negative integral; `next_destination` is value-pinned to the outpost marker.
+
+**[Decision] — run_completed outcome broadening + boss-field tolerance.** Added
+`RUN_COMPLETED_OUTCOME_COMPLETED := &"completed"` alongside the untouched `RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER`.
+`_validate_run_completed_payload` now accepts an ALLOWLIST (boss_placeholder OR completed); a stray/garbage
+outcome (e.g. `victory` — deliberately left free for Epic 9's real boss victory) is still rejected.
+`boss_node_id` is REQUIRED only for the `boss_placeholder` outcome; for a `completed` outcome it is tolerated
+ABSENT (and a present-but-non-string `boss_node_id` is still rejected). The factory now defaults
+`next_destination` to the outpost marker, and the validator REQUIRES it for BOTH outcomes — the boss factory
+supplies the default automatically, so the boss path's existing test stays green (the boss `run_completed`
+now also carries `next_destination == outpost`, defaulted, with no boss-command change).
+
+**[Decision] — Flow-signal placement (all three surfaces).** The `next_destination == outpost` domain flow
+fact (FR32) is carried on (1) the command `ActionResult.metadata`, (2) BOTH emitted event payloads
+(`run_failed` + `run_completed`), and (3) a scene-free read DTO. NOT a scene transition / `.tscn` (8.6 owns
+the outpost scene + navigation). `RUN_END_DESTINATION_OUTPOST := &"outpost"` is the single lower_snake const.
+
+**[Decision] — Read DTO built.** `RunEndOutcome` (`godot/scripts/run/run_end_outcome.gd`, a scene-free
+`RefCounted`) with `for_failed(run, cause)` / `for_completed(run, outcome)` builders and a pinned exact-key
+`to_dictionary()` = `{has_ended, phase, outcome_or_cause, next_destination, meta_progression_eligible}`
+(mirrors the `AffinityViewModel` exact-key, fail-closed, no-live-handle discipline). It READS
+`run.meta_progression_eligible` (lockstep with `is_manual_seed`) for the eligibility field — it grants/denies
+NOTHING (FR28 enforcement + Oath-Shard awarding are 8.3). A null / non-terminal / wrong-phase run projects the
+fail-closed empty fact (`has_ended == false`). Pure read (repeated reads identical, zero RNG, zero events).
+
+**[Decision] — Idempotency = stable error (`run_already_terminal`).** AC3 is satisfied with the stable
+`run_already_terminal` error (mirroring `RunOrchestrator.resolve_current_node`'s guard) rather than an
+idempotent no-op ok. A re-resolution of an already-terminal run emits ZERO new events + leaves the `RunState`
+BYTE-IDENTICAL (asserted via `to_dictionary()` before/after) — so nothing can be granted twice. A double-fail
+and a fail-then-complete are both blocked (terminal is terminal). v0 grants nothing at run-END (awarding is
+8.3), so "not granted twice" is structurally satisfied today; this guard is the seam 8.3's Oath-Shard
+awarding must run BEHIND (the award must never re-fire on a re-completion).
+
+**[Decision] — Transition table UNCHANGED (boss two-step, no new edge).** The completion path drives the
+boss's existing `ACTIVE_ROUTE → NODE_RESOLUTION → COMPLETED` two-step from `ACTIVE_ROUTE`, or a single
+`NODE_RESOLUTION → COMPLETED` step from `NODE_RESOLUTION`. The death path drives the already-legal
+`ACTIVE_ROUTE/NODE_RESOLUTION → FAILED` edges. `RunState._legal_next_phases` is completely untouched — no new
+edge added.
+
+**Orchestrator dispatch hook (thin, caller-driven).** `RunOrchestrator.resolve_run_end(outcome)` +
+`run_failed_event()` / `run_failed_cause()` / `run_end_destination()` accessors mirror `_resolve_boss`'s
+command-dispatch + event-capture shape. It is NOT wired into `run_to_completion` / `_resolve_combat` / the
+auto-resolve loop (there is NO live death source in v0 — combat auto-resolves to success), so a death NEVER
+auto-fires; the `_resolve_boss` boss-completion behavior + the boss `run_completed` boundary (Epic 9 depends
+on it) are untouched.
+
+**Scope fences confirmed.** Enum append-only + `RUN_FAILED` pinned in `expected_ids` (the Story-7.1
+exhaustiveness gate `expected_ids.size() == Type.size() - 1` + per-member iteration is green); boss
+`boss_placeholder` value UNCHANGED + boss command/test green; `RngStreamSet.required_streams()` UNCHANGED (7
+streams, ZERO RNG in new code — grep-confirmed no `randi`/`randf`/`RandomNumberGenerator`); 23-key
+`RunSnapshot` UNCHANGED + `oath_shards` stays 0; `meta_progression_eligible` READ-ONLY; rules kernel + data
+dirs + scenes/assets untouched; no `.tscn`. 8.1 touches no `scripts/generation/` — seed-regression
+fingerprints byte-identical.
+
+**8.1 OPENS Epic 8.** It ships the run-END boundary (the terminal phase + the `run_failed`/broadened
+`run_completed` events + the `next_destination == outpost` flow signal) that the run SUMMARY (8.2), the
+Oath-Shard awarding + meta profile (8.3), and the outpost menu (8.6) all consume. The `run_failed.cause` +
+`run_completed.outcome` are the INPUTS 8.2's summary reads; the AC3 idempotency guard is the seam 8.3's
+awarding sits behind. See `deferred-work.md` for the deferred dispositions.
+
 ### File List
+
+**New (production):**
+- `godot/scripts/core/commands/complete_run_command.gd` — `CompleteRunCommand` (the run-END resolution command).
+- `godot/scripts/run/run_end_outcome.gd` — `RunEndOutcome` (the scene-free run-END read DTO / flow signal).
+
+**Modified (production):**
+- `godot/scripts/core/events/domain_event.gd` — appended `RUN_FAILED` event (factory + validator + both id
+  maps + `EVENT_ID_RUN_FAILED`); added `RUN_FAILED_CAUSES`, `RUN_COMPLETED_OUTCOME_COMPLETED`,
+  `RUN_END_DESTINATION_OUTPOST` consts; broadened `_validate_run_completed_payload` (outcome allowlist +
+  boss-field tolerance + `next_destination`); made the `run_completed` factory set `boss_node_id` only when
+  supplied (the resume fix) + default `next_destination`.
+- `godot/scripts/run/run_orchestrator.gd` — added the thin `resolve_run_end(outcome)` dispatch hook +
+  `run_failed_event()`/`run_failed_cause()`/`run_end_destination()` accessors + the backing fields.
+
+**New (tests):**
+- `godot/tests/unit/core/test_complete_run_command.gd`
+- `godot/tests/unit/run/test_run_end_outcome.gd`
+
+**Modified (tests):**
+- `godot/tests/unit/core/test_domain_event.gd` — added the run_failed + broadened-run_completed per-event
+  tests + the `expected_ids` `RUN_FAILED` pin.
+- `godot/tests/unit/run/test_run_orchestrator.gd` — added `resolve_run_end` dispatch-hook coverage.
+
+**Tracking:**
+- `_bmad-output/implementation-artifacts/8-1-run-completion-and-return-to-outpost-flow.md` (this file — Status,
+  task boxes, Dev Agent Record).
+- `_bmad-output/implementation-artifacts/deferred-work.md` (the 8.1 dispositions).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (`8-1 → review`, `last_updated` refreshed).
