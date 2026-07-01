@@ -59,7 +59,7 @@ Do NOT redefine the established patterns — EXTEND them. 8.1 reuses: the `RunSt
 ### ⭐ AC2: broaden `run_completed.outcome` WITHOUT breaking the boss boundary (the load-bearing extension)
 
 `run_completed` exists but its validator pins `outcome == "boss_placeholder"` (the EXACT value, mirroring `level_victory_reached`'s `outcome == "victory"` value-equality). AC2 needs a run-completed event for a real "completion or victory path." Two clean options — `[Decision]` pick one and record it:
-- **(A, RECOMMENDED) ADD a second allowed completion-outcome marker** to the `run_completed` validator (e.g. a `victory` or `completed` lower_snake constant alongside `boss_placeholder`), so the validator accepts an ALLOWLIST of completion outcomes (boss-placeholder OR victory/completed) rather than a single hardcoded value. Add the new outcome as a `const RUN_COMPLETED_OUTCOME_*` in `domain_event.gd` (the lockstep-marker pattern the boss path uses). This keeps the boss path (`outcome == "boss_placeholder"`) byte-identical — its existing test stays green — and lets 8.1's completion path emit `outcome == "victory"`/`"completed"`.
+- **(A, RECOMMENDED) ADD a second allowed completion-outcome marker** to the `run_completed` validator (e.g. a `victory` or `completed` lower_snake constant alongside `boss_placeholder`), so the validator accepts an ALLOWLIST of completion outcomes (boss-placeholder OR victory/completed) rather than a single hardcoded value. Add the new outcome as a `const RUN_COMPLETED_OUTCOME_*` in `domain_event.gd` (the lockstep-marker pattern the boss path uses). This keeps the boss path's Epic-9 CONTRACT (`outcome == "boss_placeholder"` + `boss_node_id`) intact — its existing test stays green — and lets 8.1's completion path emit `outcome == "victory"`/`"completed"`. (NOTE: the implemented flow signal additively adds a backward-compatible `next_destination: "outpost"` key to the boss `run_completed` payload — the boss payload is not byte-identical, but the contract surface is; see the AC2 Dev Note correction and the resolved boss-payload `[Review][Decision]`.)
 - **(B)** Reuse `boss_placeholder` for 8.1's completion if 8.1's completion IS the boss-resolve path. But AC2 says "completion OR victory path" generically, and FR31/Epic 9 own the real boss VICTORY — so a generic completion outcome distinct from the placeholder is cleaner and forward-compatible. RECOMMENDED: (A).
 
 Either way: do NOT renumber the enum, do NOT change the boss's `boss_placeholder` value, and keep `_validate_run_completed_payload`'s `boss_node_id`/`cleared_node_count` field checks intact (or make them optional for a non-boss completion — record the shape decision; a non-boss completion may not have a `boss_node_id`, so the validator must tolerate its absence for a non-boss outcome WITHOUT weakening the boss path's required fields).
@@ -159,7 +159,7 @@ Do NOT fork a parallel run-end format, do NOT add a parallel phase/transition sy
 Story 7.1 hardened the event-id map (the Epic-6 retro T3 / 6.7 Round-1 Low): `test_domain_event.gd::_event_identifiers_are_stable_machine_ids` (lines 1947-2005) now asserts `expected_ids.size() == DomainEvent.Type.size() - 1` AND iterates EVERY non-`UNKNOWN` enum member asserting it is a pinned key in `expected_ids`. **When 8.1 appends `RUN_FAILED` to the enum, this gate FAILS LOUD until you add `DomainEvent.Type.RUN_FAILED: &"run_failed"` to the `expected_ids` map in the SAME change.** This is BY DESIGN — the gate exists precisely to catch a forgotten append. Do NOT loosen the assertion, do NOT skip the test; ADD the new member to the map (and wire the event end-to-end: factory + payload validator + both id maps + round-trip + malformed negatives). The Epic-7 retro explicitly flagged this as the "register/extend the gate on the new table → that is expected" heads-up for Epic 8's first award/completion event. [Source: `godot/tests/unit/core/test_domain_event.gd` lines 1996-2005 (the exhaustiveness pin) + lines 1971-1986 (the Story-6/7 append comments — mirror that comment style for `run_failed`); `_bmad-output/auto-gds/retro-notes/epic-7.md` §6 T3 + §8 Action T3 (the carried event-id-map exhaustiveness hardening)]
 
 ### ⭐ AC2 — broaden the completion outcome, keep the boss boundary intact (Epic 9 depends on it)
-`run_completed.outcome` is value-pinned to `boss_placeholder`. Epic 9 (the real Larval Avatar boss + first-victory reveal) REUSES this exact `run_completed` boundary — it swaps only the boss's pre-completion behavior (a real boss level + victory) WITHOUT changing the route model, the boss node type, or the `run_completed` event. So 8.1 must broaden the outcome (add `victory`/`completed`) so AC2's "completion or victory path" can emit, WHILE keeping `boss_placeholder` byte-identical so the boss command + its test + the Epic-9 contract all stay green. The clean shape: an outcome ALLOWLIST (boss_placeholder OR victory/completed) in `_validate_run_completed_payload`, with the boss-only field (`boss_node_id`) required ONLY for the boss outcome (tolerant/absent for a non-boss completion). Record the field-shape `[Decision]`. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` lines 22-27 (the Epic-9-reuses-this-boundary contract) + 264-268 (the boss run_completed payload); `project-context.md` "Do not re-create, rename, or duplicate the 4.5 run_completed event; later epics CONSUME it ... Do not renumber the event enum"]
+`run_completed.outcome` is value-pinned to `boss_placeholder`. Epic 9 (the real Larval Avatar boss + first-victory reveal) REUSES this exact `run_completed` boundary — it swaps only the boss's pre-completion behavior (a real boss level + victory) WITHOUT changing the route model, the boss node type, or the `run_completed` event. So 8.1 must broaden the outcome (add `victory`/`completed`) so AC2's "completion or victory path" can emit, WHILE keeping the boss's Epic-9 CONTRACT (event type `run_completed`, `outcome == "boss_placeholder"`, `boss_node_id`) intact so the boss command + its test + the Epic-9 contract all stay green. **CORRECTION (boss-payload decision, ACCEPTED Option A 2026-06-30):** the implementation broadens the `run_completed` factory to default a `next_destination == "outpost"` flow signal (and the validator to require it for BOTH outcomes), so the boss `run_completed` payload is NOT byte-identical — it now ADDITIVELY and backward-compatibly carries `next_destination: "outpost"`. The Epic-9 boss contract surface (event type, `outcome == "boss_placeholder"`, `boss_node_id`) is unchanged, and no consumer asserts the boss payload's exact key set. The clean shape: an outcome ALLOWLIST (boss_placeholder OR victory/completed) in `_validate_run_completed_payload`, with the boss-only field (`boss_node_id`) required ONLY for the boss outcome (tolerant/absent for a non-boss completion). Record the field-shape `[Decision]`. [Source: `godot/scripts/core/commands/node_resolve_placeholder_command.gd` lines 22-27 (the Epic-9-reuses-this-boundary contract) + 264-268 (the boss run_completed payload); `project-context.md` "Do not re-create, rename, or duplicate the 4.5 run_completed event; later epics CONSUME it ... Do not renumber the event enum"]
 
 ### AC1 — the run-failed CAUSE: command/caller-driven, NOT a live-combat detector
 v0 has NO live combat death (combat auto-resolves to success in `RunOrchestrator._resolve_combat` — building the live loop is OUT of scope, the retro-T1 deferred work). So 8.1's failed path is COMMAND-DRIVEN with an EXPLICIT cause the caller supplies (a test, or the later HUD/run-flow story that owns the live death). The CAUSE is a stable, readable lower_snake marker (e.g. `hero_death`/`level_defeat`/`boss_defeat`/`abandoned` — pick the set + pin it if you allowlist). Do NOT add a death-detection branch to the orchestrator's auto-resolve loop (there is no HP-reaches-zero signal there). The run-failed event + cause is the run-END RESOLUTION; the live death SOURCE is deferred. AC1's three death contexts ("during a level, event, or boss encounter") map to the CAUSE marker (the resolution is the same — transition to FAILED + emit run_failed; the cause distinguishes the context). [Source: `godot/scripts/run/run_orchestrator.gd` `_resolve_combat` (auto-resolve — no death source); `_bmad-output/planning-artifacts/epics.md` FR32 + Story 8.1 AC1]
@@ -261,7 +261,10 @@ assertions — one in `test_complete_run_command.gd` (the generic-completion pat
 `_run_completed_completion_outcome_serializes_and_parses` test in `test_domain_event.gd`. **Fix:** made the
 factory set `boss_node_id` ONLY when the caller supplies the key (`if payload.has("boss_node_id")`). The
 boss path (`NodeResolvePlaceholderCommand._resolve_boss`) always passes `boss_node_id`, so the boss payload
-stays byte-identical; a generic completion omits it, so the key is absent (not present-but-empty). The
+keeps its `boss_node_id` key; a generic completion omits it, so the key is absent (not present-but-empty).
+(For the boss payload as a WHOLE: it is NOT byte-identical after 8.1 — it additively gains a backward-compatible
+`next_destination: "outpost"` key; only the Epic-9 contract surface — event type, `outcome == "boss_placeholder"`,
+`boss_node_id` — is preserved. See the resolved boss-payload `[Review][Decision]`.) The
 second "failure" the resume brief flagged (the `to_int` overflow ERROR line in `test_domain_event.gd`) was a
 misdiagnosis: `_has_decimal_string_payload` is byte-identical to the green baseline (git-confirmed), the
 ERROR is a non-fatal `push_error` from Godot 4.6.3's `String.to_int()` that still returns a saturated value,
@@ -331,8 +334,11 @@ auto-fires; the `_resolve_boss` boss-completion behavior + the boss `run_complet
 on it) are untouched.
 
 **Scope fences confirmed.** Enum append-only + `RUN_FAILED` pinned in `expected_ids` (the Story-7.1
-exhaustiveness gate `expected_ids.size() == Type.size() - 1` + per-member iteration is green); boss
-`boss_placeholder` value UNCHANGED + boss command/test green; `RngStreamSet.required_streams()` UNCHANGED (7
+exhaustiveness gate `expected_ids.size() == Type.size() - 1` + per-member iteration is green); the boss Epic-9
+CONTRACT (event type `run_completed`, `outcome == "boss_placeholder"`, `boss_node_id`) UNCHANGED + boss
+command/test green (the boss `run_completed` payload is NOT byte-identical — it additively gains a backward-
+compatible `next_destination: "outpost"` key; boss-payload `[Review][Decision]` ACCEPTED Option A 2026-06-30);
+`RngStreamSet.required_streams()` UNCHANGED (7
 streams, ZERO RNG in new code — grep-confirmed no `randi`/`randf`/`RandomNumberGenerator`); 23-key
 `RunSnapshot` UNCHANGED + `oath_shards` stays 0; `meta_progression_eligible` READ-ONLY; rules kernel + data
 dirs + scenes/assets untouched; no `.tscn`. 8.1 touches no `scripts/generation/` — seed-regression
@@ -373,3 +379,96 @@ awarding sits behind. See `deferred-work.md` for the deferred dispositions.
   task boxes, Dev Agent Record).
 - `_bmad-output/implementation-artifacts/deferred-work.md` (the 8.1 dispositions).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (`8-1 → review`, `last_updated` refreshed).
+
+## Review Findings
+
+**Round 1 of 3**
+
+Reviewer: gds-code-review (Blind Hunter + Edge Case Hunter + Acceptance Auditor). Target: branch
+`story/8-1-run-completion-and-return-to-outpost-flow` diff vs `main`, scope `godot/` (8 files, ~1465 lines).
+Spec: this story file. Full headless suite re-verified GREEN at review time (142 files pass / 0 fail; false-PASS
+grep guard clean; `git diff --check` clean; zero `randi`/`randf`/`RandomNumberGenerator` in new production code).
+
+**Verdict: APPROVE.** All three ACs are faithfully satisfied and every scope fence holds. AC1 (death →
+`PHASE_FAILED` + `run_failed` with an allowlisted cause + `next_destination == outpost`), AC2 (completion →
+`PHASE_COMPLETED` + broadened `run_completed` `completed` outcome + outpost signal, from both `ACTIVE_ROUTE` via
+the boss two-step and `NODE_RESOLUTION` directly; boss `boss_placeholder` path preserved), and AC3
+(`run_already_terminal` stable error, zero second event, byte-identical `RunState`; double-fail + fail-then-complete
+both blocked) are all covered by tests. The `DomainEvent.Type` enum stayed append-only with the `expected_ids`
+exhaustiveness pin updated; the transition table, `required_streams()`, and the 23-key `RunSnapshot` are untouched.
+Severity counts: **Critical 0 / High 0 / Medium 0 / Low 4.** No blocking findings. The single `[Decision]` is a
+forward-looking architecture confirmation, not a defect.
+
+- [x] [Review][Decision] Boss `run_completed` payload now carries an added `next_destination == "outpost"` key —
+  confirm this is acceptable before Epic 9 builds on the boundary. The story/context framed the boss path as
+  "byte-identical," but broadening the `run_completed` factory to default `next_destination` (and the validator to
+  REQUIRE it for BOTH outcomes) means the Story-4.5 boss `run_completed` event, emitted by
+  `NodeResolvePlaceholderCommand._resolve_boss` (which passes no `next_destination`), now gains
+  `next_destination: "outpost"` in its payload. The invariant surface Epic 9 + `project-context.md` name — the
+  event TYPE, `outcome == "boss_placeholder"`, and `boss_node_id` — is fully intact; the change is an ADDITIVE,
+  backward-compatible payload key consistent with the project's append-only event discipline, and no consumer
+  asserts the boss payload's exact key set (verified: `test_node_resolve_placeholder_command.gd` and
+  `test_node_type_resolution_walk.gd` assert individual keys + JSON round-trip only, so the suite is green). This
+  is flagged only because the deliberate "boss stays byte-identical" wording is now slightly inaccurate — a human
+  product/architecture owner should bless the boss event gaining `next_destination` (recommended: ACCEPT; it is
+  harmless and forward-consistent) or, if strict byte-identity of the boss event is required, gate
+  `next_destination` to the `completed` outcome only and leave the boss payload unchanged. [Evidence:
+  `godot/scripts/core/events/domain_event.gd` `run_completed` factory next_destination default + `_validate_run_
+  completed_payload` next_destination requirement for both outcomes; `godot/scripts/core/commands/node_resolve_
+  placeholder_command.gd:264-268 (boss run_completed passes no next_destination)]
+  - **RESOLVED: Option A (accept additive key) per human decision 2026-06-30.** The shared `run_completed`
+    factory/validator is kept exactly as implemented: `next_destination` stays present on BOTH the `completed` and
+    `boss_placeholder` outcomes (NOT gated to `completed` only). No production behavior changed for this decision —
+    the resolution is documentation + test-naming only. The boss `run_completed` event now ADDITIVELY and
+    backward-compatibly carries `next_destination: "outpost"`; the Epic-9 boss contract (event type `run_completed`,
+    `outcome == "boss_placeholder"`, `boss_node_id`) is unchanged, and no consumer asserts the boss payload's exact
+    key set. The "boss stays byte-identical" framing was corrected wherever it appeared (the AC2 Dev Note, the
+    Option-A scope-boundary description, the resume-fix + scope-fences Completion Notes, and the two
+    `domain_event.gd` code comments on the `run_completed` factory + `_validate_run_completed_payload`). The
+    misnamed guard test was renamed to `_boss_run_completed_preserves_epic9_contract_with_additive_next_destination`
+    (see the resolved `[Review][Patch]` below), and its assertions reflect the intact Epic-9 identifying triple
+    plus the additive `next_destination == "outpost"`.
+
+- [x] [Review][Patch] Misleading test name/comment: `_boss_run_completed_path_stays_unchanged`
+  [godot/tests/unit/core/test_complete_run_command.gd:330]. The test asserts the boss `run_completed` now ALSO
+  carries `next_destination == "outpost"` (line 349) — i.e. the payload CHANGED (gained a key); only the outcome
+  VALUE and `boss_node_id` are unchanged. Reword to "boss outcome value stays boss_placeholder" (or similar) so the
+  name does not imply payload byte-identity. Trivial, non-blocking; left as an action item.
+  - **RESOLVED 2026-06-30.** Renamed the test (and its section header + docstring) from
+    `_boss_run_completed_path_stays_unchanged` to
+    `_boss_run_completed_preserves_epic9_contract_with_additive_next_destination` (call site + definition in
+    `test_complete_run_command.gd`), so the name no longer implies boss payload byte-identity. The docstring now
+    states the Epic-9 contract (event type `run_completed`, `outcome == "boss_placeholder"`, `boss_node_id`) is
+    unchanged while the payload ADDITIVELY carries `next_destination == "outpost"`. Assertions unchanged (they
+    already pin the Epic-9 identifying triple and the additive outpost destination). This is the same rename the
+    resolved boss-payload `[Review][Decision]` above calls for.
+
+- [x] [Review][Defer] `_resolve_completed` two-step transition is not atomic vs the command's own
+  "byte-identical no-mutation `RunState` on ANY reject" promise [godot/scripts/core/commands/complete_run_command.gd:200-221]
+  — deferred, latent (unreachable today) + shared with the pre-existing boss pattern. If
+  `ACTIVE_ROUTE → NODE_RESOLUTION` succeeded but `NODE_RESOLUTION → COMPLETED` then failed, the run would be left
+  MUTATED in `NODE_RESOLUTION` (non-terminal) while the command returns `wrong_run_phase` with zero events. Given
+  the current `_legal_next_phases` table, once step 1 succeeds step 2 CANNOT fail, so this never fires — but the
+  contract is silently broken if the table ever changes. `NodeResolvePlaceholderCommand._resolve_boss` has the
+  identical two-step shape (8.1 replicates, does not introduce, the pattern). A cheap future hardening: snapshot
+  `phase` before step 1 and restore it on step-2 failure, or assert both edges' legality up front. Not actionable
+  now (no reachable failure; fixing only 8.1 would diverge from the boss pattern — address both together if ever).
+
+- [x] [Review][Defer] `RunEndOutcome.for_failed` / `for_completed` do not validate the `cause` / `outcome`
+  against the event allowlists [godot/scripts/run/run_end_outcome.gd:78-102] — deferred, low (design-consistency,
+  no reachable defect). A caller could project `for_failed(run, &"garbage")` and the DTO would surface
+  `outcome_or_cause: "garbage"`, whereas the corresponding `run_failed` EVENT would reject that cause via
+  `RUN_FAILED_CAUSES`. The read DTO is a passive projector of already-command-validated markers (in the live flow
+  it only ever receives an allowlisted cause/outcome from `CompleteRunCommand`), so there is no reachable
+  inconsistency today; the read surface and the strict event validators simply disagree on what a valid marker is
+  in principle. If a future consumer builds a `RunEndOutcome` from untrusted input, add an allowlist guard that
+  falls back to `_empty()`. Not actionable now.
+
+**Dismissed as noise (not persisted as action items):** mixed outcome-comparison styles in `validate()`
+(StringName `.has()` for the death branch vs `String(...)==...` for the completion branch — both correct,
+cosmetic); `_validate_run_completed_payload` tolerating a present-but-empty `boss_node_id` on the `completed`
+outcome (explicitly documented as tolerated; the command never emits it); `cleared_node_count` unbounded /
+no int64 encoding (bounded by construction — nodes-per-run; matches the pre-existing `run_completed` treatment);
+`resolve_run_end` sharing `_run_completed_event`/`_run_completed_outcome` capture fields with the boss path (safe —
+a terminal run blocks a second resolve); thin `cleared_node_count` coverage at ==1 in the command tests (the
+multi-count case is covered by `test_node_resolve_placeholder_command.gd` and `test_node_type_resolution_walk.gd`).

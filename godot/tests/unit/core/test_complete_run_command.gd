@@ -32,7 +32,7 @@ func run() -> Dictionary:
 	_rejects_invalid_context()
 	_resolve_draws_no_rng_on_success_and_reject()
 	_resolve_is_deterministic()
-	_boss_run_completed_path_stays_unchanged()
+	_boss_run_completed_preserves_epic9_contract_with_additive_next_destination()
 	return result()
 
 
@@ -325,12 +325,15 @@ func _resolve_is_deterministic() -> void:
 	assert_equal(run_a.to_dictionary(), run_b.to_dictionary(), "Identical inputs must leave byte-identical run states (determinism).")
 
 
-# ---- the boss path stays unchanged (the AC2 regression guard) -------------------------------------
+# ---- the boss path preserves its Epic-9 contract (the AC2 regression guard) -----------------------
 
-func _boss_run_completed_path_stays_unchanged() -> void:
+func _boss_run_completed_preserves_epic9_contract_with_additive_next_destination() -> void:
 	# The Story-4.5 boss path (NodeResolvePlaceholderCommand) still emits run_completed with the EXACT boss_placeholder
-	# outcome — the 8.1 broadening did not regress the boss boundary Epic 9 depends on. (A focused cross-check; the full
-	# boss behavior is owned by test_node_resolve_placeholder_command.gd.)
+	# outcome and its boss_node_id — the Epic-9 boss CONTRACT (event type run_completed, outcome == "boss_placeholder",
+	# boss_node_id) is unchanged by the 8.1 broadening. The boss payload is NOT byte-identical, though: it now ADDITIVELY
+	# and backward-compatibly carries next_destination == "outpost" (defaulted by the run_completed factory) — the
+	# boss-payload decision was ACCEPTED (Option A, 2026-06-30). (A focused cross-check; the full boss behavior is owned
+	# by test_node_resolve_placeholder_command.gd.)
 	var start: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["node-1-0"])
 	var boss: RouteNode = RouteNode.new("node-1-0", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_REVEALED, [])
 	var route: RouteState = RouteState.new([start, boss], "node-1-0", ["node-0-0"])

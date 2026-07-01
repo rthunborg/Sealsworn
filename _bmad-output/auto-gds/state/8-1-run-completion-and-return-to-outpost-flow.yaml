@@ -3,7 +3,7 @@ epic_num: 8
 story_num: 1
 branch: story/8-1-run-completion-and-return-to-outpost-flow
 status: in-progress
-updated_at: "2026-06-30T20:46:00Z"
+updated_at: "2026-06-30T21:05:00Z"
 started_at: "2026-06-30T20:08:18Z"
 completed_at: null
 active_seconds: 0
@@ -21,8 +21,20 @@ epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
 phase5_resolved: true
 breaking_change: "DomainEvent.run_completed payload no longer always carries boss_node_id — emitted only for the boss_placeholder outcome, absent for generic completed."
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 4
+    decisions_resolved:
+      - "boss-payload: Option A (accept additive next_destination key on boss run_completed) per human decision 2026-06-30"
+    patches_fixed: 1
+    deferrals_logged: 2
 external_review_iterations: 0
 convergence_unverified: false
 testing:

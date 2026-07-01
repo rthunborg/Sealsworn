@@ -275,11 +275,16 @@ static func run_completed(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	var payload_value: Dictionary = payload.duplicate(true)
 	payload_value["outcome"] = String(payload.get("outcome", ""))
 	# Story 8.1 (AC2): boss_node_id is set ONLY when the caller supplies it — the boss path (Story 4.5,
-	# NodeResolvePlaceholderCommand._resolve_boss) always passes it, so the boss payload stays byte-identical; a
+	# NodeResolvePlaceholderCommand._resolve_boss) always passes it, so the boss payload keeps its boss_node_id; a
 	# GENERIC completion (CompleteRunCommand._resolve_completed) omits it, so a non-boss completion carries NO
 	# boss_node_id key (the broadened validator requires it only for the boss_placeholder outcome). Injecting it
 	# unconditionally would leak an (empty) boss_node_id into every generic completion — the field must be absent for
 	# a non-boss completion, not present-but-empty.
+	# NOTE (Story 8.1 boss-payload decision, ACCEPTED 2026-06-30): the boss run_completed event is NOT byte-identical
+	# after 8.1 — it now ADDITIVELY and backward-compatibly carries next_destination: "outpost" (defaulted below). The
+	# Epic-9 boss CONTRACT is fully intact and unchanged — event type run_completed, outcome == "boss_placeholder", and
+	# boss_node_id — and no consumer asserts the boss payload's exact key set, so this additive key is harmless and
+	# forward-consistent with the project's append-only event discipline.
 	if payload.has("boss_node_id"):
 		payload_value["boss_node_id"] = String(payload.get("boss_node_id"))
 	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
@@ -1007,9 +1012,12 @@ static func _validate_node_placeholder_resolved_payload(payload_value: Dictionar
 static func _validate_run_completed_payload(payload_value: Dictionary) -> ActionResult:
 	# The run-COMPLETED boundary (Story 4.5 boss placeholder + Story 8.1 generic completion). outcome is lower_snake
 	# AND value-equal to one of the ALLOWLISTED completion markers (boss_placeholder OR the 8.1 `completed`), so the
-	# boss path (boss_placeholder) stays byte-identical while a generic completion/victory (completed) can emit the
-	# SAME event (AC2). A WRONG/garbage outcome (e.g. a stray "victory") is still rejected — the allowlist did not
-	# become permissive.
+	# boss path (boss_placeholder) preserves its Epic-9 contract (event type, outcome value, boss_node_id) while a
+	# generic completion/victory (completed) can emit the SAME event (AC2). A WRONG/garbage outcome (e.g. a stray
+	# "victory") is still rejected — the allowlist did not become permissive. NOTE (boss-payload decision, ACCEPTED
+	# 2026-06-30): the boss payload is NOT byte-identical after 8.1 — it now additively carries next_destination:
+	# "outpost" (required for BOTH outcomes below, defaulted by the factory). This is a backward-compatible additive
+	# key; the Epic-9 boss contract surface is unchanged.
 	#
 	# boss_node_id (the boss node) carries hyphens -> a PLAIN non-empty string, but it is REQUIRED ONLY for the boss
 	# outcome (a non-boss completion has no boss node — the validator tolerates its absence/empty for the `completed`
