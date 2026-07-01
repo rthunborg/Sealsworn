@@ -2,11 +2,11 @@ story_key: 8-1-run-completion-and-return-to-outpost-flow
 epic_num: 8
 story_num: 1
 branch: story/8-1-run-completion-and-return-to-outpost-flow
-status: in-progress
-updated_at: "2026-07-01T13:08:57Z"
+status: done
+updated_at: "2026-07-01T13:59:55Z"
 started_at: "2026-06-30T20:08:18Z"
-completed_at: null
-active_seconds: 0
+completed_at: "2026-07-01T13:59:55Z"
+active_seconds: 5400  # best-effort AI-run estimate across 2 sessions; elapsed dominated by overnight HITL pause
 is_first_in_epic: true
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -18,7 +18,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 7
-completed_phases: [0, 1, 3, 5]
+completed_phases: [0, 1, 3, 5, 7, 9]
 phase5_resolved: true
 breaking_change: "DomainEvent.run_completed payload no longer always carries boss_node_id — emitted only for the boss_placeholder outcome, absent for generic completed."
 code_review_iterations: 2
@@ -57,7 +57,7 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["6a0688d", "d0fc080", "4861a11", "e1fec1d", "4ad3167", "660fe41", "2dfdf18", "5f91fc7"]
+commits: ["6a0688d", "d0fc080", "4861a11", "e1fec1d", "4ad3167", "660fe41", "2dfdf18", "5f91fc7", "fce60eb", "d1387a0", "8253163"]
 head_at_pause: "2dfdf18"
 phase5_interrupted: true
 phase5_wip_checkpoint: "4861a11"
@@ -77,7 +77,7 @@ deferred_work_archived: 0
 planning_drift: []
 pr_url: null
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
