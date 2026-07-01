@@ -3,7 +3,7 @@ epic_num: 8
 story_num: 1
 branch: story/8-1-run-completion-and-return-to-outpost-flow
 status: in-progress
-updated_at: "2026-06-30T20:17:36Z"
+updated_at: "2026-06-30T20:31:00Z"
 started_at: "2026-06-30T20:08:18Z"
 completed_at: null
 active_seconds: 0
@@ -26,7 +26,21 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["6a0688d"]
+commits: ["6a0688d", "d0fc080", "4861a11"]
+phase5_interrupted: true
+phase5_wip_checkpoint: "4861a11"
+resume_notes: >-
+  Phase 5 (dev-story) delegate died to a Claude Code process exit mid-run.
+  Partial work WIP-checkpointed at 4861a11 and pushed. Diagnostic suite run: 2
+  failures, both in the partial work — (1) test_complete_run_command.gd: a
+  generic (non-boss) completion run_completed is leaking a boss_node_id (must be
+  absent for non-boss); (2) test_domain_event.gd: _validate_run_started_payload
+  -> _has_decimal_string_payload (domain_event.gd:1625) crashes on the existing
+  run_started overflow-string test (99999999999999999999) with a 64-bit int
+  overflow — a regression the delegate introduced into the run_started
+  validation path while adding run_failed/broadening run_completed.
+  test_run_end_outcome.gd + test_run_orchestrator.gd already PASS. Resume, do not
+  reset.
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
