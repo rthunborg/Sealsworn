@@ -27,10 +27,12 @@ func run() -> Dictionary:
 	_passives_and_loot_aggregate_from_events()
 	_empty_event_list_yields_empty_lists()
 	_unrelated_events_do_not_pollute_lists()
-	_gold_reward_and_passive_reward_excluded_from_notable_loot()
+	_reward_resolved_is_excluded_from_notable_loot()
+	_backpack_reward_is_counted_once_not_doubled()
 	_not_yet_supported_fields_are_placeholder_and_flagged()
 	_state_boundaries_are_separable()
 	_non_terminal_or_null_run_projects_empty_fact()
+	_outcome_or_cause_takes_the_first_matching_terminal_event()
 	_projection_keys_are_exact()
 	_read_is_pure()
 	return result()
@@ -227,12 +229,13 @@ func _unrelated_events_do_not_pollute_lists() -> void:
 	assert_equal((run_scoped.get("notable_loot") as Array).size(), 1, "Only the item_gained event contributes to notable_loot (unrelated events ignored).")
 
 
-# ---- AC1: gold/passive reward categories are excluded from notable loot ---------------------------
+# ---- AC1: reward_resolved is fully excluded from notable loot (item_gained is the sole source) -----
 
-func _gold_reward_and_passive_reward_excluded_from_notable_loot() -> void:
-	# A reward_resolved with category gold is an economy readout (not a backpack item); category passive is tracked via
-	# the consume/destroy lists. Both are EXCLUDED from notable_loot (the recorded [Decision]); a backpack-category
-	# reward_resolved IS included.
+func _reward_resolved_is_excluded_from_notable_loot() -> void:
+	# [Decision, round 1 review] reward_resolved is EXCLUDED from notable_loot ENTIRELY (all REWARD_CATEGORIES): gold is
+	# an economy readout, passive is tracked via the consume/destroy lists, and a BACKPACK-category reward already emits a
+	# paired item_gained (ResolveRewardCommand composes PickupItemCommand) — so counting the reward_resolved too would
+	# DOUBLE-COUNT the same physical item. item_gained is the SOLE notable-loot source; each gained item is counted once.
 	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
 	var events: Array = [
 		DomainEvent.reward_resolved(1, {"table_id": "reward_basic", "category": "gold", "content_id": "gold_small"}),
@@ -241,9 +244,25 @@ func _gold_reward_and_passive_reward_excluded_from_notable_loot() -> void:
 		DomainEvent.run_completed(4, {"outcome": "completed"})
 	]
 	var loot: Array = RunSummary.build(run, events).to_dictionary().get("run_scoped").get("notable_loot")
-	assert_equal(loot.size(), 1, "gold + passive reward categories are excluded; only the backpack-category reward is notable loot.")
-	assert_equal(String((loot[0] as Dictionary).get("item_id")), "leather_vest", "The backpack-category reward (armor) is the only notable-loot entry.")
-	assert_equal(String((loot[0] as Dictionary).get("category")), "armor", "The notable-loot entry carries its category.")
+	assert_equal(loot.size(), 0, "reward_resolved (gold/passive/backpack) is fully excluded from notable_loot — item_gained is the sole source.")
+
+
+# ---- AC1: a backpack reward (reward_resolved + its paired item_gained) is counted EXACTLY once ------
+
+func _backpack_reward_is_counted_once_not_doubled() -> void:
+	# The MAIN Epic-6 loot path: ResolveRewardCommand for a backpack reward emits BOTH a reward_resolved (sequence_id)
+	# AND a paired item_gained (sequence_id + 1, via the composed PickupItemCommand) for the SAME physical item. The
+	# summary must count that item EXACTLY ONCE (from the item_gained), NOT twice (the round-1 review double-count fix).
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var events: Array = [
+		DomainEvent.reward_resolved(1, {"table_id": "reward_basic", "category": "armor", "content_id": "leather_vest"}),
+		DomainEvent.item_gained(2, {"item_id": "leather_vest", "category": "armor", "backpack_size_after": 1, "slot_index": 0}),
+		DomainEvent.run_completed(3, {"outcome": "completed"})
+	]
+	var loot: Array = RunSummary.build(run, events).to_dictionary().get("run_scoped").get("notable_loot")
+	assert_equal(loot.size(), 1, "A backpack reward (reward_resolved + paired item_gained for the same item) is counted EXACTLY once, not doubled.")
+	assert_equal(String((loot[0] as Dictionary).get("item_id")), "leather_vest", "The single notable-loot entry is the gained item.")
+	assert_equal(String((loot[0] as Dictionary).get("source")), "item_gained", "The single entry is sourced from item_gained (reward_resolved is excluded).")
 
 
 # ---- AC1/AC5: not-yet-supported fields are placeholder (0/empty) AND flagged ----------------------
@@ -310,6 +329,30 @@ func _non_terminal_or_null_run_projects_empty_fact() -> void:
 	assert_false(bool(RunSummary.build(null, []).to_dictionary().get("has_summary")), "build(null) projects the empty fact.")
 	# A default (no events arg) build of null also projects empty.
 	assert_false(bool(RunSummary.build(null).to_dictionary().get("has_summary")), "build(null) with no events arg projects the empty fact.")
+
+
+# ---- AC1: outcome_or_cause takes the FIRST matching terminal run-end event ------------------------
+
+func _outcome_or_cause_takes_the_first_matching_terminal_event() -> void:
+	# [Decision, round 1 review] The derivation breaks on the FIRST matching terminal run-end event (a run ends exactly
+	# once). On a malformed list carrying multiple run_failed events, the FIRST cause wins (self-consistent with the
+	# run-ended-once reality — not a silent last-wins overwrite).
+	var run: RunState = _terminal_run(RunState.PHASE_FAILED, false)
+	var events: Array = [
+		DomainEvent.run_failed(1, {"cause": "hero_death"}),
+		DomainEvent.run_failed(2, {"cause": "abandoned"})
+	]
+	var data: Dictionary = RunSummary.build(run, events).to_dictionary()
+	assert_equal(data.get("outcome_or_cause"), "hero_death", "The FIRST matching run_failed cause wins (first-match, not last-wins).")
+
+	# The same first-match rule holds for a completed run with multiple run_completed events.
+	var completed_run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var completed_events: Array = [
+		DomainEvent.run_completed(1, {"outcome": "completed"}),
+		DomainEvent.run_completed(2, {"outcome": "boss_placeholder", "boss_node_id": "node-2-0"})
+	]
+	var completed_data: Dictionary = RunSummary.build(completed_run, completed_events).to_dictionary()
+	assert_equal(completed_data.get("outcome_or_cause"), "completed", "The FIRST matching run_completed outcome wins (first-match, not last-wins).")
 
 
 # ---- the projection has an EXACT pinned key set (top-level + sub-dicts) ---------------------------

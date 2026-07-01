@@ -136,9 +136,11 @@ var phase: StringName = &""
 # run_failed cause (a death, e.g. hero_death). "" for a non-terminal source run OR when no terminal run-end event is
 # present in the supplied event list.
 var outcome_or_cause: StringName = &""
-# The run's root seed (a full int64). Decimal-string encoded in to_dictionary() (JSON IEEE-754 doubles truncate beyond
-# 2^53). 0 for an empty fact.
-var seed: int = 0
+# The run's root seed (a full int64), named for parity with RunState.root_seed (the source field). Decimal-string
+# encoded in to_dictionary() under the pinned "seed" key (JSON IEEE-754 doubles truncate beyond 2^53). 0 for an empty
+# fact. (Named root_seed rather than `seed` to avoid shadowing GDScript's built-in global seed() RNG function in a
+# codebase with a strict named-RNG-streams-only / ZERO-randi/randf discipline.)
+var root_seed: int = 0
 # Whether the run used a manual/debug seed (a replay/practice readout). false for an empty fact.
 var is_manual_seed: bool = false
 # The run's Oath-Shard / meta-progression eligibility (READ from run.meta_progression_eligible — lockstep with
@@ -172,7 +174,7 @@ func _init(
 	has_summary = new_has_summary
 	phase = new_phase
 	outcome_or_cause = new_outcome_or_cause
-	seed = new_seed
+	root_seed = new_seed
 	is_manual_seed = new_is_manual_seed
 	meta_progression_eligible = new_meta_progression_eligible
 	run_scoped = new_run_scoped.duplicate(true)
@@ -216,7 +218,10 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 				# passive_destroyed -> payload.passive_id (+ the rolled outcome_category; carried for an honest readout).
 				passives_destroyed.append(String(event_payload.get("passive_id", "")))
 			DomainEvent.Type.ITEM_GAINED:
-				# item_gained -> a backpack pickup: payload.item_id + payload.category (∈ ITEM_GAINED_CATEGORIES).
+				# item_gained -> a backpack pickup: payload.item_id + payload.category (∈ ITEM_GAINED_CATEGORIES). This is
+				# the SOLE notable-loot source: every backpack item the run gained emits an item_gained (a direct board
+				# pickup emits ONLY item_gained; a reward->backpack pickup emits an item_gained via the composed
+				# PickupItemCommand). So each gained item is counted EXACTLY once here.
 				notable_loot.append({
 					"item_id": String(event_payload.get("item_id", "")),
 					"category": String(event_payload.get("category", "")),
@@ -224,18 +229,15 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 				})
 			DomainEvent.Type.REWARD_RESOLVED:
 				# reward_resolved -> a resolved reward offer: payload.content_id + payload.category (∈ REWARD_CATEGORIES,
-				# which adds gold/passive over the backpack set). [Decision] EXCLUDE the gold/passive reward categories
-				# from notable_loot: gold is an economy readout (surfaced via run_scoped.gold), and a passive is
-				# consumed/destroyed (already tracked in passives_consumed/passives_destroyed). Only a backpack-item
-				# reward category is "notable loot" here — keeping the list honest (it lists gained ITEMS the events
-				# record, not a curated ranking; curation is a later content/UX concern).
-				var reward_category: String = String(event_payload.get("category", ""))
-				if reward_category != "gold" and reward_category != "passive":
-					notable_loot.append({
-						"item_id": String(event_payload.get("content_id", "")),
-						"category": reward_category,
-						"source": "reward_resolved"
-					})
+				# which is the backpack set PLUS gold/passive). [Decision, round 1 review] EXCLUDE reward_resolved from
+				# notable_loot ENTIRELY (all REWARD_CATEGORIES): gold is an economy readout (surfaced via run_scoped.gold),
+				# a passive is consumed/destroyed (already tracked in passives_consumed/passives_destroyed), and a
+				# BACKPACK-category reward ALREADY emits a paired item_gained (ResolveRewardCommand composes PickupItemCommand
+				# with sequence_id + 1) — so scanning the reward_resolved too would DOUBLE-COUNT the same physical item. The
+				# item_gained arm above records every gained item exactly once; a direct board pickup emits only item_gained,
+				# so nothing is lost by excluding reward_resolved here. Keeps the list honest (it lists gained ITEMS the
+				# events record, not a curated ranking; curation is a later content/UX concern).
+				pass
 			_:
 				# An unrelated event (entity_moved, damage_applied, run_started, ...) is ignored — a mixed event list
 				# must not pollute the summary lists.
@@ -325,8 +327,9 @@ func to_dictionary() -> Dictionary:
 		"has_summary": has_summary,
 		"phase": String(phase),
 		"outcome_or_cause": String(outcome_or_cause),
-		# root_seed is a full int64 -> decimal-string encoded (the epic-wide root_seed JSON-doubles rule).
-		"seed": str(seed),
+		# root_seed is a full int64 -> decimal-string encoded (the epic-wide root_seed JSON-doubles rule). The pinned
+		# dictionary KEY stays "seed" (the DICTIONARY_KEYS contract); only the backing member field is named root_seed.
+		"seed": str(root_seed),
 		"is_manual_seed": is_manual_seed,
 		"meta_progression_eligible": meta_progression_eligible,
 		"run_scoped": run_scoped.duplicate(true),
@@ -337,10 +340,13 @@ func to_dictionary() -> Dictionary:
 
 
 # Derive the unified outcome_or_cause marker (AC1) from the terminal run-end event in the supplied list, scoped to the
-# run's terminal phase: a FAILED run reads the LAST run_failed.cause; a COMPLETED run reads the LAST run_completed
+# run's terminal phase: a FAILED run reads the FIRST run_failed.cause; a COMPLETED run reads the FIRST run_completed
 # .outcome. Scanning for the terminal-phase's matching event keeps the marker self-consistent with the aggregated events
-# (mirroring RunOrchestrator.resolve_run_end). Returns "" when no matching terminal run-end event is present (a
-# fail-safe: the phase still carries the terminal fact; the marker is simply unknown without the event). Pure read.
+# (mirroring RunOrchestrator.resolve_run_end). [Decision, round 1 review] FIRST-match (break on the first matching
+# terminal run-end event) — a run ends exactly ONCE, so the first matching event IS the run-end fact; breaking is
+# self-consistent with that reality and avoids a silent last-wins overwrite on a malformed multi-terminal-event list.
+# Returns "" when no matching terminal run-end event is present (a fail-safe: the phase still carries the terminal fact;
+# the marker is simply unknown without the event). Pure read.
 static func _derive_outcome_or_cause(run: RunState, events: Array) -> StringName:
 	var marker: StringName = &""
 	if run.phase == RunState.PHASE_FAILED:
@@ -350,6 +356,7 @@ static func _derive_outcome_or_cause(run: RunState, events: Array) -> StringName
 			var event: DomainEvent = event_value
 			if event.event_type == DomainEvent.Type.RUN_FAILED:
 				marker = StringName(String(event.payload.get("cause", "")))
+				break
 	elif run.phase == RunState.PHASE_COMPLETED:
 		for event_value: Variant in events:
 			if not (event_value is DomainEvent):
@@ -357,6 +364,7 @@ static func _derive_outcome_or_cause(run: RunState, events: Array) -> StringName
 			var event: DomainEvent = event_value
 			if event.event_type == DomainEvent.Type.RUN_COMPLETED:
 				marker = StringName(String(event.payload.get("outcome", "")))
+				break
 	return marker
 
 

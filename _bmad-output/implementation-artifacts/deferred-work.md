@@ -91,6 +91,18 @@ no existing production file modified).
   same documented-expected negative-path push_error the 8.1 note describes; 8.2's seed field decimal-string encodes
   the full int64 (round-trip proven by test with a 9223372036854775000 seed) and does not touch that validator.
 
+## Deferred from: code review of 8-2-run-summary-snapshot (2026-07-01)
+
+Round 1 code review (verdict: Approve; Critical 0 / High 0 / Medium 1 / Low 2). NO `[Review][Defer]` items —
+this review deferred NOTHING new to the cross-story ledger. All findings are `[Review][Decision]` (human judgment
+calls recorded in the story file's `### Review Findings` section), not deferred work:
+- (Medium, Decision) `notable_loot` double-counts a backpack-category reward (`ResolveRewardCommand` emits both
+  `item_gained` and `reward_resolved` for one item; `RunSummary` scans both). Recommended fix at review time:
+  exclude backpack `reward_resolved` from `notable_loot`. If the human elects NOT to fix in this story, it should be
+  re-logged here as a `[Review][Defer]` at that point — but as of this review it is an open Decision, not a Defer.
+- (Low, Decision) `_derive_outcome_or_cause` last-wins on multiple terminal events; consider first-match/`break`.
+- (Low, Decision) member field `seed` shadows the global `seed()` RNG builtin; consider `root_seed` for parity.
+
 ## Tracked from: dev of 8-1-run-completion-and-return-to-outpost-flow (2026-07-01)
 
 Story 8.1 (FR32 — "MVP loss condition must be hero death ... followed by return to the last outpost") OPENS
