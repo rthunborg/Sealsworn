@@ -35,7 +35,8 @@ enum Type {
 	ECONOMY_CHANGED,
 	CURSE_APPLIED,
 	EVENT_OFFERED,
-	EVENT_RESOLVED
+	EVENT_RESOLVED,
+	RUN_FAILED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -70,6 +71,7 @@ const EVENT_ID_ECONOMY_CHANGED := &"economy_changed"
 const EVENT_ID_CURSE_APPLIED := &"curse_applied"
 const EVENT_ID_EVENT_OFFERED := &"event_offered"
 const EVENT_ID_EVENT_RESOLVED := &"event_resolved"
+const EVENT_ID_RUN_FAILED := &"run_failed"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -119,6 +121,37 @@ const DESTROY_OUTCOME_CATEGORIES: Array[StringName] = [
 # the validator stay in lockstep on the marker vocabulary.
 const RESOLUTION_PLACEHOLDER := &"placeholder_completed"
 const RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER := &"boss_placeholder"
+
+# Story 8.1 (AC2): the BROADENED run_completed outcome marker for a real "completion or victory path" that is
+# NOT the Story-4.5 boss placeholder. `run_completed` shipped value-pinned to boss_placeholder (the boss-boundary
+# Epic 9 reuses); 8.1 ADDS this second allowed completion outcome so a generic completion/victory can emit the
+# SAME run_completed event WITHOUT touching the boss value. `victory` is DELIBERATELY left unused here so it stays
+# free for Epic 9's real Larval-Avatar boss VICTORY (and so the existing run_completed test that rejects a stray
+# "victory" outcome stays a meaningful garbage-value guard). The two completion outcomes form an ALLOWLIST in
+# _validate_run_completed_payload (boss_placeholder OR completed); an unknown outcome is still rejected. CompleteRun
+# Command references this so the command + the validator stay in lockstep on the marker vocabulary.
+const RUN_COMPLETED_OUTCOME_COMPLETED := &"completed"
+
+# Story 8.1 (AC1): the allowlisted run-FAILED cause markers the run_failed payload may carry (lower_snake). v0 has
+# NO live combat that produces a death (combat auto-resolves to success), so the failed path is CALLER-DRIVEN with
+# an EXPLICIT cause the caller supplies — a stable, readable marker distinguishing the death CONTEXT (AC1's "during
+# a level, event, or boss encounter") + an abandoned run. The resolution is identical for every cause (transition
+# to FAILED + emit run_failed); only the cause marker differs. The validator asserts the cause is in this set
+# (mirroring the *_CATEGORIES allowlist-const pattern; the value set is pinned by test). CompleteRunCommand
+# references it so the command + the validator stay in lockstep on the cause vocabulary.
+const RUN_FAILED_CAUSES: Array[StringName] = [
+	&"hero_death",
+	&"level_defeat",
+	&"boss_defeat",
+	&"abandoned"
+]
+
+# Story 8.1 (AC1/AC2): the stable "next app flow destination" marker carried by run_failed / run_completed (and the
+# CompleteRunCommand result metadata + the RunEndOutcome read DTO). v0 has NO outpost scene (8.6 owns it) and NO
+# scene-wired app-flow machine, so the destination is a DOMAIN DATA fact a later boot/app-flow layer reads to perform
+# the actual navigation — NOT a scene transition here. lower_snake. The only valid v0 run-end destination is the
+# outpost (FR32 — death/completion returns to the last outpost).
+const RUN_END_DESTINATION_OUTPOST := &"outpost"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -241,9 +274,48 @@ static func run_completed(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	# a non-negative integral. Normalize/duplicate defensively.
 	var payload_value: Dictionary = payload.duplicate(true)
 	payload_value["outcome"] = String(payload.get("outcome", ""))
-	payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))
+	# Story 8.1 (AC2): boss_node_id is set ONLY when the caller supplies it — the boss path (Story 4.5,
+	# NodeResolvePlaceholderCommand._resolve_boss) always passes it, so the boss payload keeps its boss_node_id; a
+	# GENERIC completion (CompleteRunCommand._resolve_completed) omits it, so a non-boss completion carries NO
+	# boss_node_id key (the broadened validator requires it only for the boss_placeholder outcome). Injecting it
+	# unconditionally would leak an (empty) boss_node_id into every generic completion — the field must be absent for
+	# a non-boss completion, not present-but-empty.
+	# NOTE (Story 8.1 boss-payload decision, ACCEPTED 2026-06-30): the boss run_completed event is NOT byte-identical
+	# after 8.1 — it now ADDITIVELY and backward-compatibly carries next_destination: "outpost" (defaulted below). The
+	# Epic-9 boss CONTRACT is fully intact and unchanged — event type run_completed, outcome == "boss_placeholder", and
+	# boss_node_id — and no consumer asserts the boss payload's exact key set, so this additive key is harmless and
+	# forward-consistent with the project's append-only event discipline.
+	if payload.has("boss_node_id"):
+		payload_value["boss_node_id"] = String(payload.get("boss_node_id"))
 	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
+	# Story 8.1 (AC2): the broadened run_completed ALSO carries the next-destination flow signal (= outpost) so a
+	# completion/victory routes to the outpost the way a death does (FR32). Defaults to the outpost marker. The boss
+	# placeholder path (Story 4.5) does NOT set it; the factory defaults it, and the validator DOES require it for
+	# both outcomes (the boss factory now supplies the default, so the boss path's existing test still passes) — see
+	# _validate_run_completed_payload.
+	payload_value["next_destination"] = String(payload.get("next_destination", String(RUN_END_DESTINATION_OUTPOST)))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_COMPLETED, sequence_id, &"", payload_value)
+
+
+static func run_failed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 8.1, AC1): the run-FAILED boundary emitted when a run DIES (hero death during a
+	# level/event/boss, or an abandoned run) and resolves to PHASE_FAILED. It is the run-level FAILED counterpart of
+	# the Story-4.5 run_completed boundary (which the boss path drives) — the FIRST event to drive PHASE_FAILED, which
+	# was reachable in the transition table but had no command. NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty). `cause` is a lower_snake CAUSE marker in the RUN_FAILED_CAUSES
+	# allowlist (the death/abandon context). `node_id` is the route node where the run died — it carries hyphens
+	# (RouteGenerator mints "node-<depth>-<index>") so it is a PLAIN string, and it is OPTIONAL (a run abandoned at a
+	# route CHOICE has no node — the validator tolerates an empty node_id but rejects a malformed non-string one).
+	# `cleared_node_count` is a non-negative integral (the nodes cleared before the death). `next_destination` is the
+	# stable outpost flow marker (FR32 — death returns to the last outpost; the validator pins the exact value).
+	# Normalize/duplicate the payload defensively (mirroring run_completed). No int64 encoding (the cause/markers are
+	# short strings, the count is bounded).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["cause"] = String(payload.get("cause", ""))
+	payload_value["node_id"] = String(payload.get("node_id", ""))
+	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
+	payload_value["next_destination"] = String(payload.get("next_destination", String(RUN_END_DESTINATION_OUTPOST)))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_FAILED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -791,6 +863,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_node_placeholder_resolved_payload(payload_value)
 		Type.RUN_COMPLETED:
 			return _validate_run_completed_payload(payload_value)
+		Type.RUN_FAILED:
+			return _validate_run_failed_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -936,19 +1010,65 @@ static func _validate_node_placeholder_resolved_payload(payload_value: Dictionar
 
 
 static func _validate_run_completed_payload(payload_value: Dictionary) -> ActionResult:
-	# The boss-placeholder run-END boundary (Story 4.5). outcome is lower_snake AND value-equal to the
-	# stable boss-placeholder marker (mirroring _validate_level_victory_reached_payload's outcome ==
-	# "victory" assertion). boss_node_id (the boss node) carries hyphens -> PLAIN non-empty string.
-	# cleared_node_count is a non-negative integral: route.cleared_node_ids.size() AFTER the boss is cleared
-	# — the count of nodes the player cleared on the traversed path (one per tier on the fixed-depth MVP
-	# route), well under 2^53.
-	if not _has_lower_snake_payload(payload_value, &"outcome") \
-			or String(payload_value.get("outcome")) != String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER):
+	# The run-COMPLETED boundary (Story 4.5 boss placeholder + Story 8.1 generic completion). outcome is lower_snake
+	# AND value-equal to one of the ALLOWLISTED completion markers (boss_placeholder OR the 8.1 `completed`), so the
+	# boss path (boss_placeholder) preserves its Epic-9 contract (event type, outcome value, boss_node_id) while a
+	# generic completion/victory (completed) can emit the SAME event (AC2). A WRONG/garbage outcome (e.g. a stray
+	# "victory") is still rejected — the allowlist did not become permissive. NOTE (boss-payload decision, ACCEPTED
+	# 2026-06-30): the boss payload is NOT byte-identical after 8.1 — it now additively carries next_destination:
+	# "outpost" (required for BOTH outcomes below, defaulted by the factory). This is a backward-compatible additive
+	# key; the Epic-9 boss contract surface is unchanged.
+	#
+	# boss_node_id (the boss node) carries hyphens -> a PLAIN non-empty string, but it is REQUIRED ONLY for the boss
+	# outcome (a non-boss completion has no boss node — the validator tolerates its absence/empty for the `completed`
+	# outcome WITHOUT weakening the boss path's required field; Story 8.1's boss-field-shape decision). cleared_node_
+	# count is a non-negative integral (the count of nodes cleared on the traversed path, well under 2^53).
+	# next_destination is the stable outpost flow marker (Story 8.1, AC2 — both endings route to the outpost; the
+	# validator pins the exact value).
+	if not _has_lower_snake_payload(payload_value, &"outcome"):
 		return _error_result(&"invalid_event_payload", {"field": "outcome"})
-	if not _has_nonempty_string_payload(payload_value, &"boss_node_id"):
-		return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
+	var outcome: String = String(payload_value.get("outcome"))
+	if outcome != String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER) \
+			and outcome != String(RUN_COMPLETED_OUTCOME_COMPLETED):
+		return _error_result(&"invalid_event_payload", {"field": "outcome"})
+	# boss_node_id is required ONLY for the boss-placeholder outcome (the boss path is unchanged); for a non-boss
+	# completion it is tolerated absent/empty, but a PRESENT boss_node_id must still be a valid non-empty string.
+	if outcome == String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER):
+		if not _has_nonempty_string_payload(payload_value, &"boss_node_id"):
+			return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
+	elif payload_value.has("boss_node_id"):
+		var boss_node_id_value: Variant = payload_value.get("boss_node_id")
+		if not (boss_node_id_value is String or boss_node_id_value is StringName):
+			return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
 	if not _has_nonnegative_integral_payload(payload_value, &"cleared_node_count"):
 		return _error_result(&"invalid_event_payload", {"field": "cleared_node_count"})
+	# next_destination: present + value-equal to the outpost marker. The boss-placeholder factory now defaults it, but
+	# require it for BOTH outcomes so a hand-built/foreign payload with a wrong/missing destination fails loud (FR32).
+	if not _has_lower_snake_payload(payload_value, &"next_destination") \
+			or String(payload_value.get("next_destination")) != String(RUN_END_DESTINATION_OUTPOST):
+		return _error_result(&"invalid_event_payload", {"field": "next_destination"})
+	return _ok_result()
+
+
+static func _validate_run_failed_payload(payload_value: Dictionary) -> ActionResult:
+	# The run-FAILED boundary (Story 8.1, AC1). cause is lower_snake AND in the RUN_FAILED_CAUSES allowlist (the
+	# death/abandon context; the value set is pinned to match by test — mirroring _validate_passive_destroyed_payload's
+	# outcome_category allowlist check). node_id is the route node where the run died — it carries hyphens (a PLAIN
+	# string) and is OPTIONAL (a run abandoned at a route choice has no node), so an EMPTY node_id is tolerated but a
+	# present-non-string one is rejected (the _validate_level_defeat_reached_payload source_entity_id "" tolerance
+	# precedent). cleared_node_count is a non-negative integral (the nodes cleared before the death). next_destination
+	# is the stable outpost flow marker (FR32 — death returns to the last outpost; value-pinned).
+	if not _has_lower_snake_payload(payload_value, &"cause") \
+			or not RUN_FAILED_CAUSES.has(StringName(String(payload_value.get("cause")))):
+		return _error_result(&"invalid_event_payload", {"field": "cause"})
+	# node_id: a plain string (hyphen-tolerant), OPTIONAL/empty-tolerant (an abandoned-at-a-choice run has no node).
+	if not _has_string_payload(payload_value, &"node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "node_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"cleared_node_count"):
+		return _error_result(&"invalid_event_payload", {"field": "cleared_node_count"})
+	if not _has_lower_snake_payload(payload_value, &"next_destination") \
+			or String(payload_value.get("next_destination")) != String(RUN_END_DESTINATION_OUTPOST):
+		return _error_result(&"invalid_event_payload", {"field": "next_destination"})
 	return _ok_result()
 
 
@@ -1751,6 +1871,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_EVENT_OFFERED
 		Type.EVENT_RESOLVED:
 			return EVENT_ID_EVENT_RESOLVED
+		Type.RUN_FAILED:
+			return EVENT_ID_RUN_FAILED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1819,6 +1941,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.EVENT_OFFERED
 		EVENT_ID_EVENT_RESOLVED:
 			return Type.EVENT_RESOLVED
+		EVENT_ID_RUN_FAILED:
+			return Type.RUN_FAILED
 		_:
 			return Type.UNKNOWN
 

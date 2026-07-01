@@ -36,7 +36,68 @@ func run() -> Dictionary:
 	# Story 5.2 — the confirm-path seam: RunOrchestrator.start threads the chosen class into RunStartCommand.
 	_start_with_selectable_class_records_it_on_the_seated_run()
 	_start_with_locked_class_surfaces_command_error_and_seats_no_run()
+	# Story 8.1 — the run-END dispatch hook: resolve_run_end drives death/completion + surfaces the flow signal.
+	_resolve_run_end_death_surfaces_run_failed_and_destination()
+	_resolve_run_end_completion_surfaces_run_completed_and_destination()
+	_resolve_run_end_on_terminal_run_is_blocked()
+	_resolve_run_end_with_no_active_run_errors()
 	return result()
+
+
+# ---- Story 8.1: the run-END dispatch hook (resolve_run_end) ---------------------------------------
+
+# resolve_run_end with a death cause drives the seated ACTIVE_ROUTE run to FAILED, emits run_failed, and surfaces the
+# cause + the outpost next-destination flow signal (AC1). The orchestrator is started (a fresh run is in ACTIVE_ROUTE).
+func _resolve_run_end_death_surfaces_run_failed_and_destination() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(42, false).succeeded, "Setup: start should succeed.")
+	assert_equal(orchestrator.run.phase, RunState.PHASE_ACTIVE_ROUTE, "Setup: a fresh run is in ACTIVE_ROUTE.")
+
+	var resolved: ActionResult = orchestrator.resolve_run_end(&"hero_death")
+	assert_true(resolved.succeeded, "resolve_run_end with a death cause should succeed: %s" % resolved.metadata)
+	assert_equal(orchestrator.run.phase, RunState.PHASE_FAILED, "A death resolution should drive the run to FAILED.")
+	assert_true(orchestrator.run.is_terminal(), "A death-resolved run should be terminal.")
+	# The surfaced run-end fields.
+	assert_true(orchestrator.run_failed_event() != null, "The orchestrator should surface the run_failed event.")
+	assert_equal(orchestrator.run_failed_event().event_type, DomainEvent.Type.RUN_FAILED, "The surfaced event should be run_failed.")
+	assert_equal(orchestrator.run_failed_cause(), "hero_death", "The orchestrator should surface the death cause.")
+	assert_equal(orchestrator.run_end_destination(), "outpost", "The orchestrator should surface the outpost next-destination (AC1).")
+
+
+# resolve_run_end with the completion marker drives the seated ACTIVE_ROUTE run to COMPLETED (the two-step), emits
+# run_completed with the broadened `completed` outcome, and surfaces the outpost destination (AC2).
+func _resolve_run_end_completion_surfaces_run_completed_and_destination() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(7, false).succeeded, "Setup: start should succeed.")
+
+	var resolved: ActionResult = orchestrator.resolve_run_end(&"completed")
+	assert_true(resolved.succeeded, "resolve_run_end with the completion marker should succeed: %s" % resolved.metadata)
+	assert_equal(orchestrator.run.phase, RunState.PHASE_COMPLETED, "A completion resolution should drive the run to COMPLETED.")
+	assert_true(orchestrator.run_completed_event() != null, "The orchestrator should surface the run_completed event.")
+	assert_equal(orchestrator.run_completed_outcome(), "completed", "The orchestrator should surface the broadened `completed` outcome (NOT boss_placeholder).")
+	assert_equal(orchestrator.run_end_destination(), "outpost", "The orchestrator should surface the outpost next-destination (AC2).")
+
+
+# resolve_run_end on an already-terminal run surfaces the command's stable run_already_terminal error (AC3) — the
+# orchestrator captures nothing new (no second event, no mutation).
+func _resolve_run_end_on_terminal_run_is_blocked() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(13, false).succeeded, "Setup: start should succeed.")
+	assert_true(orchestrator.resolve_run_end(&"completed").succeeded, "The first completion should succeed.")
+	var before: Dictionary = orchestrator.run.to_dictionary()
+
+	var second: ActionResult = orchestrator.resolve_run_end(&"hero_death")
+	assert_true(second.is_error(), "A second resolve_run_end on a terminal run should be rejected.")
+	assert_equal(second.error_code, &"run_already_terminal", "A re-resolution should surface the stable run_already_terminal code.")
+	assert_equal(orchestrator.run.to_dictionary(), before, "A blocked re-resolution must leave the run byte-identical (no double-grant).")
+
+
+# resolve_run_end on an unseated orchestrator (no run started) errors with no_active_run.
+func _resolve_run_end_with_no_active_run_errors() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	var resolved: ActionResult = orchestrator.resolve_run_end(&"completed")
+	assert_true(resolved.is_error(), "resolve_run_end with no active run should be rejected.")
+	assert_equal(resolved.error_code, &"no_active_run", "An unseated resolve_run_end should use no_active_run.")
 
 
 # Story 5.2 (confirm-path option b — direct orchestrator entry): RunOrchestrator.start(seed, is_manual,

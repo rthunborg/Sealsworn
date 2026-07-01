@@ -1,0 +1,89 @@
+story_key: 8-1-run-completion-and-return-to-outpost-flow
+epic_num: 8
+story_num: 1
+branch: story/8-1-run-completion-and-return-to-outpost-flow
+status: done
+updated_at: "2026-07-01T13:59:55Z"
+started_at: "2026-06-30T20:08:18Z"
+completed_at: "2026-07-01T13:59:55Z"
+active_seconds: 5400  # best-effort AI-run estimate across 2 sessions; elapsed dominated by overnight HITL pause
+is_first_in_epic: true
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform: godot
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 7
+completed_phases: [0, 1, 3, 5, 7, 9]
+phase5_resolved: true
+breaking_change: "DomainEvent.run_completed payload no longer always carries boss_node_id — emitted only for the boss_placeholder outcome, absent for generic completed."
+code_review_iterations: 2
+code_review_loop_done: true
+# ============================================================================
+# RESUMED 2026-07-01 — Round 2 secondary review complete (clean independent
+# Approve, 0 findings). Automatic review loop CONVERGED. Now at the Phase 7
+# end-of-loop HITL halt (continue/stop); on Stop -> Phase 9 finalize.
+paused: false
+resumed_at: "2026-07-01T13:08:57Z"
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 4
+    decisions_resolved:
+      - "boss-payload: Option A (accept additive next_destination key on boss run_completed) per human decision 2026-06-30"
+    patches_fixed: 1
+    deferrals_logged: 2
+  - round: 2
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+    decisions_resolved: []
+    patches_fixed: 0
+    deferrals_logged: 0
+    note: "Fresh independent secondary review; full headless suite 142 pass / 0 fail; all 3 Round-1 fixes confirmed landed; no new findings, no new deferrals."
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["6a0688d", "d0fc080", "4861a11", "e1fec1d", "4ad3167", "660fe41", "2dfdf18", "5f91fc7", "fce60eb", "d1387a0", "8253163"]
+head_at_pause: "2dfdf18"
+phase5_interrupted: true
+phase5_wip_checkpoint: "4861a11"
+phase5_notes: >-
+  Phase 5 (dev-story) delegate died to a Claude Code process exit mid-run.
+  Partial work WIP-checkpointed at 4861a11 and pushed. Diagnostic suite run: 2
+  failures, both in the partial work — (1) test_complete_run_command.gd: a
+  generic (non-boss) completion run_completed is leaking a boss_node_id (must be
+  absent for non-boss); (2) test_domain_event.gd: _validate_run_started_payload
+  -> _has_decimal_string_payload (domain_event.gd:1625) crashes on the existing
+  run_started overflow-string test (99999999999999999999) with a 64-bit int
+  overflow — a regression the delegate introduced into the run_started
+  validation path while adding run_failed/broadening run_completed.
+  test_run_end_outcome.gd + test_run_orchestrator.gd already PASS. Resume, do not
+  reset.
+deferred_work_archived: 0
+planning_drift: []
+pr_url: null
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []
