@@ -40,6 +40,7 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
+const CompleteRunCommand = preload("res://scripts/core/commands/complete_run_command.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const EventDefinition = preload("res://scripts/content/definitions/event_definition.gd")
@@ -78,6 +79,12 @@ var _next_sequence_id: int = 1
 var _run_started_event: DomainEvent = null
 var _run_completed_event: DomainEvent = null
 var _run_completed_outcome: String = ""
+# Story 8.1: the run-FAILED event + cause + the run-end next-destination flow signal surfaced for the caller (set by
+# resolve_run_end). The boss path (4.5) populates _run_completed_*; the 8.1 generic completion / death path populates
+# these via the CompleteRunCommand-driven resolve_run_end hook.
+var _run_failed_event: DomainEvent = null
+var _run_failed_cause: String = ""
+var _run_end_destination: String = ""
 # Repositories for level generation (combat/elite nodes). Default to the baseline repositories; injectable
 # for tests. The orchestrator is the ONLY 4.x site that runs LevelGenerator.generate.
 var _recipe_repository: LevelRecipeRepository = null
@@ -678,6 +685,43 @@ func affinity_repository() -> AffinityRepository:
 	return _affinity_repository
 
 
+# ---- run-END resolution (Story 8.1 — the OPTIONAL thin dispatch hook, AC1/AC2/AC3) --------------------------------
+
+# Resolve the seated run's END through CompleteRunCommand (mirroring _resolve_boss's command-dispatch + event-capture
+# shape), surfacing the run_failed/run_completed event + the cause/outcome + the next-destination flow signal for the
+# caller. `outcome` is EITHER a death cause (DomainEvent.RUN_FAILED_CAUSES — death -> PHASE_FAILED + run_failed, AC1)
+# OR the completion marker (DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED — completion -> PHASE_COMPLETED + run_completed,
+# AC2). Threads the next free run-level sequence id into the command and advances the counter past its event. Returns
+# the command result VERBATIM (surface any error — wrong phase / already-terminal / unknown outcome — to the caller),
+# capturing the surfaced fields only on success.
+#
+# CALLER-DRIVEN (the 6.3 generate_reward_offer / 7.3 generate_event_offer posture VERBATIM): this is NOT wired into
+# run_to_completion / _resolve_combat / _resolve_non_combat_placeholder — there is NO live death source in v0 (combat
+# auto-resolves to success), so a death NEVER auto-fires; the caller (a later HUD/run-flow story that owns the live
+# death / a real victory) invokes it explicitly. It does NOT touch _resolve_boss's boss-completion behavior or the
+# boss run_completed boundary (Epic 9 depends on it) — the boss still resolves through NodeResolvePlaceholderCommand
+# unchanged. AC3 idempotency is the command's: a re-resolution of an already-terminal run surfaces the command's stable
+# run_already_terminal error here (the orchestrator captures nothing new — no second event, no mutation).
+func resolve_run_end(outcome: StringName) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	var resolved: ActionResult = CompleteRunCommand.new(outcome, _next_sequence_id).execute(run)
+	if resolved.is_error():
+		return resolved
+	_advance_sequence_past(resolved)
+
+	# Capture the surfaced run-end fields (the next-destination flow signal + the cause/outcome) for the caller.
+	_run_end_destination = String(resolved.metadata.get("next_destination", ""))
+	for event: DomainEvent in resolved.events:
+		if event.event_type == DomainEvent.Type.RUN_FAILED:
+			_run_failed_event = event
+			_run_failed_cause = String(event.payload.get("cause"))
+		elif event.event_type == DomainEvent.Type.RUN_COMPLETED:
+			_run_completed_event = event
+			_run_completed_outcome = String(event.payload.get("outcome"))
+	return resolved
+
+
 func run_started_event() -> DomainEvent:
 	return _run_started_event
 
@@ -688,6 +732,19 @@ func run_completed_event() -> DomainEvent:
 
 func run_completed_outcome() -> String:
 	return _run_completed_outcome
+
+
+# Story 8.1: the run-FAILED event + cause + the run-end next-destination flow signal surfaced by resolve_run_end.
+func run_failed_event() -> DomainEvent:
+	return _run_failed_event
+
+
+func run_failed_cause() -> String:
+	return _run_failed_cause
+
+
+func run_end_destination() -> String:
+	return _run_end_destination
 
 
 func last_route_position_snapshot() -> RunSnapshot:

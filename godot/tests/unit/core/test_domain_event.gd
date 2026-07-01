@@ -18,6 +18,10 @@ func run() -> Dictionary:
 	_node_placeholder_resolved_rejects_malformed_payloads()
 	_run_completed_serializes_and_parses_stable_payload()
 	_run_completed_rejects_malformed_payloads()
+	_run_completed_completion_outcome_serializes_and_parses()
+	_run_completed_rejects_broadened_malformed_payloads()
+	_run_failed_serializes_and_parses_stable_payload()
+	_run_failed_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -674,6 +678,9 @@ func _run_completed_serializes_and_parses_stable_payload() -> void:
 	assert_equal(restored.payload.get("outcome"), "boss_placeholder", "The boss_placeholder outcome must survive a JSON round-trip.")
 	assert_equal(restored.payload.get("boss_node_id"), "node-7-0", "The hyphenated boss node id must survive a JSON round-trip.")
 	assert_equal(restored.payload.get("cleared_node_count"), 9, "The cleared_node_count must survive a JSON round-trip.")
+	# Story 8.1 (AC2): the boss run_completed now ALSO carries the outpost next-destination flow signal (defaulted by
+	# the factory) — the boss path picks it up automatically without changing the boss outcome value.
+	assert_equal(restored.payload.get("next_destination"), "outpost", "The boss run_completed must carry the outpost next-destination (defaulted by the factory).")
 
 
 func _run_completed_rejects_malformed_payloads() -> void:
@@ -732,6 +739,172 @@ func _run_completed_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_count.is_error(), "run_completed with a negative cleared_node_count should be rejected.")
 	assert_equal(bad_count.metadata.get("field"), "cleared_node_count", "run_completed should require a non-negative cleared_node_count.")
+
+
+func _run_completed_completion_outcome_serializes_and_parses() -> void:
+	# Story 8.1 (AC2): the BROADENED run_completed for a generic completion/victory — outcome `completed` (NOT the boss
+	# placeholder), NO boss_node_id (tolerated absent for a non-boss completion), the outpost next-destination flow
+	# signal. It validates + round-trips through real JSON, exactly like the boss path.
+	var event: DomainEvent = DomainEvent.run_completed(31, {
+		"outcome": "completed",
+		"cleared_node_count": 8,
+		"next_destination": "outpost"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "run_completed", "A generic completion still uses the run_completed event id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "A generic completion run_completed should validate (the broadened allowlist): %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.payload.get("outcome"), "completed", "The `completed` outcome must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("cleared_node_count"), 8, "The cleared_node_count must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("next_destination"), "outpost", "The outpost next-destination must survive a JSON round-trip.")
+
+	# A non-boss completion does not require boss_node_id (the factory does not set it; the validator tolerates it).
+	assert_false(restored.payload.has("boss_node_id"), "A generic completion run_completed should NOT carry a boss_node_id.")
+
+	# The marker const is pinned.
+	assert_equal(String(DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED), "completed", "RUN_COMPLETED_OUTCOME_COMPLETED must be `completed`.")
+	assert_equal(String(DomainEvent.RUN_END_DESTINATION_OUTPOST), "outpost", "RUN_END_DESTINATION_OUTPOST must be `outpost`.")
+
+
+func _run_completed_rejects_broadened_malformed_payloads() -> void:
+	# A WRONG/garbage outcome (lower_snake but neither boss_placeholder nor `completed` — e.g. a stray `victory`) is
+	# still REJECTED (the allowlist did not become permissive — this is the load-bearing AC2 guard).
+	var stray: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"outcome": "victory", "cleared_node_count": 8, "next_destination": "outpost"}
+	})
+	assert_true(stray.is_error(), "A stray `victory` outcome must still be rejected (the allowlist is boss_placeholder/completed).")
+	assert_equal(stray.metadata.get("field"), "outcome", "A garbage outcome should name the outcome field.")
+
+	# A `completed` outcome MISSING the next_destination flow signal is rejected (the destination is required — FR32).
+	var missing_destination: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"outcome": "completed", "cleared_node_count": 8}
+	})
+	assert_true(missing_destination.is_error(), "A completion run_completed missing next_destination should be rejected.")
+	assert_equal(missing_destination.metadata.get("field"), "next_destination", "A missing destination should name the next_destination field.")
+
+	# A `completed` outcome with a WRONG destination (not the outpost marker) is rejected.
+	var wrong_destination: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"outcome": "completed", "cleared_node_count": 8, "next_destination": "dungeon"}
+	})
+	assert_true(wrong_destination.is_error(), "A completion run_completed with a non-outpost destination should be rejected.")
+	assert_equal(wrong_destination.metadata.get("field"), "next_destination", "A wrong destination should name the next_destination field.")
+
+	# A non-boss completion with a PRESENT-but-non-string boss_node_id is rejected (tolerant of ABSENCE, not of garbage).
+	var bad_boss_field: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_completed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"outcome": "completed", "boss_node_id": 42, "cleared_node_count": 8, "next_destination": "outpost"}
+	})
+	assert_true(bad_boss_field.is_error(), "A completion run_completed with a non-string boss_node_id should be rejected.")
+	assert_equal(bad_boss_field.metadata.get("field"), "boss_node_id", "A non-string boss_node_id should name the boss_node_id field.")
+
+
+func _run_failed_serializes_and_parses_stable_payload() -> void:
+	# Story 8.1 (AC1): a run_failed SYSTEM event (no actor) — the run-FAILED boundary. cause is lower_snake AND in the
+	# allowlist; node_id carries hyphens (plain string, OPTIONAL); cleared_node_count is non-negative integral;
+	# next_destination is the outpost marker.
+	var event: DomainEvent = DomainEvent.run_failed(12, {
+		"cause": "hero_death",
+		"node_id": "node-3-1",
+		"cleared_node_count": 4,
+		"next_destination": "outpost"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "run_failed", "run_failed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "run_failed is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "run_failed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.RUN_FAILED, "run_failed should parse back to RUN_FAILED.")
+	assert_equal(restored.payload.get("cause"), "hero_death", "The cause must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("node_id"), "node-3-1", "The hyphenated node id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("cleared_node_count"), 4, "The cleared_node_count must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("next_destination"), "outpost", "The outpost next-destination must survive a JSON round-trip.")
+
+	# An abandoned-at-a-choice run has NO node — an EMPTY node_id is tolerated.
+	var abandoned: DomainEvent = DomainEvent.run_failed(13, {
+		"cause": "abandoned",
+		"node_id": "",
+		"cleared_node_count": 0,
+		"next_destination": "outpost"
+	})
+	var abandoned_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(abandoned.to_dictionary())))
+	assert_true(abandoned_parse.succeeded, "run_failed with an empty node_id (abandoned at a choice) should validate: %s" % abandoned_parse.metadata)
+
+
+func _run_failed_rejects_malformed_payloads() -> void:
+	# A missing cause is rejected.
+	var missing_cause: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"node_id": "node-1-0", "cleared_node_count": 1, "next_destination": "outpost"}
+	})
+	assert_true(missing_cause.is_error(), "run_failed missing cause should be rejected.")
+	assert_equal(missing_cause.error_code, &"invalid_event_payload", "Malformed run_failed should use the stable code.")
+	assert_equal(missing_cause.metadata.get("field"), "cause", "run_failed should name the missing cause field.")
+
+	# An OFF-ALLOWLIST cause (lower_snake but not in RUN_FAILED_CAUSES) is rejected.
+	var bad_cause: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"cause": "exploded", "node_id": "node-1-0", "cleared_node_count": 1, "next_destination": "outpost"}
+	})
+	assert_true(bad_cause.is_error(), "run_failed with an off-allowlist cause should be rejected.")
+	assert_equal(bad_cause.metadata.get("field"), "cause", "An off-allowlist cause should name the cause field.")
+
+	# A non-string node_id is rejected (node_id is empty-tolerant but must be a string when present).
+	var bad_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"cause": "hero_death", "node_id": 7, "cleared_node_count": 1, "next_destination": "outpost"}
+	})
+	assert_true(bad_node.is_error(), "run_failed with a non-string node_id should be rejected.")
+	assert_equal(bad_node.metadata.get("field"), "node_id", "A non-string node_id should name the node_id field.")
+
+	# A negative cleared_node_count is rejected.
+	var bad_count: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"cause": "hero_death", "node_id": "node-1-0", "cleared_node_count": -1, "next_destination": "outpost"}
+	})
+	assert_true(bad_count.is_error(), "run_failed with a negative cleared_node_count should be rejected.")
+	assert_equal(bad_count.metadata.get("field"), "cleared_node_count", "run_failed should require a non-negative cleared_node_count.")
+
+	# A missing/wrong next_destination is rejected (FR32 — death routes to the outpost).
+	var missing_destination: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"cause": "hero_death", "node_id": "node-1-0", "cleared_node_count": 1}
+	})
+	assert_true(missing_destination.is_error(), "run_failed missing next_destination should be rejected.")
+	assert_equal(missing_destination.metadata.get("field"), "next_destination", "A missing destination should name the next_destination field.")
+
+	var wrong_destination: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "run_failed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"cause": "hero_death", "node_id": "node-1-0", "cleared_node_count": 1, "next_destination": "dungeon"}
+	})
+	assert_true(wrong_destination.is_error(), "run_failed with a non-outpost destination should be rejected.")
+	assert_equal(wrong_destination.metadata.get("field"), "next_destination", "A wrong destination should name the next_destination field.")
 
 
 func _item_gained_serializes_and_parses_stable_payload() -> void:
@@ -1983,7 +2156,9 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.CURSE_APPLIED: &"curse_applied",
 		# Story 7.3: the event_offered + event_resolved SYSTEM events appended at the enum end (never renumbered).
 		DomainEvent.Type.EVENT_OFFERED: &"event_offered",
-		DomainEvent.Type.EVENT_RESOLVED: &"event_resolved"
+		DomainEvent.Type.EVENT_RESOLVED: &"event_resolved",
+		# Story 8.1: the run_failed SYSTEM event appended at the enum end (never renumbered) — the run-FAILED boundary.
+		DomainEvent.Type.RUN_FAILED: &"run_failed"
 	}
 
 	for event_type: int in expected_ids.keys():
