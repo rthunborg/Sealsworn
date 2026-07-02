@@ -25,6 +25,15 @@ RESOLVED in-story (see the bullet below), so nothing from this review remains op
     `test_meta_award_rules.gd::_amount_comes_from_the_run_state`; other `MetaAwardRules` tests + the command test updated to the one-arg
     signature. Full headless suite green (147 PASS / 0 FAIL); `git diff --check` clean. NOT open — nothing carries to 8.6.
 
+Round 2 code review (auto-gds secondary / alternate-model re-review, 2026-07-02) verdict: APPROVE (Critical 0 / High 0 /
+Med 0 / Low 1). It independently VERIFIED the Round 1 fix is correct + complete (`MetaAwardRules.oath_shard_award_for(run)`
+is a one-arg pure function of the terminal `RunState`; `nodes_cleared` derived off `run.route.cleared_node_ids.size()`
+identical to `RunSummary.build` at `run_summary.gd:250-254`; no lingering two-arg call sites; `MetaAwardRules` no longer
+preloads `RunSummary`) and re-swept the FULL diff. The single Round 2 Low is a cosmetic `[Review][Note]` (the
+`AwardMetaProgressCommand.summary` constructor param is now functionally unused inside the command after the fix + its
+line-53 inline comment "the bounded award signal" is stale) — NOT a bug, NOT a defer; it grants nothing to a later story.
+**No new `[Review][Defer]` from Round 2 — nothing added to this ledger heading.**
+
 ## Tracked from: dev of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
 
 Story 8.3 (FR95/FR67 capped-sparse-meta-power; FR59 outpost meta loop; FR28 no-manual-seed-progression) is the
