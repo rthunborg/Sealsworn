@@ -28,3 +28,34 @@
 **Needs human:** choose (a) or (b) above, then resume `/auto-gds` (secondary re-review round 2, then finalize). Working tree intentionally left dirty (story-file review round, ledger entry, this report, state) — the next phase commit folds them in.
 
 **Next:** `8-4` (next Epic 8 story — preview only, not started).
+
+## Report — 2026-07-02T13:22:00Z (final)
+
+**Story:** `8-3-meta-profile-and-oath-shard-awards` (epic 8, story 3) — mid-epic.
+**Branch:** `story/8-3-meta-profile-and-oath-shard-awards` (HEAD `ac5a206` at report time; finalize commit follows).
+**Pipeline status:** clean completion — review loop converged at iteration 2 of 3, all decisions human-resolved and implemented, full suite green.
+**Continues:** Report — 2026-07-02T12:45:00Z (halted — decision-needed). The human chose option (b) "harden now"; agds-high made `MetaAwardRules.oath_shard_award_for(run)` a one-arg pure function of the terminal `RunState` and closed the paired ledger Defer (commit `4288d10`); round 2 verified the fix and converged (`ac5a206`).
+
+**Timing:** started 2026-07-02T11:58:00Z; completed 2026-07-02 — elapsed ≈1h 25m (≈52m AI-run across 5 delegates, remainder human/idle wait); single session.
+
+**Phases run:** Phase 0 (preflight), Phase 1 (branch), Phase 3 (create-story, agds-xhigh), Phase 5 (dev-story, agds-xhigh), Phase 7 (round 1 review agds-xhigh; decision fix agds-high; round 2 review agds-alt-xhigh), Phase 9 (finalize, orchestrator).
+**Skipped:** Phase 2 (project-context present at repo root), Phase 4 (gds-testing-disabled), Phase 6 (gds-testing-disabled), Phase 8 (not last in epic).
+
+**Overrides:** none.
+
+**Testing:** disabled in V0. Full headless suite green at dev, round 1, fix, and round 2: 147 PASS / 0 FAIL each time; false-PASS grep guard clean (the 6 `ERROR:` lines are documented negatives, incl. 8.3's own `profile_parse_failed`); `git diff --check` clean.
+
+**Code review:** 2 iterations (cap 3) — converged.
+- Round 1 — agds-xhigh, Approve, Critical 0 / High 0 / Medium 0 / Low 1; 1 `[Review][Decision]` (award-amount coupling) → human chose (b) "harden now", implemented by agds-high (`4288d10`): calculator decoupled from `RunSummary`, self-consistency test added, paired Defer closed as resolved-in-story.
+- Round 2 — agds-alt-xhigh, Approve, Critical 0 / High 0 / Medium 0 / Low 1 (cosmetic Note: unused stored `summary` param + stale comment — optional cleanup, no decision, no defer); round-1 fix confirmed correct + complete; adversarial sweep clean.
+- HITL outcome: auto-continued (0 open decisions, no needs-human, no blocker — user loop protocol continue conditions met).
+
+**Open questions:** (none).
+
+**Deferred work:** (none open from this review) — round 1's single Defer was resolved in-story by option (b); pre-existing 8.4/8.5/8.6/8.7 + unlock-spend ledger entries untouched.
+
+**Planning drift:** (none) — not epic-end.
+
+**Needs human:** (none) — story is done; merging the PR is optional and on the human's own time.
+
+**Next:** `8-4` (next Epic 8 story — preview only, not started).
