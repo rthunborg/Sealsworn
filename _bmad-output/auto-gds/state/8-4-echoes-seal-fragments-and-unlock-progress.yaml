@@ -2,11 +2,11 @@ story_key: 8-4-echoes-seal-fragments-and-unlock-progress
 epic_num: 8
 story_num: 4
 branch: story/8-4-echoes-seal-fragments-and-unlock-progress
-status: in-progress
-updated_at: "2026-07-02T14:55:00Z"
+status: done
+updated_at: "2026-07-02T15:05:00Z"
 started_at: "2026-07-02T13:40:00Z"
-completed_at: null
-active_seconds: 2330
+completed_at: "2026-07-02T15:05:00Z"
+active_seconds: 2390
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -18,7 +18,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 7
-completed_phases: [0, 1, 3, 5]
+completed_phases: [0, 1, 3, 5, 7, 9]
 code_review_iterations: 2
 code_review_loop_done: true
 halted_at_phase: null
@@ -55,12 +55,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["6a58c85", "5b1dce6"]
+commits: ["6a58c85", "5b1dce6", "ab9d1ca", "7361e13", "a990bb8", "f760d4d"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/43"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
