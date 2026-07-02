@@ -4,7 +4,7 @@ baseline_commit: 9c8ebc50272bdccc0503aa44428f829fa09d39cf
 
 # Story 8.3: Meta Profile and Oath Shard Awards
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
