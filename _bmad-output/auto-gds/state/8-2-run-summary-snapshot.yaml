@@ -1,0 +1,91 @@
+story_key: 8-2-run-summary-snapshot
+epic_num: 8
+story_num: 2
+branch: story/8-2-run-summary-snapshot
+status: done
+updated_at: "2026-07-02T11:50:00Z"
+started_at: "2026-07-01T15:34:40Z"
+completed_at: "2026-07-02T11:50:00Z"
+active_seconds: 2465
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform: godot
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 7
+completed_phases: [0, 1, 3, 5, 7, 9]
+phase5_resolved: true
+code_review_iterations: 3
+code_review_loop_done: true
+halted_at_phase: null
+halt_reason: "2026-07-02 halt RESOLVED: human chose option (a) for the last open [Review][Decision] (stale comment run_summary.gd:218); agds-high trimmed the comment to match code, marked it RESOLVED in rounds 2+3 entries, suite green. Zero open decisions; loop converged; proceeding to finalize."
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 1
+    low: 2
+    decisions_open: 0
+    decisions_resolved:
+      - "notable_loot double-count (Medium): human chose 'exclude backpack reward_resolved' -> implemented; item_gained is now sole notable_loot source"
+      - "_derive_outcome_or_cause (Low): human chose 'tighten to first-match' -> break on first terminal event"
+      - "seed field shadow (Low): human chose 'rename to root_seed' -> member renamed; pinned dict key 'seed' unchanged"
+    patches_fixed: 0
+    fixes_applied: 3
+    fix_profile: agds-high
+    deferrals_logged: 0
+    note: "Approve; 3 [Review][Decision] items resolved by human then implemented by agds-high. Full headless suite green after fixes. Secondary re-review (round 2) pending to confirm convergence."
+  - round: 2
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 1
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 0
+    note: "Ran in the interrupted 2026-07-01 session (recorded in story file, state not updated before exit; reconciled 2026-07-02). Verified all 3 round-1 fixes CORRECT + tested; full re-review of diff surfaced 1 NEW Low [Review][Decision]: stale comment on PASSIVE_DESTROYED arm (run_summary.gd:218). Suite green."
+  - round: 3
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 1
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 0
+    decisions_resolved:
+      - "stale PASSIVE_DESTROYED comment (Low): human chose option (a) 'trim comment to match code' 2026-07-02 -> implemented by agds-high; comment now documents the flat passive_id list; zero behavior change; suite green"
+    fix_profile: agds-high
+    note: "FINAL automatic round (cap 3). Independent source-level re-derivation of whole diff: RunSummary refs = exactly 2 files, additive-read fence holds, event payload reads match domain_event.gd factories verbatim, R1 fixes sound, fixtures match current constructors. Suite green, git diff --check clean. NO new findings; round-2 Low Decision carried forward, then RESOLVED post-halt via human option (a). Convergence confirmed."
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["082bb94", "42c3620", "956d993", "1fe7489", "ac4bcc6", "83a45ed"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/41"
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []

@@ -1,3 +1,131 @@
+## Tracked from: dev of 8-2-run-summary-snapshot (2026-07-01)
+
+Story 8.2 (FR60 — the run summary; FR28 boundary hygiene at the SUMMARY level) is the "review what happened" half
+of Epic 8. It CLOSES the run-summary defer 8.1 opened: it ships the DERIVED run-summary read surface — a
+scene-free `RunSummary` (`godot/scripts/run/run_summary.gd`, `class_name RunSummary`) that AGGREGATES the FR60
+field set from the terminal `RunState` + the run's ordered domain EVENT list into a pure, serializable, exact-key
+DTO. It is a PURE READ AGGREGATOR: NO new domain state, NO new event, NO new save key, NO command, NO mutation, NO
+RNG. Full headless suite green (Godot 4.6.3, "Headless tests passed.", exit 0, 143 PASS / 0 FAIL); the false-PASS
+grep guard is clean beyond the documented int64-overflow `Cannot represent … as a 64-bit signed integer` negative-
+path diagnostic; `git diff --check` clean; the DomainEvent enum, `RngStreamSet.required_streams()` (7 streams), the
+23-key `RunSnapshot` gate, and every seed-regression fingerprint are UNTOUCHED (additive-read: two new files only,
+no existing production file modified).
+
+**Cross-story `[Decision]`s recorded (the run-summary shape later stories consume):**
+- `RunSummary` shape: mirrors `RunEndOutcome` VERBATIM — a pure `static build(run, events) -> RunSummary` factory +
+  instance fields + `to_dictionary()` projecting an EXACT pinned `DICTIONARY_KEYS` (`has_summary`, `phase`,
+  `outcome_or_cause`, `seed`, `is_manual_seed`, `meta_progression_eligible`, `run_scoped`, `profile_meta`,
+  `content_unlock`, `not_yet_supported`), with pinned sub-dict key sets (`RUN_SCOPED_KEYS` / `PROFILE_META_KEYS` /
+  `CONTENT_UNLOCK_KEYS`). Fail-closed `_empty()` (`has_summary == false` + structurally-complete-but-empty
+  sub-dicts) on a null / non-terminal run.
+- Event source: the ordered domain-event list is an EXPLICIT `build` PARAMETER (v0 has no run-level event store —
+  commands return events; the caller accumulates; the orchestrator threads ids without a log). Received as an
+  untyped `Array`, type-checked per element (a non-`DomainEvent` entry is ignored). No presentation/
+  `CombatExplanationLog` state is read as source truth (AC2). No persisted event-log field added to `RunState` /
+  `RunSnapshot`.
+- Cause/outcome derivation: `outcome_or_cause` is DERIVED from the terminal run-end event in the supplied list
+  (scan `Type.RUN_FAILED` → `payload.cause` for a FAILED run; `Type.RUN_COMPLETED` → `payload.outcome` for a
+  COMPLETED run), self-consistent with the aggregated events (mirroring `RunOrchestrator.resolve_run_end`); the
+  terminal `phase` comes from `RunState.phase`. An absent terminal event leaves the marker `""` (the phase still
+  carries the terminal fact) — a fail-safe, not a crash.
+- Boss/elite progress field shape: `run_scoped.boss_cleared: bool` (a cleared `RouteNode.TYPE_BOSS` node) +
+  `run_scoped.elite_nodes_cleared: int` (count of cleared `TYPE_ELITE_COMBAT` nodes), derived from the ROUTE
+  cross-referenced with `cleared_node_ids` — NOT from a `run_completed` payload field (`boss_node_id` is
+  boss_placeholder-only after 8.1; the route derivation is robust to a generic `completed`).
+- Notable-loot source: aggregated from BOTH `item_gained` (by `item_id`/`category`) AND `reward_resolved` (by
+  `content_id`/`category`), EXCLUDING the `gold`/`passive` reward categories (gold is an economy readout surfaced
+  via `run_scoped.gold`; a passive is tracked in `passives_consumed`/`passives_destroyed`). Honest — lists what the
+  events RECORD, not a curated "notable" ranking (curation is a later content/UX concern).
+- Not-yet-supported placeholder marker shape: a `not_yet_supported: Array[String]` list naming
+  `["oath_shards_earned", "echoes_discovered", "unlock_progress"]`, PLUS each field's safe default in its boundary
+  sub-dict (`profile_meta.oath_shards_earned == 0`; `content_unlock.echoes_discovered == []`;
+  `content_unlock.unlock_progress == []`). A placeholder value (0/[]) is structurally impossible to mistake for a
+  real award/unlock, and is TRACKED for the Epic-10 readiness pass (AC5; Story 10.7 names Story 8.2).
+- AC3 state boundaries: the output keeps run-scoped / profile-meta / content-unlock readouts in DISTINCT sub-dicts.
+  The AC3 "replay/debug cannot grant progress" guarantee is STRUCTURAL: the summary is a PURE READ — a manual-seed
+  run's summary reports `meta_progression_eligible == false` and the SAME 0/empty award/unlock shape as any run,
+  and building it grants nothing regardless of eligibility. The summary is the read seam the 8.3 award path sits IN
+  FRONT of (8.3 reads eligibility + the summary, THEN awards BEHIND the 8.1 `run_already_terminal` idempotency
+  guard); 8.2 itself never awards.
+- Orchestrator hook: the OPTIONAL thin `RunOrchestrator` read hook was NOT added (it is optional per Dev Notes;
+  keeping the surface additive-only is lower-risk). The caller supplies the events directly; a later HUD/run-flow
+  story that owns the live loop + a run log can add a convenience read hook then (a pure read, no run-loop change).
+
+**Deferred to the owning stories (8.2 ships only the DERIVED summary read; these BUILD ON it):**
+- **[Defer] (8.3 award / 8.7 save-load tests) The META PROFILE + Oath-Shard AWARDING + the meta-save shape** — 8.2
+  REPORTS the AWARDED Oath-Shard count as 0 (`profile_meta.oath_shards_earned`) and reports
+  `meta_progression_eligible` READ-ONLY; it computes/grants NO award, creates NO cross-run `ProfileSnapshot`/
+  `ProfileRepository`, decides NO meta-save shape (likely its OWN snapshot, NOT nested under `route_state`, with
+  migration coverage from the start — the retro T2 heads-up), and keeps `RunSnapshot.oath_shards` at 0. The 8.3
+  award path READS this summary + the eligibility, THEN awards behind the 8.1 idempotency guard.
+- **[Defer] (8.4) Echoes / Seal-Fragments / class-mastery / unlock-progress DOMAIN content + profile-merge** — 8.2
+  REPORTS `content_unlock.echoes_discovered` / `content_unlock.unlock_progress` as empty not-yet-supported
+  placeholders (no domain source exists yet, named in `not_yet_supported`); it authors NO Echo/Seal-Fragment/unlock
+  content, merges NOTHING into a profile, and decides NO unlock-threshold rules.
+- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the run-summary DISPLAY / named spaces / start-another-
+  descent** — 8.2 produces the summary DATA (a scene-free DTO); it builds NO outpost `.tscn`, NO `OutpostViewModel`,
+  NO summary UI. UI-scene-last. The `RunSummary` DTO (incl. the `not_yet_supported` limitation signal) is what 8.6
+  renders — including an honest limitation note.
+- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
+  skippable delivery — 8.2 aggregates the run-end facts; it tracks NO first-death flag and delivers NO narrative.
+  Narrative stays off the summary CRITICAL path (retro §7 risk 2).
+- **[Defer] (8.7) Persisting the run summary / adding a run-log field to `RunState`/`RunSnapshot`** — the summary is
+  a DERIVED read composed on demand from `(terminal RunState, ordered events)`; whether/how a summary or an event
+  log is PERSISTED (survive an app restart before the outpost renders it) is the 8.7 meta/summary save-load concern
+  (riding the 8.3/8.7 meta-save shape). 8.2 adds NO new top-level `RunSnapshot` key (the 23-key gate stays 23) and
+  NO new persisted `RunState` field.
+
+**Remain DEFERRED (out of 8.2's scope — knowingly NOT reopened; NOT summary concerns):**
+- **[Defer] The LIVE tactical-play loop / real combat-death SOURCE / a run-level event STORE that auto-accumulates
+  the log** — combat auto-resolves to success; the orchestrator threads sequence ids without a log store. 8.2's
+  summary is built from an event list the CALLER supplies; it builds NO live loop, adds NO run-level event store,
+  and does not perturb the interrupted==uninterrupted determinism / v0 auto-resolve posture. The live loop + the
+  run log are the later HUD/run-flow story's concern (the Epic-7 retro Action T1 residual — NOT an Epic-8
+  dependency).
+- **[Note] The two 8.1 `[Review][Defer]` items are UNTOUCHED (not summary concerns):** the
+  `CompleteRunCommand._resolve_completed` two-step transition atomicity + the `RunEndOutcome.for_failed`/
+  `for_completed` allowlist-validation are command/DTO-validation concerns. 8.2 READS the events'
+  already-command-validated markers (it derives `outcome_or_cause` from the event stream, inheriting the events'
+  validated cause/outcome), so it introduces NO new allowlist-validation obligation and reopens neither item.
+- **[Note] The int64-overflow `root_seed` diagnostic** (`Cannot represent … as a 64-bit signed integer`) is the
+  same documented-expected negative-path push_error the 8.1 note describes; 8.2's seed field decimal-string encodes
+  the full int64 (round-trip proven by test with a 9223372036854775000 seed) and does not touch that validator.
+
+## Deferred from: code review of 8-2-run-summary-snapshot (2026-07-01)
+
+Round 1 code review (verdict: Approve; Critical 0 / High 0 / Medium 1 / Low 2). NO `[Review][Defer]` items —
+this review deferred NOTHING new to the cross-story ledger. All findings are `[Review][Decision]` (human judgment
+calls recorded in the story file's `### Review Findings` section), not deferred work:
+- (Medium, Decision) `notable_loot` double-counts a backpack-category reward (`ResolveRewardCommand` emits both
+  `item_gained` and `reward_resolved` for one item; `RunSummary` scans both). Recommended fix at review time:
+  exclude backpack `reward_resolved` from `notable_loot`. If the human elects NOT to fix in this story, it should be
+  re-logged here as a `[Review][Defer]` at that point — but as of this review it is an open Decision, not a Defer.
+- (Low, Decision) `_derive_outcome_or_cause` last-wins on multiple terminal events; consider first-match/`break`.
+- (Low, Decision) member field `seed` shadows the global `seed()` RNG builtin; consider `root_seed` for parity.
+
+Round 2 code review (2026-07-01; auto-gds secondary review delegate, Opus 4.8 — independent second-model
+re-review). Verdict: Approve; Critical 0 / High 0 / Medium 0 / Low 1. The three Round-1 `[Review][Decision]`
+resolutions were verified CORRECT + adequately tested (notable_loot single-sourced from `item_gained` with no
+backpack-item leakage; `_derive_outcome_or_cause` first-match `break`; member `seed` renamed to `root_seed` with
+the pinned dict key `"seed"` unchanged). Full suite green (143 PASS / 0 FAIL). **NO `[Review][Defer]` items —
+this round deferred NOTHING new to this ledger.** The single new finding is a `[Review][Decision]` (recorded in the
+story file, not here): a STALE COMMENT on the `passive_destroyed` arm (`run_summary.gd:218` claims the
+`outcome_category` is carried, but line 219 appends only `passive_id`) — a comment-vs-code accuracy nit, not a
+defect or an AC violation (Task 4 made `outcome_category` optional). Recommended low-risk resolution: trim the
+comment to match the flat-id-list code.
+
+Round 3 code review (2026-07-02; auto-gds secondary review delegate, Opus 4.8 — the FINAL automatic round under the
+three-round cap; an independent alternate-model convergence re-review). Verdict: Approve; Critical 0 / High 0 /
+Medium 0 / Low 1. The whole story diff was re-derived independently (merge-base `73f6a05`; two NEW files only, no
+existing production file modified) and both new files + the real source dependencies were re-read from source; the
+three Round-1 Decision resolutions were re-confirmed correct from the actual `domain_event.gd`/`run_state.gd`/etc.
+APIs (not from prior-round claims), and the full headless suite was re-run locally (green, 0 FAIL, false-PASS guard
+clean beyond the documented negatives). **NO `[Review][Defer]` items — this round deferred NOTHING new to this
+ledger.** The only open item is the Round-2 `[Review][Decision]` stale-comment nit (carried forward unchanged — the
+fix delegate did not touch it), which stays a human triage item recorded in the story file (apply the one-line
+comment trim, or waive). Convergence reached: 0 Critical/High/Medium open across all three rounds; the sole
+remaining Low is cosmetic with zero functional/AC/test impact and does not gate the story.
+
 ## Tracked from: dev of 8-1-run-completion-and-return-to-outpost-flow (2026-07-01)
 
 Story 8.1 (FR32 — "MVP loss condition must be hero death ... followed by return to the last outpost") OPENS
