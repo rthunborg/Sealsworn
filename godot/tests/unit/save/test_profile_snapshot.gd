@@ -19,6 +19,7 @@ func run() -> Dictionary:
 	_oath_shards_defaults_a_negative_to_zero()
 	_last_awarded_run_seed_survives_full_int64_round_trip()
 	_copy_is_a_deep_independent_clone()
+	_populated_8_4_homes_round_trip_without_a_migration()
 	return result()
 
 
@@ -195,3 +196,42 @@ func _copy_is_a_deep_independent_clone() -> void:
 	assert_equal(snapshot.oath_shards, 9, "Mutating the copy must not perturb the source oath_shards.")
 	assert_equal(snapshot.class_mastery.get("seer"), 2, "Mutating the copy must not perturb the source class_mastery.")
 	assert_equal(snapshot.echoes.size(), 1, "Mutating the copy must not perturb the source echoes.")
+
+
+func _populated_8_4_homes_round_trip_without_a_migration() -> void:
+	# Story 8.4: the POPULATED echoes / class_mastery / unlock_progress homes round-trip losslessly through
+	# to_dictionary()/parse at the SAME SCHEMA_VERSION == 1 (NO migration — 8.4 merges into the existing shape), and the
+	# exact DICTIONARY_KEYS set is UNCHANGED (8.4 adds NO new top-level profile key — Seal Fragments + the merge marker
+	# live INSIDE unlock_progress).
+	var snapshot: ProfileSnapshot = ProfileSnapshot.new()
+	snapshot.echoes = ["echo_of_salt", "echo_of_tide"]
+	snapshot.class_mastery = {"warrior": 3}
+	# unlock_progress carries the Seal-Fragment id set + an unlock-state flag + the dedicated merge marker (all INSIDE the
+	# existing unlock_progress Dictionary home — no new top-level key).
+	snapshot.unlock_progress = {
+		"seal_fragments": ["seal_a", "seal_b"],
+		"seal_gate_1_unlocked": true,
+		"_last_merged_run_seed": "4242"
+	}
+
+	var json_text: String = JSON.stringify(snapshot.to_dictionary())
+	var parsed_variant: Variant = JSON.parse_string(json_text)
+	var parse_result: ActionResult = ProfileSnapshot.parse(parsed_variant)
+	assert_true(parse_result.succeeded, "A populated 8.4 profile must parse back at SCHEMA_VERSION == 1 (no migration).")
+	var parsed: ProfileSnapshot = parse_result.metadata.get("snapshot")
+
+	# NO migration: the schema version is unchanged.
+	assert_equal(parsed.schema_version, ProfileSnapshot.SCHEMA_VERSION, "The populated 8.4 profile must round-trip at the SAME schema version (no bump).")
+	# The populated homes survive verbatim.
+	assert_equal(parsed.echoes, ["echo_of_salt", "echo_of_tide"], "The populated echoes home must round-trip losslessly.")
+	assert_equal(int(parsed.class_mastery.get("warrior")), 3, "The populated class_mastery home must round-trip losslessly.")
+	assert_equal((parsed.unlock_progress.get("seal_fragments") as Array), ["seal_a", "seal_b"], "The Seal-Fragment set inside unlock_progress must round-trip losslessly.")
+	assert_true(bool(parsed.unlock_progress.get("seal_gate_1_unlocked")), "The unlock-state flag inside unlock_progress must round-trip.")
+	assert_equal(String(parsed.unlock_progress.get("_last_merged_run_seed")), "4242", "The dedicated merge marker inside unlock_progress must round-trip.")
+
+	# The exact top-level key set is UNCHANGED (8.4 adds no new top-level profile key).
+	var actual_keys: Array = snapshot.to_dictionary().keys()
+	actual_keys.sort()
+	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
+	expected_keys.sort()
+	assert_equal(actual_keys, expected_keys, "A populated 8.4 profile must still project EXACTLY the pinned DICTIONARY_KEYS set (no new top-level key).")

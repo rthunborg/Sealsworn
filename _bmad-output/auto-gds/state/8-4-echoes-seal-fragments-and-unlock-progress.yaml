@@ -1,0 +1,72 @@
+story_key: 8-4-echoes-seal-fragments-and-unlock-progress
+epic_num: 8
+story_num: 4
+branch: story/8-4-echoes-seal-fragments-and-unlock-progress
+status: done
+updated_at: "2026-07-02T15:05:00Z"
+started_at: "2026-07-02T13:40:00Z"
+completed_at: "2026-07-02T15:05:00Z"
+active_seconds: 2390
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform: godot
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 7
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 2
+code_review_loop_done: true
+halted_at_phase: null
+halt_reason: "round-1 decision halt RESOLVED (ratified by orchestrator per human delegation). Round 2 (secondary, alternate model): Approve on byte-identical code, 0 open decisions, 1 new low-value Defer (ledgered) — CONVERGED, no round 3 warranted. End-of-loop HITL: auto-continued per user loop protocol (all continue conditions met)."
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 3
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 2
+    decisions_resolved:
+      - "idempotency-marker divergence: human delegated to orchestrator, RATIFIED (two independent per-run markers; either run order safe; no code change; 8.6/8.7 invariant)"
+    note: "Approve. All 3 ACs met; every scope fence held (schema v1, no new top-level keys, append-only events + expected_ids pin, zero RNG grep-verified); suite independently re-run green (149 PASS files / 0 FAIL). 0 Patch; 1 Decision (ratify idempotency divergence — no code change, sign-off only); 2 Defer (unlock-flag id namespace reservation for the later content story; 2 low-value test-coverage nits), both ledgered."
+  - round: 2
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 1
+    decisions_open: 0
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 1
+    note: "Independent alternate-model re-review on byte-identical code (ab9d1ca..7361e13 = ratification chore only). Suite green, false-PASS guard 0 matches, RNG rule holds, validators sound, round-trip lossless at SCHEMA_VERSION 1. No new Critical/High/Medium; 1 new low-value Defer (profile_progress_merged records mastery delta-only, validator no dedup-check on class_mastery_deltas — event-hardening pass candidate). Round-1 ratified Decision and 2 Defers stand. CONVERGED."
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["6a58c85", "5b1dce6", "ab9d1ca", "7361e13", "a990bb8", "f760d4d"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/43"
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []

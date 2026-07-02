@@ -24,6 +24,10 @@ func run() -> Dictionary:
 	_run_failed_rejects_malformed_payloads()
 	_oath_shards_awarded_serializes_and_parses_stable_payload()
 	_oath_shards_awarded_rejects_malformed_payloads()
+	_content_discovered_serializes_and_parses_stable_payload()
+	_content_discovered_rejects_malformed_payloads()
+	_profile_progress_merged_serializes_and_parses_stable_payload()
+	_profile_progress_merged_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -993,6 +997,179 @@ func _oath_shards_awarded_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_profile.is_error(), "oath_shards_awarded with a non-string profile_id should be rejected.")
 	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
+
+
+func _content_discovered_serializes_and_parses_stable_payload() -> void:
+	# Story 8.4 (AC1/AC2): a content_discovered SYSTEM event (no actor) — the run-scoped discovery record. content_kind is
+	# lower_snake AND in the DISCOVERED_CONTENT_KINDS allowlist; content_id is lower_snake; ZERO roll/draw_index (a
+	# deterministic record, not a roll).
+	for kind: String in ["echo", "seal_fragment", "class_mastery", "unlock_flag"]:
+		var event: DomainEvent = DomainEvent.content_discovered(9, {
+			"content_kind": kind,
+			"content_id": "some_content_id"
+		})
+		var serialized: Dictionary = event.to_dictionary()
+		assert_equal(serialized.get("event_id"), "content_discovered", "content_discovered should serialize a stable string id.")
+		assert_equal(serialized.get("actor_id"), "", "content_discovered is a system event with an empty actor id.")
+		assert_false((serialized.get("payload") as Dictionary).has("roll"), "content_discovered must NOT carry a roll (ZERO RNG).")
+		assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "content_discovered must NOT carry a draw_index (ZERO RNG).")
+
+		var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+		assert_true(parse_result.succeeded, "content_discovered (%s) should parse: %s" % [kind, parse_result.metadata])
+		var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+		assert_equal(restored.event_type, DomainEvent.Type.CONTENT_DISCOVERED, "content_discovered should parse back to CONTENT_DISCOVERED.")
+		assert_equal(restored.payload.get("content_kind"), kind, "The content_kind must survive a JSON round-trip.")
+		assert_equal(restored.payload.get("content_id"), "some_content_id", "The content_id must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.CONTENT_DISCOVERED), &"content_discovered", "id_for_type must map content_discovered.")
+	assert_equal(DomainEvent.type_for_id(&"content_discovered"), DomainEvent.Type.CONTENT_DISCOVERED, "type_for_id must map content_discovered back.")
+
+
+func _content_discovered_rejects_malformed_payloads() -> void:
+	# A missing content_kind is rejected.
+	var missing_kind: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "content_discovered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"content_id": "echo_of_salt"}
+	})
+	assert_true(missing_kind.is_error(), "content_discovered missing content_kind should be rejected.")
+	assert_equal(missing_kind.error_code, &"invalid_event_payload", "Malformed content_discovered should use the stable code.")
+	assert_equal(missing_kind.metadata.get("field"), "content_kind", "content_discovered should name the missing content_kind field.")
+
+	# An OFF-ALLOWLIST content_kind (lower_snake but not in DISCOVERED_CONTENT_KINDS) is rejected.
+	var bad_kind: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "content_discovered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"content_kind": "relic_shard", "content_id": "echo_of_salt"}
+	})
+	assert_true(bad_kind.is_error(), "content_discovered with an off-allowlist content_kind should be rejected.")
+	assert_equal(bad_kind.metadata.get("field"), "content_kind", "An off-allowlist content_kind should name the content_kind field.")
+
+	# A missing content_id is rejected.
+	var missing_id: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "content_discovered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"content_kind": "echo"}
+	})
+	assert_true(missing_id.is_error(), "content_discovered missing content_id should be rejected.")
+	assert_equal(missing_id.metadata.get("field"), "content_id", "content_discovered should name the missing content_id field.")
+
+	# A non-lower_snake content_id (hyphenated) is rejected (a discovery id is a lower_snake content id, not a node id).
+	var bad_id: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "content_discovered",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"content_kind": "echo", "content_id": "echo-of-salt"}
+	})
+	assert_true(bad_id.is_error(), "content_discovered with a hyphenated content_id should be rejected.")
+	assert_equal(bad_id.metadata.get("field"), "content_id", "A non-lower_snake content_id should name the content_id field.")
+
+
+func _profile_progress_merged_serializes_and_parses_stable_payload() -> void:
+	# Story 8.4 (AC1/AC3): a profile_progress_merged SYSTEM event (no actor) — the cross-run profile-merge record. The id
+	# lists are lower_snake with NO duplicates; class_mastery_deltas carries {class_id, delta (positive)}; the count
+	# fields == their matching list sizes; ZERO roll/draw_index (a deterministic record).
+	var event: DomainEvent = DomainEvent.profile_progress_merged(12, {
+		"added_echo_ids": ["echo_of_salt", "echo_of_tide"],
+		"added_seal_fragment_ids": ["seal_a"],
+		"added_unlock_flag_ids": ["variety_flag_1"],
+		"thresholds_crossed": ["seal_gate_1"],
+		"class_mastery_deltas": [{"class_id": "warrior", "delta": 2}],
+		"echoes_added": 2,
+		"seal_fragments_added": 1,
+		"unlock_flags_added": 1,
+		"thresholds_crossed_count": 1,
+		"profile_id": "default"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "profile_progress_merged", "profile_progress_merged should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "profile_progress_merged is a system event with an empty actor id.")
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "profile_progress_merged must NOT carry a roll (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "profile_progress_merged should parse: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.PROFILE_PROGRESS_MERGED, "profile_progress_merged should parse back to PROFILE_PROGRESS_MERGED.")
+	assert_equal((restored.payload.get("added_echo_ids") as Array).size(), 2, "added_echo_ids must survive a JSON round-trip.")
+	assert_equal((restored.payload.get("added_seal_fragment_ids") as Array).size(), 1, "added_seal_fragment_ids must survive a JSON round-trip.")
+	assert_equal((restored.payload.get("thresholds_crossed") as Array).size(), 1, "thresholds_crossed must survive a JSON round-trip.")
+	assert_equal(int((restored.payload.get("class_mastery_deltas") as Array)[0].get("delta")), 2, "The mastery delta must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("profile_id"), "default", "The profile_id must survive a JSON round-trip.")
+
+	# An EMPTY merge (nothing newly added, no crossings) is a valid record.
+	var empty_event: DomainEvent = DomainEvent.profile_progress_merged(13, {"profile_id": "default"})
+	var empty_parse: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(empty_event.to_dictionary())))
+	assert_true(empty_parse.succeeded, "An empty profile_progress_merged (nothing added) is a valid record: %s" % empty_parse.metadata)
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.PROFILE_PROGRESS_MERGED), &"profile_progress_merged", "id_for_type must map profile_progress_merged.")
+	assert_equal(DomainEvent.type_for_id(&"profile_progress_merged"), DomainEvent.Type.PROFILE_PROGRESS_MERGED, "type_for_id must map profile_progress_merged back.")
+
+
+func _profile_progress_merged_rejects_malformed_payloads() -> void:
+	# A DUPLICATE id in an id list is rejected (the list is the deduped newly-added delta).
+	var duplicate_echo: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "profile_progress_merged",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": _merged_payload({"added_echo_ids": ["echo_a", "echo_a"], "echoes_added": 2})
+	})
+	assert_true(duplicate_echo.is_error(), "profile_progress_merged with a duplicate echo id should be rejected.")
+	assert_equal(duplicate_echo.metadata.get("field"), "added_echo_ids", "A duplicate echo id should name the added_echo_ids field.")
+
+	# A count that diverges from its list size is rejected (the honest-record arithmetic).
+	var bad_count: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "profile_progress_merged",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": _merged_payload({"added_echo_ids": ["echo_a"], "echoes_added": 5})
+	})
+	assert_true(bad_count.is_error(), "profile_progress_merged whose echoes_added diverges from its list size should be rejected.")
+	assert_equal(bad_count.metadata.get("field"), "echoes_added", "A divergent count should name the echoes_added field.")
+
+	# A non-positive mastery delta is rejected (a merge only ever ADDS mastery).
+	var bad_delta: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "profile_progress_merged",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": _merged_payload({"class_mastery_deltas": [{"class_id": "warrior", "delta": 0}]})
+	})
+	assert_true(bad_delta.is_error(), "profile_progress_merged with a non-positive mastery delta should be rejected.")
+	assert_equal(bad_delta.metadata.get("field"), "class_mastery_deltas", "A non-positive delta should name the class_mastery_deltas field.")
+
+	# A non-lower_snake threshold id is rejected.
+	var bad_threshold: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "profile_progress_merged",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": _merged_payload({"thresholds_crossed": ["Seal-Gate-1"], "thresholds_crossed_count": 1})
+	})
+	assert_true(bad_threshold.is_error(), "profile_progress_merged with a non-lower_snake threshold id should be rejected.")
+	assert_equal(bad_threshold.metadata.get("field"), "thresholds_crossed", "A malformed threshold id should name the thresholds_crossed field.")
+
+
+# A well-formed profile_progress_merged payload with the given overrides applied (so a malformed-payload test perturbs
+# exactly ONE field and every other field stays valid — an isolated per-field rejection).
+func _merged_payload(overrides: Dictionary) -> Dictionary:
+	var payload: Dictionary = {
+		"added_echo_ids": [],
+		"added_seal_fragment_ids": [],
+		"added_unlock_flag_ids": [],
+		"thresholds_crossed": [],
+		"class_mastery_deltas": [],
+		"echoes_added": 0,
+		"seal_fragments_added": 0,
+		"unlock_flags_added": 0,
+		"thresholds_crossed_count": 0,
+		"profile_id": "default"
+	}
+	for key: String in overrides.keys():
+		payload[key] = overrides[key]
+	return payload
 
 
 func _item_gained_serializes_and_parses_stable_payload() -> void:
@@ -2249,7 +2426,11 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.RUN_FAILED: &"run_failed",
 		# Story 8.3: the oath_shards_awarded SYSTEM event appended at the enum end (never renumbered) — the FIRST
 		# persistent cross-run meta-award record.
-		DomainEvent.Type.OATH_SHARDS_AWARDED: &"oath_shards_awarded"
+		DomainEvent.Type.OATH_SHARDS_AWARDED: &"oath_shards_awarded",
+		# Story 8.4: the content_discovered + profile_progress_merged SYSTEM events appended at the enum end (never
+		# renumbered) — the run-scoped discovery record + the cross-run profile-merge record.
+		DomainEvent.Type.CONTENT_DISCOVERED: &"content_discovered",
+		DomainEvent.Type.PROFILE_PROGRESS_MERGED: &"profile_progress_merged"
 	}
 
 	for event_type: int in expected_ids.keys():

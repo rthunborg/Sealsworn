@@ -40,8 +40,10 @@ extends RefCounted
 #   1. run_scoped — this run's RunState + its events (cause/nodes-cleared/loot/passives/economy).
 #   2. profile_meta — the cross-run profile (Oath Shards AWARDED, mastery). DOES NOT EXIST YET (Story 8.3). The summary
 #      reports the AWARDED count as 0 read from NO profile. It creates/mutates/grants NOTHING.
-#   3. content_unlock — Echoes / Seal-Fragments / unlock flags. DOES NOT EXIST YET (Story 8.4). Reported empty;
-#      read-only; granted NOTHING.
+#   3. content_unlock — Echoes / Seal-Fragments / unlock flags. Story 8.4 SOURCED this from content_discovered events:
+#      echoes_discovered (the deduped discovered Echo ids) + unlock_progress (the deduped discovered seal_fragment /
+#      class_mastery / unlock_flag items). Read-only; DERIVED from events; granted NOTHING (the merge command owns the
+#      grant + denies a manual-seed run). Reported for BOTH an eligible + a manual-seed run.
 #   The AC3 "replay/debug state cannot accidentally grant profile or unlock progress" is satisfied STRUCTURALLY because
 #   the summary is a PURE READ that mutates nothing and awards nothing — a manual-seed (replay/practice) run's summary
 #   reports meta_progression_eligible == false and the SAME 0/empty award/unlock fields as any other v0 run, and
@@ -53,8 +55,8 @@ extends RefCounted
 # limitation signal) so the Epic-10 readiness pass (Story 10.7, which names Story 8.2) can enumerate them and the
 # outpost UI (8.6) can render an honest note:
 #   - oath_shards_earned -> 0 (awarding is Story 8.3; RunSnapshot.oath_shards stays the 0 AWARDED-count placeholder).
-#   - echoes_discovered -> [] (Story 8.4; no Echo domain content exists yet).
-#   - unlock_progress -> [] (Story 8.4; no unlock-progress domain state exists yet).
+#   (Story 8.4 REMOVED echoes_discovered + unlock_progress from this set — content_unlock is now sourced from
+#   content_discovered events, so they are no longer placeholders.)
 #
 # WHAT IT IS NOT:
 #   - It owns NO domain truth, submits NO command, draws NO RNG (ZERO randi/randf/RandomNumberGenerator), emits NO
@@ -111,8 +113,9 @@ const PROFILE_META_KEYS: Array[String] = [
 	"oath_shards_earned"
 ]
 
-# The EXACT key set of the content_unlock sub-dict (the Echoes / unlock readout — Story 8.4 owns the content; v0 reads
-# NO unlock state and reports empty lists). Pinned by test.
+# The EXACT key set of the content_unlock sub-dict (the Echoes / unlock readout — Story 8.4 SOURCED it from
+# content_discovered events). The sub-dict KEY set is UNCHANGED from 8.2 (echoes_discovered / unlock_progress) — 8.4
+# enriched the VALUES (empty placeholders -> derived discovery lists), not the shape. Pinned by test.
 const CONTENT_UNLOCK_KEYS: Array[String] = [
 	"echoes_discovered",
 	"unlock_progress"
@@ -121,10 +124,11 @@ const CONTENT_UNLOCK_KEYS: Array[String] = [
 # The stable machine-detectable names of the not-yet-supported placeholder fields (AC1/AC5). The Epic-10 readiness pass
 # (Story 10.7) enumerates these; the outpost UI (8.6) renders an honest limitation note from them. A placeholder value
 # (0 / []) is structurally impossible to mistake for a real award/unlock, AND is named here so it is TRACKED.
+# Story 8.4: echoes_discovered + unlock_progress were REMOVED from this set — they are no longer placeholders now that
+# content_unlock is SOURCED from content_discovered events. oath_shards_earned STAYS (8.3 left the summary reporting the
+# AWARDED count as 0 — wiring the earned count is 8.6/8.7, NOT this story).
 const NOT_YET_SUPPORTED_FIELDS: Array[String] = [
-	"oath_shards_earned",
-	"echoes_discovered",
-	"unlock_progress"
+	"oath_shards_earned"
 ]
 
 # Whether the run actually ended (a terminal phase) and a summary is meaningful. A null / non-terminal source run
@@ -153,8 +157,9 @@ var run_scoped: Dictionary = {}
 # AC3 boundary 2 — the profile/meta readout (Story 8.3 owns the profile): oath_shards_earned (0 AWARDED; read from NO
 # profile). The summary reports the AWARDED count; it does NOT award.
 var profile_meta: Dictionary = {}
-# AC3 boundary 3 — the content-unlock readout (Story 8.4 owns the content): echoes_discovered ([]), unlock_progress
-# ([]). Read from NO unlock state; granted NOTHING.
+# AC3 boundary 3 — the content-unlock readout (Story 8.4 — SOURCED from content_discovered events): echoes_discovered
+# (the deduped discovered Echo id set), unlock_progress (the deduped discovered seal_fragment/class_mastery/unlock_flag
+# items). DERIVED from events; granted NOTHING (a pure read).
 var content_unlock: Dictionary = {}
 # AC1/AC5 — the tracked not-yet-supported placeholder field names (a machine-detectable limitation signal).
 var not_yet_supported: Array[String] = []
@@ -205,6 +210,15 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 	var passives_consumed: Array[String] = []
 	var passives_destroyed: Array[String] = []
 	var notable_loot: Array[Dictionary] = []
+	# Story 8.4 (AC2/AC3): the DISCOVERY readout for content_unlock, DERIVED from content_discovered events (the same
+	# derive-from-events source the merge command reads — the 8.2 precedent). echoes_discovered is a deduped SET of
+	# discovered Echo ids; unlock_progress_discovered is a deduped-by-(kind,id) list of the OTHER discovery kinds
+	# (seal_fragment / class_mastery / unlock_flag) as {content_kind, content_id} entries. Reported for BOTH an eligible
+	# AND a manual-seed run (a pure read of events — the summary REPORTS what was discovered; the MERGE command denies the
+	# GRANT for a manual-seed run at its eligibility gate). Building this grants NOTHING (mutation-free, RNG-free).
+	var echoes_discovered: Array[String] = []
+	var unlock_progress_discovered: Array[Dictionary] = []
+	var seen_unlock_keys: Dictionary = {}
 	for event_value: Variant in events:
 		if not (event_value is DomainEvent):
 			continue
@@ -217,6 +231,25 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 			DomainEvent.Type.PASSIVE_DESTROYED:
 				# passive_destroyed -> payload.passive_id (the identifying id; a flat id list mirroring passives_consumed).
 				passives_destroyed.append(String(event_payload.get("passive_id", "")))
+			DomainEvent.Type.CONTENT_DISCOVERED:
+				# content_discovered -> payload.content_kind + payload.content_id (Story 8.4). Route by kind: `echo` ->
+				# echoes_discovered (deduped set); the other kinds -> unlock_progress_discovered (deduped by kind+id). A
+				# discovery with a blank id is skipped (defensive; the validator rejects it at build, but be tolerant).
+				var content_kind: String = String(event_payload.get("content_kind", ""))
+				var content_id: String = String(event_payload.get("content_id", ""))
+				if content_id.is_empty():
+					pass
+				elif content_kind == "echo":
+					if not echoes_discovered.has(content_id):
+						echoes_discovered.append(content_id)
+				else:
+					var unlock_key: String = "%s|%s" % [content_kind, content_id]
+					if not seen_unlock_keys.has(unlock_key):
+						seen_unlock_keys[unlock_key] = true
+						unlock_progress_discovered.append({
+							"content_kind": content_kind,
+							"content_id": content_id
+						})
 			DomainEvent.Type.ITEM_GAINED:
 				# item_gained -> a backpack pickup: payload.item_id + payload.category (∈ ITEM_GAINED_CATEGORIES). This is
 				# the SOLE notable-loot source: every backpack item the run gained emits an item_gained (a direct board
@@ -294,13 +327,14 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 		"oath_shards_earned": 0
 	}
 
-	# ---- AC3 boundary 3: the content-unlock readout. Echoes / unlock progress are Story 8.4 — no domain source exists
-	# yet -> empty lists. Read from NO unlock state; granted NOTHING. Placeholder fields (AC1/AC5).
-	var empty_echoes: Array[String] = []
-	var empty_unlock: Array[String] = []
+	# ---- AC3 boundary 3: the content-unlock readout (Story 8.4 — NOW SOURCED from content_discovered events, no longer a
+	# placeholder). echoes_discovered = the deduped discovered Echo id set; unlock_progress = the deduped discovered
+	# unlock-progress items (seal_fragment / class_mastery / unlock_flag). Read from the EVENTS (a pure derive); granted
+	# NOTHING (the MERGE command owns the grant + denies a manual-seed run). Reported for BOTH an eligible + a manual-seed
+	# run (AC2).
 	var content_unlock_data: Dictionary = {
-		"echoes_discovered": empty_echoes,
-		"unlock_progress": empty_unlock
+		"echoes_discovered": echoes_discovered,
+		"unlock_progress": unlock_progress_discovered
 	}
 
 	return load("res://scripts/run/run_summary.gd").new(
@@ -378,7 +412,9 @@ static func _empty() -> RunSummary:
 	var empty_destroyed: Array[String] = []
 	var empty_loot: Array[Dictionary] = []
 	var empty_echoes: Array[String] = []
-	var empty_unlock: Array[String] = []
+	# Story 8.4: unlock_progress is now a list of {content_kind, content_id} discovery entries -> an empty Array[Dictionary]
+	# for the empty fact (matching the populated build path's type).
+	var empty_unlock: Array[Dictionary] = []
 	return load("res://scripts/run/run_summary.gd").new(
 		false,
 		&"",
