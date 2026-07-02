@@ -1,3 +1,54 @@
+## Tracked from: dev of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
+
+Story 8.5 (FR61/FR64/FR65) is the "narrative flavor without blocking play" half of Epic 8. It CLOSES the four 8.1/8.2/8.3/8.4
+first-death/narrative defers (all marked `[Resolved 8.5]` below) by SETTING the `ProfileSnapshot.first_death_recorded` home 8.3
+reserved WITHOUT a schema bump / migration (`SCHEMA_VERSION == 1`, the 8.4 merge-without-migration discipline). Shipped: a
+`first_death_recorded` SYSTEM event (append-only, index 43, wired end-to-end incl. the `expected_ids` exhaustiveness pin), a
+run-domain `RecordFirstDeathCommand` (`godot/scripts/core/commands/record_first_death_command.gd`, mirroring
+`AwardMetaProgressCommand`/`MergeRunDiscoveriesCommand`; death-only gate + once-only latch), and a scene-free skippable read
+DTO (`godot/scripts/run/first_death_narrative_beat.gd`, `FirstDeathNarrativeBeat`, mirroring `RunSummary`).
+
+**Cross-story invariants for 8.6/8.7 (the outpost + the save-load/migration matrix):**
+- **THREE INDEPENDENT run-end profile-mutation commands, each with its OWN idempotency mechanism, safe in ANY caller order:**
+  the AWARD (8.3) = `profile.last_awarded_run_seed` (per-run); the MERGE (8.4) = `profile.unlock_progress["_last_merged_run_seed"]`
+  (per-run); the FIRST-DEATH (8.5) = the `profile.first_death_recorded` bool ITSELF (a MONOTONIC PER-PROFILE-LIFETIME latch —
+  fires on the FIRST death across ALL runs, then never again). 8.5 reads/writes NEITHER seed marker. On a first DEATH the caller
+  may run award (0 for a death) → merge (discoveries) → first-death (set flag) in ANY order, each idempotent (proven by
+  `test_record_first_death_command.gd::_first_death_independent_of_award_and_merge_markers`).
+- **The first-death latch is ELIGIBILITY-INDEPENDENT (`[Decision]` Option A):** UNLIKE the award/merge (which DENY a manual-seed
+  run at their FR28 gate), the first-death flag fires on the first real death whether or not the run was manual-seed — the line
+  is narrative flavor (FR61/FR64), and setting a boolean latch grants ZERO Oath Shards / unlocks / mastery (so it does NOT violate
+  FR28). 8.6/8.7 must treat the latch as eligibility-independent (a manual-seed first death shows the line).
+- **The narrative surface is OFF the critical path (AC3):** `RunSummary.DICTIONARY_KEYS` is UNCHANGED (NO narrative field); the
+  beat is a SEPARATE optional DTO; the start-descent path reads neither the flag nor the beat. 8.6 MAY render the beat alongside
+  the summary but must never gate understanding / a new descent on it.
+- **The line is referenced BY id (LINE-AS-ID):** the event payload carries `line_id` (== `DomainEvent.FIRST_DEATH_LINE_ID ==
+  &"first_death"`), NOT the raw prose; the display string ("Good. You remembered how to die.") lives as a const on the
+  `FirstDeathNarrativeBeat` DTO (keyed by `line_id` via `LINE_BY_ID`), centralized for a future localization pass.
+
+**Deferred to the owning stories (8.5 ships only the FLAG + the event + the beat DTO + the tests):**
+- **[Defer] (8.6) The OUTPOST first-death BEAT RENDER + DISMISS** — 8.5 produces the beat DATA (`FirstDeathNarrativeBeat`) + the
+  `first_death_recorded` event; 8.6 renders the line in the outpost scene + wires the skip/dismiss control (UI-scene-last). No
+  `.tscn` / `Control` / `SceneManager` transition / outpost surface built. The skip is ALREADY a structural no-op (the DTO is
+  read-only; the flag is set independently of display), so 8.6's dismiss is pure presentation.
+- **[Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the auto-wire** — v0 has NO live combat death source
+  (combat auto-resolves to success). 8.5 ships the command driven by a caller-/test-supplied terminal FAILED `RunState` (exactly
+  as the 8.3 award / 8.4 merge consume caller-supplied run/events); it is CALLER-DRIVEN behind the run-end seam and is NOT
+  auto-wired into `run_to_completion` (that would perturb the interrupted==uninterrupted determinism / v0 auto-resolve posture).
+- **[Defer] (later content / localization story) The narrative CONTENT roster + localization pipeline** — v0 has EXACTLY ONE
+  narrative line (the first-death line); 8.5 authors a single const on the DTO (`LINE_BY_ID`), NOT a `NarrativeRepository` /
+  codex / JSON-or-`.tres` narrative pipeline (the epic-wide by-id + no-content-pipeline defer). A localization pass replaces the
+  resolved prose without touching the event / flag / command (all by-id).
+- **[Defer] (Epic 9, Story 9.4) The first-VICTORY reveal** ("It did not die. It learned the way back." — FR62) — 8.5's death-only
+  gate (`run_not_failed`) is the discriminator; the first-VICTORY reveal keys off the OPPOSITE terminal phase (COMPLETED) and is
+  Epic 9's finale. 8.5 owns the first-DEATH line only.
+- **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.5 ships its OWN first-death round-trip + the no-migration
+  proof (`test_profile_snapshot.gd::_set_first_death_flag_round_trips_without_a_migration` +
+  `test_record_first_death_command.gd::_first_death_round_trips_through_the_repository`); 8.7 owns the full matrix (epics.md Story
+  8.7 AC1 names FIRST-DEATH FLAGS explicitly, alongside Oath Shards / Echoes / Seal Fragments / unlock progress / class unlocks).
+
+---
+
 ## Tracked from: dev of 8-4-echoes-seal-fragments-and-unlock-progress (2026-07-02)
 
 Story 8.4 (FR59/FR60/FR95; FR28 no-manual-seed-progression) is the "unlock or advance something" half of Epic 8. It
@@ -38,7 +89,9 @@ the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.co
   STATE flip (the `unlock_progress` flags + the `thresholds_crossed` report); it does NOT spend Oath Shards, apply any
   stat/passive/class/starting-option from an unlock, or build the unlock-spend tree. AC3 is about the STATE flipping
   deterministically + being reported, not applying its effect.
-- **[Defer] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded` home untouched.
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded`
+  home untouched. 8.5 SETS it via `RecordFirstDeathCommand` (behind the run-end seam, death-only gate, once-only latch;
+  merge-without-migration at `SCHEMA_VERSION == 1`) + delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO.
 - **[Defer] (8.6) The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produces the profile DATA + the
   summary-report + the events; 8.6 renders them (UI-scene-last). No `.tscn` / `OutpostViewModel` / unlock-spend UI built.
 - **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
@@ -188,9 +241,11 @@ ZERO RNG.
   provides EMPTY `class_mastery` / `echoes` / `unlock_progress` HOMES in `ProfileSnapshot` (so 8.4 merges WITHOUT a
   migration); it authors NO Echo/Seal-Fragment/mastery/unlock content, merges NOTHING into them, and decides NO
   unlock-threshold rules. The `RunSummary` `echoes_discovered`/`unlock_progress` stay not-yet-supported placeholders.
-- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + the first-death flag
-  delivery — 8.3 reserves an EMPTY `first_death_recorded: bool` HOME in `ProfileSnapshot` (so 8.5 merges without a
-  migration) but does NOT track/set the flag, deliver narrative, or build a narrative surface.
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + the first-death
+  flag delivery — 8.3 reserved an EMPTY `first_death_recorded: bool` HOME in `ProfileSnapshot` (so 8.5 merges without a
+  migration) but did NOT track/set the flag, deliver narrative, or build a narrative surface. 8.5 SETS the flag
+  (`RecordFirstDeathCommand`), delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO (the prose lives on the DTO
+  by-id; the event carries `line_id`, not the raw prose), and adds the `first_death_recorded` SYSTEM event.
 - **[Defer] (8.6) The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
   descent / the fresh-profile recovery UI** — 8.3 produces the profile DATA + the award + the structured save-error;
   it builds NO outpost `.tscn`, NO `OutpostViewModel`, NO unlock-spend UI, NO recovery screen (it makes the failure
@@ -286,9 +341,11 @@ no existing production file modified).
   descent** — 8.2 produces the summary DATA (a scene-free DTO); it builds NO outpost `.tscn`, NO `OutpostViewModel`,
   NO summary UI. UI-scene-last. The `RunSummary` DTO (incl. the `not_yet_supported` limitation signal) is what 8.6
   renders — including an honest limitation note.
-- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
-  skippable delivery — 8.2 aggregates the run-end facts; it tracks NO first-death flag and delivers NO narrative.
-  Narrative stays off the summary CRITICAL path (retro §7 risk 2).
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
+  skippable delivery — 8.2 aggregates the run-end facts; it tracked NO first-death flag and delivered NO narrative.
+  Narrative stays off the summary CRITICAL path (retro §7 risk 2). 8.5 KEPT it off the critical path: `RunSummary`
+  `DICTIONARY_KEYS` is UNCHANGED (no narrative field added), the beat is a SEPARATE optional DTO, and the start-descent path
+  reads neither the flag nor the beat (proven by `test_first_death_narrative_beat.gd::_beat_is_independent_of_run_summary`).
 - **[Defer] (8.7) Persisting the run summary / adding a run-log field to `RunState`/`RunSnapshot`** — the summary is
   a DERIVED read composed on demand from `(terminal RunState, ordered events)`; whether/how a summary or an event
   log is PERSISTED (survive an app restart before the outpost renders it) is the 8.7 meta/summary save-load concern
@@ -386,9 +443,10 @@ passed.", exit 0, 142 PASS / 0 FAIL).
 - **[Defer] (8.6) The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produces
   the DOMAIN flow fact (`next_destination == outpost`); it builds no outpost `.tscn`, no `OutpostViewModel`, no
   navigation. UI-scene-last. A later boot/app-flow layer reads the flow signal to perform the actual nav.
-- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
-  8.1 emits `run_failed`; it tracks no first-death flag and delivers no narrative. Keep narrative off the
-  run-end CRITICAL path (retro §7 risk 2).
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
+  8.1 emits `run_failed`; it tracked no first-death flag and delivered no narrative. Keep narrative off the run-end CRITICAL
+  path (retro §7 risk 2). 8.5 records the flag behind the SAME run-end seam (a sibling command, caller-driven, no auto-wire)
+  and keeps the beat off the critical path (a skip is a structural no-op — read-only DTO, flag set independently of display).
 
 **Remain DEFERRED (out of 8.1's scope — knowingly NOT reopened; NOT an Epic-8 dependency):**
 - **[Defer] The LIVE tactical-play loop / real combat-death SOURCE / auto-wiring a death into

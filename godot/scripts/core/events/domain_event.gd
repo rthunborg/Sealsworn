@@ -39,7 +39,8 @@ enum Type {
 	RUN_FAILED,
 	OATH_SHARDS_AWARDED,
 	CONTENT_DISCOVERED,
-	PROFILE_PROGRESS_MERGED
+	PROFILE_PROGRESS_MERGED,
+	FIRST_DEATH_RECORDED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -78,6 +79,7 @@ const EVENT_ID_RUN_FAILED := &"run_failed"
 const EVENT_ID_OATH_SHARDS_AWARDED := &"oath_shards_awarded"
 const EVENT_ID_CONTENT_DISCOVERED := &"content_discovered"
 const EVENT_ID_PROFILE_PROGRESS_MERGED := &"profile_progress_merged"
+const EVENT_ID_FIRST_DEATH_RECORDED := &"first_death_recorded"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -185,6 +187,13 @@ const DISCOVERED_CONTENT_KINDS: Array[StringName] = [
 	&"class_mastery",
 	&"unlock_flag"
 ]
+
+# Story 8.5 (AC1, FR61): the stable lower_snake NARRATIVE-LINE id the first_death_recorded payload carries (LINE-AS-ID
+# — the event records the line BY id, NOT the raw display prose "Good. You remembered how to die."). v0 has EXACTLY ONE
+# narrative line (the first-death line); the display string lives on the FirstDeathNarrativeBeat DTO (a presentation/
+# localization concern), keeping the event payload a clean deterministic record + honoring the epic-wide by-id posture.
+# RecordFirstDeathCommand references it so the command + the validator stay in lockstep on the line vocabulary.
+const FIRST_DEATH_LINE_ID := &"first_death"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -418,6 +427,27 @@ static func profile_progress_merged(sequence_id: int, payload: Dictionary = {}) 
 	payload_value["thresholds_crossed_count"] = int(payload.get("thresholds_crossed_count", 0))
 	payload_value["profile_id"] = String(payload.get("profile_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.PROFILE_PROGRESS_MERGED, sequence_id, &"", payload_value)
+
+
+static func first_death_recorded(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 8.5, AC1/FR61): the FIRST-DEATH narrative marker — emitted by RecordFirstDeathCommand
+	# AFTER the profile's first_death_recorded latch flips true on the FIRST death (behind the run-end seam + the death-only
+	# gate). It is the deterministic record that the first-death LINE may be shown ONCE (a later outpost UI reads it +
+	# renders the skippable beat). It is a monotonic per-profile-lifetime marker (unlike oath_shards_awarded/
+	# profile_progress_merged, which fire once PER eligible run) — the flag ITSELF is its own idempotency latch, so this
+	# event fires EXACTLY once across all of a profile's runs. NOT an entity action, so it is NOT in _event_requires_actor
+	# (actor_id stays empty). `line_id` is a stable lower_snake NARRATIVE-LINE id (LINE-AS-ID — the line is referenced BY id,
+	# == FIRST_DEATH_LINE_ID in v0; the raw prose lives on the FirstDeathNarrativeBeat DTO, NOT here). `is_skippable` is a
+	# plain bool (always true in v0 — FR65: a control-loss/narrative moment must be skippable). `profile_id` is the profile
+	# the flag landed on (a plain string, mirroring oath_shards_awarded.profile_id). It is a DETERMINISTIC record — UNLIKE
+	# passive_destroyed there is NO roll/draw_index (a first-death record is not a roll; the oath_shards_awarded/
+	# content_discovered deterministic-shell precedent). Normalize/duplicate the payload defensively (mirroring
+	# oath_shards_awarded). No int64 encoding (line_id is a short lower_snake string, is_skippable a bool).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["line_id"] = String(payload.get("line_id", ""))
+	payload_value["is_skippable"] = bool(payload.get("is_skippable", false))
+	payload_value["profile_id"] = String(payload.get("profile_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.FIRST_DEATH_RECORDED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -992,6 +1022,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_content_discovered_payload(payload_value)
 		Type.PROFILE_PROGRESS_MERGED:
 			return _validate_profile_progress_merged_payload(payload_value)
+		Type.FIRST_DEATH_RECORDED:
+			return _validate_first_death_recorded_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1290,6 +1322,24 @@ static func _validate_profile_progress_merged_payload(payload_value: Dictionary)
 		return _error_result(&"invalid_event_payload", {"field": "unlock_flags_added"})
 	if int(payload_value.get("thresholds_crossed_count")) != (payload_value.get("thresholds_crossed") as Array).size():
 		return _error_result(&"invalid_event_payload", {"field": "thresholds_crossed_count"})
+	return _ok_result()
+
+
+static func _validate_first_death_recorded_payload(payload_value: Dictionary) -> ActionResult:
+	# The FIRST-DEATH narrative marker (Story 8.5, AC1/FR61). line_id is a stable lower_snake NARRATIVE-LINE id
+	# (LINE-AS-ID — the line is referenced BY id, NOT the raw prose; validated via the SAME _has_lower_snake_payload helper
+	# content_discovered.content_id uses, which rejects blank/non-lower_snake). is_skippable is a plain bool (a control-loss
+	# moment must be skippable — FR65; the value is always true in v0 but the FIELD is validated as a bool, not pinned to a
+	# literal, so a future non-skippable beat needs no schema change). profile_id is a plain string (empty-tolerant — the
+	# oath_shards_awarded.profile_id precedent; a profile id is a plain string, NOT lower_snake-validated). UNLIKE
+	# passive_destroyed there is NO roll/draw_index (a deterministic record, not a roll). A malformed/missing field is
+	# rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"line_id"):
+		return _error_result(&"invalid_event_payload", {"field": "line_id"})
+	if not _has_bool_payload(payload_value, &"is_skippable"):
+		return _error_result(&"invalid_event_payload", {"field": "is_skippable"})
+	if not _has_string_payload(payload_value, &"profile_id"):
+		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
 	return _ok_result()
 
 
@@ -2100,6 +2150,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_CONTENT_DISCOVERED
 		Type.PROFILE_PROGRESS_MERGED:
 			return EVENT_ID_PROFILE_PROGRESS_MERGED
+		Type.FIRST_DEATH_RECORDED:
+			return EVENT_ID_FIRST_DEATH_RECORDED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2176,6 +2228,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.CONTENT_DISCOVERED
 		EVENT_ID_PROFILE_PROGRESS_MERGED:
 			return Type.PROFILE_PROGRESS_MERGED
+		EVENT_ID_FIRST_DEATH_RECORDED:
+			return Type.FIRST_DEATH_RECORDED
 		_:
 			return Type.UNKNOWN
 
