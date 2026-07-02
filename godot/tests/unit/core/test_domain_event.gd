@@ -22,6 +22,8 @@ func run() -> Dictionary:
 	_run_completed_rejects_broadened_malformed_payloads()
 	_run_failed_serializes_and_parses_stable_payload()
 	_run_failed_rejects_malformed_payloads()
+	_oath_shards_awarded_serializes_and_parses_stable_payload()
+	_oath_shards_awarded_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -905,6 +907,92 @@ func _run_failed_rejects_malformed_payloads() -> void:
 	})
 	assert_true(wrong_destination.is_error(), "run_failed with a non-outpost destination should be rejected.")
 	assert_equal(wrong_destination.metadata.get("field"), "next_destination", "A wrong destination should name the next_destination field.")
+
+
+func _oath_shards_awarded_serializes_and_parses_stable_payload() -> void:
+	# Story 8.3 (AC1/AC2): an oath_shards_awarded SYSTEM event (no actor) — the FIRST cross-run meta-award record.
+	# reason is lower_snake AND in the allowlist; amount / oath_shards_before / oath_shards_after are non-negative
+	# integral; before + amount == after; profile_id is a plain string; ZERO roll/draw_index (a recorded amount).
+	var event: DomainEvent = DomainEvent.oath_shards_awarded(21, {
+		"amount": 4,
+		"oath_shards_before": 10,
+		"oath_shards_after": 14,
+		"reason": "run_completed_eligible",
+		"profile_id": "default"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "oath_shards_awarded", "oath_shards_awarded should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "oath_shards_awarded is a system event with an empty actor id.")
+	# ZERO RNG: a recorded amount, not a roll — no roll/draw_index on the payload.
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "oath_shards_awarded must NOT carry a roll (it is a recorded amount, ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "oath_shards_awarded must NOT carry a draw_index (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "oath_shards_awarded should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.OATH_SHARDS_AWARDED, "oath_shards_awarded should parse back to OATH_SHARDS_AWARDED.")
+	assert_equal(restored.payload.get("amount"), 4, "The amount must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("oath_shards_before"), 10, "oath_shards_before must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("oath_shards_after"), 14, "oath_shards_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("reason"), "run_completed_eligible", "The reason must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("profile_id"), "default", "The profile_id must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.OATH_SHARDS_AWARDED), &"oath_shards_awarded", "id_for_type must map the new event.")
+	assert_equal(DomainEvent.type_for_id(&"oath_shards_awarded"), DomainEvent.Type.OATH_SHARDS_AWARDED, "type_for_id must map the new event back.")
+
+
+func _oath_shards_awarded_rejects_malformed_payloads() -> void:
+	# A missing reason is rejected.
+	var missing_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_awarded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 1, "oath_shards_before": 0, "oath_shards_after": 1, "profile_id": "default"}
+	})
+	assert_true(missing_reason.is_error(), "oath_shards_awarded missing reason should be rejected.")
+	assert_equal(missing_reason.error_code, &"invalid_event_payload", "Malformed oath_shards_awarded should use the stable code.")
+	assert_equal(missing_reason.metadata.get("field"), "reason", "oath_shards_awarded should name the missing reason field.")
+
+	# An OFF-ALLOWLIST reason (lower_snake but not in OATH_SHARDS_AWARDED_REASONS) is rejected.
+	var bad_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_awarded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 1, "oath_shards_before": 0, "oath_shards_after": 1, "reason": "free_money", "profile_id": "default"}
+	})
+	assert_true(bad_reason.is_error(), "oath_shards_awarded with an off-allowlist reason should be rejected.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "An off-allowlist reason should name the reason field.")
+
+	# A negative amount is rejected (an award amount is never negative).
+	var negative_amount: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_awarded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": -3, "oath_shards_before": 0, "oath_shards_after": 0, "reason": "run_completed_eligible", "profile_id": "default"}
+	})
+	assert_true(negative_amount.is_error(), "oath_shards_awarded with a negative amount should be rejected.")
+	assert_equal(negative_amount.metadata.get("field"), "amount", "A negative amount should name the amount field.")
+
+	# A dishonest arithmetic (before + amount != after) is rejected.
+	var dishonest: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_awarded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 4, "oath_shards_before": 10, "oath_shards_after": 99, "reason": "run_completed_eligible", "profile_id": "default"}
+	})
+	assert_true(dishonest.is_error(), "oath_shards_awarded whose after diverges from before+amount should be rejected.")
+	assert_equal(dishonest.metadata.get("field"), "oath_shards_after", "A dishonest arithmetic should name the oath_shards_after field.")
+
+	# A non-string profile_id is rejected.
+	var bad_profile: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_awarded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 1, "oath_shards_before": 0, "oath_shards_after": 1, "reason": "run_completed_eligible", "profile_id": 7}
+	})
+	assert_true(bad_profile.is_error(), "oath_shards_awarded with a non-string profile_id should be rejected.")
+	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
 
 
 func _item_gained_serializes_and_parses_stable_payload() -> void:
@@ -2158,7 +2246,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.EVENT_OFFERED: &"event_offered",
 		DomainEvent.Type.EVENT_RESOLVED: &"event_resolved",
 		# Story 8.1: the run_failed SYSTEM event appended at the enum end (never renumbered) — the run-FAILED boundary.
-		DomainEvent.Type.RUN_FAILED: &"run_failed"
+		DomainEvent.Type.RUN_FAILED: &"run_failed",
+		# Story 8.3: the oath_shards_awarded SYSTEM event appended at the enum end (never renumbered) — the FIRST
+		# persistent cross-run meta-award record.
+		DomainEvent.Type.OATH_SHARDS_AWARDED: &"oath_shards_awarded"
 	}
 
 	for event_type: int in expected_ids.keys():

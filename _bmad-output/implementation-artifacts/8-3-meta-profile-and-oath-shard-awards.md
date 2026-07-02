@@ -1,6 +1,10 @@
+---
+baseline_commit: 9c8ebc50272bdccc0503aa44428f829fa09d39cf
+---
+
 # Story 8.3: Meta Profile and Oath Shard Awards
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -99,52 +103,52 @@ If an AC seems to demand a live combat loop, an outpost scene, or a spend tree, 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — The versioned cross-run `ProfileSnapshot` (AC1, AC2)** — a scene-free `RefCounted` value object with its OWN schema
-  - [ ] **Resolve the ⭐ shape `[Decision]` first (see the scope boundary) and record it in Completion Notes:** RECOMMENDED `class_name ProfileSnapshot` in `res://scripts/save/snapshots/profile_snapshot.gd` with `const SCHEMA_VERSION: int = 1`, `content_version` (default "mvp-0"), `profile_id` (default "default"), `oath_shards: int` (the CROSS-RUN awarded total), plus empty/0 HOMES for 8.4/8.5 content (RECOMMENDED `class_mastery: Dictionary = {}`, `echoes: Array[String] = []`, `unlock_progress: Dictionary = {}`, and OPTIONALLY `first_death_recorded: bool = false` for 8.5). Mirror `RunSnapshot`'s structure VERBATIM.
-  - [ ] **Exact-key `to_dictionary()` + versioned `parse(data) -> ActionResult`:** a key never silently appears/vanishes (pinned by test). `parse` REJECTS an unsupported `schema_version` with a stable `unsupported_profile_schema` code + `{expected_schema_version, actual_schema_version}` metadata (mirror `RunSnapshot.parse` lines 71-78). Lenient decode of each field (a missing/invalid value defaults cleanly — the `RiskEconomyState.try_from_dictionary`/`RunSnapshot._int64_or_zero` leniency). `oath_shards` is a SMALL bounded int (NOT a seed — no decimal-string encoding; the `RiskEconomyState.gold` precedent); if you ever store a seed-scale value, decimal-string-encode it (you should not need to).
-  - [ ] **Deep-copy discipline:** `to_dictionary()` returns a FRESH dict each call (deep-copied sub-dicts/lists — the `RunSnapshot.to_dictionary()` `.duplicate(true)` precedent) so a mutation of the returned dict never perturbs the snapshot.
-  - [ ] Tests: an exact pinned key set; a JSON `stringify`→`parse` round-trip preserves every field; an unsupported schema rejects with `unsupported_profile_schema`; a partial/legacy dict parses leniently (missing fields default); the 8.4/8.5 HOMES are present + empty/0 in v0.
+- [x] **Task 1 — The versioned cross-run `ProfileSnapshot` (AC1, AC2)** — a scene-free `RefCounted` value object with its OWN schema
+  - [x] **Resolve the ⭐ shape `[Decision]` first (see the scope boundary) and record it in Completion Notes:** RECOMMENDED `class_name ProfileSnapshot` in `res://scripts/save/snapshots/profile_snapshot.gd` with `const SCHEMA_VERSION: int = 1`, `content_version` (default "mvp-0"), `profile_id` (default "default"), `oath_shards: int` (the CROSS-RUN awarded total), plus empty/0 HOMES for 8.4/8.5 content (RECOMMENDED `class_mastery: Dictionary = {}`, `echoes: Array[String] = []`, `unlock_progress: Dictionary = {}`, and OPTIONALLY `first_death_recorded: bool = false` for 8.5). Mirror `RunSnapshot`'s structure VERBATIM.
+  - [x] **Exact-key `to_dictionary()` + versioned `parse(data) -> ActionResult`:** a key never silently appears/vanishes (pinned by test). `parse` REJECTS an unsupported `schema_version` with a stable `unsupported_profile_schema` code + `{expected_schema_version, actual_schema_version}` metadata (mirror `RunSnapshot.parse` lines 71-78). Lenient decode of each field (a missing/invalid value defaults cleanly — the `RiskEconomyState.try_from_dictionary`/`RunSnapshot._int64_or_zero` leniency). `oath_shards` is a SMALL bounded int (NOT a seed — no decimal-string encoding; the `RiskEconomyState.gold` precedent); if you ever store a seed-scale value, decimal-string-encode it (you should not need to).
+  - [x] **Deep-copy discipline:** `to_dictionary()` returns a FRESH dict each call (deep-copied sub-dicts/lists — the `RunSnapshot.to_dictionary()` `.duplicate(true)` precedent) so a mutation of the returned dict never perturbs the snapshot.
+  - [x] Tests: an exact pinned key set; a JSON `stringify`→`parse` round-trip preserves every field; an unsupported schema rejects with `unsupported_profile_schema`; a partial/legacy dict parses leniently (missing fields default); the 8.4/8.5 HOMES are present + empty/0 in v0. (`test_profile_snapshot.gd`, 11 cases.)
 
-- [ ] **Task 2 — The `ProfileRepository` (AC1, AC5)** — atomic-write + structured-error, mirroring `SaveRepository`
-  - [ ] RECOMMENDED `class_name ProfileRepository` in `res://scripts/save/profile_repository.gd`, `const DEFAULT_PROFILE_PATH := "user://profile.json"` (a SEPARATE path from the run autosave `user://run_autosave.json` — the profile is its OWN save file, NOT the RunSnapshot).
-  - [ ] `write_profile(snapshot: ProfileSnapshot, save_path: String = DEFAULT_PROFILE_PATH) -> ActionResult` — copy `SaveRepository.write_run_snapshot` VERBATIM (atomic temp→backup→replace), with `profile_save_*` structured error codes (`profile_save_open_failed` / `profile_save_backup_failed` / `profile_save_replace_failed`, or reuse the `save_*` names with profile-scoped metadata — `[Decision]` record). Returns `ActionResult.ok()` on success, a STRUCTURED error on any failure (AC5 — never a silent swallow).
-  - [ ] `read_profile(save_path: String = DEFAULT_PROFILE_PATH) -> ActionResult` — copy `SaveRepository.read_run_snapshot` VERBATIM, returning `profile_not_found` when the file is absent (the CALLER starts a FRESH `ProfileSnapshot` on `profile_not_found` — AC5 recovery + 8.6's fresh-profile path), `profile_open_failed` / `profile_parse_failed` on read/parse errors, else `ProfileSnapshot.parse(parsed)` (which surfaces `unsupported_profile_schema` for a bad schema).
-  - [ ] Tests: write→read round-trip restores the profile; a read of a NON-EXISTENT path returns `profile_not_found` (fresh-profile recovery); a save FAILURE returns a structured error (simulate via an unwritable path — mirror `test_save_repository.gd`'s failure test); a read of a MALFORMED-JSON file returns `profile_parse_failed`; a read of an UNSUPPORTED-schema file surfaces `unsupported_profile_schema` (through `ProfileSnapshot.parse`).
+- [x] **Task 2 — The `ProfileRepository` (AC1, AC5)** — atomic-write + structured-error, mirroring `SaveRepository`
+  - [x] RECOMMENDED `class_name ProfileRepository` in `res://scripts/save/profile_repository.gd`, `const DEFAULT_PROFILE_PATH := "user://profile.json"` (a SEPARATE path from the run autosave `user://run_autosave.json` — the profile is its OWN save file, NOT the RunSnapshot).
+  - [x] `write_profile(snapshot: ProfileSnapshot, save_path: String = DEFAULT_PROFILE_PATH) -> ActionResult` — copy `SaveRepository.write_run_snapshot` VERBATIM (atomic temp→backup→replace), with `profile_save_*` structured error codes (`profile_save_open_failed` / `profile_save_backup_remove_failed` / `profile_save_backup_failed` / `profile_save_replace_failed` — `[Decision]`: profile-scoped codes, NOT the shared `save_*` names, so a profile failure is diagnosable distinctly). Returns `ActionResult.ok()` on success, a STRUCTURED error on any failure (AC5 — never a silent swallow).
+  - [x] `read_profile(save_path: String = DEFAULT_PROFILE_PATH) -> ActionResult` — copy `SaveRepository.read_run_snapshot` VERBATIM, returning `profile_not_found` when the file is absent (the CALLER starts a FRESH `ProfileSnapshot` on `profile_not_found` via `ProfileSnapshot.fresh()` — AC5 recovery + 8.6's fresh-profile path), `profile_open_failed` / `profile_parse_failed` on read/parse errors, else `ProfileSnapshot.parse(parsed)` (which surfaces `unsupported_profile_schema` for a bad schema).
+  - [x] Tests: write→read round-trip restores the profile; a read of a NON-EXISTENT path returns `profile_not_found` (fresh-profile recovery); a save FAILURE returns a structured error (simulate via an unwritable path — mirror `test_save_repository.gd`'s failure test); a read of a MALFORMED-JSON file returns `profile_parse_failed`; a read of an UNSUPPORTED-schema file surfaces `unsupported_profile_schema`; a failed write preserves a prior valid profile; the path is separate from the run autosave. (`test_profile_repository.gd`, 7 cases.)
 
-- [ ] **Task 3 — The Oath-Shard award CALCULATION from approved rules (AC1, AC3)** — deterministic, capped, sparse
-  - [ ] **Resolve the ⭐ award-rule `[Decision]` + record it in Completion Notes.** RECOMMENDED a SMALL, CAPPED, deterministic rule: e.g. a fixed small Oath-Shard grant per ELIGIBLE COMPLETED run, OR a small amount from a bounded run signal (nodes-cleared / boss-cleared) with a HARD CAP (e.g. `min(base + per_node * nodes_cleared, MAX_AWARD)`). Whatever you pick MUST be: DETERMINISTIC (ZERO RNG — same terminal run → same award), CAPPED (a hard `MAX_AWARD` constant), SPARSE + SECONDARY (a shallow trickle, not a stat grind), and NOT a raw-stat ladder (AC3 second half — Oath Shards are a currency toward variety, NOT a combat stat). Also decide the FAILED-run amount (`[Decision]` — 0, or a smaller consolation amount; a manual-seed run is ALWAYS 0 regardless via Gate 2).
-  - [ ] RECOMMENDED a small pure calculator (`godot/scripts/save/meta_award_rules.gd`, `class_name MetaAwardRules`, a static `oath_shard_award_for(run: RunState, summary: RunSummary) -> int` OR read the bounded signal off the summary) — a PURE read, ZERO RNG, ZERO mutation. Document in the header WHY it satisfies AC3 (capped + sparse + a currency, not a stat).
-  - [ ] Tests: an eligible completed run yields the expected capped amount; an over-cap signal (e.g. many nodes cleared) CLAMPS to `MAX_AWARD` (AC3 cap enforced); the calculation is DETERMINISTIC (twice → identical); it draws ZERO RNG; the FAILED-run amount matches the chosen rule; a manual-seed run's amount is denied at the APPLICATION gate (Task 4), not in the calculator (the calculator is a pure amount; the gate decides whether to apply it).
+- [x] **Task 3 — The Oath-Shard award CALCULATION from approved rules (AC1, AC3)** — deterministic, capped, sparse
+  - [x] **Resolve the ⭐ award-rule `[Decision]` + record it in Completion Notes.** CHOSEN: `min(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, MAX_AWARD)` for a COMPLETED run, with `BASE_AWARD = 1`, `PER_NODE_AWARD = 1`, `MAX_AWARD = 5`. DETERMINISTIC (ZERO RNG), CAPPED (hard `MAX_AWARD`), SPARSE + SECONDARY (a shallow trickle capped at 5), NOT a raw-stat ladder (Oath Shards are a currency toward variety, not a combat stat). FAILED-run amount = 0 (`[Decision]` — a death awards nothing this story; the currency rewards reaching an ending). A manual-seed run is ALWAYS 0 regardless via Gate 2.
+  - [x] Small pure calculator `godot/scripts/save/meta_award_rules.gd`, `class_name MetaAwardRules`, a static `oath_shard_award_for(run: RunState, summary: RunSummary) -> int` reading the bounded nodes-cleared signal off the summary — a PURE read, ZERO RNG, ZERO mutation. Header documents WHY it satisfies AC3 (capped + sparse + a currency, not a stat).
+  - [x] Tests: an eligible completed run yields the expected capped amount; an over-cap signal (50 nodes cleared) CLAMPS to `MAX_AWARD` (AC3 cap enforced); the calculation is DETERMINISTIC (thrice → identical); it draws ZERO RNG; the FAILED-run amount is 0; the award does not scale by economy/difficulty; a completed 0-node run yields the BASE grant. (`test_meta_award_rules.gd`, 7 cases.)
 
-- [ ] **Task 4 — The award APPLICATION path behind the two gates (AC1, AC2, AC4)** — validate-then-mutate, idempotent, eligibility-gated
-  - [ ] **Resolve the ⭐ application `[Decision]` + record it:** RECOMMENDED a run-command (`godot/scripts/core/commands/award_meta_progress_command.gd`, `class_name AwardMetaProgressCommand`, extending `game_command.gd`) with the 4.3 idiom: `validate(state)` gates on (a) `state is RunState` + structurally sound; (b) `run.is_terminal()` (the run ENDED — behind the 8.1 idempotency seam; a non-terminal run rejects with a stable code + ZERO mutation); (c) ELIGIBILITY (`run.meta_progression_eligible` — a manual-seed run rejects/awards-0, AC4); (d) `sequence_id > 0` (the event self-consistency gate, mirror `CompleteRunCommand`). `execute(state)` computes the award (Task 3), UPDATES the passed-in `ProfileSnapshot`, builds the meta-award event (Task 5), and returns `ActionResult.ok([event], {amount, oath_shards_after, ...})`. On ANY reject: ZERO events, ZERO mutation (the run + the profile untouched). `[Decision]` — the command takes the terminal `RunState` as `state` + the `ProfileSnapshot` (+ optional `RunSummary`) as constructor/param inputs; record the exact signature.
-  - [ ] **Idempotency / no-double-award (`[Decision]`, record how you guarantee it):** a re-invocation for the same already-awarded run must NOT double-award. RECOMMENDED: the award fires ONCE behind `resolve_run_end` (the run-end resolves exactly once — the 8.1 `run_already_terminal` guard prevents a second run-end, so a single award per run-end is structural). If the award can be invoked independently of `resolve_run_end`, track an awarded marker (e.g. the profile records the last-awarded run_id, or the caller guards) so a re-invocation is a no-op / a stable "already awarded" result with ZERO second event + ZERO double-mutation. Do NOT re-award on a re-completion (the AC1 "not granted twice" + 8.1 seam). Prove it with a test.
-  - [ ] **The FR28 denial (AC4):** a manual-seed run (`meta_progression_eligible == false`) awards NOTHING — 0 Oath Shards, no class mastery, no unlock progress, no meta-award event, the profile UNCHANGED. `[Decision]` — the command either REJECTS a manual-seed run with a stable code (e.g. `run_not_meta_eligible`) OR succeeds with a 0-amount no-op-no-event; RECOMMENDED reject/0-award-no-event so a manual-seed run visibly grants nothing. Record it.
-  - [ ] Tests: an eligible completed run → the profile's cross-run `oath_shards` rises by the awarded amount + the event is emitted + `oath_shards_after` matches; a manual-seed run → 0 award, no event, profile byte-identical (AC4); a non-terminal run → reject with ZERO mutation (behind the terminal gate); a re-invocation for the same already-awarded run → no double-award (idempotency); on reject the profile + run are byte-identical (the 4.3 no-mutation-on-reject guarantee).
+- [x] **Task 4 — The award APPLICATION path behind the two gates (AC1, AC2, AC4)** — validate-then-mutate, idempotent, eligibility-gated
+  - [x] **Resolve the ⭐ application `[Decision]` + record it:** CHOSEN a run-command `godot/scripts/core/commands/award_meta_progress_command.gd`, `class_name AwardMetaProgressCommand`, extending `game_command.gd`, with the 4.3 idiom. SIGNATURE: `AwardMetaProgressCommand.new(profile: ProfileSnapshot, summary: RunSummary, sequence_id: int = 1)`; `validate(state)/execute(state)` take the terminal `RunState` as `state`. `validate` gates on (d) `sequence_id > 0` FIRST; (a) `profile != null` + `state is RunState` + structurally sound; (b) `run.is_terminal()`; (c) ELIGIBILITY (`run.meta_progression_eligible`); (Gate 1) idempotency. `execute` computes the award (Task 3), UPDATES the passed-in `ProfileSnapshot`, builds the meta-award event (Task 5), returns `ActionResult.ok([event], {amount, oath_shards_before, oath_shards_after, reason, profile_id})`. On ANY reject: ZERO events, ZERO mutation.
+  - [x] **Idempotency / no-double-award (`[Decision]`, record how you guarantee it):** the profile records `last_awarded_run_seed` (the run identity — v0's `RunState` has no `run_id`, so `root_seed` IS the deterministic run identity). `validate` REJECTS a run whose `root_seed` already equals `profile.last_awarded_run_seed` with the stable `run_already_awarded` code (ZERO second event, ZERO double-mutation). This is a SECOND idempotency layer BEHIND the 8.1 `run_already_terminal` guard, structurally guaranteeing no double-award regardless of how many times the caller invokes. Proven by test (`_reinvocation_for_same_run_does_not_double_award`).
+  - [x] **The FR28 denial (AC4):** `[Decision]` — the command REJECTS a manual-seed run (`meta_progression_eligible == false`) with the stable `run_not_meta_eligible` code — 0 Oath Shards, no class mastery, no unlock progress, no meta-award event, the profile UNCHANGED (visibly grants nothing).
+  - [x] Tests: an eligible completed run → the profile's cross-run `oath_shards` rises by the awarded amount + the event is emitted + `oath_shards_after` matches; a manual-seed run → reject, 0 award, no event, profile byte-identical (AC4); a non-terminal run → reject with ZERO mutation; a re-invocation for the same already-awarded run → no double-award; a DIFFERENT run DOES award again; on reject the profile + run are byte-identical; invalid-context + invalid-sequence-id rejects; a failed (eligible) run resolves with a 0 amount. (`test_award_meta_progress_command.gd`, 13 cases.)
 
-- [ ] **Task 5 — The deterministic meta-award domain EVENT (AC2)** — append-only enum + factory + validator + the exhaustiveness pin
-  - [ ] Append a NEW member at the `DomainEvent.Type` enum END (RECOMMENDED `OATH_SHARDS_AWARDED`; `[Decision]` name it) + its `EVENT_ID_*` const (id `oath_shards_awarded`, lower_snake). NEVER renumber existing members (the append-only discipline).
-  - [ ] Add a factory `static func oath_shards_awarded(sequence_id: int, payload: Dictionary = {}) -> DomainEvent` (mirror `economy_changed` / `run_failed`): a SYSTEM event (no actor). Payload RECOMMENDED: `amount` (this run's award, non-negative int), `oath_shards_before` / `oath_shards_after` (non-negative ints), `reason` (a lower_snake marker, e.g. `run_completed_eligible`), `profile_id` (a string). Normalize/duplicate defensively. NO int64 encoding (bounded counts); NO roll/draw_index (a recorded amount, ZERO RNG — the `economy_changed` deterministic shell).
-  - [ ] Add a payload validator `_validate_oath_shards_awarded_payload` (wired into `_validate_payload_for_event`) mirroring `_validate_run_failed_payload` / `_validate_economy_changed_payload`: `reason` lower_snake (`_has_lower_snake_payload`); `amount`/`oath_shards_before`/`oath_shards_after` non-negative integral (`_has_nonnegative_integral_payload`); `profile_id` a string (`_has_string_payload`). `[Decision]` — pick the exact required fields + record.
-  - [ ] **REGISTER the new id in `test_domain_event.gd` `expected_ids`** (lines 2121-2162) with a `# Story 8.3:` comment. The pin's `expected_ids.size() == Type.size() - 1` assertion (line 2176) TRIPS if you forget — this is BY DESIGN (the documented epic-transition heads-up; 8.1's `run_failed` did the same). Add a round-trip test that the new event `try_from_dictionary`/`to_dictionary` round-trips + rejects a malformed payload (negative amount, non-lower_snake reason).
-  - [ ] Tests: the new event round-trips through `to_dictionary()`/`try_from_dictionary`; a malformed payload (negative amount / bad reason / missing field) is rejected with `invalid_event_payload`; the `expected_ids` pin includes the new id + `id_for_type`/`type_for_id` round-trip; ZERO RNG (a recorded amount).
+- [x] **Task 5 — The deterministic meta-award domain EVENT (AC2)** — append-only enum + factory + validator + the exhaustiveness pin
+  - [x] Appended `OATH_SHARDS_AWARDED` at the `DomainEvent.Type` enum END (`[Decision]` named it) + its `EVENT_ID_OATH_SHARDS_AWARDED := &"oath_shards_awarded"` const (lower_snake). Existing members NOT renumbered (append-only discipline).
+  - [x] Added factory `static func oath_shards_awarded(sequence_id: int, payload: Dictionary = {}) -> DomainEvent` (mirrors `economy_changed`): a SYSTEM event (no actor). Payload: `amount` (non-negative int), `oath_shards_before` / `oath_shards_after` (non-negative ints), `reason` (lower_snake marker `run_completed_eligible`), `profile_id` (string). Normalize/duplicate defensively. NO int64 encoding (bounded counts); NO roll/draw_index (a recorded amount, ZERO RNG). Added `OATH_SHARDS_AWARDED_REASONS` allowlist const.
+  - [x] Added payload validator `_validate_oath_shards_awarded_payload` (wired into `_validate_payload_for_event`) mirroring `_validate_run_failed_payload` / `_validate_economy_changed_payload`: `reason` lower_snake AND in the `OATH_SHARDS_AWARDED_REASONS` allowlist; `amount`/`oath_shards_before`/`oath_shards_after` non-negative integral; `profile_id` a string; the honest-record arithmetic `before + amount == after` enforced. `[Decision]` — required fields recorded above. Added `id_for_type`/`type_for_id` arms.
+  - [x] **REGISTERED the new id in `test_domain_event.gd` `expected_ids`** with a `# Story 8.3:` comment. The pin's `expected_ids.size() == Type.size() - 1` assertion passes (the exhaustiveness pin — 8.1's `run_failed` tripped the SAME pin BY DESIGN).
+  - [x] Tests: the new event round-trips through `to_dictionary()`/`try_from_dictionary`; a malformed payload (missing/off-allowlist reason / negative amount / dishonest arithmetic / non-string profile_id) is rejected with `invalid_event_payload`; the `expected_ids` pin includes the new id + `id_for_type`/`type_for_id` round-trip; ZERO RNG (no roll/draw_index on the payload). (`test_domain_event.gd`, 2 new cases + pin registration.)
 
-- [ ] **Task 6 — The FR28 manual-seed denial + the summary replay/practice warning (AC4)**
-  - [ ] Confirm (test) the award path denies ALL meta rewards for a manual-seed run (Task 4). Confirm the `RunSummary` (8.2) reports `meta_progression_eligible == false` + `is_manual_seed == true` for a manual-seed run — that IS the AC4 replay/practice warning DATA. `[Decision]` — RECOMMENDED the existing summary fields satisfy AC4 (the warning is DATA the 8.6 UI renders); do NOT add a redundant signal unless the AC4 wording demands an explicit one (it does not — "the summary shows a replay/practice warning" is satisfied by the eligibility/manual-seed fields the summary already carries). If you DO add an explicit `replay_practice_warning` field, keep `RunSummary`'s exact-key discipline + update its pinned key test. Record the choice.
-  - [ ] Tests: a manual-seed run's summary carries `meta_progression_eligible == false` + `is_manual_seed == true` (the warning data); the award path grants NOTHING for it (0 shards, no event, profile unchanged).
+- [x] **Task 6 — The FR28 manual-seed denial + the summary replay/practice warning (AC4)**
+  - [x] Confirmed (test) the award path denies ALL meta rewards for a manual-seed run (Task 4). Confirmed the `RunSummary` (8.2) reports `meta_progression_eligible == false` + `is_manual_seed == true` for a manual-seed run — that IS the AC4 replay/practice warning DATA. `[Decision]` — CHOSEN: the existing summary fields satisfy AC4 (the warning is DATA the 8.6 UI renders); NO redundant `replay_practice_warning` signal added (do NOT over-engineer; `RunSummary` untouched, its exact-key pin stays green).
+  - [x] Tests: a manual-seed run's summary carries `meta_progression_eligible == false` + `is_manual_seed == true` (the warning data) + reports 0 awarded; the award path grants NOTHING for it (reject, 0 shards, no event, profile byte-identical). (`test_award_meta_progress_command.gd`.)
 
-- [ ] **Task 7 — The AC5 save-failure structured recovery + summary independence (AC5)**
-  - [ ] `ProfileRepository.write_profile` returns a STRUCTURED error on any write failure (Task 2). The award path SURFACES that structured result to the caller (it does NOT swallow/crash). AC5's "does not silently lose current run summary data": prove (test) that a FAILED profile write leaves the `RunSummary` fully readable + the structured error available — so a recovery UI (8.6) can show the summary + retry the save. The `RunSummary` is a DERIVED read INDEPENDENT of the profile write (it reads the terminal run + events; it does not read the profile file).
-  - [ ] Tests: a profile write to an unwritable path returns the structured error (not a crash); after the failed write, `RunSummary.build(run, events)` still returns the full summary (AC5 — no silent loss); the structured error code + metadata are stable/diagnostic.
+- [x] **Task 7 — The AC5 save-failure structured recovery + summary independence (AC5)**
+  - [x] `ProfileRepository.write_profile` returns a STRUCTURED error on any write failure (Task 2). The award path SURFACES that structured result to the caller (it does NOT swallow/crash). Proven (test): a FAILED profile write returns `profile_save_open_failed` + diagnostic metadata AND leaves the `RunSummary` fully readable + byte-identical — so a recovery UI (8.6) can show the summary + retry the save. The `RunSummary` is a DERIVED read INDEPENDENT of the profile file (it reads the terminal run + events).
+  - [x] Tests: a profile write to an unwritable path returns the structured error (not a crash); after the failed write, `RunSummary.build(run, events)` still returns the full summary byte-identical (AC5 — no silent loss); the structured error code + metadata are stable/diagnostic. (`test_award_meta_progress_command.gd` + `test_profile_repository.gd`.)
 
-- [ ] **Task 8 — Full unit tests (AC1-AC5)** — the complete matrix (see IN-scope item 8 for the enumerated cases). Home them under `godot/tests/unit/save/` (profile snapshot + repository) + `godot/tests/unit/core/` (the event + the award command) mirroring the domain. Headless, no scene tree, no rendering/audio.
+- [x] **Task 8 — Full unit tests (AC1-AC5)** — the complete matrix (see IN-scope item 8 for the enumerated cases). Homed under `godot/tests/unit/save/` (profile snapshot + repository + award rules) + `godot/tests/unit/core/` (the event in `test_domain_event.gd` + the award command in `test_award_meta_progress_command.gd`) mirroring the domain. Headless, no scene tree, no rendering/audio. Total: 4 new test files (38 new cases) + 2 new cases + the pin registration in `test_domain_event.gd`.
 
-- [ ] **Task 9 — Full headless suite + diff hygiene + the scope-fence + the deferred-work disposition (AC1-AC5)**
-  - [ ] Run the FULL headless suite via PowerShell (`godot` is NOT on the Bash PATH — see Project Context Rules). Expect "Headless tests passed.", exit 0, ZERO FAIL. Apply the **false-PASS grep guard** (`SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`) — it must be clean beyond the documented-expected negative-path diagnostics (the int64-overflow `root_seed` boundary `Cannot represent … as a 64-bit signed integer`, `RouteNode parse failed: invalid_node_type`, the save/settings `Parse JSON failed`/`got 'this'`/`Expected key` negatives). Command: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` (or the console binary `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe` with the same args). **⭐ Diagnose from the runner's per-file `FAIL` list, NOT stderr `ERROR:` lines** (the 8.1 resume-verify lesson — a benign `String.to_int` int64-overflow push_error still PASSes).
-  - [ ] `git diff --check` clean (working tree + baseline..HEAD; ignore the benign LF→CRLF normalization warning on the `.md`).
-  - [ ] **Confirm the scope fences:** the new `oath_shards_awarded` event is APPENDED at the enum end (existing members NOT renumbered) + REGISTERED in `expected_ids` (the pin passes); `RngStreamSet.required_streams()` UNCHANGED (7 streams — the award draws ZERO RNG, no new stream); the **23-key `RunSnapshot` COUNT STAYS 23** + the no-surprise-key gate UNCHANGED (the PROFILE is its OWN snapshot — `ProfileSnapshot`/`ProfileRepository`/`user://profile.json` — NOT a new `RunSnapshot` key; `RunSnapshot.oath_shards` STAYS the 0 run-scoped placeholder — the CROSS-RUN total lives in the profile); `RunState`/`RouteState`/`RiskEconomyState`/`CompleteRunCommand`/`RunEndOutcome`/`RunSummary` UNCHANGED unless you make a SMALL additive read (an OPTIONAL summary warning field or a thin orchestrator award hook — a pure read/additive, no existing-behavior change; if you touch `RunSummary`, keep its exact-key pin green); `scripts/rules/{conditions,operations}` UNCHANGED (an award is not a rules-kernel concern); `data/source`/`data/resources` STAY EMPTY (no new content — the award rule is a code constant, the SAME v0 discipline as the affinity/economy markers); no `.tscn`/new asset (UI-scene-last; the outpost/meta screen is 8.6); ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code; **every Small/Medium/route seed-regression fingerprint byte-identical** (8.3 touches no `scripts/generation/`).
-  - [ ] **Update `deferred-work.md`** with the 8.3 dispositions (mirror the 8.2 entry structure): that 8.3 CLOSES the "META PROFILE + Oath-Shard AWARDING + the meta-save shape" defer (grep that phrase — the 8.2 disposition ~line 55 and the 8.1 disposition ~line 159) — record the shipped `[Decision]`s (the `ProfileSnapshot`/`ProfileRepository`/`user://profile.json` shape; the award RULE + cap; the `oath_shards_awarded` event; the two-gate application; the FR28 denial; the AC5 structured recovery); that Echoes/Seal-Fragments/class-mastery/unlock-progress content + profile-merge (8.4), the outpost menu + meta DISPLAY + unlock-spend tree (8.6), the COMPREHENSIVE meta/summary save-load test matrix (8.7), the first-death narrative (8.5), and the unlock-SPEND application (later) remain DEFERRED to their owning stories; that the profile is its OWN versioned snapshot WITH migration from the start (the retro T2 heads-up — HONORED); that the two 8.1 `[Review][Defer]` items are UNTOUCHED (command/DTO-validation concerns, not award concerns). Note whether any NEW `[Review][Defer]` arises (record at review time).
-  - [ ] Update the story Status (→ review), `sprint-status.yaml` (`8-3-meta-profile-and-oath-shard-awards: review`, refresh `last_updated`), the File List, and Completion Notes (incl. ALL `[Decision]`s). Note that 8.3 is the "receive eligible progress" half of Epic 8 + the FIRST persistent cross-run state, and that 8.4's content-merge + 8.6's meta display + 8.7's save-load matrix build on the profile it ships.
+- [x] **Task 9 — Full headless suite + diff hygiene + the scope-fence + the deferred-work disposition (AC1-AC5)**
+  - [x] Ran the FULL headless suite via the console binary (`godot` is NOT on the Bash PATH). Result: "Headless tests passed.", exit 0, ZERO FAIL, 147 PASS. Applied the **false-PASS grep guard** (`SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`) — CLEAN (no matches). The only `ERROR:` lines are the documented-expected negative-path diagnostics (the int64-overflow `Cannot represent 99999999999999999999 as a 64-bit signed integer` ×2, `RouteNode parse failed: invalid_node_type`, the save/settings `Parse JSON failed`/`got 'this'`/`Expected key` negatives ×3). Diagnosed from the runner's per-file `FAIL` list (0), NOT stderr `ERROR:` lines.
+  - [x] `git diff --check` clean (only the benign LF→CRLF normalization warning on the `.md`, ignored per Task 9).
+  - [x] **Confirmed the scope fences:** the new `oath_shards_awarded` event is APPENDED at the enum end (existing members NOT renumbered) + REGISTERED in `expected_ids` (the pin passes); `RngStreamSet.required_streams()` UNCHANGED (7 streams — rng_stream_set.gd not in the changed-files set); the **23-key `RunSnapshot` COUNT STAYS 23** + the no-surprise-key gate UNCHANGED (run_snapshot.gd not touched — the PROFILE is its OWN snapshot `ProfileSnapshot`/`ProfileRepository`/`user://profile.json`; `RunSnapshot.oath_shards` STAYS the 0 run-scoped placeholder); `RunState`/`RouteState`/`RiskEconomyState`/`CompleteRunCommand`/`RunEndOutcome`/`RunSummary` UNCHANGED (none in the changed-files set — no summary warning field, no orchestrator hook added); `scripts/rules/*` UNCHANGED; `data/source`/`data/resources` STAY EMPTY; no `.tscn`/new asset; ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code (only a header comment mentions it); **every Small/Medium/route seed-regression fingerprint byte-identical** (8.3 touches no `scripts/generation/` — the seed-regression tests PASS). The ONLY modified files are `domain_event.gd` (append-only) + `test_domain_event.gd` (pin + 2 tests); everything else is a new file.
+  - [x] **Updated `deferred-work.md`** with the 8.3 dispositions (mirrors the 8.2 entry structure): 8.3 CLOSES the "META PROFILE + Oath-Shard AWARDING + the meta-save shape" defer — recorded the shipped `[Decision]`s; Echoes/Seal-Fragments/class-mastery/unlock-progress + profile-merge (8.4), the outpost menu + meta DISPLAY + unlock-spend tree (8.6), the COMPREHENSIVE meta/summary save-load test matrix (8.7), the first-death narrative (8.5), and the unlock-SPEND application (later) remain DEFERRED; the profile is its OWN versioned snapshot WITH migration from the start (retro T2 — HONORED); the two 8.1 `[Review][Defer]` items are UNTOUCHED. NO NEW `[Review][Defer]` arises from dev.
+  - [x] Updated the story Status (→ review), `sprint-status.yaml` (`8-3-...: review`, refreshed `last_updated`), the File List, and Completion Notes (incl. ALL `[Decision]`s). 8.3 is the "receive eligible progress" half of Epic 8 + the FIRST persistent cross-run state; 8.4's content-merge + 8.6's meta display + 8.7's save-load matrix build on the profile it ships.
 
 ## Dev Notes
 
@@ -271,10 +275,110 @@ Extracted from `project-context.md` (the compact implementation rulebook) — th
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
 
 ### Debug Log References
 
+- Full headless suite (Godot 4.6.3 console binary): "Headless tests passed.", exit 0, 147 PASS / 0 FAIL.
+- False-PASS grep guard (`SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`): CLEAN (no matches). Only
+  documented-expected `ERROR:` negative-path diagnostics present (int64-overflow ×2, `RouteNode parse failed:
+  invalid_node_type`, malformed-JSON ×3).
+- One RED→GREEN fix during Task 1: the JSON round-trip test used integer dict VALUES in the opaque `class_mastery`/
+  `unlock_progress` 8.4-home dicts; JSON has no int/float distinction (`3` → `3.0` on decode). Switched the test
+  fixtures to string values (the homes are opaque — 8.4 owns their value shape). No production change.
+
 ### Completion Notes List
 
+**Story 8.3 is the "receive eligible progress" half of Epic 8 and the project's FIRST persistent CROSS-RUN state.** It
+ships the versioned meta profile + the Oath-Shard award path, all BEHIND the 8.1 idempotency guard + the FR28
+eligibility gate. 8.4 (Echo/unlock content-merge), 8.6 (outpost meta display), and 8.7 (save-load matrix) BUILD ON the
+profile it ships.
+
+**All `[Decision]`s (as prompted by the story):**
+1. **`ProfileSnapshot` shape** (`godot/scripts/save/snapshots/profile_snapshot.gd`): `SCHEMA_VERSION=1`,
+   `content_version="mvp-0"`, `profile_id="default"`, `oath_shards: int` (cross-run awarded total, plain int),
+   `last_awarded_run_seed: String` (the idempotency marker = decimal-string `root_seed`, the v0 run identity), plus
+   EMPTY 8.4/8.5 HOMES `class_mastery: Dictionary`, `echoes: Array[String]`, `unlock_progress: Dictionary`,
+   `first_death_recorded: bool`. Its OWN snapshot (NOT nested, NOT `RunSnapshot`), migration reject baked in
+   (`unsupported_profile_schema`). Retro T2 heads-up HONORED.
+2. **`ProfileRepository`** (`godot/scripts/save/profile_repository.gd`): mirrors `SaveRepository` VERBATIM;
+   `DEFAULT_PROFILE_PATH="user://profile.json"` (separate from the run autosave); profile-scoped structured codes
+   (`profile_save_*`, `profile_not_found`/`profile_open_failed`/`profile_parse_failed`). On `profile_not_found` the
+   caller starts a fresh profile via `ProfileSnapshot.fresh()`.
+3. **Award RULE** (`godot/scripts/save/meta_award_rules.gd`, `MetaAwardRules.oath_shard_award_for`):
+   `min(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, MAX_AWARD)` for a COMPLETED run (`BASE=1`, `PER_NODE=1`,
+   `MAX=5`); FAILED run = 0; deterministic, ZERO RNG, capped, sparse, not-a-stat-ladder (a currency), does not scale
+   by difficulty. Reads the bounded nodes-cleared signal off `RunSummary`.
+4. **Award APPLICATION** (`AwardMetaProgressCommand`): the 4.3 validate-then-mutate idiom;
+   `.new(profile, summary, sequence_id)`, `validate/execute(state=terminal RunState)`. Gate 1 idempotency
+   (`run_already_awarded` when `last_awarded_run_seed == str(root_seed)` — a SECOND layer behind the 8.1
+   `run_already_terminal` guard); Gate 2 eligibility (`run_not_meta_eligible` for a manual-seed run — FR28/AC4,
+   REJECT so it visibly grants nothing). ZERO events + byte-identical run+profile on any reject.
+5. **`oath_shards_awarded` event**: appended at the `DomainEvent.Type` enum END, registered in the `expected_ids`
+   exhaustiveness pin (tripped BY DESIGN). Payload `amount`/`oath_shards_before`/`oath_shards_after` (honest
+   `before+amount==after`), `reason` (allowlisted `run_completed_eligible`), `profile_id`. ZERO roll/draw_index.
+6. **AC4 warning** (`[Decision]`): the existing `RunSummary` fields (`meta_progression_eligible == false` +
+   `is_manual_seed == true`) ARE the replay/practice warning DATA — NO redundant field added; `RunSummary` UNTOUCHED.
+7. **Failed-run amount** (`[Decision]`): 0 (a death awards nothing this story; a failed *eligible* run still resolves
+   the award with a 0 amount + records the run identity so a re-award is a no-op).
+8. **`RunSummary.oath_shards_earned` feed** (`[Decision]`): NOT wired — the summary stays a pure read reporting 0
+   (wiring it to the profile would couple the derived read to the profile file; 8.6/8.7 can decide). The award result
+   metadata + the event are the award-amount source of truth for a caller.
+
+**Idempotency guarantee:** no double-award is structural via the per-run `last_awarded_run_seed` marker (a
+re-invocation for the same `root_seed` rejects `run_already_awarded` with ZERO second event + ZERO double-mutation),
+sitting BEHIND the 8.1 `run_already_terminal` guard. A DIFFERENT run (different `root_seed`) DOES award again.
+
+**AC coverage:** AC1 (eligible non-manual run awards from approved rules + profile updated through a versioned
+repository) — `test_award_meta_progress_command.gd` + `test_meta_award_rules.gd` + `test_profile_repository.gd`. AC2
+(deterministic meta event + separable run/profile/unlock state) — the `oath_shards_awarded` event + the separability
+test. AC3 (capped/sparse/secondary; no raw-stat ladder) — the cap-enforcement + no-economy/difficulty-scaling tests +
+the `MetaAwardRules` header rationale. AC4 (manual-seed awards NOTHING + summary warning) — the FR28 denial test + the
+warning-data test. AC5 (structured save-failure recovery, no silent summary loss) — the failed-write-leaves-summary-
+readable test + the repository structured-error tests.
+
+**Scope fences confirmed:** the `oath_shards_awarded` event is append-only + pin-registered; `RngStreamSet`
+required_streams UNCHANGED (7); the 23-key `RunSnapshot` gate UNCHANGED (`RunSnapshot.oath_shards` stays 0 —
+cross-run total lives in the profile); `RunState`/`RouteState`/`RiskEconomyState`/`CompleteRunCommand`/`RunEndOutcome`/
+`RunSummary` UNCHANGED; no `scripts/generation/` or `scripts/rules/` change (seed fingerprints byte-identical); no
+`.tscn`/asset; no `data/source`/`data/resources` change; ZERO RNG in new code. Only `domain_event.gd` +
+`test_domain_event.gd` modified (append-only); everything else is a new file.
+
+**BREAKING CHANGE:** none. Purely additive — a new `ProfileSnapshot`/`ProfileRepository`/`user://profile.json`, a new
+award rule + command, and one append-only `DomainEvent.Type` member (`oath_shards_awarded`). No changed/removed public
+interface, config key, existing schema, CLI flag, or required migration step. (The `oath_shards_awarded` enum append
+trips the `expected_ids` exhaustiveness pin BY DESIGN — registered in the same change, per the documented
+epic-transition heads-up; not a breaking change.)
+
 ### File List
+
+New (production):
+- `godot/scripts/save/snapshots/profile_snapshot.gd` — the versioned cross-run `ProfileSnapshot` (Task 1).
+- `godot/scripts/save/profile_repository.gd` — the `ProfileRepository` (atomic-write + structured-error) (Task 2).
+- `godot/scripts/save/meta_award_rules.gd` — the deterministic capped Oath-Shard award calculator (Task 3).
+- `godot/scripts/core/commands/award_meta_progress_command.gd` — the two-gate award application command (Task 4).
+
+New (tests):
+- `godot/tests/unit/save/test_profile_snapshot.gd` — `ProfileSnapshot` round-trip / schema / lenient-decode (11 cases).
+- `godot/tests/unit/save/test_profile_repository.gd` — repository write/read/failure/migration (7 cases).
+- `godot/tests/unit/save/test_meta_award_rules.gd` — award-rule cap / determinism / failed-run (7 cases).
+- `godot/tests/unit/core/test_award_meta_progress_command.gd` — the award application matrix, AC1-AC5 (13 cases).
+
+Modified:
+- `godot/scripts/core/events/domain_event.gd` — appended the `OATH_SHARDS_AWARDED` event (enum member, `EVENT_ID`
+  const, `OATH_SHARDS_AWARDED_REASONS` allowlist, factory, validator + dispatch arm, `id_for_type`/`type_for_id`
+  arms). Append-only.
+- `godot/tests/unit/core/test_domain_event.gd` — registered `oath_shards_awarded` in the `expected_ids` exhaustiveness
+  pin + 2 new tests (serialize/parse + malformed-payload rejection).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `8-3-...: in-progress` → `review`; `last_updated`.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the 8.3 disposition (closes the meta-profile/awarding
+  defer; records the `[Decision]`s; re-affirms the 8.4/8.5/8.6/8.7/spend defers).
+- `_bmad-output/implementation-artifacts/8-3-meta-profile-and-oath-shard-awards.md` — this file (frontmatter
+  `baseline_commit`, task checkboxes, Dev Agent Record, File List, Change Log, Status).
+
+### Change Log
+
+- 2026-07-02 — Story 8.3 implemented: versioned cross-run `ProfileSnapshot` + `ProfileRepository` (`user://profile.json`),
+  the capped/sparse/deterministic Oath-Shard award rule (`MetaAwardRules`), the two-gate `AwardMetaProgressCommand`
+  (idempotency + FR28 eligibility), and the deterministic `oath_shards_awarded` domain event. 38 new test cases +
+  2 event tests + the exhaustiveness-pin registration. Full suite green (147 PASS / 0 FAIL). Status → review.
