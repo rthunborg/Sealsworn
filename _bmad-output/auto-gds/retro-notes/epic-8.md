@@ -14,3 +14,6 @@ genuinely reusable signal; routine success recaps are omitted.
 
 ## Story 8-3-meta-profile-and-oath-shard-awards
 - [Phase 3 — create-story] Cite `deferred-work.md` by durable grep-phrase anchors, NOT line numbers — the ledger grows/shifts between a delegate's read and write (8-2's finalize drifted the line numbers mid-phase here).
+
+## Story 8-4-echoes-seal-fragments-and-unlock-progress
+- [Phase 3 — create-story] Title/schema mismatch resolved by design: the story names "Seal Fragments" but 8.3's reserved `ProfileSnapshot` homes have no `seal_fragments` field — 8.4 folds them into `unlock_progress` to honor "merge without migration" (SCHEMA_VERSION stays 1). A dedicated top-level field would be a deliberate schema-v2 + migration decision (8.7 territory), not a silent add.
