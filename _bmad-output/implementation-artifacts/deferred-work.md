@@ -74,6 +74,23 @@ non-blocking and copied here per the cross-story ledger convention.
   succeeds with empty `thresholds_crossed`", no "one merge crosses `seal_gate_1` and `seal_gate_2` together"). Completeness
   only; the underlying logic is proven. [Source: godot/tests/unit/core/test_merge_run_discoveries_command.gd; godot/tests/unit/save/test_unlock_progress_rules.gd]
 
+Round 2 code review (auto-gds secondary / alternate-model re-review, 2026-07-02) verdict: APPROVE (Critical 0 / High 0 /
+Med 0 / Low 1); NO code changed since Round 1 (the diff is byte-identical — `ab9d1ca`..HEAD is a lone ratification chore),
+the suite is green, and the review CONVERGED. The two Round-1 `[Review][Defer]` items above STILL STAND (carried forward,
+not re-listed). Round 2 added ONE new non-blocking Defer:
+
+- **[Review][Defer] (later event-hardening pass, if 8.6/8.7 consumers need it) `profile_progress_merged` records
+  class-mastery as DELTA-only (no before/after totals) + the validator does not dedup-check `class_mastery_deltas`** —
+  The merge event carries `class_mastery_deltas` (`[{class_id, delta>0}]`) but not the resulting per-class mastery
+  TOTALS, so a consumer cannot reconstruct the new total from the event alone (a minor, defensible divergence from the
+  story's Task 3.1 "honest before/after arithmetic" phrasing — the profile is the total truth, and the four scalar COUNT
+  fields that DO exist are validator-enforced == their list sizes, so the honest-count discipline is applied where a
+  scalar count exists). Secondary robustness note: the event validator dedup-checks the four string-id lists but not the
+  `class_mastery_deltas` list by `class_id` — UNREACHABLE via the command (which emits one entry per unique class), so a
+  duplicate-class delta is only a hand-crafted-payload concern. Non-blocking. Fold a before/after-mastery-total (or an
+  explicit "delta-record by design" doc line) + a mastery-delta dedup guard into a later event-hardening pass.
+  [Source: godot/scripts/core/events/domain_event.gd profile_progress_merged factory/validator; godot/scripts/core/commands/merge_run_discoveries_command.gd mastery accumulation + event build]
+
 ## Deferred from: code review of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
 
 Round 1 code review (auto-gds primary review) verdict: APPROVE (Critical 0 / High 0 / Med 0 / Low 1). One Low-severity
