@@ -1,3 +1,30 @@
+## Deferred from: code review of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
+
+Round 1 code review (auto-gds primary review) verdict: APPROVE (Critical 0 / High 0 / Med 0 / Low 1). One Low-severity
+robustness hardening was flagged non-blocking; the human chose to HARDEN IT NOW (option (b)) rather than defer — it is
+RESOLVED in-story (see the bullet below), so nothing from this review remains open.
+
+- **[Review][Defer] [RESOLVED 2026-07-02 — resolved in-story via human option (b): hardened now, not deferred] Make the
+  Oath-Shard award AMOUNT self-consistent with the terminal run** — `AwardMetaProgressCommand` computes the award via `MetaAwardRules.oath_shard_award_for(run, summary)`,
+  which reads the `nodes_cleared` signal off the CALLER-SUPPLIED `RunSummary` (`summary.run_scoped`) rather than off the
+  `state` (terminal `RunState`) passed to `validate()`/`execute()`. The command never cross-checks that the summary was
+  built from that run, so a mismatched/foreign summary would drive the amount off the wrong run's node count. Bounded
+  today by `MAX_AWARD = 5` (the award can never inflate past the cap) + the eligibility/idempotency gates firing off the
+  REAL `state` + the trusted v0 caller (a test today; 8.6 drives it behind `resolve_run_end` with a summary derived from
+  the same terminal run). **Fix:** derive `nodes_cleared` directly from `run.route.cleared_node_ids.size()` inside
+  `MetaAwardRules.oath_shard_award_for` (identical to how `RunSummary.build` derives it at `run_summary.gd:254`) and drop
+  the `summary` dependency for the AMOUNT; the calculator becomes a pure function of the run alone. Deferred rather than
+  patched this round because the change touches the award-rule signature and is cleaner to land alongside the 8.6 story
+  that first supplies a live summary at the award call site. [Source: code review of 8-3, Round 1; `godot/scripts/save/
+  meta_award_rules.gd`; `godot/scripts/core/commands/award_meta_progress_command.gd`; `godot/scripts/run/run_summary.gd`]
+  - **RESOLUTION (2026-07-02, in-story, human option (b) — harden now):** applied the fix above. `MetaAwardRules.oath_shard_award_for(run)`
+    now derives `nodes_cleared` off `run.route.cleared_node_ids.size()` (mirroring `RunSummary.build` at `run_summary.gd:254`); the
+    `summary` parameter is dropped from the calculator (clean signature — v0 test-only callers) and `MetaAwardRules` no longer preloads
+    `RunSummary`. `AwardMetaProgressCommand` retains the constructor `summary` for caller/AC4-warning context but computes the amount via
+    `oath_shard_award_for(run)`, so a foreign/mismatched summary can no longer skew the award (the coupling is structurally gone). Added
+    `test_meta_award_rules.gd::_amount_comes_from_the_run_state`; other `MetaAwardRules` tests + the command test updated to the one-arg
+    signature. Full headless suite green (147 PASS / 0 FAIL); `git diff --check` clean. NOT open — nothing carries to 8.6.
+
 ## Tracked from: dev of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
 
 Story 8.3 (FR95/FR67 capped-sparse-meta-power; FR59 outpost meta loop; FR28 no-manual-seed-progression) is the

@@ -50,7 +50,7 @@ func _eligible_completed_run_awards_updates_profile_emits_event() -> void:
 	var award_result: ActionResult = command.execute(run)
 
 	assert_true(award_result.succeeded, "An eligible completed run should award: %s" % award_result.metadata)
-	var expected_amount: int = MetaAwardRules.oath_shard_award_for(run, summary)
+	var expected_amount: int = MetaAwardRules.oath_shard_award_for(run)
 	assert_equal(award_result.metadata.get("amount"), expected_amount, "The result should carry the awarded amount.")
 	assert_equal(profile.oath_shards, 10 + expected_amount, "The profile's cross-run total must rise by the awarded amount.")
 	assert_equal(award_result.metadata.get("oath_shards_after"), 10 + expected_amount, "oath_shards_after must match the new total.")

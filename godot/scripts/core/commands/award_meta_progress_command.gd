@@ -119,7 +119,10 @@ func execute(state: Variant) -> ActionResult:
 		return validation
 
 	var run: RunState = state as RunState
-	var amount: int = MetaAwardRules.oath_shard_award_for(run, summary)
+	# The award amount is a pure function of the terminal RunState alone (nodes_cleared comes off run.route — see
+	# MetaAwardRules; code review of 8-3 Round 1, human option (b)). The constructor-supplied `summary` is retained for
+	# caller/AC4-warning context but no longer feeds the amount, so a foreign summary can never skew the award.
+	var amount: int = MetaAwardRules.oath_shard_award_for(run)
 	var before: int = profile.oath_shards
 	var after: int = before + amount
 

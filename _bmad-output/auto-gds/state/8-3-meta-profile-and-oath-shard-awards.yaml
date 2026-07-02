@@ -3,10 +3,10 @@ epic_num: 8
 story_num: 3
 branch: story/8-3-meta-profile-and-oath-shard-awards
 status: in-progress
-updated_at: "2026-07-02T12:35:00Z"
+updated_at: "2026-07-02T13:05:00Z"
 started_at: "2026-07-02T11:58:00Z"
 completed_at: null
-active_seconds: 2000
+active_seconds: 2760
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,8 +19,26 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
+halted_at_phase: null
+halt_reason: "round-1 decision halt RESOLVED: human chose option (b) 'harden now' 2026-07-02; agds-high made oath_shard_award_for(run) a one-arg pure function of RunState (nodes_cleared from run.route.cleared_node_ids.size()), dropped the summary param, added self-consistency test, closed the paired ledger Defer. Suite green. Loop continuing to secondary re-review (round 2)."
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 1
+    decisions_open: 1
+    patches_fixed: 0
+    deferrals_logged: 1
+    decisions_resolved:
+      - "award-amount coupling (Low): human chose option (b) 'harden now' -> oath_shard_award_for(run) derives nodes_cleared from run.route.cleared_node_ids.size(); summary param dropped; paired ledger Defer closed; self-consistency test added"
+    fixes_applied: 1
+    fix_profile: agds-high
+    note: "Approve. Clean, disciplined implementation; all 5 ACs test-covered; scope fences hold; suite 147 PASS / 0 FAIL re-run at review; git diff --check clean. Single Low: award amount computed from constructor-supplied RunSummary without cross-check against the validated terminal RunState (bounded by MAX_AWARD=5 + gates + trusted v0 caller). 1 Decision (harden-now vs defer) + 1 paired Defer (ledgered) + 2 informational Notes."
 external_review_iterations: 0
 convergence_unverified: false
 testing:
