@@ -3,10 +3,10 @@ epic_num: 8
 story_num: 4
 branch: story/8-4-echoes-seal-fragments-and-unlock-progress
 status: in-progress
-updated_at: "2026-07-02T14:20:00Z"
+updated_at: "2026-07-02T14:35:00Z"
 started_at: "2026-07-02T13:40:00Z"
 completed_at: null
-active_seconds: 1500
+active_seconds: 1960
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,8 +19,25 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
+halted_at_phase: null
+halt_reason: "round-1 decision halt RESOLVED: human delegated the ratification call to the orchestrator ('follow your recommendation, proceed'); orchestrator RATIFIED the two-independent-markers design 2026-07-02 (no code change; durable 8.6/8.7 invariant recorded in story file + retro notes). Loop continuing to secondary re-review (round 2)."
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 3
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 2
+    decisions_resolved:
+      - "idempotency-marker divergence: human delegated to orchestrator, RATIFIED (two independent per-run markers; either run order safe; no code change; 8.6/8.7 invariant)"
+    note: "Approve. All 3 ACs met; every scope fence held (schema v1, no new top-level keys, append-only events + expected_ids pin, zero RNG grep-verified); suite independently re-run green (149 PASS files / 0 FAIL). 0 Patch; 1 Decision (ratify idempotency divergence — no code change, sign-off only); 2 Defer (unlock-flag id namespace reservation for the later content story; 2 low-value test-coverage nits), both ledgered."
 external_review_iterations: 0
 convergence_unverified: false
 testing:

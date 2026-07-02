@@ -47,6 +47,33 @@ the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.co
 - **[Defer] (8.6/8.7) The Oath-Shard EARNED-count summary wiring** — `RunSummary.profile_meta.oath_shards_earned` STAYS
   0 / not-yet-supported (8.3 deliberately left it a pure read; 8.4 did NOT wire it).
 
+## Deferred from: code review of 8-4-echoes-seal-fragments-and-unlock-progress (2026-07-02)
+
+Round 1 code review (auto-gds primary review) verdict: APPROVE with 1 open human `[Review][Decision]` (Critical 0 / High
+0 / Med 0 / Low 3). The Decision (the dedicated `unlock_progress["_last_merged_run_seed"]` idempotency marker diverging
+from the story's stated "prefer shared `last_awarded_run_seed`") is a human ratification call recorded in the story's
+Round-1 Review Findings — it is NOT deferred work (no code change recommended). The two `[Review][Defer]` items below are
+non-blocking and copied here per the cross-story ledger convention.
+
+- **[Review][Defer] (later CONTENT story) Reserve/avoid the unlock-flag id namespace so a discovered `unlock_flag`
+  cannot collide with an internal `unlock_progress` key** — `MergeRunDiscoveriesCommand` writes discovered `unlock_flag`
+  ids as bool keys directly into `unlock_progress`, the SAME dict that holds `UnlockProgressRules`' threshold flag keys
+  (suffix `*_unlocked`, e.g. `seal_gate_1_unlocked`), the `seal_fragments` id-set key, and the `_last_merged_run_seed`
+  bookkeeping marker (leading `_`). In v0 this is UNREACHABLE (no Echo/Seal-Fragment/unlock CONTENT roster exists —
+  discoveries are test-supplied by id), but once the later content story authors the real unlock-flag vocabulary, a
+  `content_id` equal to a threshold flag key would let a discovered flag pre-empt a threshold crossing (the flag reads as
+  already-flipped, so the merge event's `thresholds_crossed` silently omits it while `added_unlock_flag_ids` still reports
+  it). The content roster must not mint ids ending `_unlocked`, the literal `seal_fragments`, or any leading-`_` id.
+  [Source: godot/scripts/core/commands/merge_run_discoveries_command.gd unlock-flag merge loop; godot/scripts/save/unlock_progress_rules.gd SEAL_FRAGMENT_THRESHOLDS/SEAL_FRAGMENTS_KEY]
+- **[Review][Defer] (later test-hardening pass) Two low-value merge/threshold coverage nits** — (a) the merge
+  repository round-trip test asserts only `echoes`/`seal_fragments` survive JSON persistence, not the accumulating
+  `class_mastery` count (whose int decodes back as a float through JSON — behaviourally safe via defensive `int(...)`
+  reads + documented in `test_profile_snapshot.gd`, just unasserted at the repo boundary); (b) threshold idempotency +
+  the both-gates-in-one-merge path are proven at the `UnlockProgressRules` RULE level but not at the
+  `MergeRunDiscoveriesCommand` integration level (no explicit "a second eligible run crossing NO new threshold still
+  succeeds with empty `thresholds_crossed`", no "one merge crosses `seal_gate_1` and `seal_gate_2` together"). Completeness
+  only; the underlying logic is proven. [Source: godot/tests/unit/core/test_merge_run_discoveries_command.gd; godot/tests/unit/save/test_unlock_progress_rules.gd]
+
 ## Deferred from: code review of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
 
 Round 1 code review (auto-gds primary review) verdict: APPROVE (Critical 0 / High 0 / Med 0 / Low 1). One Low-severity
