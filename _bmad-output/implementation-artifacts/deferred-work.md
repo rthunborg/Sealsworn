@@ -1,3 +1,52 @@
+## Tracked from: dev of 8-4-echoes-seal-fragments-and-unlock-progress (2026-07-02)
+
+Story 8.4 (FR59/FR60/FR95; FR28 no-manual-seed-progression) is the "unlock or advance something" half of Epic 8. It
+CLOSES the "Echoes / Seal-Fragments / class-mastery / unlock-progress DOMAIN content + profile-merge" defer 8.2/8.3
+opened, MERGING into the EMPTY `ProfileSnapshot` homes 8.3 reserved WITHOUT a schema bump / migration
+(`SCHEMA_VERSION == 1`). Shipped: a `content_discovered` SYSTEM event (the run-scoped discovery SOURCE, derived-from-events
+per the 8.2 precedent — no persisted in-run home), a two-gate discovery-MERGE command
+(`godot/scripts/core/commands/merge_run_discoveries_command.gd`, mirroring `AwardMetaProgressCommand`), a pure/
+deterministic/capped unlock-threshold rule (`godot/scripts/save/unlock_progress_rules.gd`, mirroring `MetaAwardRules`),
+the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.content_unlock` wire-off (echoes_discovered
++ unlock_progress now SOURCED from `content_discovered` events, removed from `NOT_YET_SUPPORTED_FIELDS`).
+
+**Cross-story invariants for 8.6/8.7 (the outpost + the save-load/migration matrix):**
+- **TWO INDEPENDENT run-end META idempotency markers** (the RUN-END META STEP ORDERING invariant): the AWARD uses
+  `profile.last_awarded_run_seed`; the MERGE uses `profile.unlock_progress["_last_merged_run_seed"]` (a DEDICATED marker
+  namespaced under a leading `_` INSIDE the existing `unlock_progress` Dictionary — NO new top-level `ProfileSnapshot`
+  key, NO migration). This deliberately DIVERGES from the story's "prefer a shared `last_awarded_run_seed`" because a
+  shared marker both set + check makes whichever command runs FIRST block the SECOND in BOTH orders. With two markers,
+  EITHER run order (award-then-merge / merge-then-award) is safe and each command is separately idempotent per run. 8.6's
+  caller may run them in either order behind the SAME 8.1 idempotency seam + FR28 eligibility gate.
+- **SEAL FRAGMENTS live inside `unlock_progress`** (`unlock_progress["seal_fragments"]`, a unique-id SET) — NOT a
+  top-level key. 8.7's migration matrix restores them through the existing `unlock_progress` home.
+- **`profile_progress_merged` is the merge-result source of truth** (the id-list deltas + mastery deltas + the AC3
+  `thresholds_crossed` list; count fields validator-pinned to their list sizes). The merge summary is also in
+  `result.metadata`.
+
+**Deferred to the owning stories (8.4 ships only the DISCOVERY event + the MERGE + the SUMMARY wire-off + the tests):**
+- **[Defer] (later content story) The Echo / Seal-Fragment / class-mastery CONTENT roster + repository** — 8.4 tracks
+  discoveries BY id (the `content_discovered.content_id` + the `DISCOVERED_CONTENT_KINDS` kind vocabulary); it authors NO
+  codex/seal CONTENT definitions and NO `ContentRepository`-boundary repo for them (the Epic 5-7 by-id-defer precedent).
+- **[Defer] (later run-flow / HUD story) The LIVE per-node discovery CALL SITE + the auto-wire** — v0 has no live
+  combat/content-discovery source that FIRES a `content_discovered` event (combat auto-resolves; the Destroy-outcome
+  `progress_unlock_hidden_flag` category RECORDS but does not yet emit a discovery). 8.4 ships the EVENT + the MERGE
+  driven by caller-/test-supplied event lists (exactly as the 8.3 award consumes `run_completed` events); the merge is
+  CALLER-DRIVEN behind the run-end seam and is NOT auto-wired into `run_to_completion` (that would perturb the
+  interrupted==uninterrupted determinism / v0 auto-resolve posture).
+- **[Defer] (later meta-spend story, 8.6+/Epic 9) The unlock-SPEND / meta-power APPLICATION** — 8.4 RECORDS the unlock
+  STATE flip (the `unlock_progress` flags + the `thresholds_crossed` report); it does NOT spend Oath Shards, apply any
+  stat/passive/class/starting-option from an unlock, or build the unlock-spend tree. AC3 is about the STATE flipping
+  deterministically + being reported, not applying its effect.
+- **[Defer] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded` home untouched.
+- **[Defer] (8.6) The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produces the profile DATA + the
+  summary-report + the events; 8.6 renders them (UI-scene-last). No `.tscn` / `OutpostViewModel` / unlock-spend UI built.
+- **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
+  no-migration proof (`test_profile_snapshot.gd::_populated_8_4_homes_round_trip_without_a_migration`); 8.7 owns the full
+  matrix (Echoes / Seal Fragments / unlock progress / class-mastery restore + the migration matrix).
+- **[Defer] (8.6/8.7) The Oath-Shard EARNED-count summary wiring** — `RunSummary.profile_meta.oath_shards_earned` STAYS
+  0 / not-yet-supported (8.3 deliberately left it a pure read; 8.4 did NOT wire it).
+
 ## Deferred from: code review of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
 
 Round 1 code review (auto-gds primary review) verdict: APPROVE (Critical 0 / High 0 / Med 0 / Low 1). One Low-severity

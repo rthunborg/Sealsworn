@@ -30,6 +30,9 @@ func run() -> Dictionary:
 	_reward_resolved_is_excluded_from_notable_loot()
 	_backpack_reward_is_counted_once_not_doubled()
 	_not_yet_supported_fields_are_placeholder_and_flagged()
+	_content_unlock_reports_discovered_content_from_events()
+	_manual_seed_run_reports_discoveries_but_grants_nothing()
+	_content_unlock_dedupes_discoveries()
 	_state_boundaries_are_separable()
 	_non_terminal_or_null_run_projects_empty_fact()
 	_outcome_or_cause_takes_the_first_matching_terminal_event()
@@ -269,19 +272,81 @@ func _backpack_reward_is_counted_once_not_doubled() -> void:
 
 func _not_yet_supported_fields_are_placeholder_and_flagged() -> void:
 	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	# With NO discovery events, content_unlock is empty (a run that discovered nothing) — but echoes_discovered /
+	# unlock_progress are no longer NOT-YET-SUPPORTED placeholders (Story 8.4 sourced them from events).
 	var data: Dictionary = RunSummary.build(run, [DomainEvent.run_completed(1, {"outcome": "completed"})]).to_dictionary()
 
-	# The placeholder VALUES are safe (0 / []) — structurally impossible to mistake for a real award/unlock.
+	# oath_shards_earned STAYS the 0 placeholder (awarding-count wiring is 8.6/8.7, not this story).
 	assert_equal(int((data.get("profile_meta") as Dictionary).get("oath_shards_earned")), 0, "oath_shards_earned is the 0 placeholder (awarding is Story 8.3).")
-	assert_true(((data.get("content_unlock") as Dictionary).get("echoes_discovered") as Array).is_empty(), "echoes_discovered is the empty placeholder (Story 8.4).")
-	assert_true(((data.get("content_unlock") as Dictionary).get("unlock_progress") as Array).is_empty(), "unlock_progress is the empty placeholder (Story 8.4).")
 
-	# The not_yet_supported signal NAMES the deferred fields so the Epic-10 readiness pass (Story 10.7) can enumerate them.
+	# Story 8.4: not_yet_supported names ONLY oath_shards_earned now (echoes_discovered/unlock_progress were removed — they
+	# are sourced from content_discovered events).
 	var flagged: Array = data.get("not_yet_supported")
-	assert_true(flagged.has("oath_shards_earned"), "not_yet_supported names oath_shards_earned.")
-	assert_true(flagged.has("echoes_discovered"), "not_yet_supported names echoes_discovered.")
-	assert_true(flagged.has("unlock_progress"), "not_yet_supported names unlock_progress.")
-	assert_equal(flagged.size(), 3, "not_yet_supported names exactly the three tracked placeholder fields.")
+	assert_true(flagged.has("oath_shards_earned"), "not_yet_supported still names oath_shards_earned.")
+	assert_false(flagged.has("echoes_discovered"), "not_yet_supported must NO LONGER name echoes_discovered (Story 8.4 sourced it).")
+	assert_false(flagged.has("unlock_progress"), "not_yet_supported must NO LONGER name unlock_progress (Story 8.4 sourced it).")
+	assert_equal(flagged.size(), 1, "not_yet_supported names exactly the ONE remaining tracked placeholder field (oath_shards_earned).")
+
+
+# ---- AC2/AC3: content_unlock reports discovered content DERIVED from content_discovered events ----
+
+func _content_unlock_reports_discovered_content_from_events() -> void:
+	# Story 8.4: an eligible run's summary REPORTS discovered content in content_unlock, DERIVED from content_discovered
+	# events (echoes_discovered = discovered Echo ids; unlock_progress = discovered seal_fragment/class_mastery/unlock_flag
+	# items). Building it grants NOTHING (a pure read).
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var events: Array = [
+		DomainEvent.content_discovered(1, {"content_kind": "echo", "content_id": "echo_of_salt"}),
+		DomainEvent.content_discovered(2, {"content_kind": "echo", "content_id": "echo_of_tide"}),
+		DomainEvent.content_discovered(3, {"content_kind": "seal_fragment", "content_id": "seal_a"}),
+		DomainEvent.content_discovered(4, {"content_kind": "class_mastery", "content_id": "warrior"}),
+		DomainEvent.content_discovered(5, {"content_kind": "unlock_flag", "content_id": "variety_flag_1"}),
+		DomainEvent.run_completed(6, {"outcome": "completed"})
+	]
+	var content_unlock: Dictionary = RunSummary.build(run, events).to_dictionary().get("content_unlock")
+
+	var echoes: Array = content_unlock.get("echoes_discovered")
+	assert_equal(echoes.size(), 2, "The two discovered Echoes must appear in echoes_discovered.")
+	assert_true(echoes.has("echo_of_salt") and echoes.has("echo_of_tide"), "echoes_discovered carries the discovered Echo ids.")
+
+	var unlock_progress: Array = content_unlock.get("unlock_progress")
+	assert_equal(unlock_progress.size(), 3, "The seal_fragment + class_mastery + unlock_flag discoveries appear in unlock_progress.")
+	var kinds: Array[String] = []
+	for entry: Variant in unlock_progress:
+		kinds.append(String((entry as Dictionary).get("content_kind")))
+	assert_true(kinds.has("seal_fragment") and kinds.has("class_mastery") and kinds.has("unlock_flag"), "unlock_progress carries the non-Echo discovery kinds.")
+
+
+func _manual_seed_run_reports_discoveries_but_grants_nothing() -> void:
+	# AC2: a MANUAL-SEED run's summary ALSO reports its discoveries (a pure read of events) — the DENIAL of the grant is
+	# the MERGE command's job (Gate 2), not the summary's. Building it grants nothing regardless of eligibility.
+	var manual_run: RunState = _terminal_run(RunState.PHASE_FAILED, true)
+	assert_false(manual_run.meta_progression_eligible, "Setup: a manual-seed run is not meta-eligible.")
+	var events: Array = [
+		DomainEvent.content_discovered(1, {"content_kind": "echo", "content_id": "echo_of_salt"}),
+		DomainEvent.run_failed(2, {"cause": "abandoned"})
+	]
+	var data: Dictionary = RunSummary.build(manual_run, events).to_dictionary()
+
+	assert_false(bool(data.get("meta_progression_eligible")), "A manual-seed run's summary reports meta_progression_eligible == false.")
+	var echoes: Array = (data.get("content_unlock") as Dictionary).get("echoes_discovered")
+	assert_true(echoes.has("echo_of_salt"), "A manual-seed run's summary STILL reports what was discovered (AC2 — the report is not the grant).")
+
+
+func _content_unlock_dedupes_discoveries() -> void:
+	# The summary reports UNIQUE discoveries (a duplicate content_discovered for the same Echo appears once) — a summary
+	# listing the same Echo repeatedly is noise; the deduped set mirrors what the merge would grant.
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var events: Array = [
+		DomainEvent.content_discovered(1, {"content_kind": "echo", "content_id": "echo_of_salt"}),
+		DomainEvent.content_discovered(2, {"content_kind": "echo", "content_id": "echo_of_salt"}),
+		DomainEvent.content_discovered(3, {"content_kind": "seal_fragment", "content_id": "seal_a"}),
+		DomainEvent.content_discovered(4, {"content_kind": "seal_fragment", "content_id": "seal_a"}),
+		DomainEvent.run_completed(5, {"outcome": "completed"})
+	]
+	var content_unlock: Dictionary = RunSummary.build(run, events).to_dictionary().get("content_unlock")
+	assert_equal((content_unlock.get("echoes_discovered") as Array).size(), 1, "A duplicate Echo discovery is reported ONCE (deduped).")
+	assert_equal((content_unlock.get("unlock_progress") as Array).size(), 1, "A duplicate Seal-Fragment discovery is reported ONCE (deduped).")
 
 
 # ---- AC3: the run-scoped / profile-meta / content-unlock boundaries are separable ----------------

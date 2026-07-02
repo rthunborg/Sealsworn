@@ -37,7 +37,9 @@ enum Type {
 	EVENT_OFFERED,
 	EVENT_RESOLVED,
 	RUN_FAILED,
-	OATH_SHARDS_AWARDED
+	OATH_SHARDS_AWARDED,
+	CONTENT_DISCOVERED,
+	PROFILE_PROGRESS_MERGED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -74,6 +76,8 @@ const EVENT_ID_EVENT_OFFERED := &"event_offered"
 const EVENT_ID_EVENT_RESOLVED := &"event_resolved"
 const EVENT_ID_RUN_FAILED := &"run_failed"
 const EVENT_ID_OATH_SHARDS_AWARDED := &"oath_shards_awarded"
+const EVENT_ID_CONTENT_DISCOVERED := &"content_discovered"
+const EVENT_ID_PROFILE_PROGRESS_MERGED := &"profile_progress_merged"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -163,6 +167,23 @@ const RUN_END_DESTINATION_OUTPOST := &"outpost"
 # reason vocabulary. A manual-seed run awards NOTHING (no event at all — FR28/AC4), so there is NO ineligible reason here.
 const OATH_SHARDS_AWARDED_REASONS: Array[StringName] = [
 	&"run_completed_eligible"
+]
+
+# Story 8.4 (AC1/AC2): the allowlisted DISCOVERED-CONTENT KIND markers the content_discovered payload may carry
+# (lower_snake). v0 tracks a discovery BY its kind + id — it authors NO Echo/Seal-Fragment/mastery/unlock CONTENT roster
+# this story (the codex/seal content + its repository is a later content story — the Epic-5-7 by-id-defer precedent).
+# The four kinds map 1:1 to the ProfileSnapshot merge targets: `echo` -> echoes (a unique-id SET), `seal_fragment` ->
+# unlock_progress.seal_fragments (a unique-id SET, the GDD "major seal/story unlocks"), `class_mastery` ->
+# class_mastery (a per-class ACCUMULATING count), `unlock_flag` -> unlock_progress[<track>] (unlock progress). Kept
+# LOCAL to domain_event.gd (a static const) so the validator has no cross-script dependency on the run/profile model —
+# the value set is pinned by test (mirroring the RUN_FAILED_CAUSES / OATH_SHARDS_AWARDED_REASONS allowlist-const
+# pattern). A kind outside this set is rejected as a malformed payload. MergeRunDiscoveriesCommand references it so the
+# command + the validator stay in lockstep on the kind vocabulary.
+const DISCOVERED_CONTENT_KINDS: Array[StringName] = [
+	&"echo",
+	&"seal_fragment",
+	&"class_mastery",
+	&"unlock_flag"
 ]
 
 var event_type: int = Type.UNKNOWN
@@ -349,6 +370,54 @@ static func oath_shards_awarded(sequence_id: int, payload: Dictionary = {}) -> D
 	payload_value["reason"] = String(payload.get("reason", ""))
 	payload_value["profile_id"] = String(payload.get("profile_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.OATH_SHARDS_AWARDED, sequence_id, &"", payload_value)
+
+
+static func content_discovered(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 8.4, AC1/AC2): the run-scoped DISCOVERY record — a run discovered an Echo / Seal
+	# Fragment / class-mastery point / unlock flag. It is the SOURCE the run-end MERGE (MergeRunDiscoveriesCommand) AND
+	# the RunSummary content_unlock readout DERIVE the discovery list from (the 8.2 derive-from-events precedent —
+	# passives_consumed/notable_loot have no persisted home either, so the events ARE the source truth, honoring AC2's
+	# "domain state and event records rather than presentation logs as source truth"). NOT an entity action, so it is NOT
+	# in _event_requires_actor (actor_id stays empty). `content_kind` is a lower_snake marker in the
+	# DISCOVERED_CONTENT_KINDS allowlist (echo/seal_fragment/class_mastery/unlock_flag — WHICH profile home the discovery
+	# merges into). `content_id` is the discovered thing's stable lower_snake CONTENT id (8.4 tracks the discovery BY id —
+	# it authors no content roster). It is a DETERMINISTIC record — UNLIKE passive_destroyed there is NO roll/draw_index
+	# (a discovery is not a roll in v0; the oath_shards_awarded deterministic-shell precedent). Normalize/duplicate the
+	# payload defensively (mirroring oath_shards_awarded). No int64 encoding (both fields are short lower_snake strings).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["content_kind"] = String(payload.get("content_kind", ""))
+	payload_value["content_id"] = String(payload.get("content_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.CONTENT_DISCOVERED, sequence_id, &"", payload_value)
+
+
+static func profile_progress_merged(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 8.4, AC1/AC3): the deterministic profile-MERGE record — emitted by
+	# MergeRunDiscoveriesCommand AFTER an ELIGIBLE run's discoveries are merged into the profile (behind the SAME 8.1
+	# idempotency marker + the FR28 eligibility gate the award sits behind). It is the oath_shards_awarded counterpart for
+	# the "unlock or advance something" half of Epic 8, recording WHAT changed: the newly-added Echo ids, the newly-
+	# unlocked Seal Fragment ids, the newly-set unlock-flag ids, the per-class mastery DELTAS, and (AC3) the unlock-track
+	# thresholds that CROSSED. NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays empty). The id
+	# lists (added_echo_ids / added_seal_fragment_ids / added_unlock_flag_ids / thresholds_crossed) are plain-String
+	# Arrays (each entry a lower_snake CONTENT id; a duplicate/malformed entry is rejected by the validator — the id lists
+	# are already the DEDUPED newly-added deltas the command computed). class_mastery_deltas is an Array of plain
+	# {class_id, delta} dicts (class_id lower_snake, delta a POSITIVE int — a merge only ever adds mastery). The COUNT
+	# fields (echoes_added / seal_fragments_added / unlock_flags_added / thresholds_crossed_count) are non-negative bounded
+	# ints, each == its matching list's size (the honest-record arithmetic — a fabricated payload whose count diverges is
+	# rejected, the oath_shards_awarded before+amount==after precedent). `profile_id` is the profile the merge landed on.
+	# It is a DETERMINISTIC record (ZERO RNG — the merge is a calculation, not a roll; no roll/draw_index). Normalize/
+	# duplicate the payload defensively (reshaping the id lists + the mastery-delta list to clean plain forms).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["added_echo_ids"] = _normalize_choice_id_list(payload.get("added_echo_ids", []))
+	payload_value["added_seal_fragment_ids"] = _normalize_choice_id_list(payload.get("added_seal_fragment_ids", []))
+	payload_value["added_unlock_flag_ids"] = _normalize_choice_id_list(payload.get("added_unlock_flag_ids", []))
+	payload_value["thresholds_crossed"] = _normalize_choice_id_list(payload.get("thresholds_crossed", []))
+	payload_value["class_mastery_deltas"] = _normalize_mastery_deltas(payload.get("class_mastery_deltas", []))
+	payload_value["echoes_added"] = int(payload.get("echoes_added", 0))
+	payload_value["seal_fragments_added"] = int(payload.get("seal_fragments_added", 0))
+	payload_value["unlock_flags_added"] = int(payload.get("unlock_flags_added", 0))
+	payload_value["thresholds_crossed_count"] = int(payload.get("thresholds_crossed_count", 0))
+	payload_value["profile_id"] = String(payload.get("profile_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.PROFILE_PROGRESS_MERGED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -558,6 +627,25 @@ static func _normalize_reward_entries(raw: Variant) -> Array:
 		result.append({
 			"category": String(entry.get("category", "")),
 			"content_id": String(entry.get("content_id", ""))
+		})
+	return result
+
+
+# Normalize an arbitrary class-mastery-delta input (the profile_progress_merged class_mastery_deltas) into a clean Array
+# of plain {class_id, delta} dicts. Each Dictionary entry is reshaped to EXACTLY {class_id (String), delta (int)}; a
+# non-dict entry is skipped. Deep-copies (no shared reference). KEEP raw values verbatim otherwise so the validator can
+# REJECT a malformed one (a blank class_id / a non-positive delta) — do NOT silently drop it here.
+static func _normalize_mastery_deltas(raw: Variant) -> Array:
+	var result: Array = []
+	if not raw is Array:
+		return result
+	for entry_value: Variant in (raw as Array):
+		if not entry_value is Dictionary:
+			continue
+		var entry: Dictionary = entry_value
+		result.append({
+			"class_id": String(entry.get("class_id", "")),
+			"delta": int(entry.get("delta", 0))
 		})
 	return result
 
@@ -900,6 +988,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_run_failed_payload(payload_value)
 		Type.OATH_SHARDS_AWARDED:
 			return _validate_oath_shards_awarded_payload(payload_value)
+		Type.CONTENT_DISCOVERED:
+			return _validate_content_discovered_payload(payload_value)
+		Type.PROFILE_PROGRESS_MERGED:
+			return _validate_profile_progress_merged_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1130,6 +1222,74 @@ static func _validate_oath_shards_awarded_payload(payload_value: Dictionary) -> 
 	# Arithmetic consistency (the record must be honest): before + amount == after.
 	if int(payload_value.get("oath_shards_before")) + int(payload_value.get("amount")) != int(payload_value.get("oath_shards_after")):
 		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
+	return _ok_result()
+
+
+static func _validate_content_discovered_payload(payload_value: Dictionary) -> ActionResult:
+	# The run-scoped DISCOVERY record (Story 8.4, AC1/AC2). content_kind is lower_snake AND in the
+	# DISCOVERED_CONTENT_KINDS allowlist (echo/seal_fragment/class_mastery/unlock_flag; the value set is pinned to match by
+	# test — mirroring _validate_run_failed_payload's cause allowlist). content_id is a Story-8.4 CONTENT id -> lower_snake
+	# (no hyphens; the discovery is tracked BY id). A malformed/off-allowlist/missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"content_kind") \
+			or not DISCOVERED_CONTENT_KINDS.has(StringName(String(payload_value.get("content_kind")))):
+		return _error_result(&"invalid_event_payload", {"field": "content_kind"})
+	if not _has_lower_snake_payload(payload_value, &"content_id"):
+		return _error_result(&"invalid_event_payload", {"field": "content_id"})
+	return _ok_result()
+
+
+static func _validate_profile_progress_merged_payload(payload_value: Dictionary) -> ActionResult:
+	# The deterministic profile-MERGE record (Story 8.4, AC1/AC3). The four id lists (added_echo_ids /
+	# added_seal_fragment_ids / added_unlock_flag_ids / thresholds_crossed) are (possibly EMPTY) Arrays of lower_snake
+	# content ids WITH NO DUPLICATES (they are the DEDUPED newly-added deltas the command computed — a duplicate is a
+	# malformed record). class_mastery_deltas is an Array of {class_id (lower_snake), delta (POSITIVE int — a merge only
+	# adds mastery)} entries. The count fields are non-negative integral and each == its matching list's size (the
+	# honest-record arithmetic — a fabricated/hand-edited payload whose count diverges from its list is rejected, the
+	# oath_shards_awarded before+amount==after precedent). profile_id is a plain string (empty-tolerant). UNLIKE
+	# passive_destroyed there is NO roll/draw_index (a deterministic record, not a roll). A malformed/missing field is
+	# rejected per-field.
+	if not _has_string_array_payload(payload_value, &"added_echo_ids", true) \
+			or _string_array_has_duplicates(payload_value.get("added_echo_ids", [])):
+		return _error_result(&"invalid_event_payload", {"field": "added_echo_ids"})
+	if not _has_string_array_payload(payload_value, &"added_seal_fragment_ids", true) \
+			or _string_array_has_duplicates(payload_value.get("added_seal_fragment_ids", [])):
+		return _error_result(&"invalid_event_payload", {"field": "added_seal_fragment_ids"})
+	if not _has_string_array_payload(payload_value, &"added_unlock_flag_ids", true) \
+			or _string_array_has_duplicates(payload_value.get("added_unlock_flag_ids", [])):
+		return _error_result(&"invalid_event_payload", {"field": "added_unlock_flag_ids"})
+	if not _has_string_array_payload(payload_value, &"thresholds_crossed", true) \
+			or _string_array_has_duplicates(payload_value.get("thresholds_crossed", [])):
+		return _error_result(&"invalid_event_payload", {"field": "thresholds_crossed"})
+	# class_mastery_deltas: a (possibly EMPTY) Array of {class_id (lower_snake), delta (POSITIVE integral)} dicts.
+	if not payload_value.has("class_mastery_deltas") or not payload_value.get("class_mastery_deltas") is Array:
+		return _error_result(&"invalid_event_payload", {"field": "class_mastery_deltas"})
+	for entry_value: Variant in payload_value.get("class_mastery_deltas", []):
+		if not entry_value is Dictionary:
+			return _error_result(&"invalid_event_payload", {"field": "class_mastery_deltas"})
+		var entry: Dictionary = entry_value
+		if not _has_lower_snake_payload(entry, &"class_id"):
+			return _error_result(&"invalid_event_payload", {"field": "class_mastery_deltas"})
+		if not _has_positive_integral_payload(entry, &"delta"):
+			return _error_result(&"invalid_event_payload", {"field": "class_mastery_deltas"})
+	# Count fields: non-negative integral, each == its matching list's size (the honest-record arithmetic).
+	if not _has_nonnegative_integral_payload(payload_value, &"echoes_added"):
+		return _error_result(&"invalid_event_payload", {"field": "echoes_added"})
+	if not _has_nonnegative_integral_payload(payload_value, &"seal_fragments_added"):
+		return _error_result(&"invalid_event_payload", {"field": "seal_fragments_added"})
+	if not _has_nonnegative_integral_payload(payload_value, &"unlock_flags_added"):
+		return _error_result(&"invalid_event_payload", {"field": "unlock_flags_added"})
+	if not _has_nonnegative_integral_payload(payload_value, &"thresholds_crossed_count"):
+		return _error_result(&"invalid_event_payload", {"field": "thresholds_crossed_count"})
+	if not _has_string_payload(payload_value, &"profile_id"):
+		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
+	if int(payload_value.get("echoes_added")) != (payload_value.get("added_echo_ids") as Array).size():
+		return _error_result(&"invalid_event_payload", {"field": "echoes_added"})
+	if int(payload_value.get("seal_fragments_added")) != (payload_value.get("added_seal_fragment_ids") as Array).size():
+		return _error_result(&"invalid_event_payload", {"field": "seal_fragments_added"})
+	if int(payload_value.get("unlock_flags_added")) != (payload_value.get("added_unlock_flag_ids") as Array).size():
+		return _error_result(&"invalid_event_payload", {"field": "unlock_flags_added"})
+	if int(payload_value.get("thresholds_crossed_count")) != (payload_value.get("thresholds_crossed") as Array).size():
+		return _error_result(&"invalid_event_payload", {"field": "thresholds_crossed_count"})
 	return _ok_result()
 
 
@@ -1936,6 +2096,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_RUN_FAILED
 		Type.OATH_SHARDS_AWARDED:
 			return EVENT_ID_OATH_SHARDS_AWARDED
+		Type.CONTENT_DISCOVERED:
+			return EVENT_ID_CONTENT_DISCOVERED
+		Type.PROFILE_PROGRESS_MERGED:
+			return EVENT_ID_PROFILE_PROGRESS_MERGED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2008,6 +2172,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.RUN_FAILED
 		EVENT_ID_OATH_SHARDS_AWARDED:
 			return Type.OATH_SHARDS_AWARDED
+		EVENT_ID_CONTENT_DISCOVERED:
+			return Type.CONTENT_DISCOVERED
+		EVENT_ID_PROFILE_PROGRESS_MERGED:
+			return Type.PROFILE_PROGRESS_MERGED
 		_:
 			return Type.UNKNOWN
 
