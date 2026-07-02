@@ -1,3 +1,130 @@
+## Deferred from: code review of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
+
+Round 1 code review (auto-gds primary review) verdict: APPROVE (Critical 0 / High 0 / Med 0 / Low 1). One Low-severity
+robustness hardening was flagged non-blocking; the human chose to HARDEN IT NOW (option (b)) rather than defer — it is
+RESOLVED in-story (see the bullet below), so nothing from this review remains open.
+
+- **[Review][Defer] [RESOLVED 2026-07-02 — resolved in-story via human option (b): hardened now, not deferred] Make the
+  Oath-Shard award AMOUNT self-consistent with the terminal run** — `AwardMetaProgressCommand` computes the award via `MetaAwardRules.oath_shard_award_for(run, summary)`,
+  which reads the `nodes_cleared` signal off the CALLER-SUPPLIED `RunSummary` (`summary.run_scoped`) rather than off the
+  `state` (terminal `RunState`) passed to `validate()`/`execute()`. The command never cross-checks that the summary was
+  built from that run, so a mismatched/foreign summary would drive the amount off the wrong run's node count. Bounded
+  today by `MAX_AWARD = 5` (the award can never inflate past the cap) + the eligibility/idempotency gates firing off the
+  REAL `state` + the trusted v0 caller (a test today; 8.6 drives it behind `resolve_run_end` with a summary derived from
+  the same terminal run). **Fix:** derive `nodes_cleared` directly from `run.route.cleared_node_ids.size()` inside
+  `MetaAwardRules.oath_shard_award_for` (identical to how `RunSummary.build` derives it at `run_summary.gd:254`) and drop
+  the `summary` dependency for the AMOUNT; the calculator becomes a pure function of the run alone. Deferred rather than
+  patched this round because the change touches the award-rule signature and is cleaner to land alongside the 8.6 story
+  that first supplies a live summary at the award call site. [Source: code review of 8-3, Round 1; `godot/scripts/save/
+  meta_award_rules.gd`; `godot/scripts/core/commands/award_meta_progress_command.gd`; `godot/scripts/run/run_summary.gd`]
+  - **RESOLUTION (2026-07-02, in-story, human option (b) — harden now):** applied the fix above. `MetaAwardRules.oath_shard_award_for(run)`
+    now derives `nodes_cleared` off `run.route.cleared_node_ids.size()` (mirroring `RunSummary.build` at `run_summary.gd:254`); the
+    `summary` parameter is dropped from the calculator (clean signature — v0 test-only callers) and `MetaAwardRules` no longer preloads
+    `RunSummary`. `AwardMetaProgressCommand` retains the constructor `summary` for caller/AC4-warning context but computes the amount via
+    `oath_shard_award_for(run)`, so a foreign/mismatched summary can no longer skew the award (the coupling is structurally gone). Added
+    `test_meta_award_rules.gd::_amount_comes_from_the_run_state`; other `MetaAwardRules` tests + the command test updated to the one-arg
+    signature. Full headless suite green (147 PASS / 0 FAIL); `git diff --check` clean. NOT open — nothing carries to 8.6.
+
+Round 2 code review (auto-gds secondary / alternate-model re-review, 2026-07-02) verdict: APPROVE (Critical 0 / High 0 /
+Med 0 / Low 1). It independently VERIFIED the Round 1 fix is correct + complete (`MetaAwardRules.oath_shard_award_for(run)`
+is a one-arg pure function of the terminal `RunState`; `nodes_cleared` derived off `run.route.cleared_node_ids.size()`
+identical to `RunSummary.build` at `run_summary.gd:250-254`; no lingering two-arg call sites; `MetaAwardRules` no longer
+preloads `RunSummary`) and re-swept the FULL diff. The single Round 2 Low is a cosmetic `[Review][Note]` (the
+`AwardMetaProgressCommand.summary` constructor param is now functionally unused inside the command after the fix + its
+line-53 inline comment "the bounded award signal" is stale) — NOT a bug, NOT a defer; it grants nothing to a later story.
+**No new `[Review][Defer]` from Round 2 — nothing added to this ledger heading.**
+
+## Tracked from: dev of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
+
+Story 8.3 (FR95/FR67 capped-sparse-meta-power; FR59 outpost meta loop; FR28 no-manual-seed-progression) is the
+"receive eligible progress" half of Epic 8 and ships the project's FIRST persistent CROSS-RUN state. It CLOSES the
+"META PROFILE + Oath-Shard AWARDING + the meta-save shape" defer 8.1 opened and 8.2 re-flagged. Shipped: a versioned
+cross-run `ProfileSnapshot` (`godot/scripts/save/snapshots/profile_snapshot.gd`), a `ProfileRepository`
+(`godot/scripts/save/profile_repository.gd`, `user://profile.json`), an Oath-Shard award CALCULATION
+(`godot/scripts/save/meta_award_rules.gd`), a two-gate award APPLICATION command
+(`godot/scripts/core/commands/award_meta_progress_command.gd`), and the deterministic `oath_shards_awarded` event.
+Full headless suite green (Godot 4.6.3, "Headless tests passed.", exit 0, 147 PASS / 0 FAIL); the false-PASS grep
+guard is clean beyond the documented int64-overflow + malformed-JSON negative-path diagnostics; `git diff --check`
+clean; `RngStreamSet.required_streams()` (7 streams), the 23-key `RunSnapshot` gate, and every seed-regression
+fingerprint are UNTOUCHED (the ONLY modified production file is `domain_event.gd` — append-only). The award draws
+ZERO RNG.
+
+**Cross-story `[Decision]`s recorded (the meta profile + award later stories build on):**
+- `ProfileSnapshot` shape (the FIRST cross-run snapshot — its OWN snapshot, NOT nested under `route_state`, NOT the
+  `RunSnapshot`; the retro T2 heads-up HONORED): `const SCHEMA_VERSION := 1`, exact pinned `DICTIONARY_KEYS`
+  (`schema_version`, `content_version`, `profile_id`, `oath_shards`, `last_awarded_run_seed`, `class_mastery`,
+  `echoes`, `unlock_progress`, `first_death_recorded`). `oath_shards` is the CROSS-RUN AWARDED total (a small bounded
+  int, plain — NOT decimal-string). `last_awarded_run_seed` is the idempotency marker (the run identity =
+  decimal-string-encoded `root_seed`, since `RunState` has no `run_id`). `class_mastery`/`echoes`/`unlock_progress`
+  are EMPTY 8.4 HOMES; `first_death_recorded` is an EMPTY 8.5 HOME (so 8.4/8.5 merge WITHOUT a migration). Migration
+  reject path baked in from day one: `parse` rejects a bad `schema_version` with `unsupported_profile_schema`.
+- `ProfileRepository` shape: mirrors `SaveRepository` VERBATIM (atomic temp→backup→replace) with `user://profile.json`
+  (SEPARATE from the run autosave) and profile-scoped structured codes (`profile_save_open_failed` /
+  `profile_save_backup_remove_failed` / `profile_save_backup_failed` / `profile_save_replace_failed`;
+  `profile_not_found` / `profile_open_failed` / `profile_parse_failed`). On `profile_not_found` the caller starts a
+  FRESH profile via `ProfileSnapshot.fresh()` (AC5 recovery + the 8.6 fresh-profile path).
+- Award RULE (AC3 capped/sparse/not-a-stat-ladder): `min(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, MAX_AWARD)` for
+  a COMPLETED run, with `BASE_AWARD=1`, `PER_NODE_AWARD=1`, `MAX_AWARD=5`; a FAILED (death) run awards 0; a manual-seed
+  run awards 0 via Gate 2. DETERMINISTIC (ZERO RNG), reads the bounded nodes-cleared signal off `RunSummary`, does NOT
+  scale by difficulty. Oath Shards are a CURRENCY toward variety/options (a later spend story), NOT a combat stat.
+- Award APPLICATION (`AwardMetaProgressCommand`): the 4.3 validate-then-mutate idiom. Signature
+  `.new(profile, summary, sequence_id)`; `validate/execute` take the terminal `RunState` as `state`. Two gates: Gate 1
+  idempotency (reject `run_already_awarded` when `profile.last_awarded_run_seed == str(run.root_seed)` — a SECOND
+  layer BEHIND the 8.1 `run_already_terminal` guard, so no double-award regardless of caller invocations); Gate 2
+  eligibility (reject `run_not_meta_eligible` for a manual-seed run — FR28/AC4, visibly grants nothing). Also rejects
+  `run_not_terminal`, `invalid_context`, `invalid_event_sequence_id`. ZERO events + byte-identical run+profile on any
+  reject.
+- `oath_shards_awarded` event (AC2): appended at the `DomainEvent.Type` enum END, registered in `test_domain_event.gd`
+  `expected_ids` (the exhaustiveness pin — tripped BY DESIGN, same as 8.1's `run_failed`). Payload: `amount` /
+  `oath_shards_before` / `oath_shards_after` (non-negative ints, honest `before+amount==after`), `reason` (lower_snake
+  in the `OATH_SHARDS_AWARDED_REASONS` allowlist — v0's only reason is `run_completed_eligible`), `profile_id`. ZERO
+  roll/draw_index (a recorded amount — the `economy_changed` deterministic shell).
+- AC4 warning: the existing `RunSummary` fields (`meta_progression_eligible == false` + `is_manual_seed == true`) ARE
+  the replay/practice warning DATA — NO redundant `replay_practice_warning` field added; `RunSummary` UNTOUCHED (its
+  exact-key pin stays green). `[Decision]` — do NOT over-engineer.
+- AC5 recovery: `write_profile` returns a STRUCTURED error on any failure (never a silent swallow/crash). "Does not
+  silently lose current run summary data" is STRUCTURAL: `RunSummary` is a DERIVED read INDEPENDENT of the profile
+  file, so a failed profile write leaves the summary fully readable (proven by test).
+- 8.3 feeds the `RunSummary.profile_meta.oath_shards_earned` `[Decision]`: NOT wired this story — `RunSummary` stays a
+  pure read reporting 0 (the summary reads NO profile; wiring it to the awarded amount would couple the summary to the
+  profile, which 8.6/8.7 can decide when the outpost renders the summary + profile together). The award result
+  metadata + the `oath_shards_awarded` event ARE the award-amount source of truth for a caller.
+
+**Deferred to the owning stories (8.3 ships only the AWARD + the profile save + the award-path save-load tests):**
+- **[Defer] (8.4) Echoes / Seal-Fragments / class-mastery / unlock-progress DOMAIN content + profile-merge** — 8.3
+  provides EMPTY `class_mastery` / `echoes` / `unlock_progress` HOMES in `ProfileSnapshot` (so 8.4 merges WITHOUT a
+  migration); it authors NO Echo/Seal-Fragment/mastery/unlock content, merges NOTHING into them, and decides NO
+  unlock-threshold rules. The `RunSummary` `echoes_discovered`/`unlock_progress` stay not-yet-supported placeholders.
+- **[Defer] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + the first-death flag
+  delivery — 8.3 reserves an EMPTY `first_death_recorded: bool` HOME in `ProfileSnapshot` (so 8.5 merges without a
+  migration) but does NOT track/set the flag, deliver narrative, or build a narrative surface.
+- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
+  descent / the fresh-profile recovery UI** — 8.3 produces the profile DATA + the award + the structured save-error;
+  it builds NO outpost `.tscn`, NO `OutpostViewModel`, NO unlock-spend UI, NO recovery screen (it makes the failure
+  RECOVERABLE via structured results; 8.6 renders the recovery). UI-scene-last.
+- **[Defer] (8.7) The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
+  versioned profile + repository + its OWN migration reject path + round-trip tests for the AWARD; 8.7 owns the
+  comprehensive matrix (Oath Shards / Echoes / Seal Fragments / unlock progress / first-death flags / class unlock
+  states restore correctly; the migration matrix; "no scene nodes serialized").
+- **[Defer] (later meta-spend story, 8.6+/Epic 9) The unlock-SPEND / meta-power APPLICATION** — turning Oath Shards
+  into an actual variety/option unlock (or a capped onboarding stat). 8.3 AWARDS the currency (the cross-run total
+  rises); it does NOT SPEND it, apply any stat/passive/class from it, or build the unlock tree. AC3 is about the
+  AWARD being capped/sparse/not-a-stat-ladder, not about a spend system.
+
+**Remain DEFERRED (out of 8.3's scope — knowingly NOT reopened; NOT award concerns):**
+- **[Defer] The LIVE tactical-play loop / real combat-death SOURCE / auto-wiring the award into `run_to_completion`**
+  — combat auto-resolves to success; the award is CALLER-DRIVEN behind `resolve_run_end` (a test today; the later
+  HUD/run-flow story tomorrow). 8.3 does NOT build the live loop, does NOT auto-wire the award into the auto-resolve
+  loop, and does not perturb the interrupted==uninterrupted determinism / v0 auto-resolve posture.
+- **[Note] The two 8.1 `[Review][Defer]` items are UNTOUCHED (not award concerns):** the
+  `CompleteRunCommand._resolve_completed` two-step transition atomicity + the `RunEndOutcome.for_failed`/
+  `for_completed` allowlist-validation are command/DTO-validation concerns. 8.3 READS the terminal run + `RunSummary`
+  + the eligibility (all already-validated); it modifies neither `CompleteRunCommand` nor `RunEndOutcome`, so neither
+  defer is in scope. NO NEW `[Review][Defer]` arises from 8.3's dev (record any at review time).
+- **[Note] The int64-overflow economy ceiling + the constant-8-tier route-depth pacing (Epic 10) are UNTOUCHED** —
+  8.3's `oath_shards` is a small bounded capped int (AC3's `MAX_AWARD` keeps it bounded); it does not touch the
+  economy ceiling or route pacing.
+
 ## Tracked from: dev of 8-2-run-summary-snapshot (2026-07-01)
 
 Story 8.2 (FR60 — the run summary; FR28 boundary hygiene at the SUMMARY level) is the "review what happened" half

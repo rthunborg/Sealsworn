@@ -36,7 +36,8 @@ enum Type {
 	CURSE_APPLIED,
 	EVENT_OFFERED,
 	EVENT_RESOLVED,
-	RUN_FAILED
+	RUN_FAILED,
+	OATH_SHARDS_AWARDED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -72,6 +73,7 @@ const EVENT_ID_CURSE_APPLIED := &"curse_applied"
 const EVENT_ID_EVENT_OFFERED := &"event_offered"
 const EVENT_ID_EVENT_RESOLVED := &"event_resolved"
 const EVENT_ID_RUN_FAILED := &"run_failed"
+const EVENT_ID_OATH_SHARDS_AWARDED := &"oath_shards_awarded"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -152,6 +154,16 @@ const RUN_FAILED_CAUSES: Array[StringName] = [
 # the actual navigation — NOT a scene transition here. lower_snake. The only valid v0 run-end destination is the
 # outpost (FR32 — death/completion returns to the last outpost).
 const RUN_END_DESTINATION_OUTPOST := &"outpost"
+
+# Story 8.3 (AC1/AC2): the allowlisted meta-award REASON markers the oath_shards_awarded payload may carry (lower_snake).
+# The FIRST persistent CROSS-RUN award event records WHY the award fired. v0 has a single reason (an eligible completed
+# run awards the Oath-Shard currency); the allowlist is future-proofed as a set (a later story MAY add a consolation /
+# milestone reason) and pinned by test. The validator asserts the reason is in this set (mirroring the RUN_FAILED_CAUSES
+# allowlist-const pattern). AwardMetaProgressCommand references it so the command + the validator stay in lockstep on the
+# reason vocabulary. A manual-seed run awards NOTHING (no event at all — FR28/AC4), so there is NO ineligible reason here.
+const OATH_SHARDS_AWARDED_REASONS: Array[StringName] = [
+	&"run_completed_eligible"
+]
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -316,6 +328,27 @@ static func run_failed(sequence_id: int, payload: Dictionary = {}) -> DomainEven
 	payload_value["cleared_node_count"] = int(payload.get("cleared_node_count", 0))
 	payload_value["next_destination"] = String(payload.get("next_destination", String(RUN_END_DESTINATION_OUTPOST)))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.RUN_FAILED, sequence_id, &"", payload_value)
+
+
+static func oath_shards_awarded(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 8.3, AC1/AC2): the FIRST persistent CROSS-RUN meta-award record — emitted by
+	# AwardMetaProgressCommand AFTER an ELIGIBLE run's Oath-Shard award is applied to the profile (behind the 8.1
+	# idempotency guard + the FR28 eligibility gate). It is the run_failed/run_completed counterpart for the "receive
+	# eligible progress" half of Epic 8. NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays
+	# empty). `amount` is THIS run's awarded amount (a non-negative bounded int — the capped/sparse grant; a manual-seed
+	# run awards NOTHING, so no event fires for it — FR28/AC4). oath_shards_before/oath_shards_after are the profile's
+	# cross-run total BEFORE/AFTER the award (non-negative integral; the honest-record arithmetic before+amount==after is
+	# validator-enforced). `reason` is a lower_snake marker in the OATH_SHARDS_AWARDED_REASONS allowlist (WHY the award
+	# fired). `profile_id` is the profile the award landed on (a plain string). UNLIKE passive_destroyed there is NO
+	# roll/draw_index — the award is a RECORDED deterministic amount, not a roll (the economy_changed deterministic shell;
+	# the calculation draws ZERO RNG). No int64 encoding (bounded counts). Normalize/duplicate the payload defensively.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["amount"] = int(payload.get("amount", 0))
+	payload_value["oath_shards_before"] = int(payload.get("oath_shards_before", 0))
+	payload_value["oath_shards_after"] = int(payload.get("oath_shards_after", 0))
+	payload_value["reason"] = String(payload.get("reason", ""))
+	payload_value["profile_id"] = String(payload.get("profile_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.OATH_SHARDS_AWARDED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -865,6 +898,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_run_completed_payload(payload_value)
 		Type.RUN_FAILED:
 			return _validate_run_failed_payload(payload_value)
+		Type.OATH_SHARDS_AWARDED:
+			return _validate_oath_shards_awarded_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1069,6 +1104,32 @@ static func _validate_run_failed_payload(payload_value: Dictionary) -> ActionRes
 	if not _has_lower_snake_payload(payload_value, &"next_destination") \
 			or String(payload_value.get("next_destination")) != String(RUN_END_DESTINATION_OUTPOST):
 		return _error_result(&"invalid_event_payload", {"field": "next_destination"})
+	return _ok_result()
+
+
+static func _validate_oath_shards_awarded_payload(payload_value: Dictionary) -> ActionResult:
+	# The FIRST cross-run meta-award record (Story 8.3, AC1/AC2). `reason` is lower_snake AND in the
+	# OATH_SHARDS_AWARDED_REASONS allowlist (WHY the award fired; the value set is pinned to match by test — mirroring
+	# _validate_run_failed_payload's cause allowlist). amount / oath_shards_before / oath_shards_after are NON-NEGATIVE
+	# integral (an award amount + a cross-run currency total are never negative). profile_id is a plain string (an
+	# empty-tolerant identifier; the _has_string_payload node_id-tolerance precedent). UNLIKE passive_destroyed there is
+	# NO roll/draw_index (a recorded deterministic amount, not a roll — the economy_changed shell). The honest-record
+	# arithmetic before + amount == after is enforced (a fabricated/hand-edited payload whose after diverges from
+	# before + amount is rejected — the 7.1 economy_changed / 7.2 curse_applied precedent).
+	if not _has_lower_snake_payload(payload_value, &"reason") \
+			or not OATH_SHARDS_AWARDED_REASONS.has(StringName(String(payload_value.get("reason")))):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	if not _has_nonnegative_integral_payload(payload_value, &"amount"):
+		return _error_result(&"invalid_event_payload", {"field": "amount"})
+	if not _has_nonnegative_integral_payload(payload_value, &"oath_shards_before"):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"oath_shards_after"):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
+	if not _has_string_payload(payload_value, &"profile_id"):
+		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
+	# Arithmetic consistency (the record must be honest): before + amount == after.
+	if int(payload_value.get("oath_shards_before")) + int(payload_value.get("amount")) != int(payload_value.get("oath_shards_after")):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
 	return _ok_result()
 
 
@@ -1873,6 +1934,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_EVENT_RESOLVED
 		Type.RUN_FAILED:
 			return EVENT_ID_RUN_FAILED
+		Type.OATH_SHARDS_AWARDED:
+			return EVENT_ID_OATH_SHARDS_AWARDED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -1943,6 +2006,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.EVENT_RESOLVED
 		EVENT_ID_RUN_FAILED:
 			return Type.RUN_FAILED
+		EVENT_ID_OATH_SHARDS_AWARDED:
+			return Type.OATH_SHARDS_AWARDED
 		_:
 			return Type.UNKNOWN
 
