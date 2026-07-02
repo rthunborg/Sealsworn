@@ -215,7 +215,7 @@ static func build(run: RunState, events: Array = []) -> RunSummary:
 				# passive_consumed -> payload.passive_id (deterministic; no draw provenance).
 				passives_consumed.append(String(event_payload.get("passive_id", "")))
 			DomainEvent.Type.PASSIVE_DESTROYED:
-				# passive_destroyed -> payload.passive_id (+ the rolled outcome_category; carried for an honest readout).
+				# passive_destroyed -> payload.passive_id (the identifying id; a flat id list mirroring passives_consumed).
 				passives_destroyed.append(String(event_payload.get("passive_id", "")))
 			DomainEvent.Type.ITEM_GAINED:
 				# item_gained -> a backpack pickup: payload.item_id + payload.category (∈ ITEM_GAINED_CATEGORIES). This is

@@ -103,6 +103,29 @@ calls recorded in the story file's `### Review Findings` section), not deferred 
 - (Low, Decision) `_derive_outcome_or_cause` last-wins on multiple terminal events; consider first-match/`break`.
 - (Low, Decision) member field `seed` shadows the global `seed()` RNG builtin; consider `root_seed` for parity.
 
+Round 2 code review (2026-07-01; auto-gds secondary review delegate, Opus 4.8 — independent second-model
+re-review). Verdict: Approve; Critical 0 / High 0 / Medium 0 / Low 1. The three Round-1 `[Review][Decision]`
+resolutions were verified CORRECT + adequately tested (notable_loot single-sourced from `item_gained` with no
+backpack-item leakage; `_derive_outcome_or_cause` first-match `break`; member `seed` renamed to `root_seed` with
+the pinned dict key `"seed"` unchanged). Full suite green (143 PASS / 0 FAIL). **NO `[Review][Defer]` items —
+this round deferred NOTHING new to this ledger.** The single new finding is a `[Review][Decision]` (recorded in the
+story file, not here): a STALE COMMENT on the `passive_destroyed` arm (`run_summary.gd:218` claims the
+`outcome_category` is carried, but line 219 appends only `passive_id`) — a comment-vs-code accuracy nit, not a
+defect or an AC violation (Task 4 made `outcome_category` optional). Recommended low-risk resolution: trim the
+comment to match the flat-id-list code.
+
+Round 3 code review (2026-07-02; auto-gds secondary review delegate, Opus 4.8 — the FINAL automatic round under the
+three-round cap; an independent alternate-model convergence re-review). Verdict: Approve; Critical 0 / High 0 /
+Medium 0 / Low 1. The whole story diff was re-derived independently (merge-base `73f6a05`; two NEW files only, no
+existing production file modified) and both new files + the real source dependencies were re-read from source; the
+three Round-1 Decision resolutions were re-confirmed correct from the actual `domain_event.gd`/`run_state.gd`/etc.
+APIs (not from prior-round claims), and the full headless suite was re-run locally (green, 0 FAIL, false-PASS guard
+clean beyond the documented negatives). **NO `[Review][Defer]` items — this round deferred NOTHING new to this
+ledger.** The only open item is the Round-2 `[Review][Decision]` stale-comment nit (carried forward unchanged — the
+fix delegate did not touch it), which stays a human triage item recorded in the story file (apply the one-line
+comment trim, or waive). Convergence reached: 0 Critical/High/Medium open across all three rounds; the sole
+remaining Low is cosmetic with zero functional/AC/test impact and does not gate the story.
+
 ## Tracked from: dev of 8-1-run-completion-and-return-to-outpost-flow (2026-07-01)
 
 Story 8.1 (FR32 — "MVP loss condition must be hero death ... followed by return to the last outpost") OPENS

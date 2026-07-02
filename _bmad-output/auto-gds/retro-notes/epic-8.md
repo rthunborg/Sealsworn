@@ -10,3 +10,4 @@ genuinely reusable signal; routine success recaps are omitted.
 
 ## Story 8-2-run-summary-snapshot
 - [Phase 7 — code review] `RunSummary.notable_loot` is single-sourced from `item_gained` events ONLY — all `reward_resolved` events are excluded (REWARD_CATEGORIES = backpack ∪ {gold, passive}; gold/passive were already excluded, backpack now too). A reward→backpack pickup emits both `reward_resolved` and a paired `item_gained`, so 8.6 UI can render `notable_loot` directly WITHOUT further dedup, and 8.3 loot reads see each gained item once.
+- [Phase 7 — code review] The review-round-guard counts rounds via standalone bold `**Round N of 3**` headers in the story file; round 3's header initially wrapped "of 3" inside a longer bold run, which would have defeated the counter and silently permitted a 4th automatic round. Keep the round header as its own bold token when appending review entries.
