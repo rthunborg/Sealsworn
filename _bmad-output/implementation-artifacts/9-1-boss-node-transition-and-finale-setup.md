@@ -4,7 +4,7 @@ baseline_commit: b20b103ed9b4d33a416ad70eeb626e868cffae3a
 
 # Story 9.1: Boss Node Transition and Finale Setup
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
