@@ -43,10 +43,8 @@ DTO (`godot/scripts/run/first_death_narrative_beat.gd`, `FirstDeathNarrativeBeat
   `FirstDeathNarrativeBeat` DTO (keyed by `line_id` via `LINE_BY_ID`), centralized for a future localization pass.
 
 **Deferred to the owning stories (8.5 ships only the FLAG + the event + the beat DTO + the tests):**
-- **[Defer] (8.6) The OUTPOST first-death BEAT RENDER + DISMISS** — 8.5 produces the beat DATA (`FirstDeathNarrativeBeat`) + the
-  `first_death_recorded` event; 8.6 renders the line in the outpost scene + wires the skip/dismiss control (UI-scene-last). No
-  `.tscn` / `Control` / `SceneManager` transition / outpost surface built. The skip is ALREADY a structural no-op (the DTO is
-  read-only; the flag is set independently of display), so 8.6's dismiss is pure presentation.
+- **[Resolved 8.6 (view-model half); scene render carried forward] The OUTPOST first-death BEAT RENDER + DISMISS** — 8.5 produced the beat DATA (`FirstDeathNarrativeBeat`) + the
+  `first_death_recorded` event; **8.6 renders the beat as the `OutpostViewModel.first_death_beat` sub-dict + provides the dismiss (a pure presentation no-op — NO dismiss command; a build+read+dismiss leaves the profile + run byte-identical, and the beat is OFF THE CRITICAL PATH — a null/absent beat never blocks the outpost surface).** The actual `.tscn` / `Control` render of the line + the skip button stays deferred to a later HUD/boot-flow story (UI-scene-last). The skip is ALREADY a structural no-op (the DTO is read-only; the flag is set independently of display).
 - **[Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the auto-wire** — v0 has NO live combat death source
   (combat auto-resolves to success). 8.5 ships the command driven by a caller-/test-supplied terminal FAILED `RunState` (exactly
   as the 8.3 award / 8.4 merge consume caller-supplied run/events); it is CALLER-DRIVEN behind the run-end seam and is NOT
@@ -108,8 +106,8 @@ the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.co
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded`
   home untouched. 8.5 SETS it via `RecordFirstDeathCommand` (behind the run-end seam, death-only gate, once-only latch;
   merge-without-migration at `SCHEMA_VERSION == 1`) + delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produces the profile DATA + the
-  summary-report + the events; 8.6 renders them (UI-scene-last). No `.tscn` / `OutpostViewModel` / unlock-spend UI built.
+- **[Resolved 8.6 (view-model half); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produced the profile DATA + the
+  summary-report + the events; **8.6 built the `OutpostViewModel` DATA contract (the view-model half — the profile-meta readout + the run-summary + the class roster + the named-space metadata + the start-run request seam + the recovery-STATE representation).** The `.tscn` scene render + the unlock-SPEND UI stay deferred (the `.tscn` to a later HUD/boot-flow story per UI-scene-last; the unlock-spend tree to a later meta-spend story / Epic 9 — see the "unlock-SPEND / meta-power APPLICATION" fence).
 - **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
   no-migration proof (`test_profile_snapshot.gd::_populated_8_4_homes_round_trip_without_a_migration`); 8.7 owns the full
   matrix (Echoes / Seal Fragments / unlock progress / class-mastery restore + the migration matrix).
@@ -262,10 +260,9 @@ ZERO RNG.
   migration) but did NOT track/set the flag, deliver narrative, or build a narrative surface. 8.5 SETS the flag
   (`RecordFirstDeathCommand`), delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO (the prose lives on the DTO
   by-id; the event carries `line_id`, not the raw prose), and adds the `first_death_recorded` SYSTEM event.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
-  descent / the fresh-profile recovery UI** — 8.3 produces the profile DATA + the award + the structured save-error;
-  it builds NO outpost `.tscn`, NO `OutpostViewModel`, NO unlock-spend UI, NO recovery screen (it makes the failure
-  RECOVERABLE via structured results; 8.6 renders the recovery). UI-scene-last.
+- **[Resolved 8.6 (view-model + start-request + recovery-STATE halves); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
+  descent / the fresh-profile recovery UI** — 8.3 produced the profile DATA + the award + the structured save-error;
+  **8.6 built the `OutpostViewModel` (the meta DISPLAY view-model half), the start-another-descent request seam (`start_run_request(...)` → a fresh `RunOrchestrator.start`), and the fresh-profile / recovery-STATE representation (`profile_not_found` → `ProfileSnapshot.fresh()`; `unsupported_profile_schema` / `profile_save_*` → a structured `recovery_state`).** The unlock-SPEND tree stays deferred (a later meta-spend story / Epic 9) and the outpost `.tscn` / recovery SCREEN stay deferred (a later HUD/boot-flow story; UI-scene-last).
 - **[Defer] (8.7) The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
   versioned profile + repository + its OWN migration reject path + round-trip tests for the AWARD; 8.7 owns the
   comprehensive matrix (Oath Shards / Echoes / Seal Fragments / unlock progress / first-death flags / class unlock
@@ -353,10 +350,8 @@ no existing production file modified).
   REPORTS `content_unlock.echoes_discovered` / `content_unlock.unlock_progress` as empty not-yet-supported
   placeholders (no domain source exists yet, named in `not_yet_supported`); it authors NO Echo/Seal-Fragment/unlock
   content, merges NOTHING into a profile, and decides NO unlock-threshold rules.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the run-summary DISPLAY / named spaces / start-another-
-  descent** — 8.2 produces the summary DATA (a scene-free DTO); it builds NO outpost `.tscn`, NO `OutpostViewModel`,
-  NO summary UI. UI-scene-last. The `RunSummary` DTO (incl. the `not_yet_supported` limitation signal) is what 8.6
-  renders — including an honest limitation note.
+- **[Resolved 8.6 (view-model + named-space + start-request halves); scene render carried forward] The OUTPOST MENU scene / view-model / the run-summary DISPLAY / named spaces / start-another-
+  descent** — 8.2 produced the summary DATA (a scene-free DTO); **8.6 built the `OutpostViewModel` (which renders `RunSummary.to_dictionary()` DIRECTLY as its `run_summary` sub-dict — `notable_loot` with NO second dedup, the `not_yet_supported` honest limitation note surfaced), the named-space metadata (the four GDD spaces with stable ids + deferred markers), and the start-another-descent request seam.** The outpost `.tscn` / summary UI stays deferred (a later HUD/boot-flow story; UI-scene-last).
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
   skippable delivery — 8.2 aggregates the run-end facts; it tracked NO first-death flag and delivered NO narrative.
   Narrative stays off the summary CRITICAL path (retro §7 risk 2). 8.5 KEPT it off the critical path: `RunSummary`
@@ -456,9 +451,8 @@ passed.", exit 0, 142 PASS / 0 FAIL).
   READ-ONLY for the flow signal ONLY. The AC3 idempotency guard (`run_already_terminal`, no second event, no
   mutation) is the SEAM 8.3's awarding must run BEHIND — a re-completion must never re-award. This is the
   project's FIRST persistent cross-run state; plan the meta-save shape + migration coverage early (retro T2).
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produces
-  the DOMAIN flow fact (`next_destination == outpost`); it builds no outpost `.tscn`, no `OutpostViewModel`, no
-  navigation. UI-scene-last. A later boot/app-flow layer reads the flow signal to perform the actual nav.
+- **[Resolved 8.6 (view-model + named-space + start-request halves); navigation carried forward] The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produced
+  the DOMAIN flow fact (`next_destination == outpost`); **8.6 built the `OutpostViewModel` DATA the navigation lands on + the named-space metadata + the start-another-descent request seam.** The actual NAVIGATION (a boot/app-flow layer reading `RunEndOutcome.next_destination` to transition to the outpost `.tscn`) stays deferred to a later HUD/boot-flow story (UI-scene-last).
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
   8.1 emits `run_failed`; it tracked no first-death flag and delivered no narrative. Keep narrative off the run-end CRITICAL
   path (retro §7 risk 2). 8.5 records the flag behind the SAME run-end seam (a sibling command, caller-driven, no auto-wire)
