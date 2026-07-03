@@ -1,3 +1,29 @@
+## Deferred from: code review of 8-6-outpost-menu-and-start-another-descent (2026-07-03)
+
+Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 1 Low. Full headless suite green (152 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean). Diff is EXACTLY two new files (`godot/scripts/ui/view_models/outpost_view_model.gd` + `godot/tests/unit/ui/test_outpost_view_model.gd`).
+
+The review requested **NO code changes** and introduced **NO new `[Review][Defer]`** — the implementation is complete and every legitimate forward defer was already recorded by the dev of 8.1/8.3/8.4/8.5 (and re-marked `[Resolved 8.6 (view-model half)]` for the four in-scope entries). Re-pointed here for review traceability (NOT new work — these are the pre-existing carried-forward fences, unchanged):
+
+- **[Review][Defer] (later HUD/boot-flow story) The OUTPOST `.tscn` / `Control` / `SceneManager` transition + the `RunEndOutcome.next_destination` navigation** — 8.6 ships the `OutpostViewModel` DATA contract + the start-run request seam + the named-space metadata + the recovery-STATE representation (view-model half); the actual outpost SCREEN render + the button wiring + the flow-signal navigation stay deferred (UI-scene-last). See the pre-existing `OUTPOST MENU scene / view-model` entries below.
+- **[Review][Defer] (later meta-spend story / Epic 9) The unlock-SPEND tree / meta-power APPLICATION** — 8.6 DISPLAYS Oath Shards / Echoes / unlock progress + names the four spaces, but spends/applies nothing. See the pre-existing `unlock-SPEND / meta-power APPLICATION` entry below.
+- **[Review][Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.6 CONSUMES the existing `ProfileRepository` structured recovery (`profile_not_found` → `fresh()`; `unsupported_profile_schema` → recovery state) for AC4; 8.7 owns the full matrix. See the pre-existing `COMPREHENSIVE save-load / migration matrix` entry below.
+- **[Review][Defer] (8.7) The Oath-Shard EARNED-count summary wiring** — the outpost reads the AWARDED total from `profile.oath_shards`; `RunSummary.profile_meta.oath_shards_earned` stays 0/not-yet-supported (a bigger coupling decision). See the pre-existing `Oath-Shard EARNED-count summary wiring` entry below.
+- **[Review][Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the run-end auto-wire** — 8.6 wires no run-end caller; the live death source + auto-wire stay deferred. See the pre-existing `LIVE combat-death CALL SITE` entry below.
+
+**Open `[Review][Decision]` (HUMAN CALL — not a defer, tracked in the story file's Round 1 Review Findings):** the `start_run_request(...)` result field `is_class_selectable` carries "is-STARTABLE" semantics (an empty class id → `true`), not literal "is-selectable." Behavior is correct + matches the authoritative `RunStartCommand` gate + is code-documented; renaming would break the pinned `START_REQUEST_KEYS` contract for zero behavioral gain, so no change this round. The later HUD/boot-flow story that consumes the request decides whether to keep the (documented) name or rename to `is_startable` when the button wiring lands. Does not create carry-forward work by itself. **[Resolved 2026-07-03 — human chose rename-now; the request-result key is now `is_startable`. Round 2 re-review verified the rename complete + the suite green.]**
+
+Round 2 adversarial SECONDARY re-review (auto-gds alternate-model delegate, Opus 4.8 [1m], 2026-07-03). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 2 Low. Full headless suite green (152 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean). Verified the Round-1 `is_startable` rename correct + complete against source; full-diff hunt for new findings.
+
+The re-review requested **NO code changes** and introduced **NO new `[Review][Defer]`** — the implementation is complete and every legitimate forward defer was already recorded above (Round 1) + by the dev of 8.1/8.3/8.4/8.5. The two new Round-2 findings are **`[Review][Decision]`s (HUMAN CALLS about the DEFERRED future HUD/boot-flow wiring — not carry-forward work in themselves; tracked in the story file's Round 2 Review Findings)**:
+- **[Review][Decision] (later HUD/boot-flow story)** `for_recovery(...)` zeroes the profile — correct for a profile-LOAD failure (`unsupported_profile_schema` / `profile_not_found`) but WRONG for a `profile_save_*` WRITE-failure display (the profile was read OK; only the write failed, so 0-shard display is misleading). MITIGATION: the `_init` constructor already supports the correct representation (loaded profile + a `{has_recovery:true, code, is_recoverable:true}` recovery_state); the write-failure caller wiring is itself deferred (no live call site in 8.6) and the surface has zero consumers today, so nothing shipped is wrong (AC4 satisfied). The future recovery-caller wiring MUST use the `_init` path with the loaded profile for the write-failure code. The `profile + recovery_state` combination is currently untested — add a test when that path is wired. **[RESOLVED 2026-07-03 — fixed in-story via human 'fix both' direction]** — extended `for_recovery(recovery_code, loaded_profile = null, ...)`: a supplied `loaded_profile` (the write-failure case) shows the real profile totals behind the retry banner (`has_profile == true`), a null one (the load-failure case) still falls back to `ProfileSnapshot.fresh()`; the `recovery_state` contract + pinned `DICTIONARY_KEYS` unchanged; the previously-untested loaded-profile + recovery combination is now covered by `_write_failure_recovery_with_loaded_profile_shows_real_totals()` + `_load_failure_recovery_still_shows_the_fresh_profile()`. Not carried forward.
+- **[Review][Decision] (later HUD/boot-flow story)** `selectable_class_ids` has two representations — the typed accessor `selectable_class_ids()` returns `Array[StringName]` while the `to_dictionary()` key returns `Array[String]` (deliberate serialization intent, documented). Harmless today; a latent consumer trap. The future HUD standardizes on the dict (String) form for serialized reads or converges the element type. **[RESOLVED 2026-07-03 — fixed in-story via human 'fix both' direction]** — standardized on `Array[String]` across both surfaces: `OutpostViewModel.selectable_class_ids()` now returns `Array[String]` (converting from the delegated `HeroSelectViewModel` StringName partition at the boundary, matching the codebase's JSON-safe-plain-String dict-projection idiom), and `to_dictionary()` calls it directly (the redundant `_selectable_class_ids_as_strings()` helper removed) so both surfaces agree element-for-element; pinned by `_selectable_class_ids_are_strings_on_both_surfaces()`. Not carried forward.
+
+Round 3 adversarial TERTIARY re-review — the FINAL automatic round under the three-round cap (auto-gds alternate-model delegate, Opus 4.8 [1m], 2026-07-03). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 1 Low (informational). Full headless suite green (152 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean; diff still exactly the two files). Verified BOTH Round-2 fixes (commit `24501c0` — the `for_recovery(recovery_code, loaded_profile = null)` write-failure hardening + the `selectable_class_ids` `Array[String]` standardization) correct + complete against source, AND independently re-derived every upstream contract (`ProfileSnapshot`/`ProfileRepository`/`RunSummary`/`FirstDeathNarrativeBeat`/`RunStartCommand`/`RunState.new_run`/`RunOrchestrator.start`/`ClassRepository` baseline) and swept the whole diff for anything both prior rounds missed.
+
+The re-review requested **NO code changes** and introduced **NO new `[Review][Defer]`** — the implementation is complete and every legitimate forward defer was already recorded above (Rounds 1-2) + by the dev of 8.1/8.3/8.4/8.5. The single new Round-3 finding is a **`[Review][Decision]` (a test-thoroughness nicety on a deferred/zero-consumer surface — NOT carry-forward work in itself; tracked in the story file's Round 3 Review Findings)**: the `to_dictionary()` mutation-independence test does not explicitly mutate the returned `recovery_state`/`run_summary`/`first_death_beat` sub-dicts, though those three are STRUCTURALLY leak-safe (deep-copied / freshly built by their own `to_dictionary()` — no defect, no shipped-code gap). A future test-hardening pass MAY broaden the assertions when the outpost surface gains a live consumer. Not carried forward.
+
+---
+
 ## Deferred from: code review of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
 
 Round 1 adversarial code review (auto-gds delegate). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 0 Low code defects; full headless suite green (151 PASS, 0 `^FAIL`, false-PASS guard clean). The review requested **NO code changes** and introduced **NO new deferral** — the implementation is complete and every legitimate forward defer was already recorded by the dev in the "Tracked from: dev of 8-5" section immediately below. Re-pointed here for review traceability:
@@ -43,10 +69,8 @@ DTO (`godot/scripts/run/first_death_narrative_beat.gd`, `FirstDeathNarrativeBeat
   `FirstDeathNarrativeBeat` DTO (keyed by `line_id` via `LINE_BY_ID`), centralized for a future localization pass.
 
 **Deferred to the owning stories (8.5 ships only the FLAG + the event + the beat DTO + the tests):**
-- **[Defer] (8.6) The OUTPOST first-death BEAT RENDER + DISMISS** — 8.5 produces the beat DATA (`FirstDeathNarrativeBeat`) + the
-  `first_death_recorded` event; 8.6 renders the line in the outpost scene + wires the skip/dismiss control (UI-scene-last). No
-  `.tscn` / `Control` / `SceneManager` transition / outpost surface built. The skip is ALREADY a structural no-op (the DTO is
-  read-only; the flag is set independently of display), so 8.6's dismiss is pure presentation.
+- **[Resolved 8.6 (view-model half); scene render carried forward] The OUTPOST first-death BEAT RENDER + DISMISS** — 8.5 produced the beat DATA (`FirstDeathNarrativeBeat`) + the
+  `first_death_recorded` event; **8.6 renders the beat as the `OutpostViewModel.first_death_beat` sub-dict + provides the dismiss (a pure presentation no-op — NO dismiss command; a build+read+dismiss leaves the profile + run byte-identical, and the beat is OFF THE CRITICAL PATH — a null/absent beat never blocks the outpost surface).** The actual `.tscn` / `Control` render of the line + the skip button stays deferred to a later HUD/boot-flow story (UI-scene-last). The skip is ALREADY a structural no-op (the DTO is read-only; the flag is set independently of display).
 - **[Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the auto-wire** — v0 has NO live combat death source
   (combat auto-resolves to success). 8.5 ships the command driven by a caller-/test-supplied terminal FAILED `RunState` (exactly
   as the 8.3 award / 8.4 merge consume caller-supplied run/events); it is CALLER-DRIVEN behind the run-end seam and is NOT
@@ -108,8 +132,8 @@ the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.co
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded`
   home untouched. 8.5 SETS it via `RecordFirstDeathCommand` (behind the run-end seam, death-only gate, once-only latch;
   merge-without-migration at `SCHEMA_VERSION == 1`) + delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produces the profile DATA + the
-  summary-report + the events; 8.6 renders them (UI-scene-last). No `.tscn` / `OutpostViewModel` / unlock-spend UI built.
+- **[Resolved 8.6 (view-model half); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produced the profile DATA + the
+  summary-report + the events; **8.6 built the `OutpostViewModel` DATA contract (the view-model half — the profile-meta readout + the run-summary + the class roster + the named-space metadata + the start-run request seam + the recovery-STATE representation).** The `.tscn` scene render + the unlock-SPEND UI stay deferred (the `.tscn` to a later HUD/boot-flow story per UI-scene-last; the unlock-spend tree to a later meta-spend story / Epic 9 — see the "unlock-SPEND / meta-power APPLICATION" fence).
 - **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
   no-migration proof (`test_profile_snapshot.gd::_populated_8_4_homes_round_trip_without_a_migration`); 8.7 owns the full
   matrix (Echoes / Seal Fragments / unlock progress / class-mastery restore + the migration matrix).
@@ -262,10 +286,9 @@ ZERO RNG.
   migration) but did NOT track/set the flag, deliver narrative, or build a narrative surface. 8.5 SETS the flag
   (`RecordFirstDeathCommand`), delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO (the prose lives on the DTO
   by-id; the event carries `line_id`, not the raw prose), and adds the `first_death_recorded` SYSTEM event.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
-  descent / the fresh-profile recovery UI** — 8.3 produces the profile DATA + the award + the structured save-error;
-  it builds NO outpost `.tscn`, NO `OutpostViewModel`, NO unlock-spend UI, NO recovery screen (it makes the failure
-  RECOVERABLE via structured results; 8.6 renders the recovery). UI-scene-last.
+- **[Resolved 8.6 (view-model + start-request + recovery-STATE halves); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
+  descent / the fresh-profile recovery UI** — 8.3 produced the profile DATA + the award + the structured save-error;
+  **8.6 built the `OutpostViewModel` (the meta DISPLAY view-model half), the start-another-descent request seam (`start_run_request(...)` → a fresh `RunOrchestrator.start`), and the fresh-profile / recovery-STATE representation (`profile_not_found` → `ProfileSnapshot.fresh()`; `unsupported_profile_schema` / `profile_save_*` → a structured `recovery_state`).** The unlock-SPEND tree stays deferred (a later meta-spend story / Epic 9) and the outpost `.tscn` / recovery SCREEN stay deferred (a later HUD/boot-flow story; UI-scene-last).
 - **[Defer] (8.7) The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
   versioned profile + repository + its OWN migration reject path + round-trip tests for the AWARD; 8.7 owns the
   comprehensive matrix (Oath Shards / Echoes / Seal Fragments / unlock progress / first-death flags / class unlock
@@ -353,10 +376,8 @@ no existing production file modified).
   REPORTS `content_unlock.echoes_discovered` / `content_unlock.unlock_progress` as empty not-yet-supported
   placeholders (no domain source exists yet, named in `not_yet_supported`); it authors NO Echo/Seal-Fragment/unlock
   content, merges NOTHING into a profile, and decides NO unlock-threshold rules.
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / the run-summary DISPLAY / named spaces / start-another-
-  descent** — 8.2 produces the summary DATA (a scene-free DTO); it builds NO outpost `.tscn`, NO `OutpostViewModel`,
-  NO summary UI. UI-scene-last. The `RunSummary` DTO (incl. the `not_yet_supported` limitation signal) is what 8.6
-  renders — including an honest limitation note.
+- **[Resolved 8.6 (view-model + named-space + start-request halves); scene render carried forward] The OUTPOST MENU scene / view-model / the run-summary DISPLAY / named spaces / start-another-
+  descent** — 8.2 produced the summary DATA (a scene-free DTO); **8.6 built the `OutpostViewModel` (which renders `RunSummary.to_dictionary()` DIRECTLY as its `run_summary` sub-dict — `notable_loot` with NO second dedup, the `not_yet_supported` honest limitation note surfaced), the named-space metadata (the four GDD spaces with stable ids + deferred markers), and the start-another-descent request seam.** The outpost `.tscn` / summary UI stays deferred (a later HUD/boot-flow story; UI-scene-last).
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
   skippable delivery — 8.2 aggregates the run-end facts; it tracked NO first-death flag and delivered NO narrative.
   Narrative stays off the summary CRITICAL path (retro §7 risk 2). 8.5 KEPT it off the critical path: `RunSummary`
@@ -456,9 +477,8 @@ passed.", exit 0, 142 PASS / 0 FAIL).
   READ-ONLY for the flow signal ONLY. The AC3 idempotency guard (`run_already_terminal`, no second event, no
   mutation) is the SEAM 8.3's awarding must run BEHIND — a re-completion must never re-award. This is the
   project's FIRST persistent cross-run state; plan the meta-save shape + migration coverage early (retro T2).
-- **[Defer] (8.6) The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produces
-  the DOMAIN flow fact (`next_destination == outpost`); it builds no outpost `.tscn`, no `OutpostViewModel`, no
-  navigation. UI-scene-last. A later boot/app-flow layer reads the flow signal to perform the actual nav.
+- **[Resolved 8.6 (view-model + named-space + start-request halves); navigation carried forward] The OUTPOST MENU scene / view-model / named spaces / start-another-descent** — 8.1 produced
+  the DOMAIN flow fact (`next_destination == outpost`); **8.6 built the `OutpostViewModel` DATA the navigation lands on + the named-space metadata + the start-another-descent request seam.** The actual NAVIGATION (a boot/app-flow layer reading `RunEndOutcome.next_destination` to transition to the outpost `.tscn`) stays deferred to a later HUD/boot-flow story (UI-scene-last).
 - **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
   8.1 emits `run_failed`; it tracked no first-death flag and delivered no narrative. Keep narrative off the run-end CRITICAL
   path (retro §7 risk 2). 8.5 records the flag behind the SAME run-end seam (a sibling command, caller-driven, no auto-wire)
