@@ -30,3 +30,4 @@ genuinely reusable signal; routine success recaps are omitted.
 
 ## Story 8-7-meta-and-summary-save-load-tests
 - [Phase 3 — create-story] AC1 "class unlock states restore correctly" is a trap: v0 has NO profile→class-selectability wiring (static `ClassDefinition.lock_state`; `HeroSelectViewModel` reads no profile). Story redefines the AC as "profile `unlock_progress`/`class_mastery` STATE round-trips" — an AC-wording-vs-as-built divergence carried from 8.3/8.4; do not build the deferred meta-spend/apply system.
+- [Phase 5 — dev-story] Whole-dict `to_dictionary()` byte-identity comparison across a JSON boundary FALSE-FAILS on nested int values: JSON decodes ints as floats and Godot's `Dictionary ==` is type-strict on values (`{"warrior": 3} != {"warrior": 3.0}`). Use int-coercion-aware normalization before comparing any JSON-reloaded snapshot carrying a nested int-valued dict.

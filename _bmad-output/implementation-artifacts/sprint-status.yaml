@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-03T12:00:00+00:00
+last_updated: 2026-07-03T14:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -125,7 +125,7 @@ development_status:
   8-4-echoes-seal-fragments-and-unlock-progress: done
   8-5-first-death-line-and-optional-narrative-delivery: done
   8-6-outpost-menu-and-start-another-descent: done
-  8-7-meta-and-summary-save-load-tests: ready-for-dev
+  8-7-meta-and-summary-save-load-tests: review
   epic-8-retrospective: optional
   epic-9: backlog
   9-1-boss-node-transition-and-finale-setup: backlog

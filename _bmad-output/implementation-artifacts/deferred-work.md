@@ -82,10 +82,14 @@ DTO (`godot/scripts/run/first_death_narrative_beat.gd`, `FirstDeathNarrativeBeat
 - **[Defer] (Epic 9, Story 9.4) The first-VICTORY reveal** ("It did not die. It learned the way back." — FR62) — 8.5's death-only
   gate (`run_not_failed`) is the discriminator; the first-VICTORY reveal keys off the OPPOSITE terminal phase (COMPLETED) and is
   Epic 9's finale. 8.5 owns the first-DEATH line only.
-- **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.5 ships its OWN first-death round-trip + the no-migration
+- **[Resolved 8.7] The COMPREHENSIVE save-load / migration matrix** — 8.5 ships its OWN first-death round-trip + the no-migration
   proof (`test_profile_snapshot.gd::_set_first_death_flag_round_trips_without_a_migration` +
   `test_record_first_death_command.gd::_first_death_round_trips_through_the_repository`); 8.7 owns the full matrix (epics.md Story
   8.7 AC1 names FIRST-DEATH FLAGS explicitly, alongside Oath Shards / Echoes / Seal Fragments / unlock progress / class unlocks).
+  **RESOLVED 8.7 (2026-07-03)** — `godot/tests/integration/save/test_meta_summary_save_load.gd` authors the full cross-cutting
+  matrix: a fully-populated profile write→restart→read (all 8.3/8.4/8.5 fields incl. the SET first-death latch), the migration
+  matrix (current-schema round-trip + unsupported-schema reject + legacy lenient parse + no-unintended-progress), and the
+  four-case grant/deny cross-product (each GRANTED case saved+reloaded). The first-death flag round-trips inside that matrix.
 
 ---
 
@@ -134,9 +138,12 @@ the deterministic `profile_progress_merged` SYSTEM event, and the `RunSummary.co
   merge-without-migration at `SCHEMA_VERSION == 1`) + delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO.
 - **[Resolved 8.6 (view-model half); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / meta DISPLAY** — 8.4 produced the profile DATA + the
   summary-report + the events; **8.6 built the `OutpostViewModel` DATA contract (the view-model half — the profile-meta readout + the run-summary + the class roster + the named-space metadata + the start-run request seam + the recovery-STATE representation).** The `.tscn` scene render + the unlock-SPEND UI stay deferred (the `.tscn` to a later HUD/boot-flow story per UI-scene-last; the unlock-spend tree to a later meta-spend story / Epic 9 — see the "unlock-SPEND / meta-power APPLICATION" fence).
-- **[Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
+- **[Resolved 8.7] The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
   no-migration proof (`test_profile_snapshot.gd::_populated_8_4_homes_round_trip_without_a_migration`); 8.7 owns the full
   matrix (Echoes / Seal Fragments / unlock progress / class-mastery restore + the migration matrix).
+  **RESOLVED 8.7 (2026-07-03)** — `test_meta_summary_save_load.gd` restores Echoes / `unlock_progress.seal_fragments` /
+  threshold flags / `class_mastery` (int-coercion aware) in the fully-populated round-trip, and merges + reloads them in the
+  four-case grant/deny matrix (a seal-fragment threshold crossing is evaluated + survives the reload).
 - **[Defer] (8.6/8.7) The Oath-Shard EARNED-count summary wiring** — `RunSummary.profile_meta.oath_shards_earned` STAYS
   0 / not-yet-supported (8.3 deliberately left it a pure read; 8.4 did NOT wire it).
 
@@ -289,10 +296,18 @@ ZERO RNG.
 - **[Resolved 8.6 (view-model + start-request + recovery-STATE halves); scene + unlock-spend carried forward] The OUTPOST MENU scene / view-model / the meta DISPLAY / the unlock-SPEND tree / start-another-
   descent / the fresh-profile recovery UI** — 8.3 produced the profile DATA + the award + the structured save-error;
   **8.6 built the `OutpostViewModel` (the meta DISPLAY view-model half), the start-another-descent request seam (`start_run_request(...)` → a fresh `RunOrchestrator.start`), and the fresh-profile / recovery-STATE representation (`profile_not_found` → `ProfileSnapshot.fresh()`; `unsupported_profile_schema` / `profile_save_*` → a structured `recovery_state`).** The unlock-SPEND tree stays deferred (a later meta-spend story / Epic 9) and the outpost `.tscn` / recovery SCREEN stay deferred (a later HUD/boot-flow story; UI-scene-last).
-- **[Defer] (8.7) The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
+- **[Resolved 8.7] The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
   versioned profile + repository + its OWN migration reject path + round-trip tests for the AWARD; 8.7 owns the
   comprehensive matrix (Oath Shards / Echoes / Seal Fragments / unlock progress / first-death flags / class unlock
   states restore correctly; the migration matrix; "no scene nodes serialized").
+  **RESOLVED 8.7 (2026-07-03)** — this is the CORE of Story 8.7. `godot/tests/integration/save/test_meta_summary_save_load.gd`
+  authors the full matrix over the SHIPPED surfaces (zero production change): AC1 (fully-populated profile round-trip +
+  profile-vs-run-autosave separability + a reloaded-profile→outpost capstone), AC2 (current-schema round-trip + unsupported-
+  schema reject native+through-repo + legacy lenient parse through a real JSON file + no-unintended-progress + `SCHEMA_VERSION`
+  stays 1), AC3 (the four-case grant/deny cross-product each saved+reloaded + the three-marker order-independence + the NFR15
+  no-`Object`-serialized structural guard). "Class unlock states restore correctly" = the profile `unlock_progress` +
+  `class_mastery` STATE persists (the profile→class-unlock APPLICATION stays deferred — see `unlock-SPEND / meta-power
+  APPLICATION`). Full headless suite green (153 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean).
 - **[Defer] (later meta-spend story, 8.6+/Epic 9) The unlock-SPEND / meta-power APPLICATION** — turning Oath Shards
   into an actual variety/option unlock (or a capped onboarding stat). 8.3 AWARDS the currency (the cross-run total
   rises); it does NOT SPEND it, apply any stat/passive/class from it, or build the unlock tree. AC3 is about the
