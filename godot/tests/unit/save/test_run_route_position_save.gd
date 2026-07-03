@@ -220,8 +220,11 @@ func _route_position_after_a_reward_draw_round_trips_the_advanced_stream() -> vo
 
 
 func _interrupted_equals_uninterrupted() -> void:
-	# Run a route partway, SAVE the route position, RESTORE it, continue to COMPLETED — and assert the SAME
-	# final outcome / run_completed cleared_node_count / final run.to_dictionary() as the UNINTERRUPTED path.
+	# Run a route partway, SAVE the route position, RESTORE it, continue to the boss-encounter SETUP — and assert
+	# the SAME final state / cleared_node_count / final run.to_dictionary() as the UNINTERRUPTED path. Story 9.1:
+	# run_to_completion now STOPS at the boss-encounter setup (the boss no longer auto-completes on arrival — the
+	# real fight/victory is 9.3/9.4), so BOTH paths park in NODE_RESOLUTION with a pending boss encounter; the
+	# interrupted == uninterrupted invariant holds at that deterministic terminus (the load-bearing final-dict match).
 	for seed_value: int in [42, 777]:
 		# Uninterrupted reference run.
 		var uninterrupted: RunOrchestrator = RunOrchestrator.new()
@@ -246,8 +249,9 @@ func _interrupted_equals_uninterrupted() -> void:
 		var completion: ActionResult = resumed.run_to_completion()
 		assert_true(completion.succeeded, "Seed %d: the resumed run should complete: %s" % [seed_value, completion.metadata])
 
-		assert_equal(resumed.run.phase, RunState.PHASE_COMPLETED, "Seed %d: the resumed run should reach COMPLETED." % seed_value)
-		assert_equal(resumed.run_completed_outcome(), uninterrupted_outcome, "Seed %d: the resumed outcome must match the uninterrupted outcome." % seed_value)
+		assert_equal(resumed.run.phase, RunState.PHASE_NODE_RESOLUTION, "Seed %d: the resumed run should reach the boss-encounter setup (NODE_RESOLUTION), not COMPLETED (9.1)." % seed_value)
+		assert_true(resumed.boss_encounter_pending(), "Seed %d: the resumed run should have a pending boss encounter set up." % seed_value)
+		assert_equal(resumed.run_completed_outcome(), uninterrupted_outcome, "Seed %d: the resumed run_completed outcome must match the uninterrupted one (both empty at the 9.1 boss setup)." % seed_value)
 		assert_equal(resumed.run.route.cleared_node_ids.size(), uninterrupted_cleared, "Seed %d: the resumed cleared_node_count must match the uninterrupted path." % seed_value)
 		# The full final run state matches byte-for-byte (route + cleared + phase + seed). Mismatches identify
 		# the first divergent step via the stringified diff in the message.
@@ -296,8 +300,9 @@ func _callback_autosave_position_resumes_equals_uninterrupted() -> void:
 		var completion: ActionResult = resumed.run_to_completion()
 		assert_true(completion.succeeded, "Seed %d: the callback-resumed run should complete: %s" % [seed_value, completion.metadata])
 
-		assert_equal(resumed.run.phase, RunState.PHASE_COMPLETED, "Seed %d: the callback-resumed run should reach COMPLETED." % seed_value)
-		assert_equal(resumed.run_completed_outcome(), uninterrupted_outcome, "Seed %d: the callback-resumed outcome must match the uninterrupted outcome." % seed_value)
+		assert_equal(resumed.run.phase, RunState.PHASE_NODE_RESOLUTION, "Seed %d: the callback-resumed run should reach the boss-encounter setup (NODE_RESOLUTION), not COMPLETED (9.1)." % seed_value)
+		assert_true(resumed.boss_encounter_pending(), "Seed %d: the callback-resumed run should have a pending boss encounter set up." % seed_value)
+		assert_equal(resumed.run_completed_outcome(), uninterrupted_outcome, "Seed %d: the callback-resumed run_completed outcome must match the uninterrupted one (both empty at the 9.1 boss setup)." % seed_value)
 		assert_equal(resumed.run.route.cleared_node_ids.size(), uninterrupted_cleared, "Seed %d: the callback-resumed cleared_node_count must match the uninterrupted path." % seed_value)
 		assert_equal(JSON.stringify(resumed.run.to_dictionary()), uninterrupted_final, "Seed %d: callback-autosave interrupted == uninterrupted — the resumed final run state must match." % seed_value)
 
@@ -409,10 +414,12 @@ func _start_from_rejects_a_terminal_or_invalid_run() -> void:
 	assert_true(null_streams.is_error(), "Seating null streams must be a structured error.")
 	assert_equal(null_streams.error_code, &"invalid_seated_streams", "Null seated streams should use the stable invalid_seated_streams code.")
 
-	# A TERMINAL run rejects: run a fresh run to COMPLETED, then try to seat it.
+	# A TERMINAL run rejects: drive a fresh run to COMPLETED via resolve_run_end (the 8.1 completion path — Story
+	# 9.1 made run_to_completion STOP at the boss-encounter SETUP rather than auto-completing, so the run-END is
+	# now the CompleteRunCommand-driven resolve_run_end), then try to seat it.
 	var completed: RunOrchestrator = RunOrchestrator.new()
 	assert_true(completed.start(7, false).succeeded, "Seating-terminal: start should succeed.")
-	assert_true(completed.run_to_completion().succeeded, "Seating-terminal: run should complete.")
+	assert_true(completed.resolve_run_end(&"completed").succeeded, "Seating-terminal: resolve_run_end completion should succeed.")
 	assert_true(completed.run.is_terminal(), "Seating-terminal: the run should be terminal before the reject check.")
 	var terminal_seat: ActionResult = RunOrchestrator.new().start_from(completed.run, completed.streams)
 	assert_true(terminal_seat.is_error(), "Seating a terminal run must be a structured error.")

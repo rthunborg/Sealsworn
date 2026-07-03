@@ -40,6 +40,7 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
+const BossNodeEnterCommand = preload("res://scripts/core/commands/boss_node_enter_command.gd")
 const CompleteRunCommand = preload("res://scripts/core/commands/complete_run_command.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
@@ -113,6 +114,15 @@ var _event_repository: EventRepository = null
 var _affinity_repository: AffinityRepository = null
 # Last composed route-position snapshot (set when persistence is requested at a between-node boundary).
 var _last_route_position_snapshot: RunSnapshot = null
+# Story 9.1: the boss-ENCOUNTER-SETUP surface. When the boss node resolves, _resolve_boss SETS UP the Larval
+# Avatar encounter (build the request + arena, transition ACTIVE_ROUTE -> NODE_RESOLUTION) and leaves the run in
+# NODE_RESOLUTION awaiting the real fight/victory (9.3/9.4) — it does NOT complete the run anymore. These capture
+# the boss-entered event + the live request + the arena payload for the caller (the later live boss loop). The
+# pending flag lets run_to_completion STOP at the boss setup (a non-terminal boss awaiting the fight).
+var _boss_encounter_started_event: DomainEvent = null
+var _boss_encounter_request = null
+var _boss_arena_payload: Dictionary = {}
+var _boss_encounter_pending: bool = false
 
 
 func _init(
@@ -270,6 +280,13 @@ func run_to_completion(request_route_position_save_callback: Variant = null) -> 
 			return resolved
 		if run.is_terminal():
 			break
+		# Story 9.1: the boss node now SETS UP the encounter (BossNodeEnterCommand) instead of auto-completing —
+		# the run is left in NODE_RESOLUTION (non-terminal) awaiting the real fight/victory (9.3/9.4). STOP the
+		# loop here: the boss has no forward choice (advance_to_first_eligible would fail), and there is no live
+		# fight to auto-play in v0. The run is NOT terminal; the caller (the later live boss loop) drives the fight.
+		# Do NOT auto-complete the run on boss arrival (the run-END is 9.4's victory or a death).
+		if _boss_encounter_pending:
+			break
 		var advance: ActionResult = advance_to_first_eligible()
 		if advance.is_error():
 			return advance
@@ -285,6 +302,21 @@ func run_to_completion(request_route_position_save_callback: Variant = null) -> 
 			_last_route_position_snapshot = snapshot
 			(request_route_position_save_callback as Callable).call(snapshot)
 		steps += 1
+
+	# Story 9.1: the boss-encounter-SETUP terminus. The loop STOPS at the boss setup with the run non-terminal
+	# (in NODE_RESOLUTION, the boss encounter requested + its arena built) — the real fight/victory is 9.3/9.4. This
+	# is a SUCCESS (the run reached its terminal boss node and set up the encounter), NOT the run_did_not_complete
+	# soft-lock error. Surface the boss-encounter setup for the caller (the live boss loop drives the fight).
+	if _boss_encounter_pending and not run.is_terminal():
+		return ActionResult.ok([], {
+			"run": run,
+			"outcome": "",
+			"resolution": "boss_encounter_started",
+			"boss_encounter_pending": true,
+			"boss_encounter_started_event": _boss_encounter_started_event,
+			"arena_payload": _boss_arena_payload,
+			"cleared_node_count": run.route.cleared_node_ids.size()
+		})
 
 	if not run.is_terminal():
 		return ActionResult.error(&"run_did_not_complete", {
@@ -698,10 +730,14 @@ func affinity_repository() -> AffinityRepository:
 # CALLER-DRIVEN (the 6.3 generate_reward_offer / 7.3 generate_event_offer posture VERBATIM): this is NOT wired into
 # run_to_completion / _resolve_combat / _resolve_non_combat_placeholder — there is NO live death source in v0 (combat
 # auto-resolves to success), so a death NEVER auto-fires; the caller (a later HUD/run-flow story that owns the live
-# death / a real victory) invokes it explicitly. It does NOT touch _resolve_boss's boss-completion behavior or the
-# boss run_completed boundary (Epic 9 depends on it) — the boss still resolves through NodeResolvePlaceholderCommand
-# unchanged. AC3 idempotency is the command's: a re-resolution of an already-terminal run surfaces the command's stable
-# run_already_terminal error here (the orchestrator captures nothing new — no second event, no mutation).
+# death / a real victory) invokes it explicitly. Since Story 9.1, _resolve_boss no longer auto-completes the run:
+# it SETS UP the Larval Avatar encounter via BossNodeEnterCommand (the run parks non-terminal in NODE_RESOLUTION,
+# emitting boss_encounter_started — it does NOT resolve through NodeResolvePlaceholderCommand in the live path).
+# NodeResolvePlaceholderCommand's boss branch (the boss run_completed / boss_placeholder / boss_node_id boundary) is
+# retained UNCHANGED for Story 9.4 to reuse — it is just no longer the orchestrator's live boss dispatch. resolve_run_end
+# stays the generic caller-driven run-END path; 9.4's boss VICTORY drives it (via CompleteRunCommand) from the
+# boss-setup terminus. AC3 idempotency is the command's: a re-resolution of an already-terminal run surfaces the
+# command's stable run_already_terminal error here (the orchestrator captures nothing new — no second event, no mutation).
 func resolve_run_end(outcome: StringName) -> ActionResult:
 	if run == null:
 		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
@@ -749,6 +785,26 @@ func run_end_destination() -> String:
 
 func last_route_position_snapshot() -> RunSnapshot:
 	return _last_route_position_snapshot
+
+
+# Story 9.1: the boss-ENCOUNTER-SETUP surface (set by _resolve_boss). The boss-entered event, the live boss
+# encounter request, the deterministic arena payload, and whether a boss encounter is currently set up (the run
+# parked in NODE_RESOLUTION on the boss awaiting the fight). The later live boss loop (9.3/9.4) reads these to
+# run the real fight + victory.
+func boss_encounter_started_event() -> DomainEvent:
+	return _boss_encounter_started_event
+
+
+func boss_encounter_request():
+	return _boss_encounter_request
+
+
+func boss_arena_payload() -> Dictionary:
+	return _boss_arena_payload
+
+
+func boss_encounter_pending() -> bool:
+	return _boss_encounter_pending
 
 
 # ---- internal dispatch ---------------------------------------------------------------------------
@@ -818,25 +874,39 @@ func _resolve_non_combat_placeholder(node: RouteNode) -> ActionResult:
 	})
 
 
-# Boss: resolve to COMPLETED + run_completed (the 4.5 boss path). No exit, no advance — the run ENDS. Capture
-# the run_completed event + outcome for the caller.
+# Boss (Story 9.1): SET UP the Larval Avatar encounter via BossNodeEnterCommand — build the boss encounter
+# REQUEST + the deterministic arena, transition ACTIVE_ROUTE -> NODE_RESOLUTION, emit boss_encounter_started —
+# and STOP. The run stays in NODE_RESOLUTION awaiting the real boss fight + victory (Story 9.4, which reuses the
+# run_completed boundary UNCHANGED). It does NOT auto-complete the run on boss arrival anymore, does NOT clear the
+# boss node (9.4's victory does), and does NOT run a live turn loop. Mirrors _resolve_combat's enter->generate
+# shape (enter the boss -> build the arena request), minus the exit/advance (a terminal boss has no return-to-route)
+# and minus the auto-resolve completion. Surfaces the boss request + arena payload + setup diagnostics for the
+# caller (the later live boss loop). This is the SETUP half of Epic 9's "reach and defeat the Larval Avatar".
 func _resolve_boss(node: RouteNode) -> ActionResult:
-	var resolved: ActionResult = NodeResolvePlaceholderCommand.new(_next_sequence_id).execute(run)
-	if resolved.is_error():
-		return resolved
-	_advance_sequence_past(resolved)
+	var setup: ActionResult = BossNodeEnterCommand.new(_next_sequence_id).execute(run)
+	if setup.is_error():
+		# A boss node whose encounter cannot be set up is a hard run-progression error: surface it structurally
+		# and STOP — do NOT advance/complete past an un-set-up boss (no partial progression, no broken boss state;
+		# the command already guaranteed a byte-identical no-mutation run on its own reject).
+		return setup
+	_advance_sequence_past(setup)
 
-	for event: DomainEvent in resolved.events:
-		if event.event_type == DomainEvent.Type.RUN_COMPLETED:
-			_run_completed_event = event
-			_run_completed_outcome = String(event.payload.get("outcome"))
+	# Capture the boss-encounter-setup surface for the caller (the live boss loop 9.3/9.4). The run is now in
+	# NODE_RESOLUTION (NOT terminal) — the boss fight/victory has not happened yet.
+	if not setup.events.is_empty():
+		_boss_encounter_started_event = setup.events[0]
+	_boss_encounter_request = setup.metadata.get("boss_encounter_request")
+	_boss_arena_payload = setup.metadata.get("arena_payload", {})
+	_boss_encounter_pending = true
 
 	return ActionResult.ok([], {
 		"node_id": node.id,
 		"node_type": String(node.type),
-		"resolution": "boss_resolved",
-		"run_completed": true,
-		"outcome": _run_completed_outcome
+		"resolution": "boss_encounter_started",
+		"run_completed": false,
+		"boss_encounter_pending": true,
+		"boss_entity_id": String(setup.metadata.get("boss_entity_id", "")),
+		"arena_payload": _boss_arena_payload
 	})
 
 

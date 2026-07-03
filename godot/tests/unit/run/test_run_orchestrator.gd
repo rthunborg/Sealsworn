@@ -6,10 +6,14 @@ extends "res://tests/unit/test_case.gd"
 # LevelGenerator.generate(...) for combat/elite nodes (the FIRST 4.x success-path level GenerationResult
 # consumer) and threads ONE RunState + one run-level RngStreamSet + a monotonic sequence_id start-to-end.
 #
-# Pins, on 4.2-generated routes across a VARIETY of seeds:
+# Pins, on 4.2-generated routes across a VARIETY of seeds (Story 9.1: the boss now SETS UP the Larval Avatar
+# encounter instead of auto-completing — the run STOPS at the boss-encounter setup in NODE_RESOLUTION awaiting
+# the real fight/victory, which is 9.3/9.4):
 #   - the run starts in ACTIVE_ROUTE on the depth-0 combat start node, run.validate() green;
-#   - dispatch-by-type drives the run to PHASE_COMPLETED with EXACTLY one run_started (start) + EXACTLY one
-#     run_completed (boss, outcome == "boss_placeholder");
+#   - dispatch-by-type drives the run to the boss-encounter SETUP with EXACTLY one run_started (start) + EXACTLY
+#     one boss_encounter_started (the 9.1 boss SETUP; NO run_completed — the boss no longer auto-completes);
+#   - the boss dispatch leaves the run in NODE_RESOLUTION (non-terminal), the boss NOT cleared (9.4 clears it on
+#     victory), and surfaces the deterministic arena payload with a placeholder boss slot;
 #   - combat/elite nodes GENERATE a playable level (LevelGenerator.generate success, a non-empty
 #     payload.level_seed read on the SUCCESS path — never result.seed);
 #   - NO soft-lock (a non-boss node always advances), cleared_node_ids never duplicates, run.validate() green
@@ -31,7 +35,7 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const RUN_SEEDS: Array[int] = [1, 7, 42, 2026, 13, 99, 314, 777]
 
 func run() -> Dictionary:
-	_orchestrated_run_reaches_completed_for_every_seed()
+	_orchestrated_run_reaches_boss_setup_for_every_seed()
 	_orchestrated_run_is_fully_deterministic()
 	# Story 5.2 — the confirm-path seam: RunOrchestrator.start threads the chosen class into RunStartCommand.
 	_start_with_selectable_class_records_it_on_the_seated_run()
@@ -113,11 +117,13 @@ func _start_with_selectable_class_records_it_on_the_seated_run() -> void:
 	assert_equal(run.phase, RunState.PHASE_ACTIVE_ROUTE, "A class run start should be in ACTIVE_ROUTE.")
 	assert_true(run.validate().succeeded, "A class run start should validate.")
 	# The orchestrator drives the class run start-to-end exactly like a seed-only run (the class records only
-	# a field; it does not alter dispatch or completion).
+	# a field; it does not alter dispatch). Story 9.1: the drive STOPS at the boss-encounter SETUP (the boss no
+	# longer auto-completes — the fight/victory is 9.3/9.4), so the run parks non-terminal in NODE_RESOLUTION.
 	var completion: ActionResult = orchestrator.run_to_completion()
-	assert_true(completion.succeeded, "A class run should drive to completion like a seed-only run: %s" % completion.metadata)
-	assert_true(orchestrator.run.is_terminal(), "A class run should reach a terminal phase.")
-	assert_equal(orchestrator.run.selected_class_id, &"warrior", "The class id must persist on the run through completion.")
+	assert_true(completion.succeeded, "A class run should drive to the boss-encounter setup like a seed-only run: %s" % completion.metadata)
+	assert_equal(orchestrator.run.phase, RunState.PHASE_NODE_RESOLUTION, "A class run should reach the boss-encounter setup (NODE_RESOLUTION), not a terminal phase (9.1).")
+	assert_true(orchestrator.boss_encounter_pending(), "A class run should have a pending boss encounter set up.")
+	assert_equal(orchestrator.run.selected_class_id, &"warrior", "The class id must persist on the run through the boss setup.")
 
 
 # Story 5.2 AC2 (confirm-path option b): RunOrchestrator.start with a LOCKED class surfaces the command's
@@ -161,9 +167,8 @@ func _drive_and_assert(seed_value: int) -> Dictionary:
 	var non_combat_nodes_resolved: int = 0
 	var combat_level_seeds: Array[String] = []
 	var emitted_sequence_ids: Array[int] = []
-	var run_completed_seen: int = 0
-	var run_completed_outcome: String = ""
-	var reached_completed: bool = false
+	var boss_setup_seen: int = 0
+	var reached_boss_setup: bool = false
 
 	# Collect the run_started's id first (it is the first event in the run-level log).
 	emitted_sequence_ids.append(run_started.sequence_id)
@@ -180,19 +185,28 @@ func _drive_and_assert(seed_value: int) -> Dictionary:
 		assert_true(resolved.succeeded, "Seed %d: resolving the %s node should succeed at step %d: %s" % [seed_value, String(current.type), steps, resolved.metadata])
 
 		if is_boss:
-			# Boss: run is COMPLETED + terminal, the boss is cleared, run_completed surfaced.
-			assert_equal(run.phase, RunState.PHASE_COMPLETED, "Seed %d: boss resolve should reach COMPLETED at step %d." % [seed_value, steps])
-			assert_true(run.is_terminal(), "Seed %d: the run should be terminal after the boss resolve." % seed_value)
-			assert_true(run.route.cleared_node_ids.has(current.id), "Seed %d: the boss should be cleared after resolve." % seed_value)
-			assert_true(run.validate().succeeded, "Seed %d: the run must stay valid after the boss resolve." % seed_value)
-			var run_completed: DomainEvent = orchestrator.run_completed_event()
-			assert_true(run_completed != null, "Seed %d: the orchestrator should surface the run_completed event." % seed_value)
-			run_completed_seen += 1
-			run_completed_outcome = orchestrator.run_completed_outcome()
-			emitted_sequence_ids.append(run_completed.sequence_id)
-			# Also count the boss's node_placeholder_resolved id (it precedes run_completed).
-			assert_equal(run_completed.payload.get("cleared_node_count"), run.route.cleared_node_ids.size(), "Seed %d: run_completed cleared_node_count must equal the final cleared set size." % seed_value)
-			reached_completed = true
+			# Story 9.1: the boss SETS UP the Larval Avatar encounter (BossNodeEnterCommand) — it does NOT
+			# auto-complete the run anymore. The run is in NODE_RESOLUTION (NOT terminal), the boss is NOT yet
+			# cleared (9.4's victory clears it), NO run_completed is emitted; instead boss_encounter_started is
+			# surfaced with the arena payload. The real fight/victory is 9.3/9.4.
+			assert_equal(run.phase, RunState.PHASE_NODE_RESOLUTION, "Seed %d: boss resolve should SET UP the encounter (NODE_RESOLUTION), not COMPLETED, at step %d." % [seed_value, steps])
+			assert_false(run.is_terminal(), "Seed %d: the run must NOT be terminal after the boss SETUP (9.1)." % seed_value)
+			assert_false(run.route.cleared_node_ids.has(current.id), "Seed %d: the boss must NOT be cleared by the 9.1 setup (9.4's victory clears it)." % seed_value)
+			assert_true(run.validate().succeeded, "Seed %d: the run must stay valid after the boss setup." % seed_value)
+			assert_equal(resolved.metadata.get("resolution"), "boss_encounter_started", "Seed %d: the boss dispatch should surface the boss_encounter_started resolution." % seed_value)
+			assert_true(bool(resolved.metadata.get("boss_encounter_pending", false)), "Seed %d: the boss dispatch should flag a pending boss encounter." % seed_value)
+			assert_true(orchestrator.run_completed_event() == null, "Seed %d: the 9.1 boss setup must NOT surface a run_completed event." % seed_value)
+			var boss_event: DomainEvent = orchestrator.boss_encounter_started_event()
+			assert_true(boss_event != null, "Seed %d: the orchestrator should surface the boss_encounter_started event." % seed_value)
+			assert_equal(boss_event.event_type, DomainEvent.Type.BOSS_ENCOUNTER_STARTED, "Seed %d: the surfaced boss event should be boss_encounter_started." % seed_value)
+			assert_equal(boss_event.payload.get("boss_node_id"), current.id, "Seed %d: the boss event must carry the boss node id." % seed_value)
+			# The arena payload is present + deterministic (a board snapshot + entrance/player_start/boss_slot).
+			var arena_payload: Dictionary = orchestrator.boss_arena_payload()
+			assert_false(arena_payload.is_empty(), "Seed %d: the orchestrator should surface the boss arena payload." % seed_value)
+			assert_true((arena_payload.get("boss_slot") as Dictionary).get("is_placeholder", false), "Seed %d: the boss slot must be marked placeholder (9.2 fills the real definition)." % seed_value)
+			boss_setup_seen += 1
+			emitted_sequence_ids.append(boss_event.sequence_id)
+			reached_boss_setup = true
 			break
 
 		if is_combat:
@@ -223,9 +237,8 @@ func _drive_and_assert(seed_value: int) -> Dictionary:
 			emitted_sequence_ids.append(event.sequence_id)
 		steps += 1
 
-	assert_true(reached_completed, "Seed %d: the orchestrated run should reach PHASE_COMPLETED within the guard." % seed_value)
-	assert_equal(run_completed_seen, 1, "Seed %d: exactly one run_completed should be surfaced." % seed_value)
-	assert_equal(run_completed_outcome, "boss_placeholder", "Seed %d: the run_completed outcome should be boss_placeholder." % seed_value)
+	assert_true(reached_boss_setup, "Seed %d: the orchestrated run should reach the boss-encounter SETUP within the guard (9.1)." % seed_value)
+	assert_equal(boss_setup_seen, 1, "Seed %d: exactly one boss-encounter setup should be surfaced." % seed_value)
 	# At least one combat node was resolved (the start is always combat).
 	assert_true(combat_nodes_resolved >= 1, "Seed %d: at least one combat node must be resolved (the start is always combat)." % seed_value)
 
@@ -243,7 +256,7 @@ func _drive_and_assert(seed_value: int) -> Dictionary:
 	}
 
 
-func _orchestrated_run_reaches_completed_for_every_seed() -> void:
+func _orchestrated_run_reaches_boss_setup_for_every_seed() -> void:
 	var total_combat: int = 0
 	var total_non_combat: int = 0
 	for seed_value: int in RUN_SEEDS:
@@ -267,13 +280,16 @@ func _orchestrated_run_is_fully_deterministic() -> void:
 		assert_equal(JSON.stringify(first.get("final_run_dict")), JSON.stringify(second.get("final_run_dict")), "Seed %d: the same inputs must produce a byte-identical final run.to_dictionary()." % seed_value)
 		assert_equal(str(first.get("combat_level_seeds")), str(second.get("combat_level_seeds")), "Seed %d: the same inputs must produce the same per-combat-node level seeds." % seed_value)
 
-		# The production run_to_completion() driver reaches the SAME terminal state as the instrumented drive.
+		# The production run_to_completion() driver reaches the SAME boss-setup terminus as the instrumented drive.
+		# Story 9.1: run_to_completion STOPS at the boss-encounter setup (NODE_RESOLUTION, non-terminal, a pending
+		# boss encounter) rather than auto-completing — the real fight/victory is 9.3/9.4.
 		var production: RunOrchestrator = RunOrchestrator.new()
 		assert_true(production.start(seed_value, false).succeeded, "Seed %d: production start should succeed." % seed_value)
 		var completion: ActionResult = production.run_to_completion()
 		assert_true(completion.succeeded, "Seed %d: production run_to_completion should succeed: %s" % [seed_value, completion.metadata])
-		assert_equal(production.run.phase, RunState.PHASE_COMPLETED, "Seed %d: production run should reach COMPLETED." % seed_value)
-		assert_equal(completion.metadata.get("outcome"), "boss_placeholder", "Seed %d: production outcome should be boss_placeholder." % seed_value)
+		assert_equal(production.run.phase, RunState.PHASE_NODE_RESOLUTION, "Seed %d: production run should reach the boss-encounter setup (NODE_RESOLUTION), not COMPLETED (9.1)." % seed_value)
+		assert_true(production.boss_encounter_pending(), "Seed %d: production run should have a pending boss encounter set up." % seed_value)
+		assert_equal(completion.metadata.get("resolution"), "boss_encounter_started", "Seed %d: production run_to_completion should surface the boss_encounter_started terminus." % seed_value)
 		assert_equal(JSON.stringify(production.run.to_dictionary()), JSON.stringify(first.get("final_run_dict")), "Seed %d: production run_to_completion must reach the same final run state as the instrumented drive." % seed_value)
 
 

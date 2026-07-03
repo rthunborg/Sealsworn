@@ -101,11 +101,14 @@ func _each_class_starts_and_enters_first_level_with_identity_and_explanations() 
 		assert_equal(str(summary.get("run_started_explanations")), str(run.rules_resolver.explain(RuleTrigger.RUN_STARTED)), "%s: the projected run_started explanations must equal the resolver's." % class_id)
 
 		# The run remains playable: the orchestrator drives it start-to-end exactly like a seed-only run (the
-		# class records only domain fields; it does not gate/alter the loop).
+		# class records only domain fields; it does not gate/alter the loop). Story 9.1: the run now STOPS at the
+		# boss-encounter SETUP (the boss no longer auto-completes on arrival — the real fight/victory is 9.3/9.4),
+		# so the drive succeeds and parks the run in NODE_RESOLUTION with a pending boss encounter (NOT COMPLETED).
 		var completion: ActionResult = orchestrator.run_to_completion()
-		assert_true(completion.succeeded, "%s: the class run should drive to completion: %s" % [class_id, completion.metadata])
-		assert_equal(orchestrator.run.phase, RunState.PHASE_COMPLETED, "%s: the class run should reach COMPLETED." % class_id)
-		assert_equal(orchestrator.run.selected_class_id, class_id, "%s: the class id must persist through completion." % class_id)
+		assert_true(completion.succeeded, "%s: the class run should drive to the boss-encounter setup: %s" % [class_id, completion.metadata])
+		assert_equal(orchestrator.run.phase, RunState.PHASE_NODE_RESOLUTION, "%s: the class run should reach the boss-encounter setup (NODE_RESOLUTION), not COMPLETED (9.1)." % class_id)
+		assert_true(orchestrator.boss_encounter_pending(), "%s: the class run should have a pending boss encounter set up." % class_id)
+		assert_equal(orchestrator.run.selected_class_id, class_id, "%s: the class id must persist through the boss setup." % class_id)
 
 
 # ---- AC1: first level generates valid + the Epic-1 loop operates on the generated board ----------
