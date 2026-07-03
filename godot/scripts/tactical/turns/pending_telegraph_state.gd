@@ -5,7 +5,19 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 
 const KIND_ASH_SEER_MARK := "ash_seer_mark"
+# Story 9.3: the Larval Avatar boss telegraph kind — a boss "major dangerous ability" telegraph reuses the SAME
+# two-turn tile_marked -> marked_tile_detonated pending-telegraph vocabulary the Ash Seer proves, but under a DISTINCT
+# kind so the record honestly names the source system (a boss ability, NOT an Ash Seer mark). Same validation shape.
+const KIND_LARVAL_AVATAR_TELEGRAPH := "larval_avatar_telegraph"
 const STATUS_PENDING := "pending"
+
+# The pending-telegraph kinds the state machine accepts (each a marked-tile danger with the identical mark shape:
+# telegraph_id / source / target / marked_cell / created<due turns / damage / damage_type / status). A tile_marked
+# event carrying an unknown kind is REJECTED (fail-closed — never silently coerce an unrecognized telegraph kind).
+const VALID_KINDS: Array[String] = [
+	KIND_ASH_SEER_MARK,
+	KIND_LARVAL_AVATAR_TELEGRAPH
+]
 
 static func validate_events(pending_telegraphs: Array[Dictionary], events: Array[DomainEvent]) -> ActionResult:
 	var staged: Array[Dictionary] = _copy_pending(pending_telegraphs)
@@ -60,10 +72,13 @@ static func _apply_tile_marked(staged: Array[Dictionary], event: DomainEvent) ->
 	if not event.payload.has("marked_cell") or not event.payload.get("marked_cell") is Dictionary:
 		return _invalid(&"invalid_marked_cell")
 
+	# Read the kind from the event payload (default to the Ash Seer kind for back-compat with the original single-kind
+	# callers). An unknown kind is rejected by validate_pending_mark below (fail-closed).
+	var mark_kind: String = String(event.payload.get("kind", KIND_ASH_SEER_MARK))
 	var marked_cell: Dictionary = event.payload.get("marked_cell")
 	var pending_mark: Dictionary = {
 		"telegraph_id": telegraph_id,
-		"kind": KIND_ASH_SEER_MARK,
+		"kind": mark_kind,
 		"source_entity_id": String(event.actor_id),
 		"target_entity_id": String(event.payload.get("target_entity_id", "")),
 		"marked_cell": {
@@ -76,6 +91,12 @@ static func _apply_tile_marked(staged: Array[Dictionary], event: DomainEvent) ->
 		"damage_type": String(event.payload.get("damage_type", "")),
 		"status": STATUS_PENDING
 	}
+	# Preserve OPTIONAL descriptive keys (present on a boss telegraph, absent on an Ash Seer mark) so the pending
+	# telegraph stays self-describing for the later resolution's explanation (AC4 — the resolved-damage event names the
+	# boss ability). Absent keys are simply not copied (the Ash Seer path is unchanged).
+	for descriptive_key: String in ["boss_action_id", "telegraph_text"]:
+		if event.payload.has(descriptive_key):
+			pending_mark[descriptive_key] = String(event.payload.get(descriptive_key, ""))
 	var validation: ActionResult = validate_pending_mark(pending_mark)
 	if validation.is_error():
 		return validation
@@ -107,7 +128,7 @@ static func _apply_marked_tile_detonated(staged: Array[Dictionary], event: Domai
 static func validate_pending_mark(mark: Dictionary) -> ActionResult:
 	if String(mark.get("telegraph_id", "")).is_empty():
 		return _invalid(&"missing_telegraph_id")
-	if String(mark.get("kind", "")) != KIND_ASH_SEER_MARK:
+	if not VALID_KINDS.has(String(mark.get("kind", ""))):
 		return _invalid(&"invalid_kind")
 	if String(mark.get("source_entity_id", "")).is_empty():
 		return _invalid(&"missing_source")

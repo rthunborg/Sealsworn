@@ -8,11 +8,13 @@ extends "res://tests/unit/test_case.gd"
 # definition/phases, and drawing it repeatedly yields identical output — no hidden RNG/state). Boundary HP-% math (a
 # boss AT exactly the threshold enters the phase). Fail-closed on a null definition / out-of-range phase index.
 
+const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const BossActionDefinition = preload("res://scripts/content/definitions/boss_action_definition.gd")
 const BossPhaseDefinition = preload("res://scripts/content/definitions/boss_phase_definition.gd")
 const BossDefinition = preload("res://scripts/content/definitions/boss_definition.gd")
 const BossPhaseResolver = preload("res://scripts/content/boss/boss_phase_resolver.gd")
 const BossPhaseTransition = preload("res://scripts/content/boss/boss_phase_transition.gd")
+const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 
 func run() -> Dictionary:
 	_reaching_a_threshold_fires_exactly_one_change()
@@ -28,6 +30,9 @@ func run() -> Dictionary:
 	_is_a_pure_read_no_mutation()
 	_fails_closed_on_null_or_out_of_range()
 	_transition_payload_is_forward_only()
+	_negative_phase_index_never_emits_an_event_invalid_transition()
+	_active_phase_index_recomputes_the_phase_from_hp()
+	_resolver_transition_closes_the_live_boss_phase_changed_seam()
 	return result()
 
 
@@ -198,3 +203,52 @@ func _transition_payload_is_forward_only() -> void:
 		var payload: Dictionary = transition.to_payload()
 		assert_equal(String(payload.get("boss_entity_id")), "larval_avatar", "The payload carries the boss id.")
 		assert_true(int(payload.get("to_phase")) > int(payload.get("from_phase")), "The payload is forward-only for the event.")
+
+
+# ---- Story 9.3 reconciliation (closing 9.2 review Low #2) -----------------------------------------
+
+func _negative_phase_index_never_emits_an_event_invalid_transition() -> void:
+	# 9.2 review Low #2: a negative current_phase_index used to emit a from_phase = -1 transition whose to_payload()
+	# the event validator REJECTS. 9.3 clamps the index to >= 0, so resolve() can NEVER return an event-invalid
+	# transition. At full HP a negative index is a no-op (phase 0 is the always-active floor).
+	var resolver: BossPhaseResolver = BossPhaseResolver.new()
+	var full_hp_transitions: Array[BossPhaseTransition] = resolver.resolve(_boss(), -1, 100)
+	assert_equal(full_hp_transitions.size(), 0, "A negative index at full HP is a no-op (clamped to phase 0).")
+
+	# A negative index with a threshold-crossing HP still yields only VALID (from_phase >= 0) transitions whose payload
+	# passes _validate_boss_phase_changed_payload.
+	var crossing_transitions: Array[BossPhaseTransition] = resolver.resolve(_boss(), -1, 25)
+	for transition: BossPhaseTransition in crossing_transitions:
+		assert_true(transition.from_phase >= 0, "A clamped negative index never yields a from_phase < 0.")
+		var event: DomainEvent = DomainEvent.boss_phase_changed(1, transition.to_payload())
+		var validation: ActionResult = DomainEvent.try_from_dictionary(event.to_dictionary())
+		assert_true(validation.succeeded, "A transition from a negative index must still produce an event-VALID payload: %s" % validation.metadata)
+
+
+func _active_phase_index_recomputes_the_phase_from_hp() -> void:
+	# The live loop RECOMPUTES the active phase from HP (no stored phase state). Phase 0 is the always-active floor.
+	var resolver: BossPhaseResolver = BossPhaseResolver.new()
+	var boss: BossDefinition = _boss()
+	assert_equal(resolver.active_phase_index(boss, 100), 0, "Full HP recomputes to phase 0.")
+	assert_equal(resolver.active_phase_index(boss, 60), 1, "60% HP recomputes to phase 1 (inclusive boundary).")
+	assert_equal(resolver.active_phase_index(boss, 30), 2, "30% HP recomputes to phase 2.")
+	assert_equal(resolver.active_phase_index(boss, 5), 2, "Deep HP stays at the deepest phase.")
+	# An out-of-band HP (> max_hp) or a null definition clamps to phase 0 (fail-closed — always in at least phase 0).
+	assert_equal(resolver.active_phase_index(boss, 200), 0, "Out-of-band HP clamps to phase 0.")
+	assert_equal(resolver.active_phase_index(null, 50), 0, "A null definition yields phase 0 (fail-closed).")
+
+
+func _resolver_transition_closes_the_live_boss_phase_changed_seam() -> void:
+	# Closes 9.2 review Low #1: the FULL loop resolver.resolve(...)[i].to_payload() -> DomainEvent.boss_phase_changed
+	# -> succeeds + validates + JSON-round-trips, exercised end to end (the seam 9.3 wires live).
+	var resolver: BossPhaseResolver = BossPhaseResolver.new()
+	var transitions: Array[BossPhaseTransition] = resolver.resolve(_boss(), 0, 55)
+	assert_equal(transitions.size(), 1, "The seam fixture crosses exactly one threshold.")
+	var event: DomainEvent = DomainEvent.boss_phase_changed(45, transitions[0].to_payload())
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(event.to_dictionary())))
+	assert_true(parse_result.succeeded, "The resolver->event->round-trip loop must succeed: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.BOSS_PHASE_CHANGED, "The seam event parses back to BOSS_PHASE_CHANGED.")
+	assert_equal(int(restored.payload.get("from_phase")), 0, "from_phase survives the round-trip.")
+	assert_equal(int(restored.payload.get("to_phase")), 1, "to_phase survives the round-trip.")
+	assert_equal(String(restored.payload.get("phase_id")), "adaptation", "phase_id survives the round-trip.")
