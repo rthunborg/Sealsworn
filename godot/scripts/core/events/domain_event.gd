@@ -41,7 +41,8 @@ enum Type {
 	CONTENT_DISCOVERED,
 	PROFILE_PROGRESS_MERGED,
 	FIRST_DEATH_RECORDED,
-	BOSS_ENCOUNTER_STARTED
+	BOSS_ENCOUNTER_STARTED,
+	BOSS_PHASE_CHANGED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -82,6 +83,7 @@ const EVENT_ID_CONTENT_DISCOVERED := &"content_discovered"
 const EVENT_ID_PROFILE_PROGRESS_MERGED := &"profile_progress_merged"
 const EVENT_ID_FIRST_DEATH_RECORDED := &"first_death_recorded"
 const EVENT_ID_BOSS_ENCOUNTER_STARTED := &"boss_encounter_started"
+const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -471,6 +473,29 @@ static func boss_encounter_started(sequence_id: int, payload: Dictionary = {}) -
 	payload_value["arena_width"] = int(payload.get("arena_width", 0))
 	payload_value["arena_height"] = int(payload.get("arena_height", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_ENCOUNTER_STARTED, sequence_id, &"", payload_value)
+
+
+static func boss_phase_changed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 9.2, AC2): the boss PHASE-CHANGE record — emitted when a Larval Avatar phase-
+	# transition trigger resolves (the boss's HP crosses an authored threshold, advancing it one phase forward). It is
+	# the deterministic past-tense record of an APPLIED phase transition (BossPhaseResolver returns the transition;
+	# this event records it) — one boss_phase_changed per phase actually ENTERED, so a multi-threshold-in-one-hit
+	# crossing emits a CHAIN of adjacent-phase changes (no phase skipped in the log). NOT an entity action, so it is
+	# NOT in _event_requires_actor (actor_id stays empty). `boss_entity_id` is the boss-entity id (lower_snake — the
+	# Larval Avatar slot "larval_avatar" 9.2 fills). `from_phase`/`to_phase` are non-negative integral phase indices
+	# with to_phase > from_phase (FORWARD-ONLY — the boss never reverts; a fabricated backward/no-op change is rejected
+	# by the validator, the honest-record precedent from oath_shards_awarded's before+amount==after check). `phase_id`
+	# is the entered phase's lower_snake id; `trigger` is a lower_snake marker (hp_threshold in v0). It is a
+	# DETERMINISTIC record — the phase resolve draws ZERO RNG (a pure read), so there is NO roll/draw_index. No int64
+	# encoding (the ids are short lower_snake strings; the indices are small ints well under 2^53). Normalize/duplicate
+	# the payload defensively (mirroring boss_encounter_started).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["boss_entity_id"] = String(payload.get("boss_entity_id", ""))
+	payload_value["from_phase"] = int(payload.get("from_phase", 0))
+	payload_value["to_phase"] = int(payload.get("to_phase", 0))
+	payload_value["phase_id"] = String(payload.get("phase_id", ""))
+	payload_value["trigger"] = String(payload.get("trigger", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_PHASE_CHANGED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -1049,6 +1074,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_first_death_recorded_payload(payload_value)
 		Type.BOSS_ENCOUNTER_STARTED:
 			return _validate_boss_encounter_started_payload(payload_value)
+		Type.BOSS_PHASE_CHANGED:
+			return _validate_boss_phase_changed_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1384,6 +1411,31 @@ static func _validate_boss_encounter_started_payload(payload_value: Dictionary) 
 		return _error_result(&"invalid_event_payload", {"field": "arena_width"})
 	if not _has_nonnegative_integral_payload(payload_value, &"arena_height"):
 		return _error_result(&"invalid_event_payload", {"field": "arena_height"})
+	return _ok_result()
+
+
+static func _validate_boss_phase_changed_payload(payload_value: Dictionary) -> ActionResult:
+	# The boss PHASE-CHANGE record (Story 9.2, AC2). boss_entity_id is the boss-entity id (a lower_snake content id —
+	# the Larval Avatar slot; validated via _has_lower_snake_payload). from_phase/to_phase are non-negative integral
+	# phase indices, AND to_phase > from_phase (FORWARD-ONLY — a boss phase change is monotonic; a backward or no-op
+	# (equal) change is a fabricated record and is REJECTED, mirroring _validate_oath_shards_awarded_payload's
+	# before+amount==after honest-record check). phase_id + trigger are lower_snake markers (the entered phase's id +
+	# the trigger marker). UNLIKE passive_destroyed there is NO roll/draw_index (the phase resolve draws ZERO RNG — a
+	# deterministic record, not a roll). A malformed/missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"boss_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "boss_entity_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"from_phase"):
+		return _error_result(&"invalid_event_payload", {"field": "from_phase"})
+	if not _has_nonnegative_integral_payload(payload_value, &"to_phase"):
+		return _error_result(&"invalid_event_payload", {"field": "to_phase"})
+	# FORWARD-ONLY: the boss advances phases, it never reverts (the RouteState reveal-monotonicity precedent). A
+	# to_phase <= from_phase is a fabricated backward/no-op change — REJECT (the honest-record discipline).
+	if int(payload_value.get("to_phase")) <= int(payload_value.get("from_phase")):
+		return _error_result(&"invalid_event_payload", {"field": "to_phase"})
+	if not _has_lower_snake_payload(payload_value, &"phase_id"):
+		return _error_result(&"invalid_event_payload", {"field": "phase_id"})
+	if not _has_lower_snake_payload(payload_value, &"trigger"):
+		return _error_result(&"invalid_event_payload", {"field": "trigger"})
 	return _ok_result()
 
 
@@ -2198,6 +2250,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_FIRST_DEATH_RECORDED
 		Type.BOSS_ENCOUNTER_STARTED:
 			return EVENT_ID_BOSS_ENCOUNTER_STARTED
+		Type.BOSS_PHASE_CHANGED:
+			return EVENT_ID_BOSS_PHASE_CHANGED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2278,6 +2332,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.FIRST_DEATH_RECORDED
 		EVENT_ID_BOSS_ENCOUNTER_STARTED:
 			return Type.BOSS_ENCOUNTER_STARTED
+		EVENT_ID_BOSS_PHASE_CHANGED:
+			return Type.BOSS_PHASE_CHANGED
 		_:
 			return Type.UNKNOWN
 
