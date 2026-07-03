@@ -1,3 +1,19 @@
+## Deferred from: code review of 8-7-meta-and-summary-save-load-tests (2026-07-03)
+
+Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 3 Low. Full headless suite green (153 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean). Diff is EXACTLY one new file (`godot/tests/integration/save/test_meta_summary_save_load.gd`) — ZERO production change (`SCHEMA_VERSION` stays 1; no new command/event/save-key/`.tscn`).
+
+The review requested **NO code changes** and introduced **NO new `[Review][Defer]`** — 8.7 is a test-hardening story that PROVES the shipped Epic-8 persistence surface; the three Low findings are informational test-thoroughness `[Review][Decision]`s (no open question, no carry-forward work — tracked in the story file's Round 1 Review Findings). Every legitimate forward defer was already recorded by the dev of 8.1-8.6 and remains correctly carried forward; the three canonical `[Defer] (8.7) The COMPREHENSIVE ... matrix` entries are now `[Resolved 8.7]`. Re-pointed here for review traceability (NOT new work — these are the pre-existing carried-forward fences, unchanged, still deferred BEYOND 8.7):
+
+- **[Review][Defer] (later meta-spend story / Epic 9) The unlock-SPEND / meta-power APPLICATION** — 8.7 tests that the `unlock_progress` + `class_mastery` STATE round-trips; turning that state into a playable-class unlock stays deferred (classes are static content in v0). See the pre-existing `unlock-SPEND / meta-power APPLICATION` entry.
+- **[Review][Defer] (later HUD/summary-render story) The Oath-Shard EARNED-count summary wiring** — 8.7 asserts the PROFILE's awarded total round-trips; `RunSummary.profile_meta.oath_shards_earned` stays 0/not-yet-supported (coupling the summary to the profile is a bigger design decision). See the pre-existing `Oath-Shard EARNED-count summary wiring` entry.
+- **[Review][Defer] (later save-shape story) Persisting the run summary / adding a run-log field to `RunState`/`RunSnapshot`** — 8.7 proves the profile persists + the summary re-derives on demand (the shipped v0 design); it adds NO persisted summary field (the 23-key `RunSnapshot` gate stays 23). See the pre-existing `Persisting the run summary / adding a run-log field` entry.
+- **[Review][Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the run-end auto-wire** — 8.7's grant/deny matrix uses caller-/test-supplied terminal `RunState` fixtures; it does NOT auto-wire the run-end commands or build a live death source. See the pre-existing `LIVE combat-death CALL SITE` entry.
+- **[Review][Defer] (Epic 9, Story 9.4) The first-VICTORY reveal** — 8.7 tests the first-DEATH latch only; the first-VICTORY reveal keys off the OPPOSITE terminal phase and is Epic 9's finale. See the pre-existing `first-VICTORY reveal` entry.
+
+**Open `[Review][Decision]` items (0 that need a NEW human call):** the three Round-1 `[Review][Decision]`s are informational notes (RNG-constructor-is-not-a-draw; `_profile_round_trip_matches` normalizes only `class_mastery`) or a RE-STATEMENT of the ALREADY-RATIFIED first-death Option-A precedent (human-ratified 2026-07-03 during the 8.5 review — closed). None require a human call this round.
+
+---
+
 ## Deferred from: code review of 8-6-outpost-menu-and-start-another-descent (2026-07-03)
 
 Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 1 Low. Full headless suite green (152 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean). Diff is EXACTLY two new files (`godot/scripts/ui/view_models/outpost_view_model.gd` + `godot/tests/unit/ui/test_outpost_view_model.gd`).
