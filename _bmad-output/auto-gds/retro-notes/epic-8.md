@@ -21,3 +21,7 @@ genuinely reusable signal; routine success recaps are omitted.
 
 ## Story 8-5-first-death-line-and-optional-narrative-delivery
 - [Phase 3 — create-story] Genuine design fork flagged for dev+review ratification: does the `first_death_recorded` latch fire on a MANUAL-SEED death (narrative flavor, recommended) or is it denied like award/merge (FR28 strictness)? Whatever ships becomes the FR28-boundary precedent for narrative-vs-meta state.
+- [Phase 7 — code review] Human RATIFIED Option A: the first-death latch is eligibility-independent (manual-seed death still records + shows the line; provably progression-free). This IS the FR28 narrative-vs-meta boundary precedent — 8.6/8.7 build on it.
+
+## Story 8-6-outpost-menu-and-start-another-descent
+- [Phase 3 — create-story] FR-numbering trap: canonical epics.md FR63 = the Larval Avatar boss (Epic 9), but the 2026-06-04 readiness patch maps a design-time GDD "FR63: named outpost/meta spaces" to Story 8.6. The named-space obligation traces via the GDD + readiness patch, NOT canonical FR63 — citing "FR63" naively mis-scopes.
