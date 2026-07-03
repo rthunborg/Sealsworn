@@ -28,3 +28,34 @@
 **Needs human:** ratify or reject Option A above, then resume `/auto-gds` (secondary re-review round 2, then finalize). Working tree intentionally left dirty (story-file review round, ledger entries, this report, state) — the next phase commit folds them in.
 
 **Next:** `8-6` (next Epic 8 story — preview only, not started).
+
+## Report — 2026-07-03T07:45:00Z (final)
+
+**Story:** `8-5-first-death-line-and-optional-narrative-delivery` (epic 8, story 5) — mid-epic.
+**Branch:** `story/8-5-first-death-line-and-optional-narrative-delivery` (HEAD `b4dace1` at report time; finalize commit follows).
+**Pipeline status:** clean completion — review loop converged at iteration 2 of 3 with zero code defects in both rounds; the single decision (Option-A eligibility precedent) human-ratified.
+**Continues:** Report — 2026-07-02T15:58:00Z (halted — decision-needed). The human ratified Option A on 2026-07-03 (first-death latch stays eligibility-independent — the FR28 narrative-vs-meta precedent for 8.6/8.7; no code change, commit `1f14713`); round 2 independently converged (`b4dace1`).
+
+**Timing:** started 2026-07-02T15:12:00Z; completed 2026-07-03 — elapsed ≈16h 30m (≈36m AI-run across 4 delegates, remainder human/idle wait — overnight decision gap); resumed across 2 days.
+
+**Phases run:** Phase 0 (preflight), Phase 1 (branch), Phase 3 (create-story, agds-xhigh), Phase 5 (dev-story, agds-xhigh), Phase 7 (round 1 review agds-xhigh; Option-A ratified, no fix needed; round 2 review agds-alt-xhigh), Phase 9 (finalize, orchestrator).
+**Skipped:** Phase 2 (project-context present at repo root), Phase 4 (gds-testing-disabled), Phase 6 (gds-testing-disabled), Phase 8 (not last in epic).
+
+**Overrides:** none.
+
+**Testing:** disabled in V0. Full headless suite green at dev, round 1, and round 2: 151 PASS / 0 FAIL each time; false-PASS grep guard clean; determinism grep clean; `git diff --check` clean.
+
+**Code review:** 2 iterations (cap 3) — converged with ZERO code defects in both rounds.
+- Round 1 — agds-xhigh, Approve, 0/0/0/0; 0 Patch, 1 Decision (Option-A eligibility precedent — RATIFIED by human 2026-07-03, no code change), 2 Notes; 5 ledger entries were traceability re-pointers.
+- Round 2 — agds-alt-xhigh, Approve, 0/0/0/0 on byte-identical code; zero new findings; two adversarial hunt targets cleared. CONVERGED.
+- HITL outcome: auto-continued (0 open decisions, no needs-human, no blocker — user loop protocol continue conditions met).
+
+**Open questions:** (none).
+
+**Deferred work:** (none new from review) — the five dev-recorded forward defers stand (8.6 render/dismiss, live combat-death call site + auto-wire, narrative roster/localization, Epic-9 first-victory FR62, 8.7 save-load matrix); the four prior first-death defers were closed as [Resolved 8.5].
+
+**Planning drift:** (none) — not epic-end.
+
+**Needs human:** (none) — story is done; merging the PR is optional and on the human's own time.
+
+**Next:** `8-6` (next Epic 8 story — preview only, not started).
