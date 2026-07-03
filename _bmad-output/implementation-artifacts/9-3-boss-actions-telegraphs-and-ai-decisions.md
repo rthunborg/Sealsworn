@@ -4,7 +4,7 @@ baseline_commit: e9cecd1e0b54aa4a15679c8a38a5b135a4fcb2fe
 
 # Story 9.3: Boss Actions, Telegraphs, and AI Decisions
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -96,44 +96,44 @@ If an AC seems to demand the boss VICTORY or the full auto-played run loop, re-r
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Instantiate the live boss `TacticalEntityState` on the arena board (AC2/AC3/AC4)** — the live-loop seam
-  - [ ] Read the `BossDefinition` through `BossRepository.get_boss("larval_avatar")` (the 9.2 baseline); build a `TacticalEntityState` (`entity_type = ENEMY`, `entity_id`/`definition_id == "larval_avatar"`, `current_hp = max_hp = definition.max_hp` (36), position = the `boss_slot` cell, `blocks_movement = true`). `TacticalEntityState.validate()` needs `max_hp > 0` — the definition supplies it. Place it on a headless, deterministic arena board (the 9.1 `BossArenaBuilder` layout, with the `boss_slot` now filled).
-  - [ ] Record the live-loop boundary: 9.3 drives boss turns by EXPLICIT test turns; it does NOT auto-wire `run_to_completion`, the victory (9.4), or a player-death path.
+- [x] **Task 1 — Instantiate the live boss `TacticalEntityState` on the arena board (AC2/AC3/AC4)** — the live-loop seam
+  - [x] Read the `BossDefinition` through `BossRepository.get_boss("larval_avatar")` (the 9.2 baseline); build a `TacticalEntityState` (`entity_type = ENEMY`, `entity_id`/`definition_id == "larval_avatar"`, `current_hp = max_hp = definition.max_hp` (36), position = the `boss_slot` cell, `blocks_movement = true`). `TacticalEntityState.validate()` needs `max_hp > 0` — the definition supplies it. Place it on a headless, deterministic arena board (the 9.1 `BossArenaBuilder` layout, with the `boss_slot` now filled).
+  - [x] Record the live-loop boundary: 9.3 drives boss turns by EXPLICIT test turns; it does NOT auto-wire `run_to_completion`, the victory (9.4), or a player-death path.
 
-- [ ] **Task 2 — The boss AI: pure utility scoring over the active phase's legal actions (AC3)** — a `RefCounted` under `godot/scripts/ai/` (the `PrototypeEnemyAi` analogue)
-  - [ ] Given `(board, boss_entity, player_id, pending_telegraphs, turn_number, active_phase_index)` + the `BossDefinition`, score ONLY `definition.legal_action_ids(active_phase_index)`; pick the highest-scoring; return an `AiDecision`-shaped choice (`action_id` + integer `score` + `reasons` + target/cell). PURE READ — ZERO RNG (the `PrototypeEnemyAi` posture); deterministic.
-  - [ ] Author distinct scores so ties never occur; if a tie is unavoidable, break it deterministically by declaration order, NEVER by RNG. Record the choice.
-  - [ ] Tests: the AI scores ONLY the active phase's legal ids; a different active phase yields a different legal set (the 9.2 phase-0 vs phase-1 sets differ); same inputs → same decision; ZERO RNG drawn.
+- [x] **Task 2 — The boss AI: pure utility scoring over the active phase's legal actions (AC3)** — a `RefCounted` under `godot/scripts/ai/` (the `PrototypeEnemyAi` analogue)
+  - [x] Given `(board, boss_entity, player_id, pending_telegraphs, turn_number, active_phase_index)` + the `BossDefinition`, score ONLY `definition.legal_action_ids(active_phase_index)`; pick the highest-scoring; return an `AiDecision`-shaped choice (`action_id` + integer `score` + `reasons` + target/cell). PURE READ — ZERO RNG (the `PrototypeEnemyAi` posture); deterministic.
+  - [x] Author distinct scores so ties never occur; if a tie is unavoidable, break it deterministically by declaration order, NEVER by RNG. Record the choice.
+  - [x] Tests: the AI scores ONLY the active phase's legal ids; a different active phase yields a different legal set (the 9.2 phase-0 vs phase-1 sets differ); same inputs → same decision; ZERO RNG drawn.
 
-- [ ] **Task 3 — The two-turn TELEGRAPH → RESOLVE flow for the major dangerous ability (AC1, AC4)**
-  - [ ] Resolve the telegraph-kind `[Decision]` (reuse the `ash_seer_mark` `PendingTelegraphState` kind vs a new boss telegraph kind with the same validation shape) and record it. The telegraph event this turn adds a pending telegraph with `due_turn_number == created_turn_number + 1` (the one-turn response window — the Ash Seer precedent; NO real-time timer, NFR10).
-  - [ ] The resolution a later turn: if the player is still in danger (on the marked cell / adjacent per the ability), emit the damage/effect events (`marked_tile_detonated` + `damage_applied` on a hit); if the player escaped, resolve as avoided/expired with NO damage (the Ash Seer `avoided` outcome).
-  - [ ] Record which abilities telegraph and which (if any) resolve same-turn (AC1 requires AT LEAST the major dangerous ability to telegraph).
-  - [ ] Tests: the major ability emits a telegraph BEFORE damage; a resolved hit applies `damage_applied` naming the ability; an escaped telegraph resolves avoided with no damage; the one-turn window holds.
+- [x] **Task 3 — The two-turn TELEGRAPH → RESOLVE flow for the major dangerous ability (AC1, AC4)**
+  - [x] Resolve the telegraph-kind `[Decision]` (reuse the `ash_seer_mark` `PendingTelegraphState` kind vs a new boss telegraph kind with the same validation shape) and record it. The telegraph event this turn adds a pending telegraph with `due_turn_number == created_turn_number + 1` (the one-turn response window — the Ash Seer precedent; NO real-time timer, NFR10).
+  - [x] The resolution a later turn: if the player is still in danger (on the marked cell / adjacent per the ability), emit the damage/effect events (`marked_tile_detonated` + `damage_applied` on a hit); if the player escaped, resolve as avoided/expired with NO damage (the Ash Seer `avoided` outcome).
+  - [x] Record which abilities telegraph and which (if any) resolve same-turn (AC1 requires AT LEAST the major dangerous ability to telegraph).
+  - [x] Tests: the major ability emits a telegraph BEFORE damage; a resolved hit applies `damage_applied` naming the ability; an escaped telegraph resolves avoided with no damage; the one-turn window holds.
 
-- [ ] **Task 4 — The narrow boss command ADAPTER: actions become existing events, never a direct mutation (AC2)** — a `RefCounted` under `godot/scripts/tactical/turns/` (the `EnemyCommandAdapter` analogue)
-  - [ ] `match` the chosen boss `action_id` → turn it into existing `DomainEvent`s (`entity_moved` for a reposition; `tile_marked` + `marked_tile_detonated` (+ `damage_applied`) for a telegraphed effect; `entity_attacked` + `damage_applied` for any same-turn attack; `enemy_waited` fallback) applied through `board.apply_events`. The boss NEVER mutates `BoardState`/`TacticalEntityState`/`TacticalTurnState` directly.
-  - [ ] Every emitted event carries the ability's `explanation` + `action_id` (+ `score`/`reasons`) so the log identifies the ability (AC4). Reuse the 9.2 `BossActionDefinition.explanation`/`telegraph_text` strings.
-  - [ ] Tests: each action id maps to the expected events; the boss path mutates the board ONLY via `apply_events` (a pre/post comparison); an unsupported/blocked action falls back to a deterministic wait.
+- [x] **Task 4 — The narrow boss command ADAPTER: actions become existing events, never a direct mutation (AC2)** — a `RefCounted` under `godot/scripts/tactical/turns/` (the `EnemyCommandAdapter` analogue)
+  - [x] `match` the chosen boss `action_id` → turn it into existing `DomainEvent`s (`entity_moved` for a reposition; `tile_marked` + `marked_tile_detonated` (+ `damage_applied`) for a telegraphed effect; `entity_attacked` + `damage_applied` for any same-turn attack; `enemy_waited` fallback) applied through `board.apply_events`. The boss NEVER mutates `BoardState`/`TacticalEntityState`/`TacticalTurnState` directly.
+  - [x] Every emitted event carries the ability's `explanation` + `action_id` (+ `score`/`reasons`) so the log identifies the ability (AC4). Reuse the 9.2 `BossActionDefinition.explanation`/`telegraph_text` strings.
+  - [x] Tests: each action id maps to the expected events; the boss path mutates the board ONLY via `apply_events` (a pre/post comparison); an unsupported/blocked action falls back to a deterministic wait.
 
-- [ ] **Task 5 — The boss turn resolver + the LIVE phase re-resolution seam (AC2, AC3; closes 9.2 Low #1)** — a driver under `godot/scripts/tactical/turns/` (the `EnemyTurnResolver` analogue, or an extension)
-  - [ ] On the boss's turn: run the boss AI → the boss adapter on a SIMULATION copy of the context (the `_copy_context_for_simulation` discipline), `PendingTelegraphState.validate_events` the events, `board.apply_events`, then `PendingTelegraphState.apply_events`; sync the turn state (the `EnemyTurnResolver.resolve_after_player_action` shape).
-  - [ ] After the boss's HP changes, call `BossPhaseResolver.resolve(def, current_phase_index, current_hp)` and emit ONE `boss_phase_changed` per returned transition (from each `transition.to_payload()`). This is the live wiring — ADD the closing test: a live boss-HP drop crosses a 9.2 threshold → the resolver returns a transition → `DomainEvent.boss_phase_changed(seq, transition.to_payload())` succeeds + validates + JSON-round-trips (closes 9.2 Low #1).
-  - [ ] Resolve the phase-state `[Decision]` (Task 7) — track `current_phase_index` as a runtime field or recompute from HP (RECOMMENDED); record it.
-  - [ ] Tests: the boss turn resolves through the simulate-then-apply path; a threshold crossing emits `boss_phase_changed` live from the resolver.
+- [x] **Task 5 — The boss turn resolver + the LIVE phase re-resolution seam (AC2, AC3; closes 9.2 Low #1)** — a driver under `godot/scripts/tactical/turns/` (the `EnemyTurnResolver` analogue, or an extension)
+  - [x] On the boss's turn: run the boss AI → the boss adapter on a SIMULATION copy of the context (the `_copy_context_for_simulation` discipline), `PendingTelegraphState.validate_events` the events, `board.apply_events`, then `PendingTelegraphState.apply_events`; sync the turn state (the `EnemyTurnResolver.resolve_after_player_action` shape).
+  - [x] After the boss's HP changes, call `BossPhaseResolver.resolve(def, current_phase_index, current_hp)` and emit ONE `boss_phase_changed` per returned transition (from each `transition.to_payload()`). This is the live wiring — ADD the closing test: a live boss-HP drop crosses a 9.2 threshold → the resolver returns a transition → `DomainEvent.boss_phase_changed(seq, transition.to_payload())` succeeds + validates + JSON-round-trips (closes 9.2 Low #1).
+  - [x] Resolve the phase-state `[Decision]` (Task 7) — track `current_phase_index` as a runtime field or recompute from HP (RECOMMENDED); record it.
+  - [x] Tests: the boss turn resolves through the simulate-then-apply path; a threshold crossing emits `boss_phase_changed` live from the resolver.
 
-- [ ] **Task 6 — Reconcile the `BossPhaseResolver` `from_phase = -1` defensive branch (closes 9.2 Low #2)** — the one 9.2-code change
-  - [ ] Clamp `current_phase_index` to `>= 0` in `resolve()` (a negative index → "already at phase 0", a no-op) so `resolve()` can NEVER return a transition whose `to_payload()` has `from_phase < 0` (which `_validate_boss_phase_changed_payload` rejects). Record the reconciliation.
-  - [ ] Test: `resolve(def, -1, full_hp)` yields no event-invalid transition; any transition it returns has `to_payload()` passing `_validate_boss_phase_changed_payload`.
+- [x] **Task 6 — Reconcile the `BossPhaseResolver` `from_phase = -1` defensive branch (closes 9.2 Low #2)** — the one 9.2-code change
+  - [x] Clamp `current_phase_index` to `>= 0` in `resolve()` (a negative index → "already at phase 0", a no-op) so `resolve()` can NEVER return a transition whose `to_payload()` has `from_phase < 0` (which `_validate_boss_phase_changed_payload` rejects). Record the reconciliation.
+  - [x] Test: `resolve(def, -1, full_hp)` yields no event-invalid transition; any transition it returns has `to_payload()` passing `_validate_boss_phase_changed_payload`.
 
-- [ ] **Task 7 — The live phase-state `[Decision]` + the runtime-event `[Decision]` (AC1/AC4)**
-  - [ ] Record where the boss's `current_phase_index` lives (RECOMMENDED: recompute from `current_hp` + the definition at each boss turn via the resolver's deepest-crossed logic — no divergent stored phase; the 23-key `RunSnapshot` gate stays 23; NO persisted phase key).
-  - [ ] Record whether a NEW runtime boss event was added (RECOMMENDED: NO — reuse `tile_marked`/`marked_tile_detonated`/`entity_attacked`/`damage_applied`/`entity_moved`/`enemy_waited`). If one is added, wire it end-to-end + UPDATE the `expected_ids` exhaustiveness pin (it fails-loud until you do — do NOT loosen it).
+- [x] **Task 7 — The live phase-state `[Decision]` + the runtime-event `[Decision]` (AC1/AC4)**
+  - [x] Record where the boss's `current_phase_index` lives (RECOMMENDED: recompute from `current_hp` + the definition at each boss turn via the resolver's deepest-crossed logic — no divergent stored phase; the 23-key `RunSnapshot` gate stays 23; NO persisted phase key).
+  - [x] Record whether a NEW runtime boss event was added (RECOMMENDED: NO — reuse `tile_marked`/`marked_tile_detonated`/`entity_attacked`/`damage_applied`/`entity_moved`/`enemy_waited`). If one is added, wire it end-to-end + UPDATE the `expected_ids` exhaustiveness pin (it fails-loud until you do — do NOT loosen it).
 
-- [ ] **Task 8 — Cross-checks, suite, and hygiene (all ACs)**
-  - [ ] Cross-check: the live boss entity's `definition_id == BossDefinition.BOSS_ID == BossEncounterRequest.BOSS_ENTITY_ID` (`larval_avatar`, the 9.1 slot) — 9.3 fills the SAME slot the arena reserved.
-  - [ ] Confirm 9.3 touches NONE of: the 9.1 setup (`BossNodeEnterCommand`/`BossEncounterRequest`/`BossArenaBuilder`/`RunOrchestrator._resolve_boss`/the `boss_encounter_started` event/the `boss_slot` marker), the 9.2 definition/phase model (`BossDefinition`/`BossPhaseDefinition`/`BossActionDefinition`/`BossRepository`/`BossPhaseTransition`/the `boss_phase_changed` event contract — EXCEPT the `resolve()` negative-index clamp), the route model, the boss node type, the `run_completed`/`boss_placeholder`/`boss_node_id` boundary, the 23-key `RunSnapshot` gate, `scripts/rules/conditions/` (EMPTY), `scripts/rules/operations/` (single file), any seed-regression fingerprint, or any `.tres`/JSON content file.
-  - [ ] Run the full headless suite; apply the false-PASS grep guard; `git diff --check`; verify `git status --short` clean of stray temp/generated files (never remove planning/story artifacts).
+- [x] **Task 8 — Cross-checks, suite, and hygiene (all ACs)**
+  - [x] Cross-check: the live boss entity's `definition_id == BossDefinition.BOSS_ID == BossEncounterRequest.BOSS_ENTITY_ID` (`larval_avatar`, the 9.1 slot) — 9.3 fills the SAME slot the arena reserved.
+  - [x] Confirm 9.3 touches NONE of: the 9.1 setup (`BossNodeEnterCommand`/`BossEncounterRequest`/`BossArenaBuilder`/`RunOrchestrator._resolve_boss`/the `boss_encounter_started` event/the `boss_slot` marker), the 9.2 definition/phase model (`BossDefinition`/`BossPhaseDefinition`/`BossActionDefinition`/`BossRepository`/`BossPhaseTransition`/the `boss_phase_changed` event contract — EXCEPT the `resolve()` negative-index clamp), the route model, the boss node type, the `run_completed`/`boss_placeholder`/`boss_node_id` boundary, the 23-key `RunSnapshot` gate, `scripts/rules/conditions/` (EMPTY), `scripts/rules/operations/` (single file), any seed-regression fingerprint, or any `.tres`/JSON content file.
+  - [x] Run the full headless suite; apply the false-PASS grep guard; `git diff --check`; verify `git status --short` clean of stray temp/generated files (never remove planning/story artifacts).
 
 ## Dev Notes
 
@@ -232,8 +232,47 @@ Extracted from `project-context.md` (the canonical implementation rulebook, refr
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — auto-gds dev-story delegate.
+
 ### Debug Log References
+
+Full headless suite green after implementation: **161 PASS / 0 `^FAIL`** (up from the 158 post-9.2 baseline — 3 new test files: `test_boss_ai.gd`, `test_boss_command_adapter.gd`, `test_boss_turn_resolver.gd`; `test_boss_phase_resolver.gd` extended in place). False-PASS grep guard clean: ZERO `SCRIPT ERROR|Parse Error|Compile Error|Failed to load script`; only the documented negatives (int64-overflow ×2, deliberate malformed-JSON ×3, `invalid_node_type` ×1). `git diff --check` clean; `git status --short` clean of stray files.
 
 ### Completion Notes List
 
+Runtime-behavior half of Epic-9's boss shipped: the Larval Avatar is now a LIVE board entity that decides, telegraphs, applies damage, and re-resolves its phase. All 4 ACs satisfied + both 9.2-earmarked Low findings closed.
+
+**Recorded `[Decision]`s:**
+- **[Decision] Phase-state (Task 7):** RECOMMENDED path — the boss's `current_phase_index` is RECOMPUTED from `current_hp` at each boss turn via a new pure `BossPhaseResolver.active_phase_index(definition, current_hp)` helper (wraps the existing `_deepest_crossed_phase`, clamped `>= 0`). NO stored/persisted phase state; the 23-key `RunSnapshot` gate stays 23; `boss_phase_changed` events are the honest crossing record.
+- **[Decision] Telegraph kind (Task 3):** Added a NEW `PendingTelegraphState.KIND_LARVAL_AVATAR_TELEGRAPH` (`"larval_avatar_telegraph"`) with the SAME validation shape as `ash_seer_mark` (generalized `validate_pending_mark` to a `VALID_KINDS` allowlist; `_apply_tile_marked` now reads the kind from the event payload instead of hardcoding, defaulting to `ash_seer_mark` for back-compat). Reason: a boss ability is not an Ash Seer mark — a distinct kind keeps the record honest. Also preserves optional `boss_action_id`/`telegraph_text` onto the stored pending mark so the later resolution's damage event names the ability (AC4).
+- **[Decision] Which abilities telegraph (Task 3):** ALL damaging boss abilities telegraph (mark the player's cell this turn, resolve next turn) — `lash`/`frenzied_lash` (physical) + `corrupt_mark`/`corrupt_flood` (corruption); the zero-damage `skitter` is an immediate reposition (`entity_moved`). One-turn window (`due == created + 1`, the Ash Seer precedent; NO real-time timer — NFR10). This EXCEEDS AC1's "at least the major dangerous ability telegraphs."
+- **[Decision] Event (Task 8):** Added NO new `DomainEvent.Type` member. Reused `tile_marked` → `marked_tile_detonated` (+`damage_applied`) for telegraphed abilities, `entity_moved` for skitter, `enemy_waited` for the no-op fallback, and the 9.2 `boss_phase_changed` (emitted LIVE). The `expected_ids` exhaustiveness pin is untouched (still valid).
+- **[Decision] DTO reuse:** The boss AI returns the existing `AiDecision` shape (the story-sanctioned option) with the boss id in `enemy_id`/`enemy_definition_id` and boss-specific bits (`boss_action_id`/`damage`/`damage_type`/`telegraph_text`/`explanation`/`active_phase_index`) in `metadata`. The adapter matches boss-shaped adapter action ids (`telegraph`/`resolve`/`move`/`wait`) mirroring the enemy adapter's `mark`/`detonate`/`move`/`wait` vocabulary.
+- **[Decision] Turn driver:** A NEW `BossTurnResolver` (parallel to `EnemyTurnResolver`, NOT an extension) — the boss is a single entity driven by explicit test turns (no player-result gate), so a dedicated driver is cleaner than branching the enemy resolver. It uses the identical `_copy_context_for_simulation` simulate-then-apply discipline. The live phase seam (`resolve_phase_transitions`) is a SEPARATE composable method called after the boss's HP changes (in 9.3 the damage-to-boss source is the player/test).
+- **[Decision] Reconciliation (Task 6):** `BossPhaseResolver.resolve()` now clamps `current_phase_index` to `maxi(0, ...)` — a negative index is treated as "already at phase 0" (a no-op for phase 0's entry), so `resolve()` can NEVER emit a `from_phase < 0` transition (which the event validator rejects). Production always starts the boss at phase 0, so this stays defensive-only. Closes 9.2 review Low #2.
+
+**Live-loop boundary (recorded, in scope):** 9.3 drives boss turns by EXPLICIT test turns. It does NOT auto-wire the boss fight into `run_to_completion`, does NOT auto-play the encounter to victory/death, and adds NO player-death → `PHASE_FAILED` or boss-defeat → run-victory call site (that + the first-victory reveal is 9.4). Dropping the boss to low HP in a test is a tactical exercise of the deepest phase transition, not the run-victory wiring.
+
+**9.2-deferred Lows closed:** (1) the resolver→`boss_phase_changed` integration seam is now exercised end-to-end live in `BossTurnResolver.resolve_phase_transitions` + closing assertions in both `test_boss_turn_resolver.gd` and `test_boss_phase_resolver.gd` (`resolver.resolve(...)[i].to_payload()` → event → validate → JSON round-trip). (2) the `from_phase = -1` branch is reconciled (the clamp above) + `test_boss_phase_resolver.gd::_negative_phase_index_never_emits_an_event_invalid_transition`.
+
+**Scope confirmed:** ZERO touch to the 9.1 setup (`BossNodeEnterCommand`/`BossEncounterRequest`/`BossArenaBuilder`/`RunOrchestrator`/`boss_encounter_started`/the `boss_slot` marker), the 9.2 definition/repository/transition/event contract (the ONLY 9.2-code change is the `resolve()` clamp + the pure `active_phase_index` helper), the route model, the 23-key `RunSnapshot` gate, `scripts/rules/conditions/` (empty), `scripts/rules/operations/` (single file), any seed-regression fingerprint, or any `.tres`/JSON content file. No new autoload; no new RNG stream; ZERO RNG in the boss AI.
+
 ### File List
+
+**New production files:**
+- `godot/scripts/ai/boss_ai.gd` — the boss AI (pure, phase-constrained utility scorer; ZERO RNG).
+- `godot/scripts/tactical/turns/boss_command_adapter.gd` — the narrow boss adapter (actions → existing events via `board.apply_events`; never a direct mutation).
+- `godot/scripts/tactical/turns/boss_turn_resolver.gd` — the simulate-then-apply boss turn driver + the live phase re-resolution seam.
+
+**Modified production files:**
+- `godot/scripts/content/boss/boss_phase_resolver.gd` — clamp `current_phase_index >= 0` in `resolve()` (closes 9.2 Low #2) + a new pure `active_phase_index()` helper.
+- `godot/scripts/tactical/turns/pending_telegraph_state.gd` — generalized to a `VALID_KINDS` allowlist + `KIND_LARVAL_AVATAR_TELEGRAPH`; `_apply_tile_marked` reads the kind from the event payload (back-compat default `ash_seer_mark`) and preserves optional `boss_action_id`/`telegraph_text`.
+
+**New test files:**
+- `godot/tests/unit/ai/test_boss_ai.gd` — AC3 (phase-constrained scoring, reproducibility, ZERO RNG).
+- `godot/tests/unit/tactical/test_boss_command_adapter.gd` — AC2/AC4 (each action → events, no direct mutation, telegraph/resolution hit+avoided, ability-named damage, wait fallback).
+- `godot/tests/unit/tactical/test_boss_turn_resolver.gd` — AC1/AC2/AC3/AC4 + the live phase seam (telegraph-before-damage, two-turn resolve, escape, live `boss_phase_changed`, the 9.1-slot cross-check).
+- `godot/tests/fixtures/tactical/boss_board_fixture_factory.gd` — the live boss board fixture (9.1 arena + the boss entity at the reserved slot + the hero).
+
+**Modified test files:**
+- `godot/tests/unit/content/test_boss_phase_resolver.gd` — the negative-index reconciliation + `active_phase_index` + the live resolver→event seam closing assertion.

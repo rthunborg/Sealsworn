@@ -1,5 +1,8 @@
 # Epic 9 — Auto-GDS retro notes
 
+## Story 9-3-boss-actions-telegraphs-and-ai-decisions
+- [Phase 5 — dev-story] `PendingTelegraphState._apply_tile_marked` silently HARDCODED `kind: ash_seer_mark` and dropped all non-schema payload keys — a latent trap for any second telegraph source. Generalized in 9.3 to read the kind + preserve optional descriptive keys (needed for the boss ability name to survive onto the resolved-damage event). The one non-obvious cross-cutting change to a shared 9.2/Epic-1 file.
+
 ## Story 9-2-larval-avatar-definition-and-phases
 - [Phase 3 — create-story] 9.2's central architectural pivot: the boss must be a validated content DEFINITION, not a live board entity — `TacticalEntityState.validate()` requires `max_hp > 0`, which is why 9.1 kept the boss as an off-board `boss_slot` marker (`is_placeholder: true`). A live boss entity or turn-loop wiring in 9.2 is scope leak into the 9.3/9.4 live-loop seam; flag in review.
 

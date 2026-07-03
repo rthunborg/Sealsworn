@@ -47,10 +47,16 @@ func resolve(definition: BossDefinition, current_phase_index: int, current_hp: i
 	# A valid boss always has >= 2 phases; guard defensively so a malformed/unvalidated definition can't index badly.
 	if phase_count < 1:
 		return transitions
+	# RECONCILIATION (Story 9.3, closing 9.2 review Low #2): CLAMP a negative current_phase_index to 0. Phase 0 is the
+	# always-active floor on a valid boss, so "before phase 0" is not a real state — treating a negative index as
+	# "already at phase 0" makes phase 0's entry a NO-OP (deepest_crossed 0 <= clamped 0) and guarantees resolve() can
+	# NEVER return a transition whose to_payload() has from_phase < 0 (which _validate_boss_phase_changed_payload
+	# rejects). The live loop (9.3) always starts the boss at phase 0, so a negative index is defensive-only; this
+	# clamp reconciles the resolver's internal contract with the event's non-negative forward-only contract.
+	var effective_phase_index: int = maxi(0, current_phase_index)
 	# Clamp the current phase index into range (a caller passing a stale/out-of-range index gets no transition rather
-	# than a crash — the fail-closed posture). A negative index is treated as "before phase 0" so phase 0's entry can
-	# still fire; but on a VALID boss the caller starts at phase 0 (always active), so this is defensive only.
-	if current_phase_index >= phase_count - 1:
+	# than a crash — the fail-closed posture). On a VALID boss the caller starts at phase 0 (always active).
+	if effective_phase_index >= phase_count - 1:
 		# Already in (or past) the last phase — nothing deeper to enter. Also covers an out-of-range-high index.
 		return transitions
 
@@ -58,13 +64,14 @@ func resolve(definition: BossDefinition, current_phase_index: int, current_hp: i
 	# decrease, so once a threshold is NOT crossed no later (lower) one can be either — but we scan all to be explicit
 	# and to keep the read robust to any (already-rejected) non-monotonic definition.
 	var deepest_crossed: int = _deepest_crossed_phase(definition, current_hp)
-	if deepest_crossed <= current_phase_index:
+	if deepest_crossed <= effective_phase_index:
 		# No phase deeper than the current one is crossed — idempotent NO-OP (a re-crossed / already-behind threshold).
 		return transitions
 
 	# Emit ONE transition per phase actually entered, in order (the multi-threshold-in-one-hit chain — no phase skipped
-	# in the log). Each step is a forward adjacent transition (to_phase == from_phase + 1).
-	for entered_phase: int in range(current_phase_index + 1, deepest_crossed + 1):
+	# in the log). Each step is a forward adjacent transition (to_phase == from_phase + 1). Because effective_phase_index
+	# is clamped to >= 0, the first entered phase is >= 0 and its from_phase (entered_phase - 1) is >= 0 (never -1).
+	for entered_phase: int in range(effective_phase_index + 1, deepest_crossed + 1):
 		var phase: BossPhaseDefinition = definition.get_phase(entered_phase)
 		var phase_id_value: StringName = &""
 		var explanation_value: String = ""
@@ -80,6 +87,18 @@ func resolve(definition: BossDefinition, current_phase_index: int, current_hp: i
 			explanation_value
 		))
 	return transitions
+
+
+# The active phase index for a boss at `current_hp` — the deepest phase whose HP threshold is crossed, clamped to a
+# valid phase index (>= 0). This is the "what phase is the boss in RIGHT NOW for this HP" pure read the live loop
+# (Story 9.3) uses to RECOMPUTE the active phase at the start of each boss turn (so there is NO divergent stored phase
+# to persist — the 23-key RunSnapshot gate stays 23). Phase 0 is the always-active floor: any in-band HP (0..max_hp)
+# yields >= 0. An out-of-band HP (> max_hp) or an invalid definition clamps to phase 0 (fail-closed — the boss is
+# always in at least its entry phase). Draws ZERO RNG; mutates nothing (the pure-read contract).
+func active_phase_index(definition: BossDefinition, current_hp: int) -> int:
+	if definition == null:
+		return 0
+	return maxi(0, _deepest_crossed_phase(definition, current_hp))
 
 
 # The deepest phase index whose HP threshold is crossed by current_hp. Phase 0 (threshold 100) is crossed at any
