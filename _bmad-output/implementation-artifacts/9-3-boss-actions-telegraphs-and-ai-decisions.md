@@ -4,7 +4,7 @@ baseline_commit: e9cecd1e0b54aa4a15679c8a38a5b135a4fcb2fe
 
 # Story 9.3: Boss Actions, Telegraphs, and AI Decisions
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
