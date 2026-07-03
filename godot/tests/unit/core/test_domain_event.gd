@@ -19,6 +19,7 @@ func run() -> Dictionary:
 	_run_completed_serializes_and_parses_stable_payload()
 	_run_completed_rejects_malformed_payloads()
 	_run_completed_completion_outcome_serializes_and_parses()
+	_run_completed_victory_outcome_serializes_and_parses()
 	_run_completed_rejects_broadened_malformed_payloads()
 	_run_failed_serializes_and_parses_stable_payload()
 	_run_failed_rejects_malformed_payloads()
@@ -34,6 +35,10 @@ func run() -> Dictionary:
 	_boss_encounter_started_rejects_malformed_payloads()
 	_boss_phase_changed_serializes_and_parses_stable_payload()
 	_boss_phase_changed_rejects_malformed_payloads()
+	_first_victory_recorded_serializes_and_parses_stable_payload()
+	_first_victory_recorded_rejects_malformed_payloads()
+	_boss_defeated_serializes_and_parses_stable_payload()
+	_boss_defeated_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -710,20 +715,21 @@ func _run_completed_rejects_malformed_payloads() -> void:
 	assert_equal(missing_outcome.error_code, &"invalid_event_payload", "Malformed run_completed should use the stable code.")
 	assert_equal(missing_outcome.metadata.get("field"), "outcome", "run_completed should name the missing outcome field.")
 
-	# A WRONG outcome value (lower_snake but not the pinned marker) is rejected (value-equality, mirroring
-	# level_victory_reached's outcome == "victory").
+	# A WRONG outcome value (lower_snake but not in the completion allowlist) is rejected (value-equality, mirroring
+	# level_victory_reached's outcome == "victory"). Story 9.4: `victory` is now a VALID marker (the 8.1-reserved value,
+	# unblocked), so a genuine garbage value (`not_a_real_outcome`) takes over as the non-marker example here.
 	var wrong_outcome: ActionResult = DomainEvent.try_from_dictionary({
 		"event_id": "run_completed",
 		"sequence_id": 1,
 		"actor_id": "",
 		"payload": {
-			"outcome": "victory",
+			"outcome": "not_a_real_outcome",
 			"boss_node_id": "node-7-0",
 			"cleared_node_count": 9
 		}
 	})
 	assert_true(wrong_outcome.is_error(), "run_completed with a non-marker outcome value should be rejected.")
-	assert_equal(wrong_outcome.metadata.get("field"), "outcome", "run_completed should pin the exact boss_placeholder outcome marker.")
+	assert_equal(wrong_outcome.metadata.get("field"), "outcome", "run_completed should pin the allowlisted outcome markers (boss_placeholder/completed/victory).")
 
 	# A missing boss_node_id is rejected.
 	var missing_boss: ActionResult = DomainEvent.try_from_dictionary({
@@ -780,16 +786,44 @@ func _run_completed_completion_outcome_serializes_and_parses() -> void:
 	assert_equal(String(DomainEvent.RUN_END_DESTINATION_OUTPOST), "outpost", "RUN_END_DESTINATION_OUTPOST must be `outpost`.")
 
 
+func _run_completed_victory_outcome_serializes_and_parses() -> void:
+	# Story 9.4 (AC1): the REAL Larval-Avatar boss VICTORY — outcome `victory` (the 8.1-reserved third completion marker,
+	# now UNBLOCKED), NO boss_node_id (a non-boss completion), the outpost next-destination flow signal. It VALIDATES +
+	# round-trips through real JSON, exactly like the `completed` completion — the run-victory IS run_completed + outcome ==
+	# victory (NOT a parallel run_victory event).
+	var event: DomainEvent = DomainEvent.run_completed(41, {
+		"outcome": "victory",
+		"cleared_node_count": 9,
+		"next_destination": "outpost"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "run_completed", "The boss victory still uses the run_completed event id (no parallel run_victory event).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "A `victory` run_completed should validate (the 9.4-unblocked allowlist): %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(String(restored.payload.get("outcome")), "victory", "The `victory` outcome must survive a JSON round-trip.")
+	assert_equal(int(restored.payload.get("cleared_node_count")), 9, "The cleared_node_count must survive a JSON round-trip.")
+	assert_equal(String(restored.payload.get("next_destination")), "outpost", "The outpost next-destination must survive a JSON round-trip.")
+	# A victory (like a generic completion) carries NO boss node id (the boss defeat derives boss progress from the route).
+	assert_false(restored.payload.has("boss_node_id"), "A `victory` run_completed should NOT carry a boss_node_id (a non-boss-placeholder completion).")
+
+	# The marker const is pinned.
+	assert_equal(String(DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY), "victory", "RUN_COMPLETED_OUTCOME_VICTORY must be `victory`.")
+
+
 func _run_completed_rejects_broadened_malformed_payloads() -> void:
-	# A WRONG/garbage outcome (lower_snake but neither boss_placeholder nor `completed` — e.g. a stray `victory`) is
-	# still REJECTED (the allowlist did not become permissive — this is the load-bearing AC2 guard).
+	# Story 9.4 (AC1): `victory` is now an ACCEPTED completion outcome (the 8.1-reserved marker, UNBLOCKED). A WRONG/garbage
+	# outcome (lower_snake but none of boss_placeholder / completed / victory — e.g. `not_a_real_outcome`) is still REJECTED
+	# (the allowlist did not become permissive — this is the load-bearing AC2/AC1 guard; a NEW garbage value takes over as
+	# the rejection guard now that `victory` is a real marker).
 	var stray: ActionResult = DomainEvent.try_from_dictionary({
 		"event_id": "run_completed",
 		"sequence_id": 1,
 		"actor_id": "",
-		"payload": {"outcome": "victory", "cleared_node_count": 8, "next_destination": "outpost"}
+		"payload": {"outcome": "not_a_real_outcome", "cleared_node_count": 8, "next_destination": "outpost"}
 	})
-	assert_true(stray.is_error(), "A stray `victory` outcome must still be rejected (the allowlist is boss_placeholder/completed).")
+	assert_true(stray.is_error(), "A stray `not_a_real_outcome` outcome must still be rejected (the allowlist is boss_placeholder/completed/victory).")
 	assert_equal(stray.metadata.get("field"), "outcome", "A garbage outcome should name the outcome field.")
 
 	# A `completed` outcome MISSING the next_destination flow signal is rejected (the destination is required — FR32).
@@ -1453,6 +1487,164 @@ func _merged_payload(overrides: Dictionary) -> Dictionary:
 	for key: String in overrides.keys():
 		payload[key] = overrides[key]
 	return payload
+
+
+func _first_victory_recorded_serializes_and_parses_stable_payload() -> void:
+	# Story 9.4 (AC2/FR62): a first_victory_recorded SYSTEM event (no actor) — the first-victory narrative marker, the
+	# OPPOSITE-terminal-phase twin of first_death_recorded. line_id is a stable lower_snake NARRATIVE-LINE id (LINE-AS-ID —
+	# NOT the raw prose); is_skippable is a plain bool (FR65); profile_id is a plain string; ZERO roll/draw_index (a
+	# deterministic record, not a roll).
+	var event: DomainEvent = DomainEvent.first_victory_recorded(31, {
+		"line_id": "first_victory",
+		"is_skippable": true,
+		"profile_id": "default"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "first_victory_recorded", "first_victory_recorded should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "first_victory_recorded is a system event with an empty actor id.")
+	# ZERO RNG: a recorded flag, not a roll — no roll/draw_index on the payload.
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "first_victory_recorded must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "first_victory_recorded must NOT carry a draw_index (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "first_victory_recorded should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.FIRST_VICTORY_RECORDED, "first_victory_recorded should parse back to FIRST_VICTORY_RECORDED.")
+	assert_equal(restored.payload.get("line_id"), "first_victory", "The line_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("is_skippable"), true, "is_skippable must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("profile_id"), "default", "The profile_id must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.FIRST_VICTORY_RECORDED), &"first_victory_recorded", "id_for_type must map first_victory_recorded.")
+	assert_equal(DomainEvent.type_for_id(&"first_victory_recorded"), DomainEvent.Type.FIRST_VICTORY_RECORDED, "type_for_id must map first_victory_recorded back.")
+	# The line-id const is pinned.
+	assert_equal(String(DomainEvent.FIRST_VICTORY_LINE_ID), "first_victory", "FIRST_VICTORY_LINE_ID must be `first_victory`.")
+
+
+func _first_victory_recorded_rejects_malformed_payloads() -> void:
+	# A missing line_id is rejected.
+	var missing_line: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_victory_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"is_skippable": true, "profile_id": "default"}
+	})
+	assert_true(missing_line.is_error(), "first_victory_recorded missing line_id should be rejected.")
+	assert_equal(missing_line.error_code, &"invalid_event_payload", "Malformed first_victory_recorded should use the stable code.")
+	assert_equal(missing_line.metadata.get("field"), "line_id", "first_victory_recorded should name the missing line_id field.")
+
+	# A non-lower_snake line_id (hyphenated) is rejected.
+	var bad_line: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_victory_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first-victory", "is_skippable": true, "profile_id": "default"}
+	})
+	assert_true(bad_line.is_error(), "first_victory_recorded with a hyphenated line_id should be rejected.")
+	assert_equal(bad_line.metadata.get("field"), "line_id", "A non-lower_snake line_id should name the line_id field.")
+
+	# A missing is_skippable is rejected (the skippability marker must be an explicit bool — FR65).
+	var missing_skippable: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_victory_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_victory", "profile_id": "default"}
+	})
+	assert_true(missing_skippable.is_error(), "first_victory_recorded missing is_skippable should be rejected.")
+	assert_equal(missing_skippable.metadata.get("field"), "is_skippable", "first_victory_recorded should name the missing is_skippable field.")
+
+	# A non-bool is_skippable (a string) is rejected.
+	var bad_skippable: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_victory_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_victory", "is_skippable": "yes", "profile_id": "default"}
+	})
+	assert_true(bad_skippable.is_error(), "first_victory_recorded with a non-bool is_skippable should be rejected.")
+	assert_equal(bad_skippable.metadata.get("field"), "is_skippable", "A non-bool is_skippable should name the is_skippable field.")
+
+	# A non-string profile_id is rejected.
+	var bad_profile: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_victory_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_victory", "is_skippable": true, "profile_id": 7}
+	})
+	assert_true(bad_profile.is_error(), "first_victory_recorded with a non-string profile_id should be rejected.")
+	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
+
+
+func _boss_defeated_serializes_and_parses_stable_payload() -> void:
+	# Story 9.4 (AC1): a boss_defeated SYSTEM event (no actor) — the TACTICAL boss-defeat fact (the Larval Avatar entity
+	# reached 0 HP), DISTINCT from the run-VICTORY (run_completed + victory) run-END record. boss_entity_id is a lower_snake
+	# content id (the Larval Avatar slot); phase_id is the boss's active phase at defeat (lower_snake); final_hp is a
+	# non-negative integral (0 for a defeat); ZERO roll/draw_index (a deterministic record, not a roll).
+	var event: DomainEvent = DomainEvent.boss_defeated(50, {
+		"boss_entity_id": "larval_avatar",
+		"phase_id": "desperation",
+		"final_hp": 0
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "boss_defeated", "boss_defeated should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "boss_defeated is a system event with an empty actor id (the boss is the subject, not the actor).")
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "boss_defeated must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "boss_defeated must NOT carry a draw_index (ZERO RNG).")
+
+	# The int→float JSON footgun (retro §9-1): assert the SURVIVING typed field after parse_string, NOT a nested re-stringify.
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "boss_defeated should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.BOSS_DEFEATED, "boss_defeated should parse back to BOSS_DEFEATED.")
+	assert_equal(String(restored.payload.get("boss_entity_id")), "larval_avatar", "The boss_entity_id must survive a JSON round-trip.")
+	assert_equal(String(restored.payload.get("phase_id")), "desperation", "The phase_id must survive a JSON round-trip.")
+	assert_equal(int(restored.payload.get("final_hp")), 0, "final_hp must survive a JSON round-trip as an int (the int→float footgun).")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.BOSS_DEFEATED), &"boss_defeated", "id_for_type must map boss_defeated.")
+	assert_equal(DomainEvent.type_for_id(&"boss_defeated"), DomainEvent.Type.BOSS_DEFEATED, "type_for_id must map boss_defeated back.")
+
+
+func _boss_defeated_rejects_malformed_payloads() -> void:
+	# A missing boss_entity_id is rejected.
+	var missing_entity: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_defeated",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"phase_id": "desperation", "final_hp": 0}
+	})
+	assert_true(missing_entity.is_error(), "boss_defeated missing boss_entity_id should be rejected.")
+	assert_equal(missing_entity.error_code, &"invalid_event_payload", "Malformed boss_defeated should use the stable code.")
+	assert_equal(missing_entity.metadata.get("field"), "boss_entity_id", "boss_defeated should name the missing boss_entity_id field.")
+
+	# A non-lower_snake boss_entity_id (hyphenated) is rejected (the boss entity id is a lower_snake content id).
+	var bad_entity: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_defeated",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval-avatar", "phase_id": "desperation", "final_hp": 0}
+	})
+	assert_true(bad_entity.is_error(), "boss_defeated with a hyphenated boss_entity_id should be rejected.")
+	assert_equal(bad_entity.metadata.get("field"), "boss_entity_id", "A non-lower_snake boss_entity_id should name the boss_entity_id field.")
+
+	# A missing phase_id is rejected.
+	var missing_phase: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_defeated",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "final_hp": 0}
+	})
+	assert_true(missing_phase.is_error(), "boss_defeated missing phase_id should be rejected.")
+	assert_equal(missing_phase.metadata.get("field"), "phase_id", "boss_defeated should name the missing phase_id field.")
+
+	# A negative final_hp is rejected (final_hp is a non-negative integral).
+	var bad_hp: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_defeated",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "phase_id": "desperation", "final_hp": -1}
+	})
+	assert_true(bad_hp.is_error(), "boss_defeated with a negative final_hp should be rejected.")
+	assert_equal(bad_hp.metadata.get("field"), "final_hp", "A negative final_hp should name the final_hp field.")
 
 
 func _item_gained_serializes_and_parses_stable_payload() -> void:
@@ -2722,7 +2914,12 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.BOSS_ENCOUNTER_STARTED: &"boss_encounter_started",
 		# Story 9.2: the boss_phase_changed SYSTEM event appended at the enum end (never renumbered) — the deterministic
 		# past-tense record of an applied FORWARD-ONLY Larval Avatar phase transition (to_phase > from_phase).
-		DomainEvent.Type.BOSS_PHASE_CHANGED: &"boss_phase_changed"
+		DomainEvent.Type.BOSS_PHASE_CHANGED: &"boss_phase_changed",
+		# Story 9.4: the first_victory_recorded + boss_defeated SYSTEM events appended at the enum end (never renumbered) —
+		# the first-victory narrative marker (the OPPOSITE-terminal-phase twin of first_death_recorded) + the tactical
+		# boss-defeat fact (DISTINCT from the run_completed + victory run-END record).
+		DomainEvent.Type.FIRST_VICTORY_RECORDED: &"first_victory_recorded",
+		DomainEvent.Type.BOSS_DEFEATED: &"boss_defeated"
 	}
 
 	for event_type: int in expected_ids.keys():

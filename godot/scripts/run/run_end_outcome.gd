@@ -72,11 +72,28 @@ func _init(
 	meta_progression_eligible = new_meta_progression_eligible
 
 
+# The allowlisted completion outcomes for_completed accepts (Story 9.4 Task 8 — the 8.1 review Low #2 allowlist guard).
+# MIRRORS the run_completed EVENT's outcome allowlist (boss_placeholder / completed / the 9.4 victory) so the read DTO and
+# the strict event validator agree on what a valid completion marker is. A non-allowlisted outcome falls back to _empty().
+const COMPLETED_OUTCOMES: Array[StringName] = [
+	DomainEvent.RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER,
+	DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED,
+	DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY
+]
+
 # Build the run-end fact for a FAILED run (AC1): the run is in PHASE_FAILED, carries its death `cause`, routes to the
 # outpost, and reports its meta eligibility. A null / non-terminal / non-FAILED run projects the fail-closed empty fact
 # (has_ended == false) so a consumer never mistakes a still-active run for an ended one.
+#
+# ALLOWLIST GUARD (Story 9.4 Task 8 — the 8.1 review Round-1 Low #2, RE-CARRIED to 9.4, now FIXED): the DTO previously
+# projected ANY handed cause WITHOUT validating it against RUN_FAILED_CAUSES, so for_failed(run, &"garbage") would surface
+# outcome_or_cause: "garbage" whereas the run_failed EVENT rejects it. It is UNREACHABLE in the live flow (the DTO only ever
+# receives an already-CompleteRunCommand-validated cause), so this is a DEFENSIVE-CORRECTNESS fix. FIX: a non-allowlisted
+# cause falls back to _empty() (the fail-closed projection) so the read surface and the strict event validators agree.
 static func for_failed(run: RunState, cause: StringName) -> RunEndOutcome:
 	if run == null or run.phase != RunState.PHASE_FAILED:
+		return _empty()
+	if not DomainEvent.RUN_FAILED_CAUSES.has(cause):
 		return _empty()
 	return load("res://scripts/run/run_end_outcome.gd").new(
 		true,
@@ -87,11 +104,19 @@ static func for_failed(run: RunState, cause: StringName) -> RunEndOutcome:
 	)
 
 
-# Build the run-end fact for a COMPLETED run (AC2): the run is in PHASE_COMPLETED, carries its completion `outcome`,
-# routes to the outpost, and reports its meta eligibility. A null / non-terminal / non-COMPLETED run projects the fail-
-# closed empty fact (has_ended == false).
+# Build the run-end fact for a COMPLETED run (AC2 / Story 9.4 AC1): the run is in PHASE_COMPLETED, carries its completion
+# `outcome`, routes to the outpost, and reports its meta eligibility. A null / non-terminal / non-COMPLETED run projects the
+# fail-closed empty fact (has_ended == false). 9.4 calls for_completed(run, victory) — the FIRST real non-boss_placeholder/
+# completed outcome through this DTO.
+#
+# ALLOWLIST GUARD (Story 9.4 Task 8 — the 8.1 review Round-1 Low #2, RE-CARRIED to 9.4, now FIXED): a non-allowlisted
+# outcome (not boss_placeholder / completed / the 9.4 victory) falls back to _empty() so the read surface and the strict
+# run_completed event validator agree on what a valid completion marker is (defensive-correctness; unreachable in the live
+# flow, where the DTO only ever receives an already-command-validated outcome).
 static func for_completed(run: RunState, outcome: StringName) -> RunEndOutcome:
 	if run == null or run.phase != RunState.PHASE_COMPLETED:
+		return _empty()
+	if not COMPLETED_OUTCOMES.has(outcome):
 		return _empty()
 	return load("res://scripts/run/run_end_outcome.gd").new(
 		true,

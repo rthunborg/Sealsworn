@@ -50,7 +50,8 @@ const DICTIONARY_KEYS: Array[String] = [
 	"class_mastery",
 	"echoes",
 	"unlock_progress",
-	"first_death_recorded"
+	"first_death_recorded",
+	"first_victory_recorded"
 ]
 
 const SCHEMA_VERSION: int = 1
@@ -70,6 +71,13 @@ var echoes: Array[String] = []
 var unlock_progress: Dictionary = {}
 # An EMPTY/false HOME for the Story 8.5 first-death flag so 8.5 merges without a migration. 8.3 does NOT set it.
 var first_death_recorded: bool = false
+# Story 9.4 (AC2): the FIRST-VICTORY latch (the OPPOSITE-terminal-phase twin of first_death_recorded). Set ONCE by
+# RecordFirstVictoryCommand on the FIRST victory across ALL runs (a monotonic per-profile-lifetime marker — the FOURTH
+# independent run-end idempotency marker alongside last_awarded_run_seed, unlock_progress["_last_merged_run_seed"], and
+# first_death_recorded). Added as a NEW ADDITIVE field at SCHEMA_VERSION == 1 (NO home was pre-reserved for it, so this is
+# a lenient additive add — a pre-9.4 dict decodes it to false — NOT a schema bump; the 8.4/8.5 merge-without-bump
+# discipline, reconciled with 8.7's migration matrix which pins SCHEMA_VERSION == 1 + schema_version:2 -> unsupported).
+var first_victory_recorded: bool = false
 
 # Exact-key serialization (the RunSnapshot / RiskEconomyState precedent). A FRESH dictionary (with deep-copied
 # sub-dicts/lists) is returned each call so a mutation of the returned dict never perturbs the snapshot. oath_shards is
@@ -85,7 +93,8 @@ func to_dictionary() -> Dictionary:
 		"class_mastery": class_mastery.duplicate(true),
 		"echoes": echoes.duplicate(),
 		"unlock_progress": unlock_progress.duplicate(true),
-		"first_death_recorded": first_death_recorded
+		"first_death_recorded": first_death_recorded,
+		"first_victory_recorded": first_victory_recorded
 	}
 
 
@@ -116,6 +125,9 @@ static func parse(data: Dictionary) -> ActionResult:
 	snapshot.echoes = _string_array(data.get("echoes", []))
 	snapshot.unlock_progress = _dictionary_or_empty(data.get("unlock_progress", {}))
 	snapshot.first_death_recorded = bool(data.get("first_death_recorded", false))
+	# Story 9.4: lenient additive decode — a pre-9.4 profile (no first_victory_recorded key) defaults to false (NO
+	# migration; the field rides at SCHEMA_VERSION == 1, exactly the 8.5 first_death_recorded leniency).
+	snapshot.first_victory_recorded = bool(data.get("first_victory_recorded", false))
 	return ActionResult.ok([], {"snapshot": snapshot})
 
 
@@ -148,6 +160,7 @@ func copy() -> ProfileSnapshot:
 	snapshot.echoes = echoes.duplicate()
 	snapshot.unlock_progress = unlock_progress.duplicate(true)
 	snapshot.first_death_recorded = first_death_recorded
+	snapshot.first_victory_recorded = first_victory_recorded
 	return snapshot
 
 

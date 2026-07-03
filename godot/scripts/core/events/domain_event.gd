@@ -42,7 +42,9 @@ enum Type {
 	PROFILE_PROGRESS_MERGED,
 	FIRST_DEATH_RECORDED,
 	BOSS_ENCOUNTER_STARTED,
-	BOSS_PHASE_CHANGED
+	BOSS_PHASE_CHANGED,
+	FIRST_VICTORY_RECORDED,
+	BOSS_DEFEATED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -84,6 +86,8 @@ const EVENT_ID_PROFILE_PROGRESS_MERGED := &"profile_progress_merged"
 const EVENT_ID_FIRST_DEATH_RECORDED := &"first_death_recorded"
 const EVENT_ID_BOSS_ENCOUNTER_STARTED := &"boss_encounter_started"
 const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"
+const EVENT_ID_FIRST_VICTORY_RECORDED := &"first_victory_recorded"
+const EVENT_ID_BOSS_DEFEATED := &"boss_defeated"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -144,6 +148,18 @@ const RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER := &"boss_placeholder"
 # Command references this so the command + the validator stay in lockstep on the marker vocabulary.
 const RUN_COMPLETED_OUTCOME_COMPLETED := &"completed"
 
+# Story 9.4 (AC1): the run-VICTORY outcome marker for the REAL Larval-Avatar boss victory — the third allowed
+# run_completed completion outcome. 8.1 DELIBERATELY left `victory` FREE in this allowlist for exactly this story
+# (RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER + RUN_COMPLETED_OUTCOME_COMPLETED were the two prior values, and the run_completed
+# validator REJECTED a stray `victory` as a meaningful garbage-value guard). 9.4 UNBLOCKS it: the boss reaching 0 HP drives
+# CompleteRunCommand with `victory` and emits the SAME run_completed event with outcome == victory (the 8.1 "Epic 9 reuses
+# THIS boundary, swapping only the boss's pre-completion behavior" contract — NOT a parallel run_victory event). The
+# boss_placeholder / completed values are UNTOUCHED. `victory` classifies as a COMPLETION marker in CompleteRunCommand
+# (a completion, NOT a death cause): like `completed`, boss_node_id is tolerated absent. The garbage-value guard survives —
+# a WRONG outcome (e.g. not_a_real_outcome) is still rejected. CompleteRunCommand references this so the command + the
+# validator stay in lockstep on the marker vocabulary.
+const RUN_COMPLETED_OUTCOME_VICTORY := &"victory"
+
 # Story 8.1 (AC1): the allowlisted run-FAILED cause markers the run_failed payload may carry (lower_snake). v0 has
 # NO live combat that produces a death (combat auto-resolves to success), so the failed path is CALLER-DRIVEN with
 # an EXPLICIT cause the caller supplies — a stable, readable marker distinguishing the death CONTEXT (AC1's "during
@@ -198,6 +214,14 @@ const DISCOVERED_CONTENT_KINDS: Array[StringName] = [
 # localization concern), keeping the event payload a clean deterministic record + honoring the epic-wide by-id posture.
 # RecordFirstDeathCommand references it so the command + the validator stay in lockstep on the line vocabulary.
 const FIRST_DEATH_LINE_ID := &"first_death"
+
+# Story 9.4 (AC2, FR62): the stable lower_snake NARRATIVE-LINE id the first_victory_recorded payload carries (LINE-AS-ID
+# — the event records the line BY id, NOT the raw display prose "It did not die. It learned the way back."). The OPPOSITE-
+# terminal-phase twin of FIRST_DEATH_LINE_ID: 8.5 keyed the first-DEATH line off PHASE_FAILED; 9.4 keys the first-VICTORY
+# line off PHASE_COMPLETED. v0 has EXACTLY ONE first-victory line; the display string lives on the FirstVictoryRevealBeat
+# DTO (a presentation/localization concern), keeping the event payload a clean deterministic record + honoring the
+# epic-wide by-id posture. RecordFirstVictoryCommand references it so the command + the validator stay in lockstep.
+const FIRST_VICTORY_LINE_ID := &"first_victory"
 
 var event_type: int = Type.UNKNOWN
 var sequence_id: int = 0
@@ -496,6 +520,48 @@ static func boss_phase_changed(sequence_id: int, payload: Dictionary = {}) -> Do
 	payload_value["phase_id"] = String(payload.get("phase_id", ""))
 	payload_value["trigger"] = String(payload.get("trigger", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_PHASE_CHANGED, sequence_id, &"", payload_value)
+
+
+static func first_victory_recorded(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 9.4, AC2/FR62): the FIRST-VICTORY narrative marker — the OPPOSITE-terminal-phase twin
+	# of first_death_recorded (8.5). Emitted by RecordFirstVictoryCommand AFTER the profile's first_victory_recorded latch
+	# flips true on the FIRST victory (behind the run-end seam + the VICTORY-only gate run.phase == PHASE_COMPLETED). It is
+	# the deterministic record that the first-victory REVEAL LINE ("It did not die. It learned the way back.") may be shown
+	# ONCE (a later outpost UI reads it + renders the skippable reveal). It is a monotonic per-profile-lifetime marker (like
+	# first_death_recorded, unlike oath_shards_awarded/profile_progress_merged which fire once PER eligible run) — the flag
+	# ITSELF is its own idempotency latch, so this event fires EXACTLY once across all of a profile's runs. NOT an entity
+	# action, so it is NOT in _event_requires_actor (actor_id stays empty). Payload MIRRORS first_death_recorded VERBATIM:
+	# `line_id` is a stable lower_snake NARRATIVE-LINE id (LINE-AS-ID — == FIRST_VICTORY_LINE_ID in v0; the raw prose lives
+	# on the FirstVictoryRevealBeat DTO, NOT here). `is_skippable` is a plain bool (always true in v0 — FR65). `profile_id`
+	# is the profile the flag landed on (a plain string). It is a DETERMINISTIC record — ZERO RNG, so NO roll/draw_index (a
+	# first-victory record is not a roll; the first_death_recorded deterministic-shell precedent). Normalize/duplicate the
+	# payload defensively (mirroring first_death_recorded). No int64 encoding (line_id is a short lower_snake string).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["line_id"] = String(payload.get("line_id", ""))
+	payload_value["is_skippable"] = bool(payload.get("is_skippable", false))
+	payload_value["profile_id"] = String(payload.get("profile_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.FIRST_VICTORY_RECORDED, sequence_id, &"", payload_value)
+
+
+static func boss_defeated(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 9.4, AC1): the boss-DEFEATED TACTICAL fact — emitted when the Larval Avatar entity
+	# reaches ZERO HP (TacticalEntityState.is_dead()) after a damaging event drops its HP. It is the TACTICAL-layer record
+	# (the boss entity died) that AC1 demands DISTINCT from the run-VICTORY (run_completed + victory) run-END record: the
+	# caller detects boss.is_dead() (via BossTurnResolver.detect_boss_defeat) and emits THIS, then drives the run-victory
+	# resolution. It is NOT an Epic-1 level outcome (level_victory_reached/level_defeat_reached are keyed to the player for
+	# a normal combat level) — the boss defeat is the BOSS ENTITY dying, a distinct NAMED fact. NOT an entity action, so it
+	# is NOT in _event_requires_actor (actor_id stays empty — the boss is the SUBJECT, recorded in boss_entity_id, not the
+	# actor). `boss_entity_id` is the boss-entity id (lower_snake — the Larval Avatar slot "larval_avatar"). `phase_id` is
+	# the boss's active phase id at defeat (lower_snake — the phase the boss died in, e.g. "desperation"). `final_hp` is the
+	# boss's HP at defeat (non-negative integral, 0 for a defeat — validated non-negative, not pinned to 0 so a future
+	# execute-order variant needs no schema change). It is a DETERMINISTIC record — the boss dying is not a roll, so NO
+	# roll/draw_index. No int64 encoding (the id is a short string; final_hp is a small int). Normalize/duplicate defensively
+	# (mirroring boss_phase_changed).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["boss_entity_id"] = String(payload.get("boss_entity_id", ""))
+	payload_value["phase_id"] = String(payload.get("phase_id", ""))
+	payload_value["final_hp"] = int(payload.get("final_hp", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_DEFEATED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -1076,6 +1142,10 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_boss_encounter_started_payload(payload_value)
 		Type.BOSS_PHASE_CHANGED:
 			return _validate_boss_phase_changed_payload(payload_value)
+		Type.FIRST_VICTORY_RECORDED:
+			return _validate_first_victory_recorded_payload(payload_value)
+		Type.BOSS_DEFEATED:
+			return _validate_boss_defeated_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1239,8 +1309,14 @@ static func _validate_run_completed_payload(payload_value: Dictionary) -> Action
 	if not _has_lower_snake_payload(payload_value, &"outcome"):
 		return _error_result(&"invalid_event_payload", {"field": "outcome"})
 	var outcome: String = String(payload_value.get("outcome"))
+	# Story 9.4 (AC1): `victory` (the real Larval-Avatar boss victory) JOINS the allowlist — the 8.1-reserved third
+	# completion outcome. A WRONG/garbage outcome (neither boss_placeholder nor completed nor victory) is STILL rejected
+	# (the allowlist did not become permissive — the load-bearing garbage-value guard survives, a NEW garbage value now
+	# takes over as the rejection guard in test). `victory` is a non-boss completion — treated like `completed` below
+	# (boss_node_id tolerated absent).
 	if outcome != String(RUN_COMPLETED_OUTCOME_BOSS_PLACEHOLDER) \
-			and outcome != String(RUN_COMPLETED_OUTCOME_COMPLETED):
+			and outcome != String(RUN_COMPLETED_OUTCOME_COMPLETED) \
+			and outcome != String(RUN_COMPLETED_OUTCOME_VICTORY):
 		return _error_result(&"invalid_event_payload", {"field": "outcome"})
 	# boss_node_id is required ONLY for the boss-placeholder outcome (the boss path is unchanged); for a non-boss
 	# completion it is tolerated absent/empty, but a PRESENT boss_node_id must still be a valid non-empty string.
@@ -1436,6 +1512,41 @@ static func _validate_boss_phase_changed_payload(payload_value: Dictionary) -> A
 		return _error_result(&"invalid_event_payload", {"field": "phase_id"})
 	if not _has_lower_snake_payload(payload_value, &"trigger"):
 		return _error_result(&"invalid_event_payload", {"field": "trigger"})
+	return _ok_result()
+
+
+static func _validate_first_victory_recorded_payload(payload_value: Dictionary) -> ActionResult:
+	# The FIRST-VICTORY narrative marker (Story 9.4, AC2/FR62) — the field rules MIRROR
+	# _validate_first_death_recorded_payload VERBATIM (the OPPOSITE-terminal-phase twin). line_id is a stable lower_snake
+	# NARRATIVE-LINE id (LINE-AS-ID — validated via the SAME _has_lower_snake_payload helper, which rejects blank/non-
+	# lower_snake). is_skippable is a plain bool (a control-loss/narrative moment must be skippable — FR65; validated as a
+	# bool, not pinned to a literal, so a future non-skippable beat needs no schema change). profile_id is a plain string
+	# (empty-tolerant — the first_death_recorded.profile_id precedent; a profile id is a plain string, NOT lower_snake-
+	# validated). UNLIKE passive_destroyed there is NO roll/draw_index (a deterministic record, not a roll). A malformed/
+	# missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"line_id"):
+		return _error_result(&"invalid_event_payload", {"field": "line_id"})
+	if not _has_bool_payload(payload_value, &"is_skippable"):
+		return _error_result(&"invalid_event_payload", {"field": "is_skippable"})
+	if not _has_string_payload(payload_value, &"profile_id"):
+		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
+	return _ok_result()
+
+
+static func _validate_boss_defeated_payload(payload_value: Dictionary) -> ActionResult:
+	# The boss-DEFEATED tactical fact (Story 9.4, AC1). boss_entity_id is the boss-entity id (a lower_snake content id —
+	# the Larval Avatar slot; validated via _has_lower_snake_payload, mirroring boss_phase_changed.boss_entity_id).
+	# phase_id is the boss's active phase id at defeat (lower_snake — the phase the boss died in). final_hp is the boss's
+	# HP at defeat: a non-negative integral (0 for a defeat, but validated non-negative rather than pinned to a literal so a
+	# future execute-order variant needs no schema change — the boss_phase_changed non-negative-index precedent). UNLIKE
+	# passive_destroyed there is NO roll/draw_index (the boss dying is not a roll — a deterministic record). A malformed/
+	# missing field is rejected per-field.
+	if not _has_lower_snake_payload(payload_value, &"boss_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "boss_entity_id"})
+	if not _has_lower_snake_payload(payload_value, &"phase_id"):
+		return _error_result(&"invalid_event_payload", {"field": "phase_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"final_hp"):
+		return _error_result(&"invalid_event_payload", {"field": "final_hp"})
 	return _ok_result()
 
 
@@ -2252,6 +2363,10 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_BOSS_ENCOUNTER_STARTED
 		Type.BOSS_PHASE_CHANGED:
 			return EVENT_ID_BOSS_PHASE_CHANGED
+		Type.FIRST_VICTORY_RECORDED:
+			return EVENT_ID_FIRST_VICTORY_RECORDED
+		Type.BOSS_DEFEATED:
+			return EVENT_ID_BOSS_DEFEATED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2334,6 +2449,10 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.BOSS_ENCOUNTER_STARTED
 		EVENT_ID_BOSS_PHASE_CHANGED:
 			return Type.BOSS_PHASE_CHANGED
+		EVENT_ID_FIRST_VICTORY_RECORDED:
+			return Type.FIRST_VICTORY_RECORDED
+		EVENT_ID_BOSS_DEFEATED:
+			return Type.BOSS_DEFEATED
 		_:
 			return Type.UNKNOWN
 

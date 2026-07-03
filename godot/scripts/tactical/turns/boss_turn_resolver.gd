@@ -160,9 +160,73 @@ func resolve_phase_transitions(
 	})
 
 
+# The boss-DEFEAT DETECTION seam (Story 9.4, AC1) — the ONLY 9.4 change to this 9.3 driver. After a damaging event drops
+# the boss's HP (in 9.4 the damage-to-boss source is the player/test, applied to the board BEFORE this call), detect the
+# boss reaching ZERO HP (TacticalEntityState.is_dead() / current_hp <= 0) and emit ONE boss_defeated DomainEvent recording
+# the TACTICAL defeat fact (the boss entity died) — the AC1 boss-defeated event, DISTINCT from the run-VICTORY
+# (run_completed + victory) run-END record the caller drives next. If the boss is still ALIVE (a non-lethal hit), it emits
+# NOTHING (an empty event list — the caller checks metadata.boss_defeated). The boss_defeated event is a SYSTEM event (no
+# board mutation — like boss_phase_changed, it is appended to the log, NOT board-applied). Returns the events + whether the
+# boss was defeated + `next_sequence_id_after` (the first free id past this step) in metadata. PURE (ZERO RNG — the boss
+# dying is not a roll).
+#
+# SEQUENCE-ID SEAM CONTRACT (Story 9.4 honors the 9.3 contract): the boss_defeated event is a system event this method does
+# NOT board-apply, so context.board's _next_sequence_id is NOT advanced by it. A caller (Story 9.4's run-to-completion loop)
+# that INTERLEAVES the boss action events + boss_phase_changed events + this boss_defeated event + the run_completed victory
+# event into ONE ordered append-only log MUST reserve the id range: pass an explicit `sequence_id_base` (>= 0) that does not
+# collide with any id a board-applied event will consume, and use the returned `next_sequence_id_after` as the reserved
+# cursor for whatever it appends next (the run_completed victory event). When `sequence_id_base < 0` the base falls back to
+# context.board.next_sequence_id() — correct for a non-interleaved test call, but a caller that merges streams MUST NOT rely
+# on that fallback (mirroring resolve_phase_transitions).
+func detect_boss_defeat(context: TacticalActionContext, sequence_id_base: int = -1) -> ActionResult:
+	if context == null or not context.has_required_state():
+		return _invalid(&"invalid_context")
+	if _boss_definition == null:
+		return _invalid(&"missing_boss_definition")
+
+	var boss: TacticalEntityState = context.board.get_entity(_boss_entity_id)
+	if boss == null:
+		return _invalid(&"missing_boss_entity", {"boss_entity_id": String(_boss_entity_id)})
+
+	var sequence_id: int = sequence_id_base if sequence_id_base >= 0 else context.board.next_sequence_id()
+	var events: Array[DomainEvent] = []
+	var defeated: bool = boss.is_dead()
+	if defeated:
+		# Record the boss's active phase at defeat (recomputed from HP — no stored phase state; at 0 HP the boss is in its
+		# deepest phase). The phase_id rides the event so the record names the phase the boss died in.
+		var phase_index: int = _active_phase_index(boss.current_hp)
+		var phase_id: StringName = _phase_id_for_index(phase_index)
+		var event: DomainEvent = DomainEvent.boss_defeated(sequence_id, {
+			"boss_entity_id": String(_boss_entity_id),
+			"phase_id": String(phase_id),
+			"final_hp": maxi(0, boss.current_hp)
+		})
+		events.append(event)
+		sequence_id += 1
+
+	return ActionResult.ok(events, {
+		"boss_defeated": defeated,
+		"boss_entity_id": String(_boss_entity_id),
+		"final_hp": maxi(0, boss.current_hp),
+		# The first free sequence id past this step — a stream-merging caller uses this as its reserved cursor.
+		"next_sequence_id_after": sequence_id
+	})
+
+
 # Recompute the boss's active phase index for a given HP (no stored phase state — the RECOMMENDED posture).
 func active_phase_index_for_hp(current_hp: int) -> int:
 	return _active_phase_index(current_hp)
+
+
+# The phase id for a given phase index (the deepest phase at defeat). Reads the definition's phase; a null/out-of-range
+# phase yields the boss id as a stable non-empty lower_snake fallback (the boss_defeated validator requires lower_snake).
+func _phase_id_for_index(phase_index: int) -> StringName:
+	if _boss_definition == null:
+		return _boss_entity_id
+	var phase: Variant = _boss_definition.get_phase(phase_index)
+	if phase == null:
+		return _boss_entity_id
+	return phase.phase_id
 
 
 func _active_phase_index(current_hp: int) -> int:

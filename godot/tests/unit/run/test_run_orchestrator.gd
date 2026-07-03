@@ -43,6 +43,7 @@ func run() -> Dictionary:
 	# Story 8.1 — the run-END dispatch hook: resolve_run_end drives death/completion + surfaces the flow signal.
 	_resolve_run_end_death_surfaces_run_failed_and_destination()
 	_resolve_run_end_completion_surfaces_run_completed_and_destination()
+	_resolve_run_end_victory_surfaces_run_completed_and_destination()
 	_resolve_run_end_on_terminal_run_is_blocked()
 	_resolve_run_end_with_no_active_run_errors()
 	return result()
@@ -80,6 +81,21 @@ func _resolve_run_end_completion_surfaces_run_completed_and_destination() -> voi
 	assert_true(orchestrator.run_completed_event() != null, "The orchestrator should surface the run_completed event.")
 	assert_equal(orchestrator.run_completed_outcome(), "completed", "The orchestrator should surface the broadened `completed` outcome (NOT boss_placeholder).")
 	assert_equal(orchestrator.run_end_destination(), "outpost", "The orchestrator should surface the outpost next-destination (AC2).")
+
+
+# Story 9.4 (AC1): resolve_run_end with the `victory` outcome drives the seated ACTIVE_ROUTE run to COMPLETED (the boss
+# two-step), emits run_completed with outcome == victory, and surfaces the outpost destination — the post-victory RETURN
+# flow, driven end-to-end through the EXISTING caller-driven run-end seam (NO orchestrator change; it dispatches any outcome).
+func _resolve_run_end_victory_surfaces_run_completed_and_destination() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(4242, false).succeeded, "Setup: start should succeed.")
+
+	var resolved: ActionResult = orchestrator.resolve_run_end(&"victory")
+	assert_true(resolved.succeeded, "resolve_run_end with the `victory` outcome should succeed: %s" % resolved.metadata)
+	assert_equal(orchestrator.run.phase, RunState.PHASE_COMPLETED, "A victory resolution should drive the run to COMPLETED (the post-victory endpoint).")
+	assert_true(orchestrator.run_completed_event() != null, "The orchestrator should surface the run_completed event (the run-victory record).")
+	assert_equal(orchestrator.run_completed_outcome(), "victory", "The orchestrator should surface the `victory` outcome.")
+	assert_equal(orchestrator.run_end_destination(), "outpost", "The orchestrator should surface the outpost next-destination — the post-victory RETURN (AC1, FR32).")
 
 
 # resolve_run_end on an already-terminal run surfaces the command's stable run_already_terminal error (AC3) — the

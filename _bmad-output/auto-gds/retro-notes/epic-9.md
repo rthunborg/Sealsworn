@@ -2,6 +2,7 @@
 
 ## Story 9-4-boss-victory-and-first-victory-reveal
 - [Phase 3 — create-story] The `ProfileSnapshot` schema pin is the sharpest 9.4 trap: no `first_victory_recorded` home was pre-reserved, so the field must be added at `SCHEMA_VERSION == 1` (additive) with the `DICTIONARY_KEYS` test pin updated but NO version bump — a bump silently breaks 8.7's already-green migration tests.
+- [Phase 5 — dev-story] Knowing split: 9.4 wired the boss-defeat→run-victory call site (the long-parked run-end auto-wire, VICTORY direction) but deliberately left the hero-DEATH live source deferred — the death half of that seam is now the last un-wired run-end path.
 - [Phase 3 — create-story] The 9.3 sequence-id seam contract comes due in 9.4: thread the orchestrator's shared `_next_sequence_id` through `resolve_phase_transitions(..., sequence_id_base)` and forbid the board-baseline fallback when merging interleaved boss-action / phase-change / boss-defeated / run-victory streams; review should check duplicate sequence ids can't arise.
 
 ## Story 9-3-boss-actions-telegraphs-and-ai-decisions

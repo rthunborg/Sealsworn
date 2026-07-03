@@ -30,6 +30,10 @@ func run() -> Dictionary:
 	_no_threshold_crossing_emits_no_phase_change()
 	_live_boss_entity_fills_the_nine_one_slot_id()
 	_boss_turn_is_reproducible_from_same_state()
+	_lethal_hit_emits_boss_defeated_naming_the_boss_and_phase()
+	_non_lethal_hit_emits_no_boss_defeated()
+	_boss_defeated_event_round_trips()
+	_sequence_id_seam_threads_a_shared_counter_across_interleaved_streams()
 	return result()
 
 
@@ -184,6 +188,108 @@ func _boss_turn_is_reproducible_from_same_state() -> void:
 	assert_equal(_event_dictionaries(first_result.events), _event_dictionaries(second_result.events), "Same state should reproduce the boss's events.")
 	assert_equal(first_pending, second_pending, "Same state should reproduce the pending telegraph state.")
 	assert_equal(first_result.metadata.get("decision"), second_result.metadata.get("decision"), "Same state should reproduce the boss decision explanation.")
+
+
+# ---- Story 9.4 (AC1): the boss-defeat detection seam ----------------------------------------------
+
+func _lethal_hit_emits_boss_defeated_naming_the_boss_and_phase() -> void:
+	# Story 9.4 (AC1): a damaging event drops the boss to 0 HP -> detect_boss_defeat detects is_dead() and emits ONE
+	# boss_defeated event naming the boss + its active phase at defeat (desperation, the deepest phase at 0 HP) + final_hp 0.
+	var board: BoardState = BossBoardFixtureFactory.boss_arena_hero_in_range()
+	var context: TacticalActionContext = _context(board, RngStreamSet.new(310), [], 1)
+	assert_true(board.get_entity(&"larval_avatar").is_alive(), "Setup: the boss starts alive.")
+
+	# Drop the boss to 0 HP (a lethal player/test hit).
+	_damage_boss(board, 36)
+	assert_true(board.get_entity(&"larval_avatar").is_dead(), "The boss is dead at 0 HP.")
+
+	var result_value: ActionResult = _resolver().detect_boss_defeat(context)
+
+	assert_true(result_value.succeeded, "The boss-defeat detection should succeed.")
+	assert_true(bool(result_value.metadata.get("boss_defeated")), "The seam must report the boss as defeated.")
+	assert_equal(result_value.events.size(), 1, "A lethal hit emits exactly one boss_defeated event.")
+	var event: DomainEvent = result_value.events[0]
+	assert_equal(event.event_type, DomainEvent.Type.BOSS_DEFEATED, "The seam emits a boss_defeated event.")
+	assert_equal(String(event.payload.get("boss_entity_id")), "larval_avatar", "The boss_defeated event names the Larval Avatar.")
+	assert_equal(String(event.payload.get("phase_id")), "desperation", "The boss died in its deepest phase (desperation, at 0 HP).")
+	assert_equal(int(event.payload.get("final_hp")), 0, "The boss_defeated final_hp is 0 (a defeat).")
+	assert_equal(String(event.actor_id), "", "boss_defeated is a system event with no actor (the boss is the subject).")
+
+
+func _non_lethal_hit_emits_no_boss_defeated() -> void:
+	# Story 9.4 (AC1): a NON-lethal hit leaves the boss alive -> detect_boss_defeat emits NOTHING (an empty event list; the
+	# caller checks metadata.boss_defeated == false).
+	var board: BoardState = BossBoardFixtureFactory.boss_arena_hero_in_range()
+	var context: TacticalActionContext = _context(board, RngStreamSet.new(311), [], 1)
+	_damage_boss(board, 10)  # 36 -> 26, still alive
+	assert_true(board.get_entity(&"larval_avatar").is_alive(), "The boss survives a non-lethal hit.")
+
+	var result_value: ActionResult = _resolver().detect_boss_defeat(context)
+
+	assert_true(result_value.succeeded, "The boss-defeat detection should still succeed for a survivor.")
+	assert_false(bool(result_value.metadata.get("boss_defeated")), "A non-lethal hit must NOT report the boss as defeated.")
+	assert_equal(result_value.events.size(), 0, "A non-lethal hit emits NO boss_defeated event.")
+
+
+func _boss_defeated_event_round_trips() -> void:
+	# The boss_defeated event validates + JSON-round-trips (the int→float footgun: assert the SURVIVING typed final_hp after
+	# parse_string, NOT a nested re-stringify).
+	var board: BoardState = BossBoardFixtureFactory.boss_arena_hero_in_range()
+	var context: TacticalActionContext = _context(board, RngStreamSet.new(312), [], 1)
+	_damage_boss(board, 40)  # clamp to 0
+	var result_value: ActionResult = _resolver().detect_boss_defeat(context)
+	assert_equal(result_value.events.size(), 1, "Setup: a lethal hit emits boss_defeated.")
+	var event: DomainEvent = result_value.events[0]
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(event.to_dictionary())))
+	assert_true(parse_result.succeeded, "The boss_defeated event must validate + JSON-round-trip: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(int(restored.payload.get("final_hp")), 0, "final_hp must survive the round-trip as an int (the int→float footgun).")
+	assert_equal(String(restored.payload.get("phase_id")), "desperation", "phase_id must survive the round-trip.")
+
+
+func _sequence_id_seam_threads_a_shared_counter_across_interleaved_streams() -> void:
+	# Story 9.4 Task 8 (closes the 9.3 review Round-1 Med): 9.4 INTERLEAVES the boss phase-change events + the boss_defeated
+	# event into ONE ordered append-only log. The seam contract (from 9.3) requires threading a shared monotonic
+	# sequence_id_base cursor: pass an explicit base >= 0 to resolve_phase_transitions AND detect_boss_defeat, and thread the
+	# returned next_sequence_id_after cursor. This test drives a big lethal hit (crossing BOTH phase thresholds AND killing
+	# the boss), merges the phase-change chain + the boss_defeat into one stream via the shared cursor, and asserts EVERY
+	# sequence id is UNIQUE (no duplicate ids — the bug the seam contract prevents).
+	var board: BoardState = BossBoardFixtureFactory.boss_arena_hero_in_range()
+	var context: TacticalActionContext = _context(board, RngStreamSet.new(313), [], 1)
+	var resolver: BossTurnResolver = _resolver()
+
+	# The shared monotonic run-level counter the merging caller owns (mirrors RunOrchestrator._next_sequence_id).
+	var shared_cursor: int = 100
+
+	# One big hit drops the boss from full (phase 0) to 0 HP -> a phase-change chain 0->1->2 THEN a boss_defeat.
+	_damage_boss(board, 36)
+	assert_true(board.get_entity(&"larval_avatar").is_dead(), "Setup: the boss is dead (a lethal hit past both thresholds).")
+
+	# Stream 1: the phase-change chain, sequenced from the shared cursor. Thread the returned cursor forward.
+	var phase_result: ActionResult = resolver.resolve_phase_transitions(context, 0, shared_cursor)
+	assert_true(phase_result.succeeded, "The phase re-resolution should succeed.")
+	shared_cursor = int(phase_result.metadata.get("next_sequence_id_after", shared_cursor))
+
+	# Stream 2: the boss_defeat, sequenced from the ADVANCED shared cursor (no collision with the phase-change ids).
+	var defeat_result: ActionResult = resolver.detect_boss_defeat(context, shared_cursor)
+	assert_true(defeat_result.succeeded, "The boss-defeat detection should succeed.")
+	shared_cursor = int(defeat_result.metadata.get("next_sequence_id_after", shared_cursor))
+
+	# Merge both streams into ONE ordered log and assert every sequence id is UNIQUE (the seam contract's guarantee).
+	var merged: Array[DomainEvent] = []
+	merged.append_array(phase_result.events)
+	merged.append_array(defeat_result.events)
+	assert_true(merged.size() >= 3, "The merged stream should carry the phase-change chain (0->1, 1->2) + the boss_defeat (>= 3 events).")
+
+	var seen_ids: Dictionary = {}
+	for event: DomainEvent in merged:
+		assert_false(seen_ids.has(event.sequence_id), "Every merged sequence id must be UNIQUE (no duplicate ids — the 9.3 Med closed): id %d repeated." % event.sequence_id)
+		seen_ids[event.sequence_id] = true
+
+	# The ids are monotonic + contiguous from the base (100, 101, 102 for the chain+defeat), and the cursor advanced past all.
+	assert_equal(phase_result.events[0].sequence_id, 100, "The first phase-change event uses the shared base id (100).")
+	assert_true(shared_cursor > merged[merged.size() - 1].sequence_id, "The threaded cursor advances PAST the last emitted id (the reserved-cursor contract).")
 
 
 # ---- helpers -------------------------------------------------------------------------------------

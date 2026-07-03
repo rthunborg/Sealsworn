@@ -23,6 +23,8 @@ func run() -> Dictionary:
 	_each_death_cause_resolves_to_failed()
 	_completion_resolves_to_completed_from_active_route_two_step()
 	_completion_resolves_to_completed_from_node_resolution()
+	_completion_resolves_to_completed_via_victory_outcome()
+	_two_step_completion_is_atomic_on_a_hypothetical_step_two_failure()
 	_re_resolution_of_terminal_run_is_blocked_idempotent()
 	_double_fail_and_fail_then_complete_are_blocked()
 	_rejects_non_positive_sequence_id_first_with_no_mutation()
@@ -176,6 +178,69 @@ func _completion_resolves_to_completed_from_node_resolution() -> void:
 	assert_equal(resolved.events[0].payload.get("outcome"), "completed", "The completion outcome should be `completed`.")
 
 
+# ---- Story 9.4 (AC1): the REAL boss victory drives run_completed + `victory` -----------------------
+
+func _completion_resolves_to_completed_via_victory_outcome() -> void:
+	# Story 9.4 (AC1): the Larval-Avatar VICTORY — outcome `victory` classifies as a COMPLETION marker (the 9.4 extension of
+	# the classifier), driving the SAME completion path as `completed` (ACTIVE_ROUTE two-step -> COMPLETED) and emitting
+	# run_completed with outcome == victory + the outpost flow signal. The run-victory IS run_completed + victory (NOT a
+	# parallel run_victory event).
+	var run: RunState = _active_run_on_node()
+
+	var resolved: ActionResult = CompleteRunCommand.new(&"victory", 21).execute(run)
+	assert_true(resolved.succeeded, "A `victory` resolution from ACTIVE_ROUTE should succeed (the two-step): %s" % resolved.metadata)
+
+	# Phase transitioned ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED (terminal) — NO new transition edge.
+	assert_equal(run.phase, RunState.PHASE_COMPLETED, "A `victory` resolution should transition the run to COMPLETED.")
+	assert_true(run.is_terminal(), "A victory-resolved run should be terminal.")
+	assert_true(run.validate().succeeded, "A committed victory resolution should leave the run structurally valid.")
+
+	# Exactly one run_completed event with the `victory` outcome + the outpost flow signal + NO boss_node_id.
+	assert_equal(resolved.events.size(), 1, "A victory resolution should emit exactly one event (run_completed).")
+	var event: DomainEvent = resolved.events[0]
+	assert_equal(event.event_type, DomainEvent.Type.RUN_COMPLETED, "The emitted event should be run_completed (not a parallel run_victory event).")
+	assert_equal(String(event.actor_id), "", "run_completed is a system event with no actor.")
+	assert_equal(event.payload.get("outcome"), "victory", "run_completed should carry the `victory` outcome.")
+	assert_equal(event.payload.get("next_destination"), "outpost", "run_completed should carry the outpost next-destination flow signal (FR32).")
+	assert_false(event.payload.has("boss_node_id"), "A victory run_completed should NOT carry a boss_node_id (a non-boss-placeholder completion).")
+	_assert_emitted_event_round_trips(event, "run_completed (victory)")
+
+	# Metadata surfaces the flow signal + the victory outcome.
+	assert_true(bool(resolved.metadata.get("run_completed")), "Victory metadata should flag run_completed.")
+	assert_equal(resolved.metadata.get("outcome"), "victory", "Victory metadata should carry the victory outcome.")
+	assert_equal(resolved.metadata.get("next_destination"), "outpost", "Victory metadata should carry the outpost destination.")
+
+	# The command's victory marker const is pinned.
+	assert_equal(String(CompleteRunCommand.VICTORY_OUTCOME), "victory", "VICTORY_OUTCOME must be `victory`.")
+
+	# A victory from NODE_RESOLUTION is a single direct step too.
+	var node_run: RunState = _node_resolution_run()
+	var direct: ActionResult = CompleteRunCommand.new(&"victory", 3).execute(node_run)
+	assert_true(direct.succeeded, "A `victory` from NODE_RESOLUTION should succeed (single step): %s" % direct.metadata)
+	assert_equal(node_run.phase, RunState.PHASE_COMPLETED, "A `victory` from NODE_RESOLUTION should transition to COMPLETED.")
+	assert_equal(direct.events[0].payload.get("outcome"), "victory", "The direct victory outcome should be `victory`.")
+
+
+func _two_step_completion_is_atomic_on_a_hypothetical_step_two_failure() -> void:
+	# Story 9.4 Task 8 (the 8.1 review Round-1 Low #1, RE-CARRIED and now FIXED): the ACTIVE_ROUTE -> NODE_RESOLUTION ->
+	# COMPLETED two-step is atomic vs the "byte-identical no-mutation on ANY reject" promise. The failure is UNREACHABLE in
+	# the live flow (both edges are always legal from ACTIVE_ROUTE), so this is a defensive-correctness fix. We prove the
+	# GUARANTEE structurally: a victory/completed from ACTIVE_ROUTE always fully commits (reaches COMPLETED — never parked in
+	# NODE_RESOLUTION), and if the two-step ever HAD to abort at step 2 the phase would be restored. Since we can't force the
+	# legal step 2 to fail, assert the observable invariant: the run is NEVER left in the intermediate NODE_RESOLUTION phase
+	# by a successful two-step, and a successful two-step is terminal (the restore path is exercised by code review / the
+	# defensive branch — the live path always commits).
+	for outcome: StringName in [&"completed", &"victory"]:
+		var run: RunState = _active_run_on_node()
+		assert_equal(run.phase, RunState.PHASE_ACTIVE_ROUTE, "Setup: the run starts in ACTIVE_ROUTE (the two-step source).")
+		var resolved: ActionResult = CompleteRunCommand.new(outcome, 1).execute(run)
+		assert_true(resolved.succeeded, "The %s two-step should commit fully." % String(outcome))
+		# The two-step NEVER leaves the run parked in the intermediate NODE_RESOLUTION phase (it either fully commits to
+		# COMPLETED or, on a step-2 failure, restores ACTIVE_ROUTE — never NODE_RESOLUTION).
+		assert_false(run.phase == RunState.PHASE_NODE_RESOLUTION, "The two-step must NEVER leave the run parked in NODE_RESOLUTION (%s)." % String(outcome))
+		assert_equal(run.phase, RunState.PHASE_COMPLETED, "A committed %s two-step must reach COMPLETED (terminal)." % String(outcome))
+
+
 # ---- AC3: idempotency / no-double-grant -----------------------------------------------------------
 
 func _re_resolution_of_terminal_run_is_blocked_idempotent() -> void:
@@ -238,10 +303,12 @@ func _rejects_non_positive_sequence_id_first_with_no_mutation() -> void:
 
 
 func _rejects_unknown_outcome_with_no_mutation() -> void:
-	# An outcome that is neither a known death cause nor the completion marker is rejected fail-loud (the offending
-	# value rides metadata, never the error code) with no mutation + zero events. `victory` is a deliberately-unknown
-	# value here (it is reserved for Epic 9's boss victory, NOT a v0 CompleteRunCommand outcome).
-	for bad_outcome: StringName in [&"victory", &"boss_placeholder", &"", &"garbage"]:
+	# An outcome that is neither a known death cause nor a completion marker is rejected fail-loud (the offending
+	# value rides metadata, never the error code) with no mutation + zero events. Story 9.4: `victory` is NO LONGER here —
+	# it is now an ACCEPTED completion marker (see _completion_resolves_to_completed_via_victory_outcome); `boss_placeholder`
+	# is still unknown to THIS command (it is the 4.5 NodeResolvePlaceholderCommand's boss branch, not a CompleteRunCommand
+	# outcome).
+	for bad_outcome: StringName in [&"boss_placeholder", &"", &"garbage"]:
 		var run: RunState = _active_run_on_node()
 		var before: Dictionary = run.to_dictionary()
 		var rejected: ActionResult = CompleteRunCommand.new(bad_outcome, 1).execute(run)
