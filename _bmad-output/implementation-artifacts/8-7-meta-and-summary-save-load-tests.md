@@ -4,7 +4,7 @@ baseline_commit: 7a6da60ed181e95642fb843421042e073ac5f6bf
 
 # Story 8.7: Meta and Summary Save/Load Tests
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
