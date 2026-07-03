@@ -32,6 +32,8 @@ func run() -> Dictionary:
 	_first_death_recorded_rejects_malformed_payloads()
 	_boss_encounter_started_serializes_and_parses_stable_payload()
 	_boss_encounter_started_rejects_malformed_payloads()
+	_boss_phase_changed_serializes_and_parses_stable_payload()
+	_boss_phase_changed_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -1239,6 +1241,115 @@ func _boss_encounter_started_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_height.is_error(), "boss_encounter_started with a non-integral arena_height should be rejected.")
 	assert_equal(bad_height.metadata.get("field"), "arena_height", "A non-integral arena_height should name the arena_height field.")
+
+
+func _boss_phase_changed_serializes_and_parses_stable_payload() -> void:
+	# Story 9.2 (AC2): a boss_phase_changed SYSTEM event (no actor) — the deterministic record of an applied FORWARD-ONLY
+	# Larval Avatar phase transition. boss_entity_id is the boss slot id (lower_snake); from_phase/to_phase are
+	# non-negative integral phase indices with to_phase > from_phase; phase_id/trigger are lower_snake markers; ZERO
+	# roll/draw_index (the phase resolve draws ZERO RNG — a deterministic record).
+	var event: DomainEvent = DomainEvent.boss_phase_changed(45, {
+		"boss_entity_id": "larval_avatar",
+		"from_phase": 0,
+		"to_phase": 1,
+		"phase_id": "adaptation",
+		"trigger": "hp_threshold"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "boss_phase_changed", "boss_phase_changed should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "boss_phase_changed is a system event with an empty actor id.")
+	# ZERO RNG: a deterministic phase-change record, not a roll — no roll/draw_index on the payload.
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "boss_phase_changed must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "boss_phase_changed must NOT carry a draw_index (ZERO RNG).")
+
+	# JSON round-trip: assert the SURVIVING typed fields after parse_string (the epic-9 int->float footgun — do NOT
+	# assert a byte-identical re-stringify of a nested-dict payload; the small phase indices survive as ints).
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "boss_phase_changed should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.BOSS_PHASE_CHANGED, "boss_phase_changed should parse back to BOSS_PHASE_CHANGED.")
+	assert_equal(String(restored.payload.get("boss_entity_id")), "larval_avatar", "The boss_entity_id must survive a JSON round-trip.")
+	assert_equal(int(restored.payload.get("from_phase")), 0, "from_phase must survive a JSON round-trip as an int.")
+	assert_equal(int(restored.payload.get("to_phase")), 1, "to_phase must survive a JSON round-trip as an int.")
+	assert_equal(String(restored.payload.get("phase_id")), "adaptation", "phase_id must survive a JSON round-trip.")
+	assert_equal(String(restored.payload.get("trigger")), "hp_threshold", "trigger must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.BOSS_PHASE_CHANGED), &"boss_phase_changed", "id_for_type must map boss_phase_changed.")
+	assert_equal(DomainEvent.type_for_id(&"boss_phase_changed"), DomainEvent.Type.BOSS_PHASE_CHANGED, "type_for_id must map boss_phase_changed back.")
+
+
+func _boss_phase_changed_rejects_malformed_payloads() -> void:
+	# A missing boss_entity_id is rejected.
+	var missing_entity: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"from_phase": 0, "to_phase": 1, "phase_id": "adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(missing_entity.is_error(), "boss_phase_changed missing boss_entity_id should be rejected.")
+	assert_equal(missing_entity.error_code, &"invalid_event_payload", "Malformed boss_phase_changed should use the stable code.")
+	assert_equal(missing_entity.metadata.get("field"), "boss_entity_id", "It should name the missing boss_entity_id field.")
+
+	# A non-lower_snake boss_entity_id (hyphenated) is rejected.
+	var bad_entity: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval-avatar", "from_phase": 0, "to_phase": 1, "phase_id": "adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(bad_entity.is_error(), "A hyphenated boss_entity_id should be rejected.")
+	assert_equal(bad_entity.metadata.get("field"), "boss_entity_id", "A non-lower_snake boss_entity_id should name the boss_entity_id field.")
+
+	# A negative from_phase is rejected (indices are non-negative integral).
+	var bad_from: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "from_phase": -1, "to_phase": 1, "phase_id": "adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(bad_from.is_error(), "A negative from_phase should be rejected.")
+	assert_equal(bad_from.metadata.get("field"), "from_phase", "A negative from_phase should name the from_phase field.")
+
+	# A BACKWARD to_phase (to_phase < from_phase) is rejected (forward-only — a boss never reverts).
+	var backward: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "from_phase": 2, "to_phase": 1, "phase_id": "adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(backward.is_error(), "A backward to_phase (< from_phase) should be rejected (forward-only).")
+	assert_equal(backward.metadata.get("field"), "to_phase", "A backward change should name the to_phase field.")
+
+	# An EQUAL to_phase (to_phase == from_phase, a no-op change) is rejected (forward-only requires strict advance).
+	var equal_phase: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "from_phase": 1, "to_phase": 1, "phase_id": "adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(equal_phase.is_error(), "An equal (no-op) to_phase should be rejected (forward-only).")
+	assert_equal(equal_phase.metadata.get("field"), "to_phase", "A no-op change should name the to_phase field.")
+
+	# A non-lower_snake phase_id is rejected.
+	var bad_phase_id: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "from_phase": 0, "to_phase": 1, "phase_id": "Adaptation", "trigger": "hp_threshold"}
+	})
+	assert_true(bad_phase_id.is_error(), "A non-lower_snake phase_id should be rejected.")
+	assert_equal(bad_phase_id.metadata.get("field"), "phase_id", "A bad phase_id should name the phase_id field.")
+
+	# A non-lower_snake trigger is rejected.
+	var bad_trigger: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_phase_changed",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "from_phase": 0, "to_phase": 1, "phase_id": "adaptation", "trigger": "HP Threshold"}
+	})
+	assert_true(bad_trigger.is_error(), "A non-lower_snake trigger should be rejected.")
+	assert_equal(bad_trigger.metadata.get("field"), "trigger", "A bad trigger should name the trigger field.")
 
 
 func _profile_progress_merged_serializes_and_parses_stable_payload() -> void:
@@ -2608,7 +2719,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.FIRST_DEATH_RECORDED: &"first_death_recorded",
 		# Story 9.1: the boss_encounter_started SYSTEM event appended at the enum end (never renumbered) — the boss-
 		# ENCOUNTER-SETUP boundary (the Larval Avatar encounter is requested + its arena set up; the run is NOT completed).
-		DomainEvent.Type.BOSS_ENCOUNTER_STARTED: &"boss_encounter_started"
+		DomainEvent.Type.BOSS_ENCOUNTER_STARTED: &"boss_encounter_started",
+		# Story 9.2: the boss_phase_changed SYSTEM event appended at the enum end (never renumbered) — the deterministic
+		# past-tense record of an applied FORWARD-ONLY Larval Avatar phase transition (to_phase > from_phase).
+		DomainEvent.Type.BOSS_PHASE_CHANGED: &"boss_phase_changed"
 	}
 
 	for event_type: int in expected_ids.keys():

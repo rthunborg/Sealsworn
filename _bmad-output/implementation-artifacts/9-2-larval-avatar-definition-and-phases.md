@@ -1,6 +1,10 @@
+---
+baseline_commit: 39985933ba45d52c18da938f2e5c171012380c7c
+---
+
 # Story 9.2: Larval Avatar Definition and Phases
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -103,41 +107,41 @@ If an AC seems to demand a LIVE boss fight or a runtime phase transition, re-rea
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — The Larval Avatar DEFINITION + typed phase sub-resource(s) (AC1)** — content `Resource`(s) under `godot/scripts/content/definitions/`
-  - [ ] Resolve the ⭐ definition-shape `[Decision]` first (dedicated `BossDefinition`/`LarvalAvatarDefinition` + `BossPhaseDefinition` sub-resource RECOMMENDED, vs extending `EnemyDefinition`) and record it in Completion Notes. Mirror `EventDefinition` + `EventChoiceDefinition` VERBATIM: `DEFINITION_TYPE` const, `@export` fields, an `_init` copying inputs into a typed `Array[BossPhaseDefinition]` (null-tolerant `as` copy so `validate()` rejects a malformed entry, never silently drops it), the shared `_is_lower_snake_id` helper.
-  - [ ] Author the fields AC1 names: `max_hp` (`> 0`); an ORDERED `phases` list (≥2; each phase carries its HP threshold/trigger + legal-action id set + telegraph definition(s) + damage rule(s) + explanation text — decide per-phase vs a boss-level catalog-by-id and record it); boss-level explanation text. Declaration order == the stable transition order (AC3).
-  - [ ] `validate() -> ActionResult` fail-loud (never coerce): non-lower_snake boss id; `max_hp <= 0`; `< 2` phases; a non-monotonic / out-of-`(0,max_hp]`-range / duplicate phase threshold; any per-phase validation error surfaced with the phase INDEX (`{reason: "invalid_phase", phase_index, field}` — the `_invalid_choice` precedent); a phase missing its required legal-actions/telegraph/damage/explanation; a blank explanation. Return `invalid_boss_definition` + `{reason, field}`.
-  - [ ] Tests (`godot/tests/unit/content/test_boss_definition.gd`): a valid Larval Avatar validates; each invalid-field + each invalid-phase-index case fails per-field; the phase list is ordered + monotonic-thresholded.
+- [x] **Task 1 — The Larval Avatar DEFINITION + typed phase sub-resource(s) (AC1)** — content `Resource`(s) under `godot/scripts/content/definitions/`
+  - [x] Resolve the ⭐ definition-shape `[Decision]` first (dedicated `BossDefinition`/`LarvalAvatarDefinition` + `BossPhaseDefinition` sub-resource RECOMMENDED, vs extending `EnemyDefinition`) and record it in Completion Notes. Mirror `EventDefinition` + `EventChoiceDefinition` VERBATIM: `DEFINITION_TYPE` const, `@export` fields, an `_init` copying inputs into a typed `Array[BossPhaseDefinition]` (null-tolerant `as` copy so `validate()` rejects a malformed entry, never silently drops it), the shared `_is_lower_snake_id` helper.
+  - [x] Author the fields AC1 names: `max_hp` (`> 0`); an ORDERED `phases` list (≥2; each phase carries its HP threshold/trigger + legal-action id set + telegraph definition(s) + damage rule(s) + explanation text — decide per-phase vs a boss-level catalog-by-id and record it); boss-level explanation text. Declaration order == the stable transition order (AC3).
+  - [x] `validate() -> ActionResult` fail-loud (never coerce): non-lower_snake boss id; `max_hp <= 0`; `< 2` phases; a non-monotonic / out-of-`(0,max_hp]`-range / duplicate phase threshold; any per-phase validation error surfaced with the phase INDEX (`{reason: "invalid_phase", phase_index, field}` — the `_invalid_choice` precedent); a phase missing its required legal-actions/telegraph/damage/explanation; a blank explanation. Return `invalid_boss_definition` + `{reason, field}`.
+  - [x] Tests (`godot/tests/unit/content/test_boss_definition.gd`): a valid Larval Avatar validates; each invalid-field + each invalid-phase-index case fails per-field; the phase list is ordered + monotonic-thresholded.
 
-- [ ] **Task 2 — The `BossRepository` (fail-loud, code-constant baseline) (AC1)** — under `godot/scripts/content/repositories/`, mirroring `EnemyRepository`
-  - [ ] `create_baseline_repository()` + `_baseline_definitions()` CODE CONSTANT authoring the single Larval Avatar (`boss_id == larval_avatar`, the 9.1 slot id); `register_boss(def)` through `ContentRepository.register_definition(BossDefinition.DEFINITION_TYPE, def.boss_id, def)` (inherit the fail-loud `duplicate_definition` guard; surface `duplicate_boss`); fail-closed `get_boss(id)` / `has_boss(id)` / `boss_ids()`.
-  - [ ] NO new content family/subdir in `data/source/` or `data/resources/` (stays empty scaffolding — the Echo/Seal-Fragment precedent); NO `.tres`/JSON pipeline.
-  - [ ] Tests: the baseline `larval_avatar` registers + validates; a duplicate id fails loud (`duplicate_boss`); an unknown id fails closed (`get_boss` returns null); the registered id == the 9.1 `boss_slot.entity_id`.
+- [x] **Task 2 — The `BossRepository` (fail-loud, code-constant baseline) (AC1)** — under `godot/scripts/content/repositories/`, mirroring `EnemyRepository`
+  - [x] `create_baseline_repository()` + `_baseline_definitions()` CODE CONSTANT authoring the single Larval Avatar (`boss_id == larval_avatar`, the 9.1 slot id); `register_boss(def)` through `ContentRepository.register_definition(BossDefinition.DEFINITION_TYPE, def.boss_id, def)` (inherit the fail-loud `duplicate_definition` guard; surface `duplicate_boss`); fail-closed `get_boss(id)` / `has_boss(id)` / `boss_ids()`.
+  - [x] NO new content family/subdir in `data/source/` or `data/resources/` (stays empty scaffolding — the Echo/Seal-Fragment precedent); NO `.tres`/JSON pipeline.
+  - [x] Tests: the baseline `larval_avatar` registers + validates; a duplicate id fails loud (`duplicate_boss`); an unknown id fails closed (`get_boss` returns null); the registered id == the 9.1 `boss_slot.entity_id`.
 
-- [ ] **Task 3 — The deterministic PHASE-RESOLUTION helper (AC2, AC3)** — a PURE `RefCounted` (the `RulesResolver` boss analogue)
-  - [ ] Given `(current_phase_index, current_hp, max_hp)` (+ scripted-trigger flags if any), return the ordered phase transition(s) to apply: FORWARD-ONLY (never phase < current), STABLE declaration order, IDEMPOTENT (a re-crossed / already-behind threshold is a NO-OP). Each transition surfaces a readable explanation.
-  - [ ] Draws ZERO RNG, mutates nothing on the source (PURE READ — the snapshot/`RulesResolver`/`LevelValidator` purity contract). Deterministic: same `(phase, hp, max_hp)` → same transition list + explanation.
-  - [ ] Decide + record the multi-threshold-in-one-hit behavior (RECOMMENDED: advance to the deepest crossed phase, emit ONE `boss_phase_changed` per phase entered, in order — no phase skipped in the log).
-  - [ ] Place it with the boss content/logic (record the home; do NOT build the generic rules engine; do NOT touch `scripts/rules/conditions/` (EMPTY) or `scripts/rules/operations/` (single file)).
-  - [ ] Tests: reaching a threshold fires exactly one change; re-reaching / staying below fires none; a threshold behind the current phase fires none; transitions fire in declaration order; the multi-threshold-in-one-hit case behaves as recorded; ZERO RNG + no mutation.
+- [x] **Task 3 — The deterministic PHASE-RESOLUTION helper (AC2, AC3)** — a PURE `RefCounted` (the `RulesResolver` boss analogue)
+  - [x] Given `(current_phase_index, current_hp, max_hp)` (+ scripted-trigger flags if any), return the ordered phase transition(s) to apply: FORWARD-ONLY (never phase < current), STABLE declaration order, IDEMPOTENT (a re-crossed / already-behind threshold is a NO-OP). Each transition surfaces a readable explanation.
+  - [x] Draws ZERO RNG, mutates nothing on the source (PURE READ — the snapshot/`RulesResolver`/`LevelValidator` purity contract). Deterministic: same `(phase, hp, max_hp)` → same transition list + explanation.
+  - [x] Decide + record the multi-threshold-in-one-hit behavior (RECOMMENDED: advance to the deepest crossed phase, emit ONE `boss_phase_changed` per phase entered, in order — no phase skipped in the log).
+  - [x] Place it with the boss content/logic (record the home; do NOT build the generic rules engine; do NOT touch `scripts/rules/conditions/` (EMPTY) or `scripts/rules/operations/` (single file)).
+  - [x] Tests: reaching a threshold fires exactly one change; re-reaching / staying below fires none; a threshold behind the current phase fires none; transitions fire in declaration order; the multi-threshold-in-one-hit case behaves as recorded; ZERO RNG + no mutation.
 
-- [ ] **Task 4 — The per-phase LEGAL-ACTION-SET accessor (AC2 half 2)** — the AI constraint surface
-  - [ ] The definition exposes the active phase's legal-action id set (`legal_action_ids(phase_index)` or a phase field) so 9.3's boss AI scores ONLY phase-permitted actions.
-  - [ ] Do NOT implement action selection / utility scoring / runtime telegraph emission (9.3). Record that AC2's "constrained" half is satisfied by exposing the per-phase legal-action set (the constraint surface 9.3 scores against).
-  - [ ] Tests: phase-0 vs phase-1 legal-action sets are queryable + differ (or intentionally overlap, asserted).
+- [x] **Task 4 — The per-phase LEGAL-ACTION-SET accessor (AC2 half 2)** — the AI constraint surface
+  - [x] The definition exposes the active phase's legal-action id set (`legal_action_ids(phase_index)` or a phase field) so 9.3's boss AI scores ONLY phase-permitted actions.
+  - [x] Do NOT implement action selection / utility scoring / runtime telegraph emission (9.3). Record that AC2's "constrained" half is satisfied by exposing the per-phase legal-action set (the constraint surface 9.3 scores against).
+  - [x] Tests: phase-0 vs phase-1 legal-action sets are queryable + differ (or intentionally overlap, asserted).
 
-- [ ] **Task 5 — The `boss_phase_changed` SYSTEM event (NEW, append-only, end-to-end) (AC2)** — extend `godot/scripts/core/events/domain_event.gd`
-  - [ ] Append `BOSS_PHASE_CHANGED` AFTER `BOSS_ENCOUNTER_STARTED` (the current enum tail; append only, NEVER renumber an existing member) + `const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"`.
-  - [ ] Factory `boss_phase_changed(sequence_id, payload)` — SYSTEM event (no actor; NOT in `_event_requires_actor`); defensively duplicate/normalize the payload (`boss_entity_id`, `from_phase`, `to_phase`, `phase_id`?, `trigger`?). No int64 encoding.
-  - [ ] `_validate_boss_phase_changed_payload` (`boss_entity_id` lower_snake; `from_phase`/`to_phase` non-negative integral; `to_phase > from_phase` forward-only — reject a backward/equal change; `phase_id`/`trigger` lower_snake if carried) wired into `validate_payload`.
-  - [ ] Both id maps (`id_for_type` + `type_for_id`).
-  - [ ] ⭐ UPDATE the `expected_ids` exhaustiveness pin in `test_domain_event.gd` (add `DomainEvent.Type.BOSS_PHASE_CHANGED: &"boss_phase_changed"`); the gate FAILS until you do — do NOT loosen it.
-  - [ ] Tests: the event round-trips through JSON + rejects each malformed field (incl. backward/equal `to_phase`); the exhaustiveness pin is green.
+- [x] **Task 5 — The `boss_phase_changed` SYSTEM event (NEW, append-only, end-to-end) (AC2)** — extend `godot/scripts/core/events/domain_event.gd`
+  - [x] Append `BOSS_PHASE_CHANGED` AFTER `BOSS_ENCOUNTER_STARTED` (the current enum tail; append only, NEVER renumber an existing member) + `const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"`.
+  - [x] Factory `boss_phase_changed(sequence_id, payload)` — SYSTEM event (no actor; NOT in `_event_requires_actor`); defensively duplicate/normalize the payload (`boss_entity_id`, `from_phase`, `to_phase`, `phase_id`?, `trigger`?). No int64 encoding.
+  - [x] `_validate_boss_phase_changed_payload` (`boss_entity_id` lower_snake; `from_phase`/`to_phase` non-negative integral; `to_phase > from_phase` forward-only — reject a backward/equal change; `phase_id`/`trigger` lower_snake if carried) wired into `validate_payload`.
+  - [x] Both id maps (`id_for_type` + `type_for_id`).
+  - [x] ⭐ UPDATE the `expected_ids` exhaustiveness pin in `test_domain_event.gd` (add `DomainEvent.Type.BOSS_PHASE_CHANGED: &"boss_phase_changed"`); the gate FAILS until you do — do NOT loosen it.
+  - [x] Tests: the event round-trips through JSON + rejects each malformed field (incl. backward/equal `to_phase`); the exhaustiveness pin is green.
 
-- [ ] **Task 6 — Cross-checks, suite, and hygiene (all ACs)**
-  - [ ] Cross-check: the baseline boss id == the 9.1 `boss_slot.entity_id` (`larval_avatar`) — 9.2 fills the SAME slot (assert against `BossEncounterRequest.BOSS_ENTITY_ID` or the arena payload).
-  - [ ] Confirm 9.2 touches NONE of: `BossNodeEnterCommand`, `BossEncounterRequest`, `BossArenaBuilder`, `RunOrchestrator._resolve_boss`, the `boss_encounter_started` event, the route model, the boss node type, the `run_completed`/`boss_placeholder`/`boss_node_id` boundary, the 23-key `RunSnapshot` gate, `scripts/rules/conditions/` (EMPTY), `scripts/rules/operations/` (single file), any seed-regression fingerprint, or any `.tres`/JSON content file.
-  - [ ] Run the full headless suite; apply the false-PASS grep guard; `git diff --check`; verify `git status --short` clean of stray temp/generated files (never remove planning/story artifacts).
+- [x] **Task 6 — Cross-checks, suite, and hygiene (all ACs)**
+  - [x] Cross-check: the baseline boss id == the 9.1 `boss_slot.entity_id` (`larval_avatar`) — 9.2 fills the SAME slot (assert against `BossEncounterRequest.BOSS_ENTITY_ID` or the arena payload).
+  - [x] Confirm 9.2 touches NONE of: `BossNodeEnterCommand`, `BossEncounterRequest`, `BossArenaBuilder`, `RunOrchestrator._resolve_boss`, the `boss_encounter_started` event, the route model, the boss node type, the `run_completed`/`boss_placeholder`/`boss_node_id` boundary, the 23-key `RunSnapshot` gate, `scripts/rules/conditions/` (EMPTY), `scripts/rules/operations/` (single file), any seed-regression fingerprint, or any `.tres`/JSON content file.
+  - [x] Run the full headless suite; apply the false-PASS grep guard; `git diff --check`; verify `git status --short` clean of stray temp/generated files (never remove planning/story artifacts).
 
 ## Dev Notes
 
@@ -218,8 +222,52 @@ If an AC seems to demand a LIVE boss fight or a runtime phase transition, re-rea
 
 ### Agent Model Used
 
+Claude Opus 4.8 (1M context) — auto-gds `dev-story` delegate.
+
 ### Debug Log References
+
+- Baseline suite (pre-implementation, HEAD `39985933`): 155 PASS / 0 FAIL, no script errors — matches the documented post-9.1 baseline.
+- Final suite (post-implementation): 158 PASS / 0 FAIL (+3 new test files), error-guard scan clean, `git diff --check` clean (only a benign LF→CRLF markdown warning), `git status --short` clean of stray temp/generated files.
 
 ### Completion Notes List
 
+**[Decision] Definition shape — Option A (dedicated `BossDefinition` + typed sub-resources).** Authored a dedicated `BossDefinition` content `Resource` with two typed sub-resources — `BossPhaseDefinition` (ordered phase) and `BossActionDefinition` (a legal action carrying its telegraph + damage rule + explanation) — mirroring `EventDefinition` + `EventChoiceDefinition` VERBATIM (`DEFINITION_TYPE` const, `@export` fields, `_init` null-tolerant `as`-copy into a typed `Array`, `validate() -> ActionResult` with `invalid_boss_definition` + `{reason, field}` / `{reason: "invalid_phase", phase_index, field}` / `{reason: "invalid_action", action_index, field}`, the shared `_is_lower_snake_id` helper, `get_*`/`*_ids` accessors). Rejected Option B (extending `EnemyDefinition`) — the boss has phases + telegraphs + a multi-action set, none of which fit the flat two-behavior enemy contract.
+
+**[Decision] Per-phase content, NOT a boss-level catalog-by-id.** The legal actions / telegraphs / damage rules live as fields ON each phase (`BossPhaseDefinition.actions: Array[BossActionDefinition]`), not a shared boss-level catalog referenced by id. This is the simplest, most self-contained shape and matches the `EventChoiceDefinition` per-choice precedent; each `BossActionDefinition` unifies AC1's "legal actions", "telegraph definitions", and "damage rules" into one validated entry (`action_id` + `telegraph_text` + `damage` + `damage_type` + `explanation`). The AC2-half-2 constraint surface is `BossDefinition.legal_action_ids(phase_index)` / `BossPhaseDefinition.legal_action_ids()` — the exact per-phase action-id set 9.3's AI scores against (9.2 EXPOSES it; 9.3 SCORES it; no selection/utility/runtime-telegraph here).
+
+**[Decision] Threshold model — integer HP-% per phase, phase 0 == 100, strictly decreasing.** Each phase carries `hp_threshold_percent` (int, 1–100). Phase 0 is the always-active entry phase (threshold 100); later phases carry strictly-decreasing thresholds (the structural cross-rule `BossDefinition.validate()` enforces — a phase-0 != 100 or a threshold >= the prior is rejected with the phase index). Forward-only monotonic escalation (the `RouteState` reveal-monotonicity precedent). The resolver compares with integer math (`current_hp * 100 <= threshold * max_hp`) — no float rounding; a boss AT exactly the threshold % ENTERS the phase (inclusive `<=`).
+
+**[Decision] Multi-threshold-in-one-hit — advance to the deepest crossed phase, emit ONE change per phase entered, in order (RECOMMENDED).** `BossPhaseResolver.resolve(definition, current_phase_index, current_hp)` returns a chain of adjacent forward transitions (each `to_phase == from_phase + 1`) so no phase is skipped in the event log. A single large damage event that crosses two thresholds emits two `boss_phase_changed` records (0→1, 1→2), an honest log.
+
+**[Decision] Resolver home — `scripts/content/boss/`.** The pure `BossPhaseResolver` (+ the `BossPhaseTransition` pure DTO) live with the boss content/logic, NOT the rules kernel. `scripts/rules/conditions/` stays EMPTY, `scripts/rules/operations/` stays at its single file; no generic `RuleCondition`/`RuleTarget`/`RuleOperation` engine, stacking/conflict/duration, or combat hook sites. The resolver is a PURE READ: ZERO RNG, mutates nothing on the definition/phases, deterministic (same inputs → same transitions + explanations). Idempotency is STRUCTURAL (the current phase index is the state; the resolve only advances), not a dedup cache — a re-crossed / already-behind threshold is a no-op.
+
+**[Decision] `boss_phase_changed` — a dedicated append-only SYSTEM event.** Appended `BOSS_PHASE_CHANGED` at the enum END (after `BOSS_ENCOUNTER_STARTED`, index 45; no member renumbered), wired end-to-end (id const, factory `boss_phase_changed(sequence_id, payload)` — no actor, not in `_event_requires_actor`; `_validate_boss_phase_changed_payload`; `validate_payload` dispatch; both id maps) and the `expected_ids` exhaustiveness pin updated (it FAILS until the entry is added — by design; not loosened). Payload: `boss_entity_id` (lower_snake), `from_phase`/`to_phase` (non-negative integral, `to_phase > from_phase` FORWARD-ONLY — a backward/equal change is rejected, the honest-record precedent), `phase_id` + `trigger` (lower_snake). No int64 encoding (short strings + small ints). The event's JSON round-trip test asserts the SURVIVING typed fields after `parse_string` (the epic-9 int→float footgun — no byte-identical re-stringify of a nested-dict payload).
+
+**Boundary drawn (recorded per the story).** 9.2 ships the phase MODEL (definition + pure resolver + event + the queryable per-phase legal-action set) that 9.3's live loop CONSUMES. It does NOT: persist phase state, add a `RunSnapshot` key (the 23-key gate stays 23), instantiate a live `TacticalEntityState` boss (needs `max_hp > 0` on a board entity — the later live-loop story), wire a turn loop, select actions / score utility / emit telegraphs at runtime (9.3), resolve the boss to zero HP / emit a victory / build the first-victory reveal (9.4), or add the finale regression suite (9.5). It fills the 9.1 boss slot — `BossDefinition.BOSS_ID == BossEncounterRequest.BOSS_ENTITY_ID == arena boss_slot.entity_id == "larval_avatar"` (a cross-check test pins all three) — WITHOUT re-opening the 9.1 encounter setup (`BossNodeEnterCommand`/`BossEncounterRequest`/`BossArenaBuilder`/`RunOrchestrator._resolve_boss`/`boss_encounter_started`/route model/node type/`run_completed` all untouched). No generator/route/arena layout touched → every seed-regression fingerprint stays byte-identical; no `tools/dump_*` re-pin. The boss is a code-constant baseline on `BossRepository` through the `ContentRepository` fail-loud `duplicate_definition` boundary; `data/source`/`data/resources` gained no boss family; no `.tres`/JSON pipeline. Difficulty stays a hard non-goal — the 3-phase escalation is authored, readable phase content, not a selectable tier.
+
+**No breaking changes.** Everything is additive: a new `BossDefinition`/`BossPhaseDefinition`/`BossActionDefinition` content family, a new `BossRepository`, a new `BossPhaseResolver`/`BossPhaseTransition`, and a new append-only `boss_phase_changed` event. No existing public interface, config key, schema, or save shape changed; no migration required.
+
 ### File List
+
+**New (production):**
+- `godot/scripts/content/definitions/boss_action_definition.gd` — the per-phase legal-action sub-resource (action id + telegraph + damage rule + explanation).
+- `godot/scripts/content/definitions/boss_phase_definition.gd` — the ordered phase sub-resource (threshold trigger + action set + explanation; `legal_action_ids()`/`get_action()`).
+- `godot/scripts/content/definitions/boss_definition.gd` — the Larval Avatar boss definition (`boss_id`/`max_hp`/ordered `phases`/`explanation`; the phase-0==100 + strictly-decreasing threshold cross-rules; `legal_action_ids(phase_index)`/`phase_threshold_percent(phase_index)`/`get_phase`/`phase_ids` accessors; `BOSS_ID == "larval_avatar"`).
+- `godot/scripts/content/repositories/boss_repository.gd` — the fail-closed boss repository (code-constant baseline Larval Avatar; `register_boss`/`get_boss`/`has_boss`/`boss_ids`; `duplicate_boss` fail-loud).
+- `godot/scripts/content/boss/boss_phase_resolver.gd` — the pure, deterministic, forward-only, stable-ordered, idempotent phase-transition resolver (the `RulesResolver` boss analogue).
+- `godot/scripts/content/boss/boss_phase_transition.gd` — the pure transition DTO (`from_phase`/`to_phase`/`phase_id`/`trigger`/`explanation`; `to_payload()` for the event).
+
+**New (tests):**
+- `godot/tests/unit/content/test_boss_definition.gd` — definition/phase/action per-field + per-phase-index + per-action-index rejects; threshold cross-rules; accessors; the AC2-half-2 phase-dependent legal-action sets (fixture + baseline).
+- `godot/tests/unit/content/test_boss_repository.gd` — baseline registers/validates; duplicate fails loud; unknown fails closed; the 9.1 slot cross-check (`BOSS_ID == BossEncounterRequest.BOSS_ENTITY_ID == arena boss_slot.entity_id`).
+- `godot/tests/unit/content/test_boss_phase_resolver.gd` — single-transition + idempotency + forward-only + declaration order + multi-threshold chain + boundary HP-% + determinism + pure-read/no-mutation + fail-closed.
+
+**Modified:**
+- `godot/scripts/core/events/domain_event.gd` — appended the `BOSS_PHASE_CHANGED` event end-to-end (enum member + id const + factory + payload validator + `validate_payload` dispatch + both id maps).
+- `godot/tests/unit/core/test_domain_event.gd` — the `boss_phase_changed` JSON round-trip + per-field malformed (incl. backward/equal `to_phase`) tests + the `expected_ids` exhaustiveness-pin entry.
+- `_bmad-output/implementation-artifacts/9-2-larval-avatar-definition-and-phases.md` — this story file (baseline_commit frontmatter, task checkboxes, Dev Agent Record, Status).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — story status ready-for-dev → in-progress → review; `last_updated` refreshed.
+
+## Change Log
+
+- 2026-07-03 — Story 9.2 implemented (all 6 tasks): the Larval Avatar `BossDefinition` + `BossPhaseDefinition` + `BossActionDefinition` typed content family; the fail-closed `BossRepository` code-constant baseline (`larval_avatar`, a readable 3-phase escalation); the pure deterministic `BossPhaseResolver` + `BossPhaseTransition` (forward-only, stable-ordered, idempotent, multi-threshold chain); the per-phase legal-action-set AI constraint surface; the append-only `boss_phase_changed` SYSTEM event wired end-to-end + the exhaustiveness pin. Full suite 158 PASS / 0 FAIL. Status → review.
