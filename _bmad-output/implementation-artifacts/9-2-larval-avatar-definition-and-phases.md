@@ -4,7 +4,7 @@ baseline_commit: 39985933ba45d52c18da938f2e5c171012380c7c
 
 # Story 9.2: Larval Avatar Definition and Phases
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
