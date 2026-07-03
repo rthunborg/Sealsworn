@@ -28,9 +28,11 @@ static func boss_definition() -> BossDefinition:
 	return BossRepository.create_baseline_repository().get_boss(BOSS_ENTITY_ID)
 
 
-# The reserved boss_slot cell from the 9.1 arena (top-center interior).
+# The reserved boss_slot cell from the 9.1 arena (top-center interior) — read from the ACTUAL built arena payload's
+# boss_slot marker (not a duplicated constant), so the Task-8 cross-check asserts the live boss sits at the real
+# reserved marker and a future arena-layout change to the slot can never silently desync the fixture from the arena.
 static func boss_slot_cell() -> Vector2i:
-	return _boss_slot_cell()
+	return _build_arena().get("boss_slot_cell", _boss_slot_cell())
 
 
 # The entrance / player-start cell from the 9.1 arena (bottom-center interior).
@@ -40,13 +42,17 @@ static func entrance_cell() -> Vector2i:
 
 # The live boss board with the hero at the given cell and the boss at the current HP. `boss_current_hp < 0` means full
 # HP (max_hp from the definition). The hero and boss are cardinally alignable along column 6 by default (both at x==6).
+# The boss is placed at the arena's ACTUAL reserved boss_slot (read from the built payload, not a duplicated constant),
+# so a future arena-layout change to the slot desyncs nothing and the Task-8 cross-check asserts the real marker.
 static func boss_arena(hero_cell: Vector2i, boss_current_hp: int = -1) -> BoardState:
-	var board: BoardState = _arena_board()
+	var built: Dictionary = _build_arena()
+	var board: BoardState = built.get("board") as BoardState
+	var slot_cell: Vector2i = built.get("boss_slot_cell", _boss_slot_cell())
 	var definition: BossDefinition = boss_definition()
 	var resolved_hp: int = boss_current_hp
 	if resolved_hp < 0:
 		resolved_hp = definition.max_hp
-	_place_boss(board, definition, resolved_hp)
+	_place_boss(board, definition, resolved_hp, slot_cell)
 	_place_hero(board, hero_cell)
 	_reveal_all(board)
 	return board
@@ -66,26 +72,30 @@ static func boss_arena_hero_far() -> BoardState:
 	return boss_arena(_entrance_cell(), -1)
 
 
-static func _arena_board() -> BoardState:
+# Build the 9.1 arena and return BOTH the restored board and the arena's ACTUAL reserved boss_slot cell (read from the
+# built payload, not a duplicated constant — so the live boss is placed at the real marker the arena reserved).
+static func _build_arena() -> Dictionary:
 	var request: BossEncounterRequest = BossEncounterRequest.new(4242, &"node_boss_finale")
 	var result: GenerationResult = BossArenaBuilder.new().build(request)
 	if not result.succeeded:
 		push_error("Boss arena fixture build failed: %s" % String(result.error_code))
-		return BoardState.new()
+		return {"board": BoardState.new(), "boss_slot_cell": _boss_slot_cell()}
 	var board_snapshot: Dictionary = result.payload.get("board_snapshot", {})
 	var board: BoardState = BoardState.from_snapshot(board_snapshot)
 	if board == null:
 		push_error("Boss arena fixture snapshot restore failed.")
-		return BoardState.new()
-	return board
+		return {"board": BoardState.new(), "boss_slot_cell": _boss_slot_cell()}
+	var slot: Dictionary = result.payload.get("boss_slot", {})
+	var slot_cell: Vector2i = Vector2i(int(slot.get("x", _boss_slot_cell().x)), int(slot.get("y", _boss_slot_cell().y)))
+	return {"board": board, "boss_slot_cell": slot_cell}
 
 
-static func _place_boss(board: BoardState, definition: BossDefinition, current_hp: int) -> void:
+static func _place_boss(board: BoardState, definition: BossDefinition, current_hp: int, slot_cell: Vector2i) -> void:
 	var boss: TacticalEntityState = TacticalEntityState.new(
 		BOSS_ENTITY_ID,
 		TacticalEntityState.EntityType.ENEMY,
 		&"boss",
-		_boss_slot_cell(),
+		slot_cell,
 		current_hp,
 		definition.max_hp,
 		true,

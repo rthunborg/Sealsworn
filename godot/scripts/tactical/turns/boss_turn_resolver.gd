@@ -113,8 +113,24 @@ func resolve_boss_turn(context: TacticalActionContext) -> ActionResult:
 # returned transition (from each transition.to_payload()). `previous_phase_index` is the boss's phase BEFORE the HP
 # change (the caller tracks it, or passes the recomputed pre-damage phase). The boss_phase_changed events are SYSTEM
 # events (no board mutation) — they are returned in the event stream / log, NOT board-applied. Returns the events +
-# the new active phase index in metadata. PURE over the resolver (ZERO RNG).
-func resolve_phase_transitions(context: TacticalActionContext, previous_phase_index: int) -> ActionResult:
+# the new active phase index + `next_sequence_id_after` (the first free id past this step) in metadata. PURE over the
+# resolver (ZERO RNG).
+#
+# SEQUENCE-ID SEAM CONTRACT (Story 9.3 review Round 1, Med finding — addresses the 9.4 stream-merge seam): these
+# boss_phase_changed events are system events that this method does NOT board-apply, so `context.board`'s
+# `_next_sequence_id` is NOT advanced by them (only `apply_events` advances it). Within 9.3 the ids are
+# log-ordering-only and benign. BUT a caller (Story 9.4's run-to-completion loop) that INTERLEAVES these
+# phase-change events with board-applied action events into ONE ordered append-only log MUST reserve the id range:
+# pass an explicit `sequence_id_base` (>= 0) that does not collide with any id a board-applied event will consume,
+# and use the returned `next_sequence_id_after` as the reserved cursor for whatever it appends next. When
+# `sequence_id_base < 0` (the 9.3 default) the base falls back to `context.board.next_sequence_id()` — correct for
+# 9.3's non-interleaved, driven-by-explicit-test-turns usage, but a caller that merges streams MUST NOT rely on
+# that fallback.
+func resolve_phase_transitions(
+	context: TacticalActionContext,
+	previous_phase_index: int,
+	sequence_id_base: int = -1
+) -> ActionResult:
 	if context == null or not context.has_required_state():
 		return _invalid(&"invalid_context")
 	if _boss_definition == null:
@@ -126,9 +142,10 @@ func resolve_phase_transitions(context: TacticalActionContext, previous_phase_in
 
 	var transitions: Array[BossPhaseTransition] = _phase_resolver.resolve(_boss_definition, previous_phase_index, boss.current_hp)
 	var events: Array[DomainEvent] = []
-	# The boss_phase_changed events are system events (not board-applied); sequence them monotonically after the board's
-	# current next sequence id so the log stays ordered and unique within this step.
-	var sequence_id: int = context.board.next_sequence_id()
+	# The boss_phase_changed events are system events (not board-applied); sequence them monotonically from the
+	# caller-reserved base (>= 0) when interleaving streams, else from the board's current next sequence id. See the
+	# SEQUENCE-ID SEAM CONTRACT above.
+	var sequence_id: int = sequence_id_base if sequence_id_base >= 0 else context.board.next_sequence_id()
 	for transition: BossPhaseTransition in transitions:
 		var event: DomainEvent = DomainEvent.boss_phase_changed(sequence_id, transition.to_payload())
 		events.append(event)
@@ -137,7 +154,9 @@ func resolve_phase_transitions(context: TacticalActionContext, previous_phase_in
 	return ActionResult.ok(events, {
 		"transition_count": transitions.size(),
 		"previous_phase_index": previous_phase_index,
-		"active_phase_index": _active_phase_index(boss.current_hp)
+		"active_phase_index": _active_phase_index(boss.current_hp),
+		# The first free sequence id past this step — a stream-merging caller uses this as its reserved cursor.
+		"next_sequence_id_after": sequence_id
 	})
 
 
