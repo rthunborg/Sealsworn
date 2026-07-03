@@ -30,6 +30,8 @@ func run() -> Dictionary:
 	_profile_progress_merged_rejects_malformed_payloads()
 	_first_death_recorded_serializes_and_parses_stable_payload()
 	_first_death_recorded_rejects_malformed_payloads()
+	_boss_encounter_started_serializes_and_parses_stable_payload()
+	_boss_encounter_started_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -1151,6 +1153,92 @@ func _first_death_recorded_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_profile.is_error(), "first_death_recorded with a non-string profile_id should be rejected.")
 	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
+
+
+func _boss_encounter_started_serializes_and_parses_stable_payload() -> void:
+	# Story 9.1 (AC1): a boss_encounter_started SYSTEM event (no actor) — the boss-ENCOUNTER-SETUP boundary. boss_node_id
+	# is the ORIGINAL route boss node id (HYPHENATED — a plain non-empty string, NOT lower_snake); boss_entity_id is the
+	# reserved boss-entity SLOT id (lower_snake — the Larval Avatar slot 9.2 fills); arena_width/arena_height are the boss
+	# arena bounds (non-negative integral); ZERO roll/draw_index (the setup draws ZERO RNG — a deterministic record).
+	var event: DomainEvent = DomainEvent.boss_encounter_started(44, {
+		"boss_node_id": "node-7-0",
+		"boss_entity_id": "larval_avatar",
+		"arena_width": 12,
+		"arena_height": 12
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "boss_encounter_started", "boss_encounter_started should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "boss_encounter_started is a system event with an empty actor id.")
+	# ZERO RNG: a setup record, not a roll — no roll/draw_index on the payload.
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "boss_encounter_started must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "boss_encounter_started must NOT carry a draw_index (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "boss_encounter_started should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.BOSS_ENCOUNTER_STARTED, "boss_encounter_started should parse back to BOSS_ENCOUNTER_STARTED.")
+	# The HYPHENATED boss node id survives the round trip (validated as a plain string, NEVER lower_snake).
+	assert_equal(restored.payload.get("boss_node_id"), "node-7-0", "The hyphenated boss_node_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("boss_entity_id"), "larval_avatar", "The boss_entity_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("arena_width"), 12, "arena_width must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("arena_height"), 12, "arena_height must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.BOSS_ENCOUNTER_STARTED), &"boss_encounter_started", "id_for_type must map boss_encounter_started.")
+	assert_equal(DomainEvent.type_for_id(&"boss_encounter_started"), DomainEvent.Type.BOSS_ENCOUNTER_STARTED, "type_for_id must map boss_encounter_started back.")
+
+
+func _boss_encounter_started_rejects_malformed_payloads() -> void:
+	# A missing boss_node_id is rejected.
+	var missing_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_encounter_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_entity_id": "larval_avatar", "arena_width": 12, "arena_height": 12}
+	})
+	assert_true(missing_node.is_error(), "boss_encounter_started missing boss_node_id should be rejected.")
+	assert_equal(missing_node.error_code, &"invalid_event_payload", "Malformed boss_encounter_started should use the stable code.")
+	assert_equal(missing_node.metadata.get("field"), "boss_node_id", "boss_encounter_started should name the missing boss_node_id field.")
+
+	# An EMPTY boss_node_id is rejected (the boss encounter must key off a real node).
+	var empty_node: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_encounter_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_node_id": "", "boss_entity_id": "larval_avatar", "arena_width": 12, "arena_height": 12}
+	})
+	assert_true(empty_node.is_error(), "boss_encounter_started with an empty boss_node_id should be rejected.")
+	assert_equal(empty_node.metadata.get("field"), "boss_node_id", "An empty boss_node_id should name the boss_node_id field.")
+
+	# A non-lower_snake boss_entity_id (hyphenated) is rejected (a boss-entity slot id is a lower_snake content id).
+	var bad_entity: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_encounter_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_node_id": "node-7-0", "boss_entity_id": "larval-avatar", "arena_width": 12, "arena_height": 12}
+	})
+	assert_true(bad_entity.is_error(), "boss_encounter_started with a hyphenated boss_entity_id should be rejected.")
+	assert_equal(bad_entity.metadata.get("field"), "boss_entity_id", "A non-lower_snake boss_entity_id should name the boss_entity_id field.")
+
+	# A negative arena_width is rejected (the bounds are non-negative integral).
+	var bad_width: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_encounter_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_node_id": "node-7-0", "boss_entity_id": "larval_avatar", "arena_width": -1, "arena_height": 12}
+	})
+	assert_true(bad_width.is_error(), "boss_encounter_started with a negative arena_width should be rejected.")
+	assert_equal(bad_width.metadata.get("field"), "arena_width", "A negative arena_width should name the arena_width field.")
+
+	# A non-integral arena_height (a string) is rejected.
+	var bad_height: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "boss_encounter_started",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"boss_node_id": "node-7-0", "boss_entity_id": "larval_avatar", "arena_width": 12, "arena_height": "tall"}
+	})
+	assert_true(bad_height.is_error(), "boss_encounter_started with a non-integral arena_height should be rejected.")
+	assert_equal(bad_height.metadata.get("field"), "arena_height", "A non-integral arena_height should name the arena_height field.")
 
 
 func _profile_progress_merged_serializes_and_parses_stable_payload() -> void:
@@ -2517,7 +2605,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.PROFILE_PROGRESS_MERGED: &"profile_progress_merged",
 		# Story 8.5: the first_death_recorded SYSTEM event appended at the enum end (never renumbered) — the first-death
 		# narrative marker (the FIRST persistent per-profile-lifetime latch record).
-		DomainEvent.Type.FIRST_DEATH_RECORDED: &"first_death_recorded"
+		DomainEvent.Type.FIRST_DEATH_RECORDED: &"first_death_recorded",
+		# Story 9.1: the boss_encounter_started SYSTEM event appended at the enum end (never renumbered) — the boss-
+		# ENCOUNTER-SETUP boundary (the Larval Avatar encounter is requested + its arena set up; the run is NOT completed).
+		DomainEvent.Type.BOSS_ENCOUNTER_STARTED: &"boss_encounter_started"
 	}
 
 	for event_type: int in expected_ids.keys():

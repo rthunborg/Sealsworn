@@ -40,7 +40,8 @@ enum Type {
 	OATH_SHARDS_AWARDED,
 	CONTENT_DISCOVERED,
 	PROFILE_PROGRESS_MERGED,
-	FIRST_DEATH_RECORDED
+	FIRST_DEATH_RECORDED,
+	BOSS_ENCOUNTER_STARTED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -80,6 +81,7 @@ const EVENT_ID_OATH_SHARDS_AWARDED := &"oath_shards_awarded"
 const EVENT_ID_CONTENT_DISCOVERED := &"content_discovered"
 const EVENT_ID_PROFILE_PROGRESS_MERGED := &"profile_progress_merged"
 const EVENT_ID_FIRST_DEATH_RECORDED := &"first_death_recorded"
+const EVENT_ID_BOSS_ENCOUNTER_STARTED := &"boss_encounter_started"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -448,6 +450,27 @@ static func first_death_recorded(sequence_id: int, payload: Dictionary = {}) -> 
 	payload_value["is_skippable"] = bool(payload.get("is_skippable", false))
 	payload_value["profile_id"] = String(payload.get("profile_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.FIRST_DEATH_RECORDED, sequence_id, &"", payload_value)
+
+
+static func boss_encounter_started(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 9.1, AC1): the boss-ENCOUNTER-SETUP boundary — emitted when the terminal boss
+	# node is reached and BossNodeEnterCommand sets up the Larval Avatar encounter (transition ACTIVE_ROUTE ->
+	# NODE_RESOLUTION). It is the boss sibling of node_entered (the combat-node level-entry record): the boss
+	# encounter is now REQUESTED + its arena is SET UP, but the run is NOT completed (the real fight + victory is
+	# Story 9.4, which reuses the run_completed boundary UNCHANGED). NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty). `boss_node_id` is the ORIGINAL route boss node id, which carries
+	# hyphens (RouteGenerator mints "node-<depth>-<index>") -> a PLAIN non-empty string, NEVER lower_snake-validated.
+	# `boss_entity_id` is the reserved boss-entity SLOT id (lower_snake — the Larval Avatar slot 9.2 fills; 9.1
+	# authors NO boss stats). `arena_width`/`arena_height` are the boss arena's bounds (non-negative integral, well
+	# under 2^53). It is a DETERMINISTIC record — the boss REQUEST/arena setup draws ZERO RNG (the node_entered
+	# posture), so there is NO roll/draw_index. Normalize/duplicate the payload defensively (mirroring node_entered /
+	# run_completed). No int64 encoding (the ids are short strings, the bounds are small ints).
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["boss_node_id"] = String(payload.get("boss_node_id", ""))
+	payload_value["boss_entity_id"] = String(payload.get("boss_entity_id", ""))
+	payload_value["arena_width"] = int(payload.get("arena_width", 0))
+	payload_value["arena_height"] = int(payload.get("arena_height", 0))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_ENCOUNTER_STARTED, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -1024,6 +1047,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_profile_progress_merged_payload(payload_value)
 		Type.FIRST_DEATH_RECORDED:
 			return _validate_first_death_recorded_payload(payload_value)
+		Type.BOSS_ENCOUNTER_STARTED:
+			return _validate_boss_encounter_started_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1340,6 +1365,25 @@ static func _validate_first_death_recorded_payload(payload_value: Dictionary) ->
 		return _error_result(&"invalid_event_payload", {"field": "is_skippable"})
 	if not _has_string_payload(payload_value, &"profile_id"):
 		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
+	return _ok_result()
+
+
+static func _validate_boss_encounter_started_payload(payload_value: Dictionary) -> ActionResult:
+	# The boss-ENCOUNTER-SETUP boundary (Story 9.1, AC1). boss_node_id is the ORIGINAL route boss node id, which
+	# carries hyphens (RouteGenerator mints "node-<depth>-<index>") -> validated as a PLAIN non-empty string, NEVER
+	# via _has_lower_snake_payload (it rejects hyphens — the node_placeholder_resolved.node_id precedent).
+	# boss_entity_id is the reserved boss-entity SLOT id (a lower_snake content id — the Larval Avatar slot;
+	# validated via _has_lower_snake_payload, UNLIKE the hyphenated node id). arena_width/arena_height are the boss
+	# arena bounds (non-negative integral). UNLIKE passive_destroyed there is NO roll/draw_index (the setup draws
+	# ZERO RNG — a deterministic record, not a roll). A malformed/missing field is rejected per-field.
+	if not _has_nonempty_string_payload(payload_value, &"boss_node_id"):
+		return _error_result(&"invalid_event_payload", {"field": "boss_node_id"})
+	if not _has_lower_snake_payload(payload_value, &"boss_entity_id"):
+		return _error_result(&"invalid_event_payload", {"field": "boss_entity_id"})
+	if not _has_nonnegative_integral_payload(payload_value, &"arena_width"):
+		return _error_result(&"invalid_event_payload", {"field": "arena_width"})
+	if not _has_nonnegative_integral_payload(payload_value, &"arena_height"):
+		return _error_result(&"invalid_event_payload", {"field": "arena_height"})
 	return _ok_result()
 
 
@@ -2152,6 +2196,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_PROFILE_PROGRESS_MERGED
 		Type.FIRST_DEATH_RECORDED:
 			return EVENT_ID_FIRST_DEATH_RECORDED
+		Type.BOSS_ENCOUNTER_STARTED:
+			return EVENT_ID_BOSS_ENCOUNTER_STARTED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2230,6 +2276,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.PROFILE_PROGRESS_MERGED
 		EVENT_ID_FIRST_DEATH_RECORDED:
 			return Type.FIRST_DEATH_RECORDED
+		EVENT_ID_BOSS_ENCOUNTER_STARTED:
+			return Type.BOSS_ENCOUNTER_STARTED
 		_:
 			return Type.UNKNOWN
 
