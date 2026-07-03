@@ -1,6 +1,6 @@
 # Story 8.6: Outpost Menu and Start Another Descent
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
