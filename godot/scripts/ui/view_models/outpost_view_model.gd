@@ -156,13 +156,14 @@ const NAMED_SPACES: Array[Dictionary] = [
 # The EXACT key set of a start_run_request(...) result (AC3). Pinned by test. root_seed is the decimal-string-encoded
 # int64 seed (JSON doubles truncate beyond 2^53 — the epic-wide root_seed rule); is_manual_seed is the seed-eligibility
 # flag (a manual-seed start -> meta_progression_eligible == false via the existing lockstep); class_id is the selected
-# class (lower_snake String; "" is the legacy no-class start); is_class_selectable is the fail-closed pre-gate result
-# (whether the request can actually start a run — an empty class id is a startable no-class request).
+# class (lower_snake String; "" is the legacy no-class start); is_startable is the fail-closed pre-gate result — whether
+# the request can actually start a run (an empty class id is a STARTABLE no-class request even though it is not
+# "selectable" per HeroSelectViewModel; a non-empty class must pass the selectable pre-gate).
 const START_REQUEST_KEYS: Array[String] = [
 	"root_seed",
 	"is_manual_seed",
 	"class_id",
-	"is_class_selectable"
+	"is_startable"
 ]
 
 # Whether the outpost was built from a REAL loaded profile (true) or a FRESH/recovery profile (false) — the AC4
@@ -322,7 +323,7 @@ func start_run_request(request_root_seed: int, request_is_manual_seed: bool = fa
 		"root_seed": str(request_root_seed),
 		"is_manual_seed": request_is_manual_seed,
 		"class_id": String(request_class_id),
-		"is_class_selectable": class_is_startable
+		"is_startable": class_is_startable
 	}
 
 

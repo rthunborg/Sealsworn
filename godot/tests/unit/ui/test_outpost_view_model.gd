@@ -346,8 +346,8 @@ func _start_run_request_for_a_selectable_class_is_startable() -> void:
 
 	var keys: Array = request.keys()
 	keys.sort()
-	assert_equal(keys, ["class_id", "is_class_selectable", "is_manual_seed", "root_seed"], "The start request exposes EXACTLY the pinned key set.")
-	assert_true(bool(request.get("is_class_selectable")), "A request for a selectable class (warrior) is startable.")
+	assert_equal(keys, ["class_id", "is_manual_seed", "is_startable", "root_seed"], "The start request exposes EXACTLY the pinned key set.")
+	assert_true(bool(request.get("is_startable")), "A request for a selectable class (warrior) is startable.")
 	assert_equal(String(request.get("class_id")), "warrior", "The request carries the selected class id.")
 	assert_equal(String(request.get("root_seed")), "123456789", "The request carries the decimal-string-encoded seed.")
 	assert_false(bool(request.get("is_manual_seed")), "A normal-seed request is not manual-seed.")
@@ -355,17 +355,17 @@ func _start_run_request_for_a_selectable_class_is_startable() -> void:
 
 func _start_run_request_for_a_locked_or_unknown_class_is_not_startable() -> void:
 	# AC3 fail-closed: a request for a LOCKED class (necromancer) or an UNKNOWN class produces a NOT-startable request
-	# (is_class_selectable == false — the HeroSelectViewModel pre-gate). The AUTHORITATIVE gate is still RunStartCommand.
+	# (is_startable == false — via the HeroSelectViewModel pre-gate). The AUTHORITATIVE gate is still RunStartCommand.
 	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile())
-	assert_false(bool(view_model.start_run_request(1, false, &"necromancer").get("is_class_selectable")), "A locked class produces a NOT-startable request (fail-closed).")
-	assert_false(bool(view_model.start_run_request(1, false, &"does_not_exist").get("is_class_selectable")), "An unknown class produces a NOT-startable request (fail-closed).")
+	assert_false(bool(view_model.start_run_request(1, false, &"necromancer").get("is_startable")), "A locked class produces a NOT-startable request (fail-closed).")
+	assert_false(bool(view_model.start_run_request(1, false, &"does_not_exist").get("is_startable")), "An unknown class produces a NOT-startable request (fail-closed).")
 
 
 func _empty_class_start_run_request_is_startable_legacy_no_class() -> void:
 	# AC3: an EMPTY class id is the legacy no-class start (startable — the RunStartCommand back-compat path).
 	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile())
 	var request: Dictionary = view_model.start_run_request(1, false, &"")
-	assert_true(bool(request.get("is_class_selectable")), "An empty class id is the legacy no-class start (startable).")
+	assert_true(bool(request.get("is_startable")), "An empty class id is the legacy no-class start (startable).")
 	assert_equal(String(request.get("class_id")), "", "The empty-class request carries an empty class id.")
 
 
@@ -384,7 +384,7 @@ func _starting_from_an_outpost_holding_a_terminal_run_does_not_reuse_it() -> voi
 
 	# The outpost produces a REQUEST; the caller starts the run via a FRESH orchestrator (a NEW seed -> a new route).
 	var request: Dictionary = view_model.start_run_request(987654321, false, &"warrior")
-	assert_true(bool(request.get("is_class_selectable")), "Setup: the warrior start request is startable.")
+	assert_true(bool(request.get("is_startable")), "Setup: the warrior start request is startable.")
 
 	var orchestrator: RunOrchestrator = RunOrchestrator.new()
 	var start_result: Variant = orchestrator.start(int(String(request.get("root_seed")).to_int()), bool(request.get("is_manual_seed")), StringName(String(request.get("class_id"))))
@@ -450,7 +450,7 @@ func _first_death_beat_is_empty_when_absent_and_off_critical_path() -> void:
 	# The outpost surface stands WITHOUT the beat.
 	assert_equal((data.get("class_options") as Array).size(), 5, "The class options are present without a beat (off-critical-path).")
 	assert_true(bool(data.get("can_start_run")), "A start is possible without a beat (lore reading is NOT required to start another descent).")
-	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_class_selectable")), "The start-run action does not read the beat as a precondition.")
+	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_startable")), "The start-run action does not read the beat as a precondition.")
 
 
 func _first_death_dismiss_is_a_structural_no_op() -> void:
@@ -557,7 +557,7 @@ func _recovery_outpost_grants_no_progress_and_never_crashes() -> void:
 	assert_true((data.get("echoes") as Array).is_empty(), "The recovery outpost has empty Echoes (no invalid meta state).")
 	assert_true((data.get("unlock_progress") as Dictionary).is_empty(), "The recovery outpost has empty unlock progress.")
 	# The start-run affordance still works in a recovery state (a fresh start is always possible).
-	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_class_selectable")), "The recovery outpost can still start a fresh run.")
+	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_startable")), "The recovery outpost can still start a fresh run.")
 
 
 # ---- determinism: the view model draws ZERO RNG (a pure read/assembly) ---------------------------

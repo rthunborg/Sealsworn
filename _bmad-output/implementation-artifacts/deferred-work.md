@@ -1,3 +1,19 @@
+## Deferred from: code review of 8-6-outpost-menu-and-start-another-descent (2026-07-03)
+
+Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 1 Low. Full headless suite green (152 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean). Diff is EXACTLY two new files (`godot/scripts/ui/view_models/outpost_view_model.gd` + `godot/tests/unit/ui/test_outpost_view_model.gd`).
+
+The review requested **NO code changes** and introduced **NO new `[Review][Defer]`** — the implementation is complete and every legitimate forward defer was already recorded by the dev of 8.1/8.3/8.4/8.5 (and re-marked `[Resolved 8.6 (view-model half)]` for the four in-scope entries). Re-pointed here for review traceability (NOT new work — these are the pre-existing carried-forward fences, unchanged):
+
+- **[Review][Defer] (later HUD/boot-flow story) The OUTPOST `.tscn` / `Control` / `SceneManager` transition + the `RunEndOutcome.next_destination` navigation** — 8.6 ships the `OutpostViewModel` DATA contract + the start-run request seam + the named-space metadata + the recovery-STATE representation (view-model half); the actual outpost SCREEN render + the button wiring + the flow-signal navigation stay deferred (UI-scene-last). See the pre-existing `OUTPOST MENU scene / view-model` entries below.
+- **[Review][Defer] (later meta-spend story / Epic 9) The unlock-SPEND tree / meta-power APPLICATION** — 8.6 DISPLAYS Oath Shards / Echoes / unlock progress + names the four spaces, but spends/applies nothing. See the pre-existing `unlock-SPEND / meta-power APPLICATION` entry below.
+- **[Review][Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — 8.6 CONSUMES the existing `ProfileRepository` structured recovery (`profile_not_found` → `fresh()`; `unsupported_profile_schema` → recovery state) for AC4; 8.7 owns the full matrix. See the pre-existing `COMPREHENSIVE save-load / migration matrix` entry below.
+- **[Review][Defer] (8.7) The Oath-Shard EARNED-count summary wiring** — the outpost reads the AWARDED total from `profile.oath_shards`; `RunSummary.profile_meta.oath_shards_earned` stays 0/not-yet-supported (a bigger coupling decision). See the pre-existing `Oath-Shard EARNED-count summary wiring` entry below.
+- **[Review][Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the run-end auto-wire** — 8.6 wires no run-end caller; the live death source + auto-wire stay deferred. See the pre-existing `LIVE combat-death CALL SITE` entry below.
+
+**Open `[Review][Decision]` (HUMAN CALL — not a defer, tracked in the story file's Round 1 Review Findings):** the `start_run_request(...)` result field `is_class_selectable` carries "is-STARTABLE" semantics (an empty class id → `true`), not literal "is-selectable." Behavior is correct + matches the authoritative `RunStartCommand` gate + is code-documented; renaming would break the pinned `START_REQUEST_KEYS` contract for zero behavioral gain, so no change this round. The later HUD/boot-flow story that consumes the request decides whether to keep the (documented) name or rename to `is_startable` when the button wiring lands. Does not create carry-forward work by itself.
+
+---
+
 ## Deferred from: code review of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
 
 Round 1 adversarial code review (auto-gds delegate). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 0 Low code defects; full headless suite green (151 PASS, 0 `^FAIL`, false-PASS guard clean). The review requested **NO code changes** and introduced **NO new deferral** — the implementation is complete and every legitimate forward defer was already recorded by the dev in the "Tracked from: dev of 8-5" section immediately below. Re-pointed here for review traceability:
