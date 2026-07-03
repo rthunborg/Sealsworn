@@ -4,7 +4,7 @@ baseline_commit: 21f83eb696690be912d0e9aff3a536859a65c737
 
 # Story 8.5: First-Death Line and Optional Narrative Delivery
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
