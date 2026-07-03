@@ -2,6 +2,68 @@
 
 Entries moved out of `deferred-work.md` once verified resolved. Archived during epic closeouts by auto-gds (and ad-hoc when an item is confirmed done). Newest archive batch on top.
 
+## Archived during epic 8 closeout (2026-07-03)
+
+### Originally deferred from: Tracked from: dev of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
+
+- **[Resolved 8.7] The COMPREHENSIVE save-load / migration matrix** — 8.5 ships its OWN first-death round-trip + the no-migration
+  proof (`test_profile_snapshot.gd::_set_first_death_flag_round_trips_without_a_migration` +
+  `test_record_first_death_command.gd::_first_death_round_trips_through_the_repository`); 8.7 owns the full matrix (epics.md Story
+  8.7 AC1 names FIRST-DEATH FLAGS explicitly, alongside Oath Shards / Echoes / Seal Fragments / unlock progress / class unlocks).
+  **RESOLVED 8.7 (2026-07-03)** — `godot/tests/integration/save/test_meta_summary_save_load.gd` authors the full cross-cutting
+  matrix: a fully-populated profile write→restart→read (all 8.3/8.4/8.5 fields incl. the SET first-death latch), the migration
+  matrix (current-schema round-trip + unsupported-schema reject + legacy lenient parse + no-unintended-progress), and the
+  four-case grant/deny cross-product (each GRANTED case saved+reloaded). The first-death flag round-trips inside that matrix.
+
+### Originally deferred from: Tracked from: dev of 8-4-echoes-seal-fragments-and-unlock-progress (2026-07-02)
+
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death flag / narrative** — 8.4 left the `ProfileSnapshot.first_death_recorded`
+  home untouched. 8.5 SETS it via `RecordFirstDeathCommand` (behind the run-end seam, death-only gate, once-only latch;
+  merge-without-migration at `SCHEMA_VERSION == 1`) + delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO.
+
+- **[Resolved 8.7] The COMPREHENSIVE save-load / migration matrix** — 8.4 ships its OWN merge round-trip + the
+  no-migration proof (`test_profile_snapshot.gd::_populated_8_4_homes_round_trip_without_a_migration`); 8.7 owns the full
+  matrix (Echoes / Seal Fragments / unlock progress / class-mastery restore + the migration matrix).
+  **RESOLVED 8.7 (2026-07-03)** — `test_meta_summary_save_load.gd` restores Echoes / `unlock_progress.seal_fragments` /
+  threshold flags / `class_mastery` (int-coercion aware) in the fully-populated round-trip, and merges + reloads them in the
+  four-case grant/deny matrix (a seal-fragment threshold crossing is evaluated + survives the reload).
+
+### Originally deferred from: Tracked from: dev of 8-3-meta-profile-and-oath-shard-awards (2026-07-02)
+
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + the first-death
+  flag delivery — 8.3 reserved an EMPTY `first_death_recorded: bool` HOME in `ProfileSnapshot` (so 8.5 merges without a
+  migration) but did NOT track/set the flag, deliver narrative, or build a narrative surface. 8.5 SETS the flag
+  (`RecordFirstDeathCommand`), delivers the line via the scene-free `FirstDeathNarrativeBeat` DTO (the prose lives on the DTO
+  by-id; the event carries `line_id`, not the raw prose), and adds the `first_death_recorded` SYSTEM event.
+
+- **[Resolved 8.7] The COMPREHENSIVE meta/summary save-load TEST MATRIX + the migration matrix** — 8.3 ships the
+  versioned profile + repository + its OWN migration reject path + round-trip tests for the AWARD; 8.7 owns the
+  comprehensive matrix (Oath Shards / Echoes / Seal Fragments / unlock progress / first-death flags / class unlock
+  states restore correctly; the migration matrix; "no scene nodes serialized").
+  **RESOLVED 8.7 (2026-07-03)** — this is the CORE of Story 8.7. `godot/tests/integration/save/test_meta_summary_save_load.gd`
+  authors the full matrix over the SHIPPED surfaces (zero production change): AC1 (fully-populated profile round-trip +
+  profile-vs-run-autosave separability + a reloaded-profile→outpost capstone), AC2 (current-schema round-trip + unsupported-
+  schema reject native+through-repo + legacy lenient parse through a real JSON file + no-unintended-progress + `SCHEMA_VERSION`
+  stays 1), AC3 (the four-case grant/deny cross-product each saved+reloaded + the three-marker order-independence + the NFR15
+  no-`Object`-serialized structural guard). "Class unlock states restore correctly" = the profile `unlock_progress` +
+  `class_mastery` STATE persists (the profile→class-unlock APPLICATION stays deferred — see `unlock-SPEND / meta-power
+  APPLICATION`). Full headless suite green (153 PASS, 0 `^FAIL`, false-PASS guard clean, RNG-free, `git diff --check` clean).
+
+### Originally deferred from: Tracked from: dev of 8-2-run-summary-snapshot (2026-07-01)
+
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + first-death flag +
+  skippable delivery — 8.2 aggregates the run-end facts; it tracked NO first-death flag and delivered NO narrative.
+  Narrative stays off the summary CRITICAL path (retro §7 risk 2). 8.5 KEPT it off the critical path: `RunSummary`
+  `DICTIONARY_KEYS` is UNCHANGED (no narrative field added), the beat is a SEPARATE optional DTO, and the start-descent path
+  reads neither the flag nor the beat (proven by `test_first_death_narrative_beat.gd::_beat_is_independent_of_run_summary`).
+
+### Originally deferred from: Tracked from: dev of 8-1-run-completion-and-return-to-outpost-flow (2026-07-01)
+
+- **[Resolved 8.5, 2026-07-02] (8.5) The first-death narrative line** ("Good. You remembered how to die.") + skippable delivery —
+  8.1 emits `run_failed`; it tracked no first-death flag and delivered no narrative. Keep narrative off the run-end CRITICAL
+  path (retro §7 risk 2). 8.5 records the flag behind the SAME run-end seam (a sibling command, caller-driven, no auto-wire)
+  and keeps the beat off the critical path (a skip is a structural no-op — read-only DTO, flag set independently of display).
+
 ## Archived during epic 7 closeout (2026-06-30)
 
 ### Originally deferred from: code review of 4-6-playable-run-shell-from-start-to-end (2026-06-23)
