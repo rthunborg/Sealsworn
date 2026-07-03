@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-03T17:04:00+00:00
+last_updated: 2026-07-03T18:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -129,7 +129,7 @@ development_status:
   epic-8-retrospective: done
   epic-9: in-progress
   9-1-boss-node-transition-and-finale-setup: done
-  9-2-larval-avatar-definition-and-phases: backlog
+  9-2-larval-avatar-definition-and-phases: ready-for-dev
   9-3-boss-actions-telegraphs-and-ai-decisions: backlog
   9-4-boss-victory-and-first-victory-reveal: backlog
   9-5-finale-regression-and-run-length-tuning-hooks: backlog
