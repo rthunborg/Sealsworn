@@ -730,10 +730,14 @@ func affinity_repository() -> AffinityRepository:
 # CALLER-DRIVEN (the 6.3 generate_reward_offer / 7.3 generate_event_offer posture VERBATIM): this is NOT wired into
 # run_to_completion / _resolve_combat / _resolve_non_combat_placeholder — there is NO live death source in v0 (combat
 # auto-resolves to success), so a death NEVER auto-fires; the caller (a later HUD/run-flow story that owns the live
-# death / a real victory) invokes it explicitly. It does NOT touch _resolve_boss's boss-completion behavior or the
-# boss run_completed boundary (Epic 9 depends on it) — the boss still resolves through NodeResolvePlaceholderCommand
-# unchanged. AC3 idempotency is the command's: a re-resolution of an already-terminal run surfaces the command's stable
-# run_already_terminal error here (the orchestrator captures nothing new — no second event, no mutation).
+# death / a real victory) invokes it explicitly. Since Story 9.1, _resolve_boss no longer auto-completes the run:
+# it SETS UP the Larval Avatar encounter via BossNodeEnterCommand (the run parks non-terminal in NODE_RESOLUTION,
+# emitting boss_encounter_started — it does NOT resolve through NodeResolvePlaceholderCommand in the live path).
+# NodeResolvePlaceholderCommand's boss branch (the boss run_completed / boss_placeholder / boss_node_id boundary) is
+# retained UNCHANGED for Story 9.4 to reuse — it is just no longer the orchestrator's live boss dispatch. resolve_run_end
+# stays the generic caller-driven run-END path; 9.4's boss VICTORY drives it (via CompleteRunCommand) from the
+# boss-setup terminus. AC3 idempotency is the command's: a re-resolution of an already-terminal run surfaces the
+# command's stable run_already_terminal error here (the orchestrator captures nothing new — no second event, no mutation).
 func resolve_run_end(outcome: StringName) -> ActionResult:
 	if run == null:
 		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
