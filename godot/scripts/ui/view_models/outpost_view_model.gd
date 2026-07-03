@@ -235,19 +235,27 @@ func _init(
 	_hero_select = HeroSelectViewModel.new(class_repository)
 
 
-# AC4: build an outpost surface in a STRUCTURED RECOVERY state (an incompatible profile / a failed profile write). The
-# profile is fresh (0 Oath Shards, empty homes — no invalid meta state), has_profile == false, and recovery_state carries
-# the structured code + is_recoverable == true (every v0 recovery has a fresh-profile fallback / retry affordance). NO
-# crash. A later HUD story renders the recover affordance from this state. Draws NO RNG, mutates NOTHING.
+# AC4: build an outpost surface in a STRUCTURED RECOVERY state. This correctly represents BOTH recovery failure modes:
+#   - PROFILE-LOAD failure (profile_not_found / unsupported_profile_schema): there is NO valid loaded profile, so
+#     loaded_profile stays null and the surface falls back to ProfileSnapshot.fresh() (0 Oath Shards, empty homes —
+#     has_profile == false). A fresh 0-shard surface is the honest recovery representation (no real totals exist to show).
+#   - PROFILE-WRITE failure (profile_save_* codes): the profile was successfully READ and the player accumulated REAL
+#     progress THIS session; only the WRITE failed. The caller holds the intact loaded profile and passes it as
+#     loaded_profile so the surface shows the player's REAL Oath-Shard / Echoes / unlock totals BEHIND the retry banner
+#     (has_profile == true) — NOT a misleading 0-shard surface. recovery_state still carries the structured write-failure
+#     code + is_recoverable == true (the retry affordance).
+# In BOTH modes recovery_state {has_recovery, code, is_recoverable} is populated, there is NO crash, and NO invalid meta
+# state is created. Draws NO RNG, mutates NOTHING (the supplied loaded_profile is read verbatim as source truth).
 static func for_recovery(
 	recovery_code: StringName,
+	loaded_profile: ProfileSnapshot = null,
 	run_summary: RunSummary = null,
 	first_death_beat: FirstDeathNarrativeBeat = null,
 	class_repository: ClassRepository = null,
 	is_recoverable: bool = true
 ) -> OutpostViewModel:
 	return load("res://scripts/ui/view_models/outpost_view_model.gd").new(
-		null,
+		loaded_profile,
 		run_summary,
 		first_death_beat,
 		class_repository,
@@ -271,9 +279,16 @@ func is_class_selectable(query_class_id: StringName) -> bool:
 	return _hero_select.is_class_selectable(query_class_id)
 
 
-# AC3 start-run affordance: the selectable class ids (the playable roster) in class_ids() order.
-func selectable_class_ids() -> Array[StringName]:
-	return _hero_select.selectable_class_ids()
+# AC3 start-run affordance: the selectable class ids (the playable roster) in class_ids() order, as plain Strings. Both
+# this accessor AND the to_dictionary() "selectable_class_ids" key return the SAME element type (Array[String]) — the
+# codebase idiom that dictionary projections are JSON-safe plain Strings (HeroSelectViewModel.classes() emits
+# String(class_id)). HeroSelectViewModel.selectable_class_ids() returns the in-engine StringName partition; this
+# converts at the boundary so a consumer reading either surface gets a String (no StringName/String type trap).
+func selectable_class_ids() -> Array[String]:
+	var ids: Array[String] = []
+	for class_id: StringName in _hero_select.selectable_class_ids():
+		ids.append(String(class_id))
+	return ids
 
 
 # AC2: the named-space metadata (the four fixed GDD spaces with stable lower_snake ids + display + deferred markers +
@@ -343,20 +358,11 @@ func to_dictionary() -> Dictionary:
 		"first_death_recorded": first_death_recorded,
 		"run_summary": _run_summary.to_dictionary(),
 		"class_options": _hero_select.classes(),
-		"selectable_class_ids": _selectable_class_ids_as_strings(),
+		"selectable_class_ids": selectable_class_ids(),
 		"named_spaces": named_spaces(),
 		"first_death_beat": _first_death_beat.to_dictionary(),
 		"can_start_run": can_start_run()
 	}
-
-
-# The selectable class ids projected as plain Strings (the roster's selectable partition — the AC3 start-run affordance).
-# A plain-String list (no StringName handle) so the projection is pure serializable data.
-func _selectable_class_ids_as_strings() -> Array[String]:
-	var ids: Array[String] = []
-	for class_id: StringName in _hero_select.selectable_class_ids():
-		ids.append(String(class_id))
-	return ids
 
 
 # Normalize a supplied recovery_state to the pinned RECOVERY_STATE_KEYS shape (a lenient decode — a missing/invalid field

@@ -74,6 +74,7 @@ func run() -> Dictionary:
 	_run_summary_sub_dict_is_populated_for_a_just_ended_run()
 	_run_summary_sub_dict_is_empty_when_no_run_just_ended()
 	_class_options_delegate_to_hero_select_view_model()
+	_selectable_class_ids_are_strings_on_both_surfaces()
 	_building_and_reading_leaves_the_profile_and_run_byte_identical()
 	_oath_shards_read_from_profile_not_the_zero_summary_field()
 	# AC2
@@ -96,6 +97,8 @@ func run() -> Dictionary:
 	_null_profile_projects_the_fresh_profile_default()
 	_incompatible_profile_surfaces_a_structured_recovery_state()
 	_recovery_outpost_grants_no_progress_and_never_crashes()
+	_write_failure_recovery_with_loaded_profile_shows_real_totals()
+	_load_failure_recovery_still_shows_the_fresh_profile()
 	# Determinism
 	_read_is_deterministic_and_rng_free()
 	_cleanup()
@@ -246,6 +249,29 @@ func _class_options_delegate_to_hero_select_view_model() -> void:
 	assert_true(selectable.has("warrior") and selectable.has("pyromancer") and selectable.has("ranger"), "selectable_class_ids surfaces the playable roster.")
 	assert_false(selectable.has("necromancer"), "A locked class is NOT in selectable_class_ids.")
 	assert_true(bool(view_model.to_dictionary().get("can_start_run")), "A start is possible (there is a selectable class).")
+
+
+func _selectable_class_ids_are_strings_on_both_surfaces() -> void:
+	# AC1 / API-shape standardization: the selectable_class_ids field returns the SAME element type on BOTH surfaces — the
+	# typed accessor selectable_class_ids() AND the to_dictionary() "selectable_class_ids" key both return Array[String]
+	# (the codebase idiom that dictionary projections are JSON-safe plain Strings). Neither surface leaks StringName (a
+	# strict ==/dictionary-key comparison against the wrong type could silently miss). Both surfaces AGREE element-for-element.
+	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile())
+
+	var accessor_ids: Array[String] = view_model.selectable_class_ids()
+	var dict_ids: Array = view_model.to_dictionary().get("selectable_class_ids")
+
+	# The accessor is a typed Array[String] — every element is a plain String, not a StringName.
+	assert_false(accessor_ids.is_empty(), "The selectable roster is non-empty in the baseline.")
+	for id: Variant in accessor_ids:
+		assert_true(id is String, "Every selectable_class_ids() element is a plain String (not a StringName).")
+	for id: Variant in dict_ids:
+		assert_true(id is String, "Every to_dictionary()['selectable_class_ids'] element is a plain String (not a StringName).")
+
+	# Both surfaces AGREE (same ids, same String element type) — a consumer reading either gets identical, comparable data.
+	assert_equal(accessor_ids, dict_ids, "The accessor and the dict projection expose the SAME selectable_class_ids (same String elements).")
+	# A strict String == comparison matches (the whole point of standardizing on String — no StringName trap).
+	assert_true(accessor_ids.has("warrior"), "A strict String lookup ('warrior') matches on the standardized accessor.")
 
 
 func _building_and_reading_leaves_the_profile_and_run_byte_identical() -> void:
@@ -558,6 +584,55 @@ func _recovery_outpost_grants_no_progress_and_never_crashes() -> void:
 	assert_true((data.get("unlock_progress") as Dictionary).is_empty(), "The recovery outpost has empty unlock progress.")
 	# The start-run affordance still works in a recovery state (a fresh start is always possible).
 	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_startable")), "The recovery outpost can still start a fresh run.")
+
+
+func _write_failure_recovery_with_loaded_profile_shows_real_totals() -> void:
+	# AC4 (profile-WRITE failure): a profile_save_* code means the profile was successfully READ and the player accumulated
+	# REAL progress THIS session; only the WRITE failed. The caller holds the intact loaded profile and passes it to
+	# for_recovery(code, loaded_profile) so the surface shows the player's REAL Oath-Shard / Echoes / unlock totals BEHIND
+	# the retry banner (has_profile == true) — NOT a misleading 0-shard surface. The recovery_state still carries the
+	# structured write-failure code. The loaded profile is read verbatim (byte-identical — a pure read).
+	var loaded_profile: ProfileSnapshot = _populated_profile()  # oath_shards == 12, non-empty echoes/unlock/mastery
+	var loaded_before: Dictionary = loaded_profile.to_dictionary()
+
+	var view_model: OutpostViewModel = OutpostViewModel.for_recovery(&"profile_save_replace_failed", loaded_profile)
+	var data: Dictionary = view_model.to_dictionary()
+
+	# The recovery banner is surfaced with the structured write-failure code + retry affordance.
+	var recovery_state: Dictionary = data.get("recovery_state")
+	assert_true(bool(recovery_state.get("has_recovery")), "A write-failure recovery state is surfaced.")
+	assert_equal(String(recovery_state.get("code")), "profile_save_replace_failed", "The write-failure recovery carries its structured code.")
+	assert_true(bool(recovery_state.get("is_recoverable")), "The write failure is recoverable (a retry affordance).")
+
+	# ⭐ The REAL loaded totals show BEHIND the retry banner (NOT a false 0-shard surface) — the whole point of the fix.
+	assert_true(bool(data.get("has_profile")), "A write-failure recovery WITH a loaded profile has has_profile == true (real profile behind the banner).")
+	assert_equal(int(data.get("oath_shards")), 12, "The write-failure recovery shows the player's REAL Oath-Shard total (12), NOT a false 0.")
+	assert_true((data.get("echoes") as Array).has("echo_of_salt"), "The write-failure recovery shows the player's REAL discovered Echoes.")
+	assert_true((data.get("unlock_progress") as Dictionary).has("seal_fragments"), "The write-failure recovery shows the player's REAL unlock progress.")
+	assert_equal(int((data.get("class_mastery") as Dictionary).get("warrior")), 3, "The write-failure recovery shows the player's REAL class mastery.")
+	assert_true(bool(data.get("first_death_recorded")), "The write-failure recovery shows the player's REAL first-death latch.")
+
+	# The loaded profile is left byte-identical (a pure read — the recovery surface never mutates it).
+	assert_equal(loaded_profile.to_dictionary(), loaded_before, "The write-failure recovery reads the loaded profile verbatim (byte-identical — a pure read).")
+
+
+func _load_failure_recovery_still_shows_the_fresh_profile() -> void:
+	# AC4 (profile-LOAD failure — the current/default behavior, still correct): for a load-failure code
+	# (unsupported_profile_schema / profile_not_found) there is NO valid loaded profile, so for_recovery(code) (no
+	# loaded_profile) falls back to ProfileSnapshot.fresh() — a valid 0-shard surface (has_profile == false). This is the
+	# honest recovery representation (no real totals exist to show). Contrasted directly with the write-failure case above.
+	var view_model: OutpostViewModel = OutpostViewModel.for_recovery(&"unsupported_profile_schema")
+	var data: Dictionary = view_model.to_dictionary()
+
+	var recovery_state: Dictionary = data.get("recovery_state")
+	assert_true(bool(recovery_state.get("has_recovery")), "A load-failure recovery state is surfaced.")
+	assert_equal(String(recovery_state.get("code")), "unsupported_profile_schema", "The load-failure recovery carries its structured code.")
+	# The fresh 0-shard surface (has_profile == false) — NO real totals exist for a load failure.
+	assert_false(bool(data.get("has_profile")), "A load-failure recovery (no loaded profile) has has_profile == false (the fresh default).")
+	assert_equal(int(data.get("oath_shards")), 0, "The load-failure recovery shows the FRESH profile (0 Oath Shards — no real totals to show).")
+	assert_true((data.get("echoes") as Array).is_empty(), "The load-failure recovery shows empty Echoes (the fresh profile).")
+	assert_true((data.get("unlock_progress") as Dictionary).is_empty(), "The load-failure recovery shows empty unlock progress (the fresh profile).")
+	assert_false(bool(data.get("first_death_recorded")), "The load-failure recovery shows the fresh first-death latch (false).")
 
 
 # ---- determinism: the view model draws ZERO RNG (a pure read/assembly) ---------------------------

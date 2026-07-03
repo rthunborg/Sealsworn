@@ -3,10 +3,10 @@ epic_num: 8
 story_num: 6
 branch: story/8-6-outpost-menu-and-start-another-descent
 status: in-progress
-updated_at: "2026-07-03T09:05:00Z"
+updated_at: "2026-07-03T09:50:00Z"
 started_at: "2026-07-03T07:58:00Z"
 completed_at: null
-active_seconds: 1990
+active_seconds: 2880
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,10 +19,10 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 1
+code_review_iterations: 2
 code_review_loop_done: false
 halted_at_phase: null
-halt_reason: "round-1 decision halt RESOLVED: human chose option (b) 'rename now' 2026-07-03; agds-high renamed the request-result key is_class_selectable -> is_startable (pure rename; pinned START_REQUEST_KEYS + 9 test refs + story record updated; the legitimately-named selectability METHOD untouched). Suite green. Loop continuing to secondary re-review (round 2)."
+halt_reason: "round-2 decision halt RESOLVED: human chose 'fix both' 2026-07-03; agds-high (1) extended for_recovery(code, loaded_profile=null) so write-failure shows real totals, load-failure keeps the fresh surface, +2 tests for the previously-untested combo; (2) standardized selectable_class_ids on Array[String] across both surfaces, +1 pinning test. Contracts/pinned keys unchanged; suite green. Loop continuing to round 3 (final automatic round)."
 code_review_rounds:
   - round: 1
     reviewer: agds-xhigh
@@ -39,6 +39,22 @@ code_review_rounds:
     fixes_applied: 1
     fix_profile: agds-high
     note: "Approve — clean, scope-exact view-model assembly (2 new files, +370 prod / +587 test); every AC verified against source; no code changes required. Suite independently re-run green (152 PASS / 0 FAIL); determinism grep clean; git diff --check clean. 1 Low Decision (is_class_selectable naming); 0 Patch; 0 new Defer (5 ledger bullets are traceability re-pointers to pre-existing fences)."
+  - round: 2
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 2
+    decisions_open: 2
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 0
+    decisions_resolved:
+      - "for_recovery write-failure trap (Low): human chose 'fix both' -> for_recovery(code, loaded_profile=null); write-failure shows real totals, load-failure keeps fresh surface; _init+recovery combo now tested both directions"
+      - "selectable_class_ids type form (Low): human chose 'fix both' -> standardized Array[String] on both surfaces (StringName converted at the boundary); redundant helper removed; pinned by test"
+    fix_profile: agds-high
+    note: "Independent alternate-model re-review. Round-1 is_startable rename verified correct+complete (grep: no surviving dict-key usage; METHOD correctly untouched). Diff confirmed exactly the two new files (+958), nothing leaked; suite green (152 PASS / 0 FAIL); RNG-free; git diff --check clean. 2 NEW Low Decisions, both fixed post-halt via human 'fix both' direction. 0 new Defers."
 external_review_iterations: 0
 convergence_unverified: false
 testing:

@@ -25,3 +25,5 @@ genuinely reusable signal; routine success recaps are omitted.
 
 ## Story 8-6-outpost-menu-and-start-another-descent
 - [Phase 3 — create-story] FR-numbering trap: canonical epics.md FR63 = the Larval Avatar boss (Epic 9), but the 2026-06-04 readiness patch maps a design-time GDD "FR63: named outpost/meta spaces" to Story 8.6. The named-space obligation traces via the GDD + readiness patch, NOT canonical FR63 — citing "FR63" naively mis-scopes.
+- [Phase 7 — code review] `OutpostViewModel.for_recovery(...)` fits the profile-LOAD-failure case only — a future WRITE-failure (`profile_save_*`) caller must use the `_init` path with the loaded profile, or the outpost shows a false 0-shard surface over intact-but-unsaved progress. The HUD/boot-flow wiring story must handle this (and the `_init`+recovery combination is currently untested).
+- [Phase 7 — code review] Godot `--path` arg via the Bash tool: doubled backslashes get consumed (`C:\\Sealsworn\\godot` → `C:Sealsworngodot`, silent abort masked by tee exit 0). Use forward slashes (`--path C:/Sealsworn/godot`).
