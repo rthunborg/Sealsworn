@@ -3,10 +3,10 @@ epic_num: 8
 story_num: 6
 branch: story/8-6-outpost-menu-and-start-another-descent
 status: in-progress
-updated_at: "2026-07-03T09:50:00Z"
+updated_at: "2026-07-03T10:10:00Z"
 started_at: "2026-07-03T07:58:00Z"
 completed_at: null
-active_seconds: 2880
+active_seconds: 3260
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,10 +19,10 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 2
-code_review_loop_done: false
+code_review_iterations: 3
+code_review_loop_done: true
 halted_at_phase: null
-halt_reason: "round-2 decision halt RESOLVED: human chose 'fix both' 2026-07-03; agds-high (1) extended for_recovery(code, loaded_profile=null) so write-failure shows real totals, load-failure keeps the fresh surface, +2 tests for the previously-untested combo; (2) standardized selectable_class_ids on Array[String] across both surfaces, +1 pinning test. Contracts/pinned keys unchanged; suite green. Loop continuing to round 3 (final automatic round)."
+halt_reason: "round-3 triage RESOLVED: human WAIVED the test-thoroughness nicety 2026-07-03 (option a — leave as-is; deep-copy discipline source-verified, zero consumers; broaden when the HUD story adds the first consumer). Zero open decisions; loop converged at cap; proceeding to finalize."
 code_review_rounds:
   - round: 1
     reviewer: agds-xhigh
@@ -55,6 +55,20 @@ code_review_rounds:
       - "selectable_class_ids type form (Low): human chose 'fix both' -> standardized Array[String] on both surfaces (StringName converted at the boundary); redundant helper removed; pinned by test"
     fix_profile: agds-high
     note: "Independent alternate-model re-review. Round-1 is_startable rename verified correct+complete (grep: no surviving dict-key usage; METHOD correctly untouched). Diff confirmed exactly the two new files (+958), nothing leaked; suite green (152 PASS / 0 FAIL); RNG-free; git diff --check clean. 2 NEW Low Decisions, both fixed post-halt via human 'fix both' direction. 0 new Defers."
+  - round: 3
+    reviewer: agds-alt-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 1
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 0
+    decisions_resolved:
+      - "mutation-independence test breadth (Low, nicety): human WAIVED 2026-07-03 (leave as-is; deep-copy source-verified, zero consumers; broaden when the HUD story adds the first consumer)"
+    note: "FINAL automatic round (cap 3). Both round-2 fixes VERIFIED correct+complete from source; every upstream contract independently re-derived (ProfileSnapshot/Repository codes, RunSummary._empty, beat fail-closed, RunStartCommand gate agreement, RunState.new_run structural reset, fixture arities, ClassRepository lock states); deep-copy discipline re-verified; diff exactly the 2 intended files. Suite 152 PASS / 0 FAIL. 1 Low Decision: broaden mutation-independence test to 3 more sub-dicts (structurally leak-safe already; nicety only) — WAIVED post-halt. 0 Patch, 0 Defer. CONVERGED — 'story ready to proceed to done'."
 external_review_iterations: 0
 convergence_unverified: false
 testing:
