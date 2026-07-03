@@ -3,10 +3,10 @@ epic_num: 8
 story_num: 5
 branch: story/8-5-first-death-line-and-optional-narrative-delivery
 status: in-progress
-updated_at: "2026-07-02T15:45:00Z"
+updated_at: "2026-07-02T15:58:00Z"
 started_at: "2026-07-02T15:12:00Z"
 completed_at: null
-active_seconds: 1450
+active_seconds: 1770
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,8 +19,25 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
+halted_at_phase: null
+halt_reason: "round-1 decision halt RESOLVED: human RATIFIED Option A 2026-07-03 (first-death latch stays eligibility-independent; FR28 narrative-vs-meta precedent set for 8.6/8.7; no code change). Loop continuing to secondary re-review (round 2)."
+code_review_rounds:
+  - round: 1
+    reviewer: agds-xhigh
+    verdict: approve
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+    decisions_open: 1
+    patches_fixed: 0
+    fixes_applied: 0
+    deferrals_logged: 5
+    decisions_resolved:
+      - "Option-A eligibility precedent: human RATIFIED 2026-07-03 (latch eligibility-independent; provably progression-free; FR28 narrative-vs-meta precedent for 8.6/8.7; no code change)"
+    note: "Approve — ZERO code defects across three review lenses on a 921-line diff. Suite independently re-run green (151 PASS / 0 FAIL); determinism grep clean; git diff --check clean. 1 Decision (ratify Option-A eligibility precedent) + 2 informational Notes; 5 ledger entries are traceability re-pointers to dev-recorded forward defers (nothing genuinely new); the 4 prior first-death defers correctly closed as [Resolved 8.5]."
 external_review_iterations: 0
 convergence_unverified: false
 testing:

@@ -1,3 +1,17 @@
+## Deferred from: code review of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
+
+Round 1 adversarial code review (auto-gds delegate). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 0 Low code defects; full headless suite green (151 PASS, 0 `^FAIL`, false-PASS guard clean). The review requested **NO code changes** and introduced **NO new deferral** — the implementation is complete and every legitimate forward defer was already recorded by the dev in the "Tracked from: dev of 8-5" section immediately below. Re-pointed here for review traceability:
+
+- **[Review][Defer] (8.6) The OUTPOST first-death BEAT RENDER + DISMISS** — see the dev-of-8-5 entry below; 8.5 ships only the `FirstDeathNarrativeBeat` DATA + the `first_death_recorded` event, 8.6 owns the outpost render + the skip/dismiss control (UI-scene-last). The skip is ALREADY a structural no-op (the DTO is read-only; the flag is set independently of display).
+- **[Review][Defer] (later run-flow / HUD story) The LIVE combat-death CALL SITE + the auto-wire** — see below; v0 has no live combat death source, so the command is caller-driven behind the run-end seam and NOT auto-wired into `run_to_completion` (preserving the interrupted==uninterrupted determinism).
+- **[Review][Defer] (later content / localization story) The narrative CONTENT roster + localization pipeline** — see below; v0 has EXACTLY ONE line (a single `LINE_BY_ID` const on the DTO), NOT a `NarrativeRepository` / codex / JSON-or-`.tres` pipeline.
+- **[Review][Defer] (Epic 9, Story 9.4) The first-VICTORY reveal** ("It did not die. It learned the way back." — FR62) — see below; 8.5's death-only gate (`run_not_failed`) is the discriminator (opposite terminal phase).
+- **[Review][Defer] (8.7) The COMPREHENSIVE save-load / migration matrix** — see below; 8.5 ships its OWN first-death round-trip + no-migration proof, 8.7 owns the full matrix (epics.md 8.7 AC1 names FIRST-DEATH FLAGS explicitly).
+
+**Open `[Review][Decision]` (HUMAN RATIFICATION — not a defer, tracked in the story file's Round 1 Review Findings):** the first-death latch is deliberately eligibility-INDEPENDENT (Option A — a manual-seed first death still records the flag + shows the line, because a boolean narrative latch grants ZERO Oath Shards / unlocks / mastery and so does not violate FR28). Whatever ships becomes the FR28 narrative-vs-meta boundary precedent for 8.6/8.7; the review assessed it defensible and code-enforced but flags it for explicit human ratification.
+
+---
+
 ## Tracked from: dev of 8-5-first-death-line-and-optional-narrative-delivery (2026-07-02)
 
 Story 8.5 (FR61/FR64/FR65) is the "narrative flavor without blocking play" half of Epic 8. It CLOSES the four 8.1/8.2/8.3/8.4
