@@ -20,6 +20,7 @@ func run() -> Dictionary:
 	_last_awarded_run_seed_survives_full_int64_round_trip()
 	_copy_is_a_deep_independent_clone()
 	_populated_8_4_homes_round_trip_without_a_migration()
+	_set_first_death_flag_round_trips_without_a_migration()
 	return result()
 
 
@@ -235,3 +236,37 @@ func _populated_8_4_homes_round_trip_without_a_migration() -> void:
 	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
 	expected_keys.sort()
 	assert_equal(actual_keys, expected_keys, "A populated 8.4 profile must still project EXACTLY the pinned DICTIONARY_KEYS set (no new top-level key).")
+
+
+func _set_first_death_flag_round_trips_without_a_migration() -> void:
+	# Story 8.5 (Task 4.2): the SET first_death_recorded == true round-trips losslessly through to_dictionary()/parse AND a
+	# JSON stringify->parse at the SAME SCHEMA_VERSION == 1 (NO migration — 8.5 SETS the EXISTING reserved home, exactly the
+	# 8.4 merge-without-migration precedent), the exact DICTIONARY_KEYS set is UNCHANGED (no new top-level profile key), and a
+	# lenient parse still defaults a legacy/missing first-death field to false (a pre-8.5 profile parses cleanly with false).
+	var snapshot: ProfileSnapshot = ProfileSnapshot.new()
+	snapshot.first_death_recorded = true
+
+	var json_text: String = JSON.stringify(snapshot.to_dictionary())
+	var parsed_variant: Variant = JSON.parse_string(json_text)
+	var parse_result: ActionResult = ProfileSnapshot.parse(parsed_variant)
+	assert_true(parse_result.succeeded, "A profile with the SET first-death flag must parse back at SCHEMA_VERSION == 1 (no migration).")
+	var parsed: ProfileSnapshot = parse_result.metadata.get("snapshot")
+
+	# NO migration: the schema version is unchanged, and the SET flag survives.
+	assert_equal(parsed.schema_version, ProfileSnapshot.SCHEMA_VERSION, "The SET first-death flag must round-trip at the SAME schema version (no bump).")
+	assert_true(parsed.first_death_recorded, "The SET first_death_recorded == true must round-trip losslessly.")
+
+	# The exact top-level key set is UNCHANGED (8.5 adds no new top-level profile key — it SETS the existing home).
+	var actual_keys: Array = snapshot.to_dictionary().keys()
+	actual_keys.sort()
+	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
+	expected_keys.sort()
+	assert_equal(actual_keys, expected_keys, "A profile with the SET first-death flag must still project EXACTLY the pinned DICTIONARY_KEYS set (no new top-level key).")
+
+	# A legacy profile with NO first-death key parses cleanly to false (a pre-8.5 profile).
+	var legacy_result: ActionResult = ProfileSnapshot.parse({
+		"schema_version": ProfileSnapshot.SCHEMA_VERSION,
+		"oath_shards": 2
+	})
+	assert_true(legacy_result.succeeded, "A pre-8.5 (no first-death key) profile must parse leniently.")
+	assert_false(legacy_result.metadata.get("snapshot").first_death_recorded, "A missing/legacy first_death_recorded must default to false.")

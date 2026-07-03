@@ -28,6 +28,8 @@ func run() -> Dictionary:
 	_content_discovered_rejects_malformed_payloads()
 	_profile_progress_merged_serializes_and_parses_stable_payload()
 	_profile_progress_merged_rejects_malformed_payloads()
+	_first_death_recorded_serializes_and_parses_stable_payload()
+	_first_death_recorded_rejects_malformed_payloads()
 	_item_gained_serializes_and_parses_stable_payload()
 	_item_gained_rejects_malformed_payloads()
 	_reward_offered_serializes_and_parses_stable_payload()
@@ -1067,6 +1069,88 @@ func _content_discovered_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_id.is_error(), "content_discovered with a hyphenated content_id should be rejected.")
 	assert_equal(bad_id.metadata.get("field"), "content_id", "A non-lower_snake content_id should name the content_id field.")
+
+
+func _first_death_recorded_serializes_and_parses_stable_payload() -> void:
+	# Story 8.5 (AC1/FR61): a first_death_recorded SYSTEM event (no actor) — the first-death narrative marker. line_id is a
+	# stable lower_snake NARRATIVE-LINE id (LINE-AS-ID — NOT the raw prose); is_skippable is a plain bool (FR65); profile_id
+	# is a plain string; ZERO roll/draw_index (a deterministic record, not a roll).
+	var event: DomainEvent = DomainEvent.first_death_recorded(31, {
+		"line_id": "first_death",
+		"is_skippable": true,
+		"profile_id": "default"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "first_death_recorded", "first_death_recorded should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "first_death_recorded is a system event with an empty actor id.")
+	# ZERO RNG: a recorded flag, not a roll — no roll/draw_index on the payload.
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "first_death_recorded must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "first_death_recorded must NOT carry a draw_index (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "first_death_recorded should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.FIRST_DEATH_RECORDED, "first_death_recorded should parse back to FIRST_DEATH_RECORDED.")
+	assert_equal(restored.payload.get("line_id"), "first_death", "The line_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("is_skippable"), true, "is_skippable must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("profile_id"), "default", "The profile_id must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.FIRST_DEATH_RECORDED), &"first_death_recorded", "id_for_type must map first_death_recorded.")
+	assert_equal(DomainEvent.type_for_id(&"first_death_recorded"), DomainEvent.Type.FIRST_DEATH_RECORDED, "type_for_id must map first_death_recorded back.")
+
+
+func _first_death_recorded_rejects_malformed_payloads() -> void:
+	# A missing line_id is rejected.
+	var missing_line: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_death_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"is_skippable": true, "profile_id": "default"}
+	})
+	assert_true(missing_line.is_error(), "first_death_recorded missing line_id should be rejected.")
+	assert_equal(missing_line.error_code, &"invalid_event_payload", "Malformed first_death_recorded should use the stable code.")
+	assert_equal(missing_line.metadata.get("field"), "line_id", "first_death_recorded should name the missing line_id field.")
+
+	# A non-lower_snake line_id (hyphenated) is rejected (a line id is a lower_snake content id, not a node id).
+	var bad_line: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_death_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first-death", "is_skippable": true, "profile_id": "default"}
+	})
+	assert_true(bad_line.is_error(), "first_death_recorded with a hyphenated line_id should be rejected.")
+	assert_equal(bad_line.metadata.get("field"), "line_id", "A non-lower_snake line_id should name the line_id field.")
+
+	# A missing is_skippable is rejected (the skippability marker must be an explicit bool — FR65).
+	var missing_skippable: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_death_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_death", "profile_id": "default"}
+	})
+	assert_true(missing_skippable.is_error(), "first_death_recorded missing is_skippable should be rejected.")
+	assert_equal(missing_skippable.metadata.get("field"), "is_skippable", "first_death_recorded should name the missing is_skippable field.")
+
+	# A non-bool is_skippable (a string) is rejected — the marker is a strict bool, not a truthy value.
+	var bad_skippable: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_death_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_death", "is_skippable": "yes", "profile_id": "default"}
+	})
+	assert_true(bad_skippable.is_error(), "first_death_recorded with a non-bool is_skippable should be rejected.")
+	assert_equal(bad_skippable.metadata.get("field"), "is_skippable", "A non-bool is_skippable should name the is_skippable field.")
+
+	# A non-string profile_id is rejected.
+	var bad_profile: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "first_death_recorded",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"line_id": "first_death", "is_skippable": true, "profile_id": 7}
+	})
+	assert_true(bad_profile.is_error(), "first_death_recorded with a non-string profile_id should be rejected.")
+	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
 
 
 func _profile_progress_merged_serializes_and_parses_stable_payload() -> void:
@@ -2430,7 +2514,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# Story 8.4: the content_discovered + profile_progress_merged SYSTEM events appended at the enum end (never
 		# renumbered) — the run-scoped discovery record + the cross-run profile-merge record.
 		DomainEvent.Type.CONTENT_DISCOVERED: &"content_discovered",
-		DomainEvent.Type.PROFILE_PROGRESS_MERGED: &"profile_progress_merged"
+		DomainEvent.Type.PROFILE_PROGRESS_MERGED: &"profile_progress_merged",
+		# Story 8.5: the first_death_recorded SYSTEM event appended at the enum end (never renumbered) — the first-death
+		# narrative marker (the FIRST persistent per-profile-lifetime latch record).
+		DomainEvent.Type.FIRST_DEATH_RECORDED: &"first_death_recorded"
 	}
 
 	for event_type: int in expected_ids.keys():
