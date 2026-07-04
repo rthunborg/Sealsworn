@@ -4,7 +4,7 @@ baseline_commit: db513a26c9b8c8bb497228e664bb2ad4b872389b
 
 # Story 9.5: Finale Regression and Run-Length Tuning Hooks
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
