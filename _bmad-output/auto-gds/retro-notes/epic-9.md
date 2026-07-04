@@ -1,5 +1,8 @@
 # Epic 9 — Auto-GDS retro notes
 
+## Story 9-5-finale-regression-and-run-length-tuning-hooks
+- [Phase 3 — create-story] Latent integration trap: the live 9.4 victory chain drives `PHASE_COMPLETED` but never clears the boss route node, so `RunSummary.boss_cleared` reads false after a live victory unless the full-run integration clears it — flagged as AC2's load-bearing `[Decision]` (recommended: clear the boss node on victory, mirroring the placeholder command's idempotent `REVEAL_CLEARED` + `cleared_node_ids` discipline).
+
 ## Story 9-4-boss-victory-and-first-victory-reveal
 - [Phase 3 — create-story] The `ProfileSnapshot` schema pin is the sharpest 9.4 trap: no `first_victory_recorded` home was pre-reserved, so the field must be added at `SCHEMA_VERSION == 1` (additive) with the `DICTIONARY_KEYS` test pin updated but NO version bump — a bump silently breaks 8.7's already-green migration tests.
 - [Phase 5 — dev-story] Knowing split: 9.4 wired the boss-defeat→run-victory call site (the long-parked run-end auto-wire, VICTORY direction) but deliberately left the hero-DEATH live source deferred — the death half of that seam is now the last un-wired run-end path.
