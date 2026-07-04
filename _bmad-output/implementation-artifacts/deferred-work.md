@@ -1,3 +1,13 @@
+## Deferred from: code review of 9-5-finale-regression-and-run-length-tuning-hooks (2026-07-04)
+
+Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 2 Low. Full headless suite re-run and independently verified green: **166 PASS / 0 `^FAIL`**, "Headless tests passed."; false-PASS grep clean (only the documented negatives: int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1); `git diff --check` clean. Diff vs `main` (merge-base `11496f8`): 1 production new (`boss_attempt_diagnostics.gd`), 1 production modified (`run_orchestrator.gd` — additive `resolve_boss_victory()`/`_boss_route_node()`), 4 test files new (fixture + 2 finale integration + 1 diagnostics unit). `domain_event.gd` / `run_snapshot.gd` UNCHANGED. All 3 ACs met + tested; the boss-chain regression suite + full-run-through-the-shell integration (victory + driven death) + the local/offline build-profile-gated `BossAttemptDiagnostics` recorder all verified against source. Invariants hold (enum tail index 47, `SCHEMA_VERSION == 1`, rules dirs unchanged, 7 RNG streams, ZERO new RNG). This is the Epic-9 finale closeout.
+
+**No NEW `[Review][Defer]` items from this review.** The review produced 2 Low `[Review][Decision]` items (recorded in the story's `### Review Findings` — both a human-awareness/ordering note, neither requiring a code change): (1) `RunOrchestrator.resolve_boss_victory()` has no live production call site (the intended continuation of 9.4's human-accepted "the live full-run wiring belongs to 9.5" — 9.5's boundary is an integration test + thin continuation, not an auto-play loop); (2) an idempotent-safe mutate-before-reject ordering wart in `resolve_boss_victory()` (documented; `RouteState.validate()` has no forward-only cleared-set constraint so the boss-clear can never corrupt state).
+
+Re-carried (NOT new — already in the ledger, unchanged by 9.5): the **LIVE combat-DEATH CALL SITE / hero-death → `PHASE_FAILED` live SOURCE** stays deferred to a later run-flow/HUD story (9.5 exercises the death PATH with a DRIVEN death, not the live source); the **first-victory REVEAL RENDER on the outpost** stays a later UI story; the **`NodeResolvePlaceholderCommand._resolve_boss` two-step atomicity twin** stays parked (9.5 does not drive that branch). 9.5 added no deferral of its own.
+
+---
+
 ## Tracked from: dev of 9-4-boss-victory-and-first-victory-reveal (2026-07-03)
 
 Story 9.4 (FR62/FR63) is the FOURTH story of Epic 9 ("Larval Avatar MVP Finale") — the boss VICTORY + first-VICTORY reveal boundary. It makes the Larval Avatar reaching 0 HP the run's real VICTORY endpoint and delivers the MVP first-victory story beat, MIRRORING the ratified 8.5 first-DEATH precedent VERBATIM at the OPPOSITE terminal phase (`PHASE_COMPLETED` vs 8.5's `PHASE_FAILED`). SHIPPED: (a) a NEW `boss_defeated` `DomainEvent` (the tactical defeat fact) + the `BossTurnResolver.detect_boss_defeat` seam (the ONLY 9.3-code change — detect `boss.is_dead()` after damage, emit `boss_defeated`, honoring the 9.3 sequence-id seam contract); (b) the run-VICTORY resolution — `RUN_COMPLETED_OUTCOME_VICTORY := &"victory"` UNBLOCKED in the `run_completed` outcome allowlist + the validator + `CompleteRunCommand`'s completion classifier (`victory` joins `completed` as a second completion marker; both run `_resolve_completed`), so the boss victory drives `run_completed` + `outcome == victory` + `next_destination == outpost` via the existing caller-driven `RunOrchestrator.resolve_run_end` (NO orchestrator change — it already dispatches any outcome); (c) the first-VICTORY latch — a NEW additive `ProfileSnapshot.first_victory_recorded` bool at `SCHEMA_VERSION == 1` (the FOURTH independent run-end idempotency marker) + `RecordFirstVictoryCommand` (the `RecordFirstDeathCommand` twin — VICTORY-only gate `run.phase == PHASE_COMPLETED`, reject a FAILED run `run_not_completed`, once-only `first_victory_already_recorded`) + a NEW `first_victory_recorded` `DomainEvent`; (d) the `FirstVictoryRevealBeat` pure-read DTO carrying the FR62 line "It did not die. It learned the way back." (the `FirstDeathNarrativeBeat` twin — a skip is structurally a no-op). All 3 ACs met + tested. Full headless suite green (Godot 4.6.3, "Headless tests passed.", **163 PASS / 0 `^FAIL`**, false-PASS grep clean beyond the documented int64-overflow ×2 / `invalid_node_type` / malformed-JSON ×3 negatives). ZERO `randi`/`randf`/`RandomNumberGenerator` in any new code (the victory/defeat/reveal are deterministic records); `SCHEMA_VERSION` stays 1 (no migration — 8.7's matrix stays green); the 23-key `RunSnapshot` gate stays 23 (the latch is a PROFILE field); the 7 named RNG streams invariant; no seed-regression fingerprint moved; `scripts/rules/conditions/` stays EMPTY + `scripts/rules/operations/` single-file; no `.tscn`/content file.
@@ -23,16 +33,6 @@ Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Ap
 
 - [Review][Defer] Defensive-branch coverage gap in the two 8.1 fixes 9.4 owns: `CompleteRunCommand._resolve_completed`'s step-2-failure restore (`run.phase = phase_before`) is UNREACHABLE (both edges always legal), so its forcing test can't exist — `test_complete_run_command.gd::_two_step_completion_is_atomic_on_a_hypothetical_step_two_failure` asserts only the observable invariant (a committed two-step is never parked in `NODE_RESOLUTION`). (The `RunEndOutcome` allowlist fallback IS directly covered via a garbage marker.) Acceptable for a defensive fix on an unreachable path; a future story that makes the path reachable (a live death source) should add a forcing test. Low, non-blocking. (Originating review: code review of 9-4, Round 1, 2026-07-03.)
 - [Review][Defer] The `NodeResolvePlaceholderCommand._resolve_boss` two-step atomicity TWIN is left un-hardened. 9.4 fixed the identical two-step shape in `CompleteRunCommand._resolve_completed` (the 8.1 Low #1) but scoped the placeholder-command boss branch OUT (untouched by 9.4), so it retains the un-hardened `ACTIVE_ROUTE → NODE_RESOLUTION → COMPLETED` sequence (same theoretical, currently-unreachable "parked in `NODE_RESOLUTION` on a step-2 failure" gap). A future story that drives that path should mirror the capture+restore fix. Low, non-blocking (unreachable today — both edges always legal). (Originating review: code review of 9-4, Round 1, 2026-07-03.)
-
----
-
-## Deferred from: code review of 9-2-larval-avatar-definition-and-phases (2026-07-03)
-
-Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 2 Low. Full headless suite green (158 PASS, 0 `^FAIL`, false-PASS guard clean — only the documented negatives: int64-overflow ×2, `invalid_node_type`, malformed-JSON ×3; `git diff --check` clean). Diff: 6 new production files (`boss_definition.gd`, `boss_phase_definition.gd`, `boss_action_definition.gd`, `boss_repository.gd`, `boss_phase_resolver.gd`, `boss_phase_transition.gd`), 1 modified production file (`domain_event.gd` — append-only `boss_phase_changed` SYSTEM event), 3 new test files + the `test_domain_event.gd` extension (`boss_phase_changed` round-trip/malformed + the `expected_ids` exhaustiveness-pin entry). Scope verified exact: ZERO touch to `generation/boss` / `run` / `rules/conditions` (stays empty) / `rules/operations` (stays single-file) / `data/` / `tools/`; 23-key `RunSnapshot` gate unchanged; no seed-regression fingerprint moved. AC1/AC2/AC3 all satisfied and tested. `BossRepository` mirrors `EnemyRepository` verbatim; the definition family mirrors `EventDefinition`/`EventChoiceDefinition`; the event mirrors the `boss_encounter_started` end-to-end template. The two Low `[Review][Defer]` items below are defensive-coverage / internal-consistency gaps, both non-blocking (behavior verified correct by inspection; 9.2 ships NO live call site so neither is production-reachable):
-
-- [Resolved 9.3] (Low) The AC2 resolver→event integration seam is untested end-to-end. **Closed by Story 9.3**: the live phase seam `BossTurnResolver.resolve_phase_transitions` calls `BossPhaseResolver.resolve` after a boss-HP change and emits `boss_phase_changed` from each `transition.to_payload()`. Closing assertions added in `test_boss_turn_resolver.gd::_live_hp_drop_emits_boss_phase_changed_from_the_resolver` (live drop → transition → event → validate → JSON round-trip) AND `test_boss_phase_resolver.gd::_resolver_transition_closes_the_live_boss_phase_changed_seam` (the direct `resolve(...)[i].to_payload()` → event → round-trip loop). (Originating review: code review of 9-2, Round 1, 2026-07-03.)
-
-- [Resolved 9.3] (Low) `BossPhaseResolver.resolve()` emits an event-invalid `from_phase = -1` transition on a negative `current_phase_index`. **Closed by Story 9.3**: `resolve()` now clamps `current_phase_index` to `maxi(0, ...)` — a negative index is treated as "already at phase 0" (a no-op for phase 0's entry), so `resolve()` can NEVER return a transition whose `to_payload()` has `from_phase < 0`. Test: `test_boss_phase_resolver.gd::_negative_phase_index_never_emits_an_event_invalid_transition` asserts `resolve(def, -1, full_hp)` is a no-op and any transition from a negative index produces an event-VALID payload. (Originating review: code review of 9-2, Round 1, 2026-07-03.)
 
 ---
 
@@ -536,42 +536,6 @@ passed.", exit 0, 142 PASS / 0 FAIL).
   regression — left untouched (an out-of-scope tightening that fixes no failure + risks the max-int64 boundary
   tests). If a future story wants to silence the ERROR line, guard the magnitude BEFORE `to_int()` and keep the
   max-int64-round-trips / max+1-rejected boundary tests green.
-
-## Deferred from: code review of 8-1-run-completion-and-return-to-outpost-flow (2026-06-30)
-
-- [Review][Defer][Resolved 9.4] `CompleteRunCommand._resolve_completed` two-step transition is not atomic vs the command's own
-  "byte-identical no-mutation RunState on ANY reject" promise (`godot/scripts/core/commands/complete_run_command.gd:200-221`).
-  If `ACTIVE_ROUTE → NODE_RESOLUTION` succeeded but `NODE_RESOLUTION → COMPLETED` then failed, the run would be left
-  MUTATED in `NODE_RESOLUTION` (non-terminal) with a `wrong_run_phase` error + zero events. Given the current
-  `RunState._legal_next_phases` table, once step 1 succeeds step 2 CANNOT fail, so this never fires today — but the
-  contract is silently broken if the table ever changes. `NodeResolvePlaceholderCommand._resolve_boss` has the
-  identical two-step shape (8.1 replicates, not introduces, the pattern). Cheap future hardening: snapshot `phase`
-  before step 1 and restore on step-2 failure, or assert both edges' legality up front. Not actionable now (no
-  reachable failure; fixing only 8.1 would diverge from the boss pattern — address both together if ever).
-  (Originating review: code review of 8-1, Round 1, 2026-06-30.)
-  RESOLVED (Story 9.4, 2026-07-03): 9.4 drives this exact completion path for the boss VICTORY (from ACTIVE_ROUTE, the
-  two-step runs), so the owning story hardened it: `_resolve_completed` now captures `phase_before` and restores
-  `run.phase = phase_before` on a step-2 failure, so a step-2 failure leaves the run byte-identical (as if the two-step
-  never ran) rather than parked in NODE_RESOLUTION. Still UNREACHABLE (both edges are always legal), so the restore is
-  defensive; `test_complete_run_command.gd::_two_step_completion_is_atomic_on_a_hypothetical_step_two_failure` asserts the
-  observable invariant (a successful two-step is never left in NODE_RESOLUTION). The `NodeResolvePlaceholderCommand._resolve_boss`
-  twin is NOT in 9.4 scope (its boss branch is untouched) — it retains the un-hardened two-step; a future story that drives
-  it may mirror this fix.
-- [Review][Defer][Resolved 9.4] `RunEndOutcome.for_failed` / `for_completed` do not validate the `cause` / `outcome` against the
-  event allowlists (`godot/scripts/run/run_end_outcome.gd:78-102`). A caller could project
-  `for_failed(run, &"garbage")` and the DTO would surface `outcome_or_cause: "garbage"`, whereas the corresponding
-  `run_failed` EVENT rejects that cause via `RUN_FAILED_CAUSES`. The read DTO is a passive projector of
-  already-command-validated markers (in the live flow it only ever receives an allowlisted cause/outcome from
-  `CompleteRunCommand`), so there is no reachable inconsistency today — the read surface and the strict event
-  validators merely disagree in principle on what a valid marker is. If a future consumer builds a `RunEndOutcome`
-  from untrusted input, add an allowlist guard that falls back to `_empty()`. Not blocking for v0.
-  (Originating review: code review of 8-1, Round 1, 2026-06-30.)
-  RESOLVED (Story 9.4, 2026-07-03): 9.4 calls `for_completed(run, victory)` — the FIRST real non-boss_placeholder/completed
-  outcome through this DTO — so the owning story added the allowlist guard: `for_completed` now accepts only
-  `boss_placeholder`/`completed`/`victory` (the `COMPLETED_OUTCOMES` const) and `for_failed` only the `RUN_FAILED_CAUSES`;
-  a non-allowlisted outcome/cause falls back to `_empty()` (the fail-closed projection), so the read surface and the strict
-  event validators agree. Still UNREACHABLE in the live flow (defensive-correctness);
-  `test_run_end_outcome.gd::_non_allowlisted_outcome_or_cause_falls_back_to_empty` asserts the guard.
 
 ## Tracked from: dev of 7-6-darkness-fairness-and-memory-pressure (2026-06-30)
 
