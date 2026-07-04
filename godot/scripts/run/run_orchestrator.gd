@@ -758,6 +758,65 @@ func resolve_run_end(outcome: StringName) -> ActionResult:
 	return resolved
 
 
+# Resolve the boss VICTORY from the boss-setup terminus (Story 9.5, AC2 — the THIN caller-driven integration
+# continuation, NOT an auto-play loop). It is the seam that closes the long-parked "the boss-defeat -> run-victory chain
+# has no production call site" (9.4's review recorded this; a human accepted it belongs to 9.5): after the caller has
+# driven the live boss fight to 0 HP on the arena board (via BossTurnResolver's explicit turns — the 9.3 posture, NOT an
+# auto-played loop inside run_to_completion) and confirmed the boss is defeated (detect_boss_defeat), this method (1)
+# CLEARS the boss route node so RunSummary.boss_cleared derives true (the reconciliation, [Decision] A) and (2) drives
+# resolve_run_end(&"victory") to transition the run to PHASE_COMPLETED + emit run_completed(victory) + surface the outpost
+# destination.
+#
+# THE boss_cleared RECONCILIATION ([Decision] A, RECOMMENDED): the live 9.4 victory chain (CompleteRunCommand.
+# _resolve_completed) drives PHASE_COMPLETED WITHOUT clearing the boss route node (no REVEAL_CLEARED, no cleared_node_ids
+# append) — so RunSummary.boss_cleared (which derives from a cleared TYPE_BOSS node) would read FALSE after a live victory.
+# This method reconciles it by mirroring the NodeResolvePlaceholderCommand._resolve_boss boss-clear discipline EXACTLY
+# (node.reveal_state = REVEAL_CLEARED + an IDEMPOTENT cleared_node_ids append, guarded on existing membership so the
+# RouteState.validate() duplicate_cleared_node guard stays green), MUTATE-BEFORE-the-infallible-resolve_run_end (the 4.4
+# ordering). A defeated boss IS a cleared boss node — this keeps the route state HONEST and run.validate() green, WITHOUT
+# changing CompleteRunCommand (the boss-clear is a boss-specific caller step the placeholder command already owns; the
+# generic completion command must not clear a boss node it does not know about). It does NOT touch the boss AI / adapter /
+# telegraph / phase / defeat contracts (9.1-9.4 are consumed, not changed).
+#
+# Fail-closed: no_active_run (orchestrator unseated); no_boss_node (the run has no terminal boss route node — a
+# structurally-wrong run, never true for a real full run); the resolve_run_end error VERBATIM (wrong phase / already
+# terminal / unknown outcome). Draws ZERO RNG (the clear is a state mutation; resolve_run_end is deterministic).
+func resolve_boss_victory() -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+
+	# Find the terminal boss route node (the node the victory clears).
+	var boss_node: RouteNode = _boss_route_node()
+	if boss_node == null:
+		return ActionResult.error(&"no_boss_node", {"command": "run_orchestrator"})
+
+	# Reconcile boss_cleared: mark the boss REVEAL_CLEARED + idempotently append it to cleared_node_ids (the
+	# NodeResolvePlaceholderCommand._resolve_boss discipline, mirrored here). MUTATE-BEFORE-the-infallible resolve_run_end
+	# (so a defeated boss IS a cleared boss node before the run transitions to COMPLETED). Idempotent (guarded on existing
+	# membership — the RouteState.validate() duplicate_cleared_node guard stays green even if called twice).
+	boss_node.reveal_state = RouteNode.REVEAL_CLEARED
+	if not run.route.cleared_node_ids.has(boss_node.id):
+		var cleared: Array[String] = run.route.cleared_node_ids.duplicate()
+		cleared.append(boss_node.id)
+		run.route.cleared_node_ids = cleared
+
+	# Drive the generic run-END victory resolution (transition to COMPLETED + run_completed(victory) + outpost). Surfaces
+	# the command error VERBATIM (a wrong-phase / already-terminal reject leaves the boss-clear applied but the run
+	# un-completed — the caller sees the error; the clear is idempotent so a retry is safe).
+	return resolve_run_end(DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY)
+
+
+# The terminal boss route node on the seated run (the TYPE_BOSS node), or null if the run has none (a structurally-wrong
+# run). A pure read.
+func _boss_route_node() -> RouteNode:
+	if run == null or run.route == null:
+		return null
+	for node: RouteNode in run.route.nodes():
+		if node.type == RouteNode.TYPE_BOSS:
+			return node
+	return null
+
+
 func run_started_event() -> DomainEvent:
 	return _run_started_event
 

@@ -3,6 +3,8 @@
 ## Story 9-5-finale-regression-and-run-length-tuning-hooks
 - [Phase 3 — create-story] Latent integration trap: the live 9.4 victory chain drives `PHASE_COMPLETED` but never clears the boss route node, so `RunSummary.boss_cleared` reads false after a live victory unless the full-run integration clears it — flagged as AC2's load-bearing `[Decision]` (recommended: clear the boss node on victory, mirroring the placeholder command's idempotent `REVEAL_CLEARED` + `cleared_node_ids` discipline).
 
+- [Phase 5 — dev-story] Epic-9 closeout: finale regression-pinned (5-seed approved catalog), integration-proven end-to-end through the run shell, tuning-instrumented. The 9.4 "no production call site" seam closed by thin caller-driven `RunOrchestrator.resolve_boss_victory()` (clears the boss route node, then resolve_run_end(victory)) — still NOT auto-wired into `run_to_completion`. The live combat-death source and the outpost reveal render remain the two open finale-adjacent defers for a later run-flow/HUD story.
+
 ## Story 9-4-boss-victory-and-first-victory-reveal
 - [Phase 3 — create-story] The `ProfileSnapshot` schema pin is the sharpest 9.4 trap: no `first_victory_recorded` home was pre-reserved, so the field must be added at `SCHEMA_VERSION == 1` (additive) with the `DICTIONARY_KEYS` test pin updated but NO version bump — a bump silently breaks 8.7's already-green migration tests.
 - [Phase 5 — dev-story] Knowing split: 9.4 wired the boss-defeat→run-victory call site (the long-parked run-end auto-wire, VICTORY direction) but deliberately left the hero-DEATH live source deferred — the death half of that seam is now the last un-wired run-end path.
