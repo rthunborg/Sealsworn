@@ -4,7 +4,7 @@ baseline_commit: 5be8594e398821cfbad9ca4c84bc2383d6ae94e2
 
 # Story 9.4: Boss Victory and First-Victory Reveal
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
