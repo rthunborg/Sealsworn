@@ -4,7 +4,7 @@ baseline_commit: ddf36629e11b1aa14a323fd1a3d9e3593fc9b178
 
 # Story 11.1: Run-Flow UX Appendix and Screen Contracts
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
