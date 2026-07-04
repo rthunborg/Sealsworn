@@ -3,10 +3,10 @@ epic_num: 9
 story_num: 5
 branch: story/9-5-finale-regression-and-run-length-tuning-hooks
 status: in-progress
-updated_at: "2026-07-04T11:30:00Z"
+updated_at: "2026-07-04T11:55:00Z"
 started_at: "2026-07-04T10:29:41Z"
 completed_at: null
-active_seconds: 2306
+active_seconds: 3185
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -22,7 +22,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 5
-completed_phases: [0, 1, 3, 5, 7]
+completed_phases: [0, 1, 3, 5, 7, 8]
 code_review_iterations: 1
 code_review_loop_done: true
 external_review_iterations: 0
@@ -31,8 +31,11 @@ testing:
   enabled: false
   ran: []
 commits: ["db513a2", "c235f61", "dfeacc2"]
-deferred_work_archived: 0
-planning_drift: []
+deferred_work_archived: 4
+planning_drift:
+  - "STRUCTURAL: Epic-10 story list missing the run-flow/HUD + outpost-scene story its 10-4/10-6 loop gates assume — recommend gds-correct-course re-sync to insert/sequence it ahead of Epic 10's playtest + loop-gate stories"
+  - "DETAIL: epics.md FR63 numbering collision (canonical Larval Avatar boss vs design-time GDD outpost/meta spaces) — annotate on next re-sync"
+  - "DETAIL: FR32 loss half (hero death -> outpost) has no live trigger as-built; driven death only until the run-flow/HUD story lands"
 pr_url: null
 ci_run_url: null
 ci_status: unknown
