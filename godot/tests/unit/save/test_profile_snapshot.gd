@@ -21,6 +21,7 @@ func run() -> Dictionary:
 	_copy_is_a_deep_independent_clone()
 	_populated_8_4_homes_round_trip_without_a_migration()
 	_set_first_death_flag_round_trips_without_a_migration()
+	_set_first_victory_flag_round_trips_without_a_migration()
 	return result()
 
 
@@ -72,6 +73,7 @@ func _json_round_trip_preserves_every_field() -> void:
 	snapshot.echoes = ["echo_of_salt", "echo_of_tide"]
 	snapshot.unlock_progress = {"variety_pool": "tier_1"}
 	snapshot.first_death_recorded = true
+	snapshot.first_victory_recorded = true
 
 	var json_text: String = JSON.stringify(snapshot.to_dictionary())
 	var parsed_variant: Variant = JSON.parse_string(json_text)
@@ -89,6 +91,7 @@ func _json_round_trip_preserves_every_field() -> void:
 	assert_equal(parsed.echoes, ["echo_of_salt", "echo_of_tide"], "Round-trip must preserve echoes.")
 	assert_equal(parsed.unlock_progress, {"variety_pool": "tier_1"}, "Round-trip must preserve unlock_progress.")
 	assert_true(parsed.first_death_recorded, "Round-trip must preserve first_death_recorded.")
+	assert_true(parsed.first_victory_recorded, "Round-trip must preserve first_victory_recorded (Story 9.4).")
 
 
 func _partial_legacy_dict_parses_leniently() -> void:
@@ -119,10 +122,12 @@ func _future_content_homes_are_present_and_empty_in_v0() -> void:
 	assert_true(data.has("echoes"), "The 8.4 echoes home must exist in v0.")
 	assert_true(data.has("unlock_progress"), "The 8.4 unlock_progress home must exist in v0.")
 	assert_true(data.has("first_death_recorded"), "The 8.5 first_death_recorded home must exist in v0.")
+	assert_true(data.has("first_victory_recorded"), "The 9.4 first_victory_recorded home must exist in v0.")
 	assert_equal(data.get("class_mastery"), {}, "class_mastery must be empty in v0 (8.4 fills it).")
 	assert_equal(data.get("echoes"), [], "echoes must be empty in v0 (8.4 fills it).")
 	assert_equal(data.get("unlock_progress"), {}, "unlock_progress must be empty in v0 (8.4 fills it).")
 	assert_equal(data.get("first_death_recorded"), false, "first_death_recorded must be false in v0 (8.5 sets it).")
+	assert_equal(data.get("first_victory_recorded"), false, "first_victory_recorded must be false in v0 (9.4 sets it).")
 	assert_equal(data.get("oath_shards"), 0, "A fresh profile has 0 Oath Shards.")
 
 
@@ -270,3 +275,42 @@ func _set_first_death_flag_round_trips_without_a_migration() -> void:
 	})
 	assert_true(legacy_result.succeeded, "A pre-8.5 (no first-death key) profile must parse leniently.")
 	assert_false(legacy_result.metadata.get("snapshot").first_death_recorded, "A missing/legacy first_death_recorded must default to false.")
+
+
+func _set_first_victory_flag_round_trips_without_a_migration() -> void:
+	# Story 9.4 (Task 8 — the SCHEMA [Decision]): the SET first_victory_recorded == true round-trips losslessly through
+	# to_dictionary()/parse AND a JSON stringify->parse at the SAME SCHEMA_VERSION == 1 (NO migration — 9.4 adds the field as
+	# a NEW ADDITIVE field at v1, the 8.4/8.5 merge-without-bump discipline; NO home was pre-reserved for it, but a lenient
+	# additive add still needs no bump). The exact DICTIONARY_KEYS set now INCLUDES first_victory_recorded (a new key REQUIRES
+	# updating the pin, but this is NOT a schema bump — 8.7's matrix pins SCHEMA_VERSION == 1 + schema_version:2 -> unsupported,
+	# both of which stay green). A lenient parse still defaults a legacy/missing first-victory field to false (a pre-9.4
+	# profile parses cleanly with false).
+	var snapshot: ProfileSnapshot = ProfileSnapshot.new()
+	snapshot.first_victory_recorded = true
+
+	var json_text: String = JSON.stringify(snapshot.to_dictionary())
+	var parsed_variant: Variant = JSON.parse_string(json_text)
+	var parse_result: ActionResult = ProfileSnapshot.parse(parsed_variant)
+	assert_true(parse_result.succeeded, "A profile with the SET first-victory flag must parse back at SCHEMA_VERSION == 1 (no migration).")
+	var parsed: ProfileSnapshot = parse_result.metadata.get("snapshot")
+
+	# NO migration: the schema version is unchanged, and the SET flag survives.
+	assert_equal(parsed.schema_version, ProfileSnapshot.SCHEMA_VERSION, "The SET first-victory flag must round-trip at the SAME schema version (no bump).")
+	assert_equal(ProfileSnapshot.SCHEMA_VERSION, 1, "SCHEMA_VERSION stays 1 (8.7's migration matrix pins it — a bump would break test 2.5).")
+	assert_true(parsed.first_victory_recorded, "The SET first_victory_recorded == true must round-trip losslessly.")
+
+	# The exact top-level key set now INCLUDES first_victory_recorded (the DICTIONARY_KEYS pin is updated — NOT a schema bump).
+	var actual_keys: Array = snapshot.to_dictionary().keys()
+	actual_keys.sort()
+	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
+	expected_keys.sort()
+	assert_equal(actual_keys, expected_keys, "A profile with the SET first-victory flag must project EXACTLY the pinned DICTIONARY_KEYS set (incl. the new key).")
+
+	# A legacy profile with NO first-victory key parses cleanly to false (a pre-9.4 profile — the 8.7 migration matrix's
+	# schema_version:1 lenient-parse stays green).
+	var legacy_result: ActionResult = ProfileSnapshot.parse({
+		"schema_version": ProfileSnapshot.SCHEMA_VERSION,
+		"oath_shards": 4
+	})
+	assert_true(legacy_result.succeeded, "A pre-9.4 (no first-victory key) profile must parse leniently.")
+	assert_false(legacy_result.metadata.get("snapshot").first_victory_recorded, "A missing/legacy first_victory_recorded must default to false.")

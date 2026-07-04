@@ -8,6 +8,7 @@ extends "res://tests/unit/test_case.gd"
 # the fail-closed empty fact (has_ended == false).
 
 const RunEndOutcome = preload("res://scripts/run/run_end_outcome.gd")
+const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
@@ -15,8 +16,10 @@ const RunState = preload("res://scripts/run/run_state.gd")
 func run() -> Dictionary:
 	_failed_run_reports_outpost_and_cause()
 	_completed_run_reports_outpost_and_outcome()
+	_victory_run_reports_outpost_and_victory_outcome()
 	_manual_seed_run_reports_ineligible()
 	_non_terminal_or_null_run_projects_empty_fact()
+	_non_allowlisted_outcome_or_cause_falls_back_to_empty()
 	_projection_keys_are_exact()
 	_read_is_pure()
 	return result()
@@ -61,6 +64,22 @@ func _completed_run_reports_outpost_and_outcome() -> void:
 	assert_equal(data.get("outcome_or_cause"), "completed", "A completed run's outcome should carry the completion outcome.")
 	assert_equal(data.get("next_destination"), "outpost", "A completed run's next destination is the outpost (AC2).")
 	assert_true(bool(data.get("meta_progression_eligible")), "A non-manual completed run is meta-eligible (mirrors the run).")
+
+
+# ---- Story 9.4 (AC1): a victory projects the outpost + the `victory` outcome -----------------------
+
+func _victory_run_reports_outpost_and_victory_outcome() -> void:
+	# Story 9.4 (AC1): the REAL boss victory — for_completed(run, victory) projects the post-victory RETURN fact (phase
+	# COMPLETED, outcome_or_cause == victory, destination outpost). This is the FIRST real non-boss_placeholder/completed
+	# outcome through this DTO; the allowlist guard now ACCEPTS `victory`.
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var data: Dictionary = RunEndOutcome.for_completed(run, &"victory").to_dictionary()
+
+	assert_true(bool(data.get("has_ended")), "A victory run's outcome should report has_ended == true.")
+	assert_equal(data.get("phase"), "completed", "A victory run's outcome should report the completed phase.")
+	assert_equal(data.get("outcome_or_cause"), "victory", "A victory run's outcome should carry the `victory` outcome.")
+	assert_equal(data.get("next_destination"), "outpost", "A victory run routes to the outpost — the post-victory RETURN (AC1, FR32).")
+	assert_true(bool(data.get("meta_progression_eligible")), "A non-manual victory is meta-eligible (mirrors the run).")
 
 
 # ---- the eligibility field mirrors meta_progression_eligible (READ-ONLY; 8.1 grants nothing) -----
@@ -112,6 +131,34 @@ func _non_terminal_or_null_run_projects_empty_fact() -> void:
 	assert_false(bool(null_failed.get("has_ended")), "for_failed(null) should project the empty fact.")
 	var null_completed: Dictionary = RunEndOutcome.for_completed(null, &"completed").to_dictionary()
 	assert_false(bool(null_completed.get("has_ended")), "for_completed(null) should project the empty fact.")
+
+
+# ---- Story 9.4 Task 8 (the 8.1 review Low #2): a non-allowlisted outcome/cause falls back to empty ---
+
+func _non_allowlisted_outcome_or_cause_falls_back_to_empty() -> void:
+	# The 8.1 review Round-1 Low #2, RE-CARRIED to 9.4 and now FIXED: the read DTO validates the cause/outcome against the
+	# event allowlists. A garbage outcome/cause (which the run_completed / run_failed EVENT would reject) now falls back to
+	# the fail-closed empty fact — the read surface and the strict event validators agree. Defensive-correctness (unreachable
+	# in the live flow, where the DTO only ever receives an already-command-validated marker).
+	var completed_run: RunState = _terminal_run(RunState.PHASE_COMPLETED, false)
+	var garbage_completed: Dictionary = RunEndOutcome.for_completed(completed_run, &"garbage").to_dictionary()
+	assert_false(bool(garbage_completed.get("has_ended")), "for_completed with a non-allowlisted outcome must fall back to the empty fact (the allowlist guard).")
+	assert_equal(garbage_completed.get("outcome_or_cause"), "", "A rejected outcome must NOT be surfaced (the empty fact carries no outcome).")
+
+	var failed_run: RunState = _terminal_run(RunState.PHASE_FAILED, false)
+	var garbage_failed: Dictionary = RunEndOutcome.for_failed(failed_run, &"garbage").to_dictionary()
+	assert_false(bool(garbage_failed.get("has_ended")), "for_failed with a non-allowlisted cause must fall back to the empty fact (the allowlist guard).")
+
+	# The three real completion markers (boss_placeholder / completed / victory) are all ACCEPTED (the allowlist is not
+	# over-tight — a completed run still projects each).
+	for outcome: StringName in [&"boss_placeholder", &"completed", &"victory"]:
+		var accepted: Dictionary = RunEndOutcome.for_completed(_terminal_run(RunState.PHASE_COMPLETED, false), outcome).to_dictionary()
+		assert_true(bool(accepted.get("has_ended")), "for_completed(%s) must be accepted (an allowlisted completion marker)." % String(outcome))
+		assert_equal(accepted.get("outcome_or_cause"), String(outcome), "for_completed(%s) must carry the outcome." % String(outcome))
+	# Every run_failed cause is ACCEPTED.
+	for cause: StringName in DomainEvent.RUN_FAILED_CAUSES:
+		var accepted_failed: Dictionary = RunEndOutcome.for_failed(_terminal_run(RunState.PHASE_FAILED, false), cause).to_dictionary()
+		assert_true(bool(accepted_failed.get("has_ended")), "for_failed(%s) must be accepted (an allowlisted cause)." % String(cause))
 
 
 # ---- the projection has an EXACT pinned key set ---------------------------------------------------

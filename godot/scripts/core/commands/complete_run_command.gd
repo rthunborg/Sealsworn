@@ -53,10 +53,26 @@ extends "res://scripts/core/commands/game_command.gd"
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 
-# The completion outcome marker this command emits for a generic completion/victory (the broadened run_completed
-# outcome — NOT the boss placeholder). Equal to DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED (the validator pins the
-# allowlist) — referenced from the event const so the command + validator stay in lockstep on the marker vocabulary.
+# The completion outcome marker this command emits for a generic completion (the broadened run_completed outcome — NOT the
+# boss placeholder). Equal to DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED (the validator pins the allowlist) — referenced
+# from the event const so the command + validator stay in lockstep on the marker vocabulary.
 const COMPLETION_OUTCOME := DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED
+
+# Story 9.4 (AC1): the run-VICTORY completion marker for the REAL Larval-Avatar boss victory. `victory` is a SECOND
+# COMPLETION marker (a completion, NOT a death cause — see _is_completion_outcome): it drives the SAME completion path as
+# `completed` (both run _resolve_completed -> PHASE_COMPLETED + run_completed) with the `victory` outcome. This UNBLOCKS the
+# 8.1-reserved `victory` outcome so the boss defeat resolves the run the SAME way a generic completion does, WITHOUT
+# touching the boss_placeholder / completed values. The command emits the ACTUAL requested outcome (victory or completed),
+# NOT a hardcoded marker.
+const VICTORY_OUTCOME := DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY
+
+# The completion markers this command accepts (both drive the completion path). `completed` (8.1 generic completion) +
+# `victory` (9.4 real boss victory). The boss_placeholder outcome is NOT here — that is the 4.5 NodeResolvePlaceholder
+# Command's boss branch, unchanged by 9.4.
+const COMPLETION_OUTCOMES: Array[StringName] = [
+	DomainEvent.RUN_COMPLETED_OUTCOME_COMPLETED,
+	DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY
+]
 
 # The stable "next app flow destination" marker carried on the result metadata + both emitted event payloads (FR32 —
 # death/completion returns to the last outpost). Equal to DomainEvent.RUN_END_DESTINATION_OUTPOST.
@@ -117,10 +133,11 @@ func validate(state: Variant) -> ActionResult:
 				"requested_phase": String(RunState.PHASE_FAILED)
 			})
 		return ActionResult.ok()
-	if String(outcome) == String(COMPLETION_OUTCOME):
-		# Completion path: PHASE_COMPLETED is legal only from NODE_RESOLUTION; from ACTIVE_ROUTE the command runs the
-		# boss's TWO-STEP (ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED), so a completion is reachable from BOTH
-		# ACTIVE_ROUTE and NODE_RESOLUTION (no new transition edge). From NEW_RUN neither is reachable — reject.
+	if _is_completion_outcome(outcome):
+		# Completion path (`completed` or the 9.4 `victory`): PHASE_COMPLETED is legal only from NODE_RESOLUTION; from
+		# ACTIVE_ROUTE the command runs the boss's TWO-STEP (ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED), so a completion
+		# is reachable from BOTH ACTIVE_ROUTE and NODE_RESOLUTION (no new transition edge). From NEW_RUN neither is
+		# reachable — reject.
 		if run.phase != RunState.PHASE_ACTIVE_ROUTE and run.phase != RunState.PHASE_NODE_RESOLUTION:
 			return ActionResult.error(&"wrong_run_phase", {
 				"command": String(command_id),
@@ -128,7 +145,7 @@ func validate(state: Variant) -> ActionResult:
 				"requested_phase": String(RunState.PHASE_COMPLETED)
 			})
 		return ActionResult.ok()
-	# Neither a known death cause nor the completion marker.
+	# Neither a known death cause nor a completion marker.
 	return ActionResult.error(&"unknown_run_end_outcome", {
 		"command": String(command_id),
 		"outcome": String(outcome)
@@ -185,18 +202,31 @@ func _resolve_failed(run: RunState) -> ActionResult:
 	})
 
 
-# COMPLETION resolution (AC2): transition to PHASE_COMPLETED (from NODE_RESOLUTION directly, or from ACTIVE_ROUTE via
-# the boss's TWO-STEP ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED so NO new edge is needed), then emit run_completed
-# with the BROADENED `completed` outcome + the cleared-node count + the outpost destination. validate() already pinned
-# the phase, so the transitions cannot fail here — but check each defensively and surface a structured error WITHOUT
-# having emitted any event if either ever did (build the event ONLY after the run is actually in COMPLETED). Draws ZERO
-# RNG.
+# COMPLETION resolution (AC2 / Story 9.4 AC1): transition to PHASE_COMPLETED (from NODE_RESOLUTION directly, or from
+# ACTIVE_ROUTE via the boss's TWO-STEP ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED so NO new edge is needed), then emit
+# run_completed with the ACTUAL requested completion outcome (`completed` OR the 9.4 `victory`) + the cleared-node count +
+# the outpost destination. validate() already pinned the phase, so the transitions cannot fail here — but check each
+# defensively and surface a structured error WITHOUT having emitted any event if either ever did (build the event ONLY after
+# the run is actually in COMPLETED). Draws ZERO RNG.
+#
+# TWO-STEP ATOMICITY (Story 9.4 Task 8 — the 8.1 review Round-1 Low #1, RE-CARRIED to 9.4, now FIXED): the ACTIVE_ROUTE ->
+# NODE_RESOLUTION -> COMPLETED two-step could leave the run MUTATED in NODE_RESOLUTION (non-terminal) if step 1 succeeded
+# but step 2 then failed — violating the command's "byte-identical no-mutation RunState on ANY reject" promise. It is
+# currently UNREACHABLE (given RunState._legal_next_phases both edges are always legal from the checked phases), so this is
+# a DEFENSIVE-CORRECTNESS fix, not a live bug. FIX: capture the phase BEFORE step 1 and RESTORE it (run.phase = phase_before
+# — the command already reads run.phase directly; no new RunState surface) on a step-2 failure, so a step-2 failure leaves
+# the run byte-identical (as if the two-step never ran) rather than parked in NODE_RESOLUTION. 9.4 drives this exact path for
+# the boss VICTORY (from ACTIVE_ROUTE, the two-step runs), so the owning story hardens it.
 func _resolve_completed(run: RunState) -> ActionResult:
+	# Capture the phase BEFORE any transition so a step-2 failure can restore the run to byte-identical (the atomicity fix).
+	var phase_before: StringName = run.phase
+
 	# Step 1 (only from ACTIVE_ROUTE): ACTIVE_ROUTE -> NODE_RESOLUTION (the boss two-step's first hop). From
 	# NODE_RESOLUTION this is skipped (already there).
 	if run.phase == RunState.PHASE_ACTIVE_ROUTE:
 		var to_resolution: ActionResult = run.transition_to(RunState.PHASE_NODE_RESOLUTION)
 		if to_resolution.is_error():
+			# Step 1 failed BEFORE any mutation (transition_to rejects without mutating) — the run is still at phase_before.
 			return ActionResult.error(&"wrong_run_phase", {
 				"command": String(command_id),
 				"phase": String(run.phase),
@@ -207,6 +237,10 @@ func _resolve_completed(run: RunState) -> ActionResult:
 	# Step 2: NODE_RESOLUTION -> COMPLETED (the terminal completion edge).
 	var to_completed: ActionResult = run.transition_to(RunState.PHASE_COMPLETED)
 	if to_completed.is_error():
+		# ATOMICITY (the 8.1 Low #1 fix): step 1 may have advanced the run to NODE_RESOLUTION; RESTORE the pre-step-1 phase
+		# so a step-2 failure leaves the run BYTE-IDENTICAL (no mutation on ANY reject). Unreachable today (both edges are
+		# always legal), so this restore is defensive; it never fires in the live flow.
+		run.phase = phase_before
 		return ActionResult.error(&"wrong_run_phase", {
 			"command": String(command_id),
 			"phase": String(run.phase),
@@ -215,17 +249,18 @@ func _resolve_completed(run: RunState) -> ActionResult:
 		})
 
 	var cleared_count: int = run.route.cleared_node_ids.size()
-	# A non-boss generic completion has NO boss node — boss_node_id is omitted (the broadened run_completed validator
-	# tolerates its absence for the `completed` outcome; it is required only for the boss_placeholder outcome).
+	# A non-boss generic completion AND the 9.4 victory have NO boss node — boss_node_id is omitted (the broadened
+	# run_completed validator tolerates its absence for the `completed`/`victory` outcomes; it is required only for the
+	# boss_placeholder outcome). Emit the ACTUAL requested outcome (victory or completed), NOT a hardcoded marker.
 	var event: DomainEvent = DomainEvent.run_completed(sequence_id, {
-		"outcome": String(COMPLETION_OUTCOME),
+		"outcome": String(outcome),
 		"cleared_node_count": cleared_count,
 		"next_destination": String(NEXT_DESTINATION_OUTPOST)
 	})
 
 	return ActionResult.ok([event], {
 		"run_completed": true,
-		"outcome": String(COMPLETION_OUTCOME),
+		"outcome": String(outcome),
 		"cleared_node_count": cleared_count,
 		"next_destination": String(NEXT_DESTINATION_OUTPOST)
 	})
@@ -234,6 +269,12 @@ func _resolve_completed(run: RunState) -> ActionResult:
 # Whether the requested outcome is a death CAUSE (in the run_failed cause allowlist) -> the FAILED resolution path.
 func _is_death_cause(value: StringName) -> bool:
 	return DomainEvent.RUN_FAILED_CAUSES.has(value)
+
+
+# Whether the requested outcome is a COMPLETION marker (`completed` or the 9.4 `victory`) -> the COMPLETED resolution path.
+# Story 9.4 extends the classifier to accept `victory` alongside `completed` (both run _resolve_completed).
+func _is_completion_outcome(value: StringName) -> bool:
+	return COMPLETION_OUTCOMES.has(value)
 
 
 # A single stable top-level code (invalid_context) holds the not-a-RunState / null-route / structurally-invalid-run
