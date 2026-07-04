@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-04T15:43:39+00:00
+last_updated: 2026-07-04T18:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -137,8 +137,8 @@ development_status:
   # SPRINT CHANGE 2026-07-04 (sprint-change-proposal-2026-07-04.md):
   # epic-11 executes BEFORE epic-10 — the live run flow / HUD / outpost layer is a
   # prerequisite for 10-4/10-5/10-6/10-7. Epic numbering intentionally NOT reshuffled.
-  epic-11: backlog
-  11-1-run-flow-ux-appendix-and-screen-contracts: backlog
+  epic-11: in-progress
+  11-1-run-flow-ux-appendix-and-screen-contracts: ready-for-dev
   11-2-live-combat-loop-and-hero-death-source: backlog
   11-3-run-flow-scene-navigation-and-in-run-hud: backlog
   11-4-live-affinity-pressure-on-screen: backlog
