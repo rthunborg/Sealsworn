@@ -72,7 +72,7 @@ board stays the dominant, readable region on every profile; orientation changes 
 (`gdd.md` 558–575).
 
 > **Layout convention for this appendix:** unless a screen section states otherwise, its four-layout
-> treatment follows §13 (the global layout+accessibility pass). Per-screen sections call out only the
+> treatment follows §14 (the global layout+accessibility pass). Per-screen sections call out only the
 > deviations/specifics that matter for that screen.
 
 ### 0.5 The accessibility contract (inherited by EVERY screen)

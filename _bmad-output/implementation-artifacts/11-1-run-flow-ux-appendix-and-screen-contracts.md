@@ -482,6 +482,82 @@ correct.
 No `[Review][Defer]` items (nothing punted to the cross-story ledger). No `[Review][Decision]` items (no human
 call required). All three findings are self-contained appendix edits the story owner can apply directly.
 
+**Round 2 of 3**
+
+Second independent adversarial pass (auto-gds delegate, Opus 4.8 [1m], 2026-07-04) — model-diverse re-review of the
+same deliverable (`_bmad-output/planning-artifacts/ux-appendix-run-flow.md`). Two objectives: (1) verify the Round 1
+fixes landed correctly in place, (2) hunt for anything the Round 1 pass missed. Every contract binding in the appendix
+was re-verified directly against the as-built GDScript source (not trusting Round 1's verification), and the diff was
+confirmed to touch ZERO production `godot/` code (diff-stat: only the appendix + this story file + `deferred-work.md`
++ `sprint-status.yaml` + `auto-gds/retro-notes/epic-11.md` changed).
+
+**Verdict: Approve** — 0 Critical / 0 High / 0 Med / 1 Low (new). The appendix remains accurate and complete; the
+sole new finding is a single mis-targeted internal section cross-reference (same class as the Round 1 §0.2 fix, a
+different instance Round 1 did not catch). It has no contract-accuracy impact and does not block the downstream scene
+stories.
+
+**Round 1 fixes — all THREE verified in place and substantiated by source:**
+- **G1 hero-HP source (Med, Round 1):** VERIFIED. `godot/scripts/run/run_state.gd` (re-read) carries no run-level HP
+  field (its fields: `phase, root_seed, is_manual_seed, meta_progression_eligible, route, selected_class_id,
+  starting_kit, rules_resolver, inventory, pending_reward_offer, risk_economy, pending_event_offer,
+  assigned_affinities`). Appendix §1.3 + §16 G1 now correctly source hero HP from the hero `TacticalEntityState` /
+  `StartingKit.baseline_hp` (confirmed `var baseline_hp: int = 0` at `starting_kit.gd:37`) and state "there is NO
+  run-level HP field on `RunState`". Gold source `RiskEconomyState.gold` confirmed (`risk_economy_state.gd:51`); node
+  progress `RouteState.cleared_node_ids` confirmed.
+- **weapon_reach metadata key (Low, Round 1):** VERIFIED. `tactical_attack_preview.gd:40-41` emits `"weapon_reach":
+  weapon_reach` in the preview-VM metadata dict; appendix §2.2 now lists `weapon_reach` and correctly disambiguates it
+  from the command-bridge `range` key. The distinction is doubly confirmed: `tactical_command_bridge.gd:338` copies
+  `range` in the ATTACK command metadata — a genuinely distinct surface. The Round 1 fix's disambiguation note is
+  precisely correct.
+- **§16 cross-ref (Low, Round 1):** VERIFIED. §0.2 (line 29) now reads "(see §16)"; §16 is the Contract-Gap ledger.
+
+**Independent contract re-verification (all MATCH source; superset of Round 1's list, re-read from scratch):**
+`TacticalBoardViewModel.to_dictionary()` 16 top-level keys in order (§1.2); `TacticalLayoutProfile` `PROFILE_*` ids +
+`_REGION_NAMES` + `DEFAULT_MINIMUM_TOUCH_TARGET = Vector2(44,44)` + `PHONE_MAX_DIMENSION 700` + `DESKTOP_MIN_WIDTH 1280`
++ `_build_stacked_layout`/`_build_side_rail_layout` + `available:false` fallback (§0.4/§14); `TacticalAccessibilityModel`
+`CHANNEL_*`/`SEVERITY_*` + `CUE_FEEDBACK_PREVIEW [shape,label]` + `CUE_FEEDBACK_COMMITTED [pattern,label,text]` +
+affinity/Darkness cue ids (§0.5/§2.3/§15); `TacticalInspectView.from_context` 14-field `to_dictionary()` + visibility
+tiers + telegraph fields (§3.2); `TacticalCommandBridge.build_command` intents `move`/`attack`/`inspect` +
+`unsupported_intent` + `command_ready`/`disabled_result`/`metadata_only` (§2.2); `TacticalAttackCommitFlow`
+`to_dictionary()` 10-key state + `MODE_*` + all 6 flow methods + `preview_ready`/`cancelled` reasons (§2.2);
+`TacticalMovementPreview`/`TacticalAttackPreview` shapes + cue ids (§2.2); `PassiveRewardModalViewModel.MODAL_KEYS` (10
+keys incl. `passive_id`) + `icon` as `String(definition.icon)` (§4.2); `PassiveRewardCommitFlow.to_dictionary()` 5 keys +
+`arm_consume`/`arm_destroy`/`confirm`/`cancel`/`dismiss` + `dismissed` reason (§4.2); `HeroSelectViewModel.ENTRY_KEYS` +
+`is_class_selectable` + class order `warrior/pyromancer/ranger/necromancer/shadeblade` (§6.2); `OutpostViewModel`
+`DICTIONARY_KEYS` (13) + `RECOVERY_STATE_KEYS` + `NAMED_SPACE_KEYS` + `NAMED_SPACES` (4, all `deferred`, `maps_to`) +
+`START_REQUEST_KEYS` + both `for_recovery` modes + `can_start_run()==true` (§7.2/§13.2); `RunSummary` `DICTIONARY_KEYS`
+(10)/`RUN_SCOPED_KEYS` (9)/`PROFILE_META_KEYS`/`CONTENT_UNLOCK_KEYS`/`NOT_YET_SUPPORTED_FIELDS` + `oath_shards_earned`
+(§8.2); the `outcome_or_cause` example value `victory` confirmed real (`run_end_outcome.gd:81`
+`RUN_COMPLETED_OUTCOME_VICTORY`; `run_orchestrator.gd:767` `resolve_run_end(&"victory")`); `FirstDeathNarrativeBeat`/
+`FirstVictoryRevealBeat` `DICTIONARY_KEYS` (`has_beat/line_id/line/is_skippable`) + both lines VERBATIM + `LINE_BY_ID`
+keys `first_death`/`first_victory` (§9.2/§10.2); `RouteState` `eligible_choice_ids` (reveal-gated) vs
+`available_choice_ids` (looser) + `RouteNode.TYPE_*`/`REVEAL_*`/`CLUE_*` (§5.2); `SettingsSnapshot.PREFERENCE_KEYS` (6)
++ `[-60,0]` dB + `INPUT_SCHEMES` + `SCHEMA_VERSION==1` + difficulty-non-goal regression-test comment (§12);
+`RunResumeService` EXISTS (`godot/scripts/save/run_resume_service.gd`) + `SaveManager` delegators `resume_run`/
+`resume_route_position`/`autosave_route_position`/`autosave_between_level` (`save_manager.gd:23-51`) + all 7 structured
+codes `save_not_found/save_open_failed/save_parse_failed/unsupported_save_schema/invalid_tactical_snapshot/
+missing_tactical_snapshot/invalid_rng_snapshot` (§13.2); `AffinityViewModel.MODAL_KEYS`/`RULE_KEYS` +
+`DarknessReadView.MODAL_KEYS` + the two Darkness cue-id constants (§15.2). AC1 (roster + 2 reveal beats + manual-seed
+warning), AC2 (per-screen pinned-key bindings + G1–G4 ledger, no invented surface), AC3 (four profiles +
+color-independence + scalable text) all re-confirmed met.
+
+- [x] **[Review][Patch] (Low) §0.4 layout-convention callout mis-targets §13; the layout+accessibility pass is §14.**
+  §0.4 (line 75) reads: "unless a screen section states otherwise, its four-layout treatment follows **§13** (the
+  global layout+accessibility pass)." Verified against the appendix's own section map: **§13 is "Save/resume recovery
+  states"**; the global layout+accessibility pass is **§14** ("Layout + accessibility coverage pass (ALL screens —
+  AC3)"). The parenthetical "(the global layout+accessibility pass)" is verbatim §14's role, confirming §13 is a typo
+  for §14. Every other per-screen layout reference in the appendix correctly targets §14 (lines 217, 301, 351, 460,
+  972) — only this one convention callout is wrong, and it is the most load-bearing cross-ref because all 13 screen
+  sections defer their layout treatment to it. This is the SAME CLASS of navigation-reference defect as the Round 1
+  §0.2 finding (a mis-numbered "see §N"), a different instance Round 1 did not catch. Fix: change "follows §13" →
+  "follows §14" in §0.4 (line 75). Internal navigation only — no contract-accuracy impact; the self-labelling
+  parenthetical lets a reader recover, so Low.
+
+No `[Review][Defer]` items (nothing punted to the cross-story ledger). No `[Review][Decision]` items (no human call
+required). The single new finding is a one-word appendix edit (§13 → §14) the story owner can apply directly. All
+Round 1 fixes are confirmed in place; the appendix's contract fidelity is intact under a second, independent,
+model-diverse pass.
+
 ## Dev Agent Record
 
 ### Agent Model Used

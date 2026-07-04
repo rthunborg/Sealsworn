@@ -2,6 +2,8 @@
 
 Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 1 Med / 2 Low. **No `[Review][Defer]` items** — nothing punted to this cross-story ledger. All three findings are self-contained edits to the appendix (`_bmad-output/planning-artifacts/ux-appendix-run-flow.md`) and are recorded in the story's `### Review Findings` as `[Review][Patch]` items (Med: Gap G1 mis-sources hero HP on `RunState`, which has no HP field; Low: §2.2 lists a `range` key that is actually `weapon_reach` on the attack-preview metadata; Low: §0.2 cross-references "§14" for the gap ledger, which is §16). No `[Review][Decision]` (no human call). This heading is retained for ledger completeness; there is nothing to carry forward from this story.
 
+Round 2 adversarial code review (auto-gds delegate, Opus 4.8 [1m], model-diverse second pass). Verdict **Approve** — 0 Critical / 0 High / 0 Med / 1 Low (new). All three Round 1 fixes verified in place and re-substantiated against source. **No `[Review][Defer]` items** — nothing punted to this ledger. The single new finding is a `[Review][Patch]` (Low): §0.4's layout-convention callout says "follows §13 (the global layout+accessibility pass)" but the layout+accessibility pass is §14 (§13 is Save/resume recovery states) — a one-word fix recorded in the story's `### Review Findings`. No `[Review][Decision]`. Still nothing to carry forward.
+
 ---
 
 ## Deferred from: code review of 9-5-finale-regression-and-run-length-tuning-hooks (2026-07-04)
