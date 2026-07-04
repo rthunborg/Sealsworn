@@ -145,7 +145,7 @@ FR61: First death must be able to show the line "Good. You remembered how to die
 
 FR62: First victory must be able to show the reveal "It did not die. It learned the way back."
 
-FR63: The Larval Avatar must be implemented as the only required MVP boss.
+FR63: The Larval Avatar must be implemented as the only required MVP boss. (Numbering note, 2026-07-04: this is the canonical implementation FR63. The design-time GDD separately uses "FR63" for named outpost/meta spaces, which traces to Story 8.6 — see the 2026-06-04 traceability map. Cite the canonical numbering.)
 
 FR64: The game must keep story discovery optional and must not require lore reading to understand the gameplay loop.
 
@@ -304,7 +304,7 @@ FR30: Epic 10 - Successful run length target is validated during MVP tuning.
 
 FR31: Epic 9 - Defeating the Larval Avatar is the MVP finale victory condition.
 
-FR32: Epic 8 - Death returning to the outpost belongs to the roguelite return loop.
+FR32: Epic 8 - Death returning to the outpost belongs to the roguelite return loop. (As-built note, 2026-07-04: Epic 8/9 prove the death RESOLUTION path with driven deaths; the LIVE hero-death trigger — combat loop detecting hero 0 HP — lands in Epic 11, Story 11.2.)
 
 FR33: Epic 4 - Combat and elite combat node types belong to run-map progression.
 
@@ -400,6 +400,10 @@ This supplemental map preserves the existing 70-item implementation FR inventory
 - GDD FR112, FR113, and FR114: MVP visual/audio baseline and preview/commit cue mapping -> Story 10.7.
 - Placeholder replacement/de-scope checkpoints from the readiness report -> Stories 4.5, 7.5, 8.2, and 10.7.
 
+### 2026-07-04 Sprint Change Traceability (Epic 11 insertion)
+
+Per `sprint-change-proposal-2026-07-04.md` (trigger: `epic-9-retro-2026-07-04.md` §10): Epic 11 (Live Run Flow, HUD, and Outpost) added and sequenced between Epic 9 and Epic 10's Stories 10.4-10.7. It consolidates the deferred live layer recorded across Epics 7-9: live run combat + hero-death source (FR32 loss half) -> Story 11.2; run-flow scenes/HUD -> Story 11.3; live affinity call sites + HUD/VFX -> Story 11.4; outpost scene + reveal renders (FR61/FR62) + summary coupling -> Story 11.5; meta spend/application (FR59) -> Story 11.6; the pre-scene-work UX appendix (also 10.7 AC5's input) -> Story 11.1. Epic numbering of existing epics is unchanged by design (live cross-references preserved).
+
 ## Epic List
 
 ### Epic 1: Core Tactical Combat Slice
@@ -481,6 +485,14 @@ Players receive a stable MVP experience validated against performance, readabili
 **FRs covered:** FR30, FR70.
 
 **Implementation notes:** This epic validates cross-cutting NFRs, device tiers, debug tooling, headless seed runs, and milestone gates while preserving a playable build.
+
+### Epic 11: Live Run Flow, HUD, and Outpost
+
+Players can play the full descent hands-on — launch, choose a class, fight generated levels and the Larval Avatar on the live tactical board, win or die for real, see the reveal lines and run summary, spend meta progress at the outpost, and start another descent.
+
+**FRs covered:** live/on-screen delivery of FR1, FR31, FR32 (live loss trigger), FR54-FR58 (felt affinity/risk pressure), FR59 (meta spend/application), FR60, FR61, FR62 (summary and reveal renders), FR64, FR65, and the FR68 flow expansion (run map, outpost/meta menu, run summary). Domain logic for these shipped in Epics 1-9; this epic wires live call sites, scenes, and HUD. Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
+
+**Implementation notes:** Added 2026-07-04 via sprint change proposal (see `sprint-change-proposal-2026-07-04.md`) to consolidate the deliberately deferred live layer from Epics 7-9. **Sequencing: executes between Epic 9 and Epic 10's Stories 10.4-10.7** (10.1-10.3 are independent). UI observes view models through the command bridge and owns no tactical truth; scenes live under `godot/scenes/ui/` and `godot/scenes/game/`. The live wiring must preserve interrupted==uninterrupted determinism, the 23-key `RunSnapshot` gate, `ProfileSnapshot.SCHEMA_VERSION == 1`, the 7 named RNG streams, and every pinned fingerprint. Consumes (does not rebuild): the Epic-2 tactical presentation contracts, 7.4/7.5 affinity effects, 8.5/9.4 narrative beat DTOs, 8.6 `OutpostViewModel`, 9.3 `BossTurnResolver` live loop, 9.5 `resolve_boss_victory()`.
 
 ## Epic 1: Core Tactical Combat Slice
 
@@ -2338,6 +2350,8 @@ So that reaching the boss feels like a fair culmination of the MVP run.
 
 Players receive a stable MVP experience validated against performance, readability, save/resume reliability, generator safety, run length, comprehension, and replay-intent signals.
 
+> **Sequencing note (2026-07-04, sprint change):** Stories 10.4, 10.5, 10.6, and 10.7 require **Epic 11 (Live Run Flow, HUD, and Outpost)** to land first — their playtest sessions, screen audits, loop gate, and UX gate assume a hands-off-playable loop that Epic 11 wires. Stories 10.1-10.3 are independent of Epic 11.
+
 ### Story 10.1: Device Tiers and Performance Budgets
 
 As a player,
@@ -2429,6 +2443,8 @@ So that procedural variety remains trustworthy.
 
 ### Story 10.4: Gameplay Comprehension and Playtest Checklist
 
+**Prerequisite (2026-07-04):** Epic 11 — observed sessions require the live playable loop (fight, die or win, reveal, outpost, another descent).
+
 As a player,
 I want the first MVP playtest to reveal whether the core loop is understandable,
 So that tuning focuses on real friction rather than guesswork.
@@ -2472,6 +2488,8 @@ So that tuning focuses on real friction rather than guesswork.
 
 ### Story 10.5: Accessibility and Readability Audit
 
+**Prerequisite (2026-07-04):** Epic 11 — the audited surfaces (tactical HUD in-run, route map, outpost, run summary, reveal beats) must exist as screens first.
+
 As a player,
 I want critical tactical information to remain accessible in the MVP build,
 So that readability problems are caught before broader testing.
@@ -2494,6 +2512,8 @@ So that readability problems are caught before broader testing.
 **And** no required information is audio-only.
 
 ### Story 10.6: MVP Readiness Gate and Playable Build Preservation
+
+**Prerequisite (2026-07-04):** Epic 11 — the loop gate's steps (fight, die or win, view summary, start another descent) must be live, not driven/test-resolved.
 
 As a player,
 I want each milestone and the final MVP candidate to remain playable,
@@ -2531,6 +2551,8 @@ So that the project does not accumulate disconnected systems.
 
 ### Story 10.7: Asset, Audio, Placeholder, and UX Readiness Gate
 
+**Prerequisite (2026-07-04):** Epic 11 — the UX appendix (Story 11.1) and the screen surfaces (11.3/11.5) are inputs to this gate.
+
 As a player,
 I want the MVP build to use readable visuals and feedback even where production assets are deferred,
 So that placeholders do not hide missing gameplay communication or readiness risk.
@@ -2561,3 +2583,164 @@ So that placeholders do not hide missing gameplay communication or readiness ris
 **When** UX prerequisites are checked
 **Then** a lightweight UX appendix or equivalent implementation notes exist for tactical HUD, preview/confirm, inspect, passive modal, run map, outpost/meta, run summary, settings, and save/resume recovery
 **And** the absence of a standalone UX document remains non-blocking only for domain-first Epic 1 work and view-model/command-bridge contracts.
+
+## Epic 11: Live Run Flow, HUD, and Outpost
+
+Players can play the full descent hands-on — launch, choose a class, fight generated levels and the Larval Avatar on the live tactical board, win or die for real, see the reveal lines and run summary, spend meta progress at the outpost, and start another descent.
+
+> **Sequencing:** inserted 2026-07-04 via sprint change proposal; executes between Epic 9 and Epic 10's Stories 10.4-10.7. See the Epic List entry for FR coverage and implementation notes.
+
+### Story 11.1: Run-Flow UX Appendix and Screen Contracts
+
+As a player,
+I want the MVP's screens to follow deliberate, readable designs,
+So that the run flow communicates tactical and meta information clearly on phone and desktop.
+
+**Prerequisite discharge:** this story delivers the "lightweight UX appendix" required by the UX Design Requirements readiness patch note before UI-heavy scene implementation, and consumed by Story 10.7's UX prerequisite check.
+
+**Acceptance Criteria:**
+
+**Given** UI-heavy scene implementation is about to begin
+**When** the lightweight UX appendix is authored under planning artifacts
+**Then** it covers tactical HUD, preview/confirm states, inspect panel, passive modal, run map, outpost/meta menu, run summary, settings, and save/resume recovery states
+**And** it additionally covers the first-death and first-victory reveal moments with their skip/dismiss affordances and the manual-seed no-progression warning surface.
+
+**Given** the appendix is authored
+**When** each screen section is reviewed
+**Then** it maps to the existing view-model/command-bridge contracts (tactical view models, reward/passive modal contract, `HeroSelectViewModel`, `OutpostViewModel`, `RunSummary`, narrative beat DTOs) without inventing new domain surfaces
+**And** any contract gap it identifies is recorded as an explicit note for the owning story rather than silently expanded scope.
+
+**Given** the appendix exists
+**When** layout coverage is reviewed
+**Then** phone portrait, phone landscape, tablet, and desktop-style layouts are addressed for each screen (FR66)
+**And** critical information avoids color-only meaning and supports scalable text (NFR8, NFR9).
+
+### Story 11.2: Live Combat Loop and Hero Death Source
+
+As a player,
+I want fights to be played out for real and death to actually end a run,
+So that a descent can be won or lost by what happens on the board.
+
+**Acceptance Criteria:**
+
+**Given** a run enters a combat, elite combat, or boss node
+**When** the node resolves in the live run flow
+**Then** resolution comes from live tactical play on the board state — player commands through the command bridge, enemy and boss turns through the existing turn resolvers
+**And** the v0 auto-resolve-to-success placeholder no longer decides live combat outcomes (it may remain for explicitly non-live simulation paths).
+
+**Given** the hero reaches 0 HP during any live encounter (level or boss)
+**When** the combat loop detects hero death
+**Then** it auto-fires the run-end resolution (`CompleteRunCommand` with the appropriate failure cause from `RUN_FAILED_CAUSES`) driving `PHASE_FAILED` and `next_destination == outpost`
+**And** FR32's loss condition is triggerable live, with the first-death latch recordable off the real terminal state.
+
+**Given** the Larval Avatar reaches 0 HP in the live flow
+**When** the boss victory resolves
+**Then** `RunOrchestrator.resolve_boss_victory()` gains its production call site (boss route node cleared, `resolve_run_end(victory)` driven, first-victory latch recorded via `RecordFirstVictoryCommand`)
+**And** `run_to_completion` can auto-play the full boss fight headlessly (both sides simulated) for seed-batch and simulation use.
+
+**Given** the live wiring lands
+**When** the headless suite and seed regressions run
+**Then** interrupted==uninterrupted determinism, the 23-key `RunSnapshot` gate, `ProfileSnapshot.SCHEMA_VERSION == 1`, the 7 named RNG streams, and every pinned fingerprint hold
+**And** forcing tests are added for defensive branches the live path makes reachable (the `_resolve_completed` step-2 restore; the `NodeResolvePlaceholderCommand._resolve_boss` atomicity twin if its branch is driven).
+
+### Story 11.3: Run Flow Scene Navigation and In-Run HUD
+
+As a player,
+I want to move through a whole descent on screen — from launch to class select to levels to the run's end,
+So that the roguelite loop is something I play rather than something tests prove.
+
+**Acceptance Criteria:**
+
+**Given** the game launches
+**When** I start a run
+**Then** `SceneManager` drives launch -> hero select -> route map -> tactical board per node -> run-end return
+**And** navigation follows `RunEndOutcome.next_destination` and the existing view-model contracts, with no scene owning tactical truth.
+
+**Given** I play a combat node
+**When** the tactical board hosts a generated level in-run
+**Then** movement/attack previews, two-step commit, inspect, the passive reward modal, and reward pickup flows work through the existing Epic 2/6 presentation contracts
+**And** the in-run HUD presents run context (HP, node progress, gold, inventory/passives access) per the 11.1 appendix.
+
+**Given** I quit and resume mid-run
+**When** the resume flow runs at a between-level boundary
+**Then** the run continues from the persisted snapshot with save/resume recovery states reachable through real screens
+**And** resumed outcomes match uninterrupted play (NFR13).
+
+**Given** phone portrait and desktop layouts
+**When** the full flow is exercised on both
+**Then** primary actions remain reachable and readable (FR66, NFR7)
+**And** layout changes never alter tactical rules.
+
+### Story 11.4: Live Affinity Pressure On Screen
+
+As a player,
+I want affinity levels to feel different and dangerous in real play,
+So that Scorched, Flooded, Cursed, and Darkness change my tactical choices, not just visuals.
+
+**Acceptance Criteria:**
+
+**Given** a run level carries an affinity
+**When** the level is played live
+**Then** the Epic-7 affinity effects receive their first live call sites (Darkness visibility/memory pressure, Scorched damage-over-time, Cursed rule-source, Flooded per its ratified MVP placeholder posture)
+**And** live effects match the headless-proven deterministic behavior (FR57).
+
+**Given** an affinity is active
+**When** the board and HUD present it
+**Then** the approved affinity treatments and readability cues make the affinity and its rule visible before and during play (FR55)
+**And** telegraphed danger remains inspectable through the existing inspect flow (FR12, FR58).
+
+**Given** Darkness is active in live play
+**When** fairness invariants are exercised on the live path
+**Then** the 7.6 fairness guardrails hold (no unavoidable damage from unseen space)
+**And** the darkness fairness queries remain the single authority the HUD reflects.
+
+### Story 11.5: Outpost Scene, Reveal Renders, and Another Descent
+
+As a player,
+I want to return to a real outpost after a run — see what happened, read the line, and descend again,
+So that the return loop and its story beats are experienced, not implied.
+
+**Acceptance Criteria:**
+
+**Given** a run ends in death or victory
+**When** I return to the outpost
+**Then** an outpost scene renders the `OutpostViewModel` contract (currency totals, named spaces, run summary, unlock progress)
+**And** starting another descent works through the `start_run_request`/`is_startable` seam (FR1 loop closure).
+
+**Given** the profile's first death or first victory has just been recorded
+**When** the outpost presents the narrative beat
+**Then** "Good. You remembered how to die." / "It did not die. It learned the way back." render as optional, skippable/dismissible beats (FR61, FR62, FR64, FR65)
+**And** skipping or dismissing is a pure presentation no-op that never blocks the outpost surface or a new descent.
+
+**Given** a profile load or write failure occurred
+**When** the outpost renders recovery
+**Then** the write-failure path uses the loaded-profile `_init` representation (real totals behind a retry banner) and the load-failure path uses the fresh-profile fallback
+**And** the previously untested loaded-profile + recovery combination gains its scene-level test (carried Epic-8 T4).
+
+**Given** the run summary displays
+**When** "Oath Shards earned" is shown
+**Then** the summary-to-profile coupling decision (carried Epic-8 T5 / Epic-9 T4) is made and implemented — display the awarded total on the summary or surface it via the outpost
+**And** manual-seed runs show their no-progression warning (FR28 surface).
+
+### Story 11.6: Meta Spend and Unlock Application
+
+As a player,
+I want to spend what I earn and feel meta progress apply,
+So that descents feed a shallow but real progression loop.
+
+**Acceptance Criteria:**
+
+**Given** the profile holds Oath Shards and unlock progress
+**When** I spend at the outpost's shallow meta menu (FR59)
+**Then** spend operations run as validated commands that emit deterministic domain events and persist through `ProfileRepository`
+**And** manual-seed-earned progress remains excluded end-to-end (FR28).
+
+**Given** an unlock's requirements are met and its effect applied
+**When** hero select next renders
+**Then** the applied unlock is reflected (locked-class hint -> actual selectability path per FR43), with meta power staying capped and sparse per the ratified GDD FR95 posture
+**And** the application flows profile -> class selectability through repositories/view models, never through scene-owned state.
+
+**Given** spends and applications exist
+**When** save/load and migration tests run
+**Then** profile round-trips cover the new spend state additively (no schema bump unless justified against the 8.7 migration matrix)
+**And** idempotency and caller-ordering safety match the run-end command family's standards.
