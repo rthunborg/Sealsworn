@@ -1,6 +1,10 @@
+---
+baseline_commit: ddf36629e11b1aa14a323fd1a3d9e3593fc9b178
+---
+
 # Story 11.1: Run-Flow UX Appendix and Screen Contracts
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -66,108 +70,111 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.1). Three AC groups (Given/W
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Create the appendix file and frame it (AC1, AC2, AC3)**
-  - [ ] Author `_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (recommended filename; if you
+- [x] **Task 1 — Create the appendix file and frame it (AC1, AC2, AC3)**
+  - [x] Author `_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (recommended filename; if you
         prefer, `ux-run-flow-appendix.md` — keep it discoverable by the `*ux*.md` glob the create-story /
-        readiness workflows use, and reference it from Story 10.7's UX-prerequisite check).
-  - [ ] Open with: purpose (the readiness prerequisite it discharges + the 10.7 AC5 input it feeds),
+        readiness workflows use, and reference it from Story 10.7's UX-prerequisite check). — DONE: file
+        authored + verified discoverable by the `{planning_artifacts}/*ux*.md` glob. Story 10.7 does NOT yet
+        exist as a file (Epic-10 §10.4–10.7 execute AFTER Epic 11 per the 2026-07-04 sprint change), so the
+        appendix self-documents the 10.7 AC5 linkage (§0.1); 10.7 cites it when authored.
+  - [x] Open with: purpose (the readiness prerequisite it discharges + the 10.7 AC5 input it feeds),
         scope (lightweight — screen intent + regions + states + contract bindings + layout + accessibility;
         NOT pixel comps or final art), and a one-line pointer to `game-architecture.md` (UI observes view
-        models through the command bridge; scenes own no tactical truth).
-  - [ ] State the four target layout profiles up front using the EXISTING stable ids so every screen
+        models through the command bridge; scenes own no tactical truth). — DONE: §0.1–§0.3.
+  - [x] State the four target layout profiles up front using the EXISTING stable ids so every screen
         section can reference them: `phone_portrait`, `phone_landscape`, `tablet`, `desktop`
-        (`TacticalLayoutProfile.PROFILE_*` — do NOT invent new profile names).
-  - [ ] State the accessibility contract up front (color-independence + scalable text) by referencing the
+        (`TacticalLayoutProfile.PROFILE_*` — do NOT invent new profile names). — DONE: §0.4.
+  - [x] State the accessibility contract up front (color-independence + scalable text) by referencing the
         EXISTING vocabulary: non-color channels `shape`/`icon`/`label`/`pattern`/`text` and severities
         `info`/`warning`/`blocked`/`danger` (`TacticalAccessibilityModel`), and the clamped text-scale bound
-        (`TacticalTextScale`). Every screen inherits this; per-screen sections only note deviations/specifics.
+        (`TacticalTextScale`). Every screen inherits this; per-screen sections only note deviations/specifics. — DONE: §0.5.
 
-- [ ] **Task 2 — Tactical HUD + preview/confirm states + inspect panel sections (AC1, AC2, AC3)**
-  - [ ] Tactical HUD: bind to `TacticalBoardViewModel.to_dictionary()` (composes `board` + `layout` +
+- [x] **Task 2 — Tactical HUD + preview/confirm states + inspect panel sections (AC1, AC2, AC3)**
+  - [x] Tactical HUD: bind to `TacticalBoardViewModel.to_dictionary()` (composes `board` + `layout` +
         `accessibility` slots) and the `TacticalLayoutProfile` region plan (`board`, `preview`,
         `confirm_cancel`, `inspect`, `status`, `log_or_outcome`). Document the in-run HUD context 11.3
-        needs (HP, node progress, gold, inventory/passives access) — see Contract Gap G1 for HP/node/gold.
-  - [ ] Preview/confirm states: bind to the command bridge intents `move` / `attack` / `inspect`
+        needs (HP, node progress, gold, inventory/passives access) — see Contract Gap G1 for HP/node/gold. — DONE: §1 (region→slot map in §1.2; G1 in §1.3).
+  - [x] Preview/confirm states: bind to the command bridge intents `move` / `attack` / `inspect`
         (`TacticalCommandBridge`), the two-step attack commit (`TacticalAttackCommitFlow`), and the
         preview view models (`TacticalMovementPreview`, `TacticalAttackPreview`, `TacticalPreviewView`).
         Document the preview-vs-committed distinction cues (`feedback_preview` / `feedback_committed`, each
-        with a non-color channel so it survives with audio muted).
-  - [ ] Inspect panel: bind to `TacticalInspectView` + the bridge `inspect` intent; cover FR12 fields
+        with a non-color channel so it survives with audio muted). — DONE: §2 (bridge §2.2; distinction §2.3).
+  - [x] Inspect panel: bind to `TacticalInspectView` + the bridge `inspect` intent; cover FR12 fields
         (tile, terrain, occupant, move cost, attack preview, hazard notes, telegraphed danger) and the
-        three visibility tiers (`inspect_visible` / `inspect_memory` / `inspect_hidden_unexplored`).
+        three visibility tiers (`inspect_visible` / `inspect_memory` / `inspect_hidden_unexplored`). — DONE: §3 (FR12 fields + tiers §3.2).
 
-- [ ] **Task 3 — Passive modal + run map + hero-select sections (AC1, AC2, AC3)**
-  - [ ] Passive modal: bind to `PassiveRewardModalViewModel` (pinned `MODAL_KEYS`: `has_passive`,
+- [x] **Task 3 — Passive modal + run map + hero-select sections (AC1, AC2, AC3)**
+  - [x] Passive modal: bind to `PassiveRewardModalViewModel` (pinned `MODAL_KEYS`: `has_passive`,
         `display_name`, `flavor`, `exact_mechanical_effects`, `consume_text`, `destroy_text`,
         `has_unknown_consequences`, `consequences_text`) + the Consume/Destroy two-step commit
         (`PassiveRewardCommitFlow`). Note FR55 (clear upside/downside before acceptance) and that `icon`
-        is an id/placeholder string, not art.
-  - [ ] Run map: bind to the route read surface (`RouteState` / `RouteNode`; node types via
+        is an id/placeholder string, not art. — DONE: §4 (full MODAL_KEYS + two-step §4.2; icon-as-id §4.2).
+  - [x] Run map: bind to the route read surface (`RouteState` / `RouteNode`; node types via
         `RouteNode.TYPE_*`). If no dedicated route VIEW model exists, record it as Contract Gap G2 for the
-        owning story (11.3) — do NOT design a new route view model here.
-  - [ ] Hero select: bind to `HeroSelectViewModel` (pinned `ENTRY_KEYS`: `class_id`, `display_name`,
+        owning story (11.3) — do NOT design a new route view model here. — DONE: §5 (RouteState/RouteNode §5.2; G2).
+  - [x] Hero select: bind to `HeroSelectViewModel` (pinned `ENTRY_KEYS`: `class_id`, `display_name`,
         `selectable`, `unlock_hint`) + `is_class_selectable()`. Note locked-class grey-out + unlock hint,
-        and that the authoritative gate is `RunStartCommand` (a mis-enabled confirm cannot start a locked run).
+        and that the authoritative gate is `RunStartCommand` (a mis-enabled confirm cannot start a locked run). — DONE: §6 (ENTRY_KEYS + is_class_selectable §6.2; RunStartCommand gate §6.2).
 
-- [ ] **Task 4 — Outpost/meta menu + run summary + reveal beats + manual-seed warning (AC1, AC2, AC3)**
-  - [ ] Outpost/meta menu: bind to `OutpostViewModel.to_dictionary()` (pinned `DICTIONARY_KEYS`) — the
+- [x] **Task 4 — Outpost/meta menu + run summary + reveal beats + manual-seed warning (AC1, AC2, AC3)**
+  - [x] Outpost/meta menu: bind to `OutpostViewModel.to_dictionary()` (pinned `DICTIONARY_KEYS`) — the
         four named spaces (`memory_archive`, `hall_of_oaths`, `seal_table`, `descent_stair`, each marked
         `deferred` in v0), the aggregated meta readout (`oath_shards` read from the PROFILE, `echoes`,
         `unlock_progress`, `class_mastery`, `first_death_recorded`), the embedded `run_summary` /
         `first_death_beat` sub-dicts, and the start-another-descent affordance
-        (`start_run_request()` → `is_startable`). Document the recovery surface (see Task 5).
-  - [ ] Run summary: bind to `RunSummary.to_dictionary()` (pinned `DICTIONARY_KEYS` + `RUN_SCOPED_KEYS`)
+        (`start_run_request()` → `is_startable`). Document the recovery surface (see Task 5). — DONE: §7 (DICTIONARY_KEYS + named spaces + start seam §7.2; recovery cross-ref §13).
+  - [x] Run summary: bind to `RunSummary.to_dictionary()` (pinned `DICTIONARY_KEYS` + `RUN_SCOPED_KEYS`)
         — cause of death/victory (`outcome_or_cause`), nodes cleared, boss/elite progress, passives
         consumed/destroyed, notable loot, gold/curse/corruption, seed, manual-seed flag. Cover the FR60
         GDD field list. Record the "Oath Shards earned" display as Contract Gap G3 (the summary reports
         `oath_shards_earned == 0` / `not_yet_supported`; the AWARDED total lives on the profile — the
-        coupling decision is owned by Story 11.5, NOT designed-resolved here).
-  - [ ] First-death reveal moment: bind to `FirstDeathNarrativeBeat` (`has_beat`, `line`, `is_skippable`)
+        coupling decision is owned by Story 11.5, NOT designed-resolved here). — DONE: §8 (all pinned sub-dicts §8.2; G3 both options §8.3).
+  - [x] First-death reveal moment: bind to `FirstDeathNarrativeBeat` (`has_beat`, `line`, `is_skippable`)
         — line "Good. You remembered how to die." (FR61). Document the skip/dismiss affordance as a PURE
         presentation no-op (dismiss mutates nothing; the flag is set independently by
         `RecordFirstDeathCommand`) and that it is OFF the critical path (never blocks the outpost/another
-        descent) (FR64, FR65).
-  - [ ] First-victory reveal moment: bind to `FirstVictoryRevealBeat` (`has_beat`, `line`, `is_skippable`)
+        descent) (FR64, FR65). — DONE: §9 (line verbatim + pure-no-op §9.3 + off-critical-path §9.3).
+  - [x] First-victory reveal moment: bind to `FirstVictoryRevealBeat` (`has_beat`, `line`, `is_skippable`)
         — line "It did not die. It learned the way back." (FR62). Same skip/dismiss no-op + off-critical-path
-        posture, opposite terminal phase.
-  - [ ] Manual-seed no-progression warning surface: bind to the eligibility flags already on the read
+        posture, opposite terminal phase. — DONE: §10 (line verbatim + §10.3 twin posture).
+  - [x] Manual-seed no-progression warning surface: bind to the eligibility flags already on the read
         surfaces (`RunSummary.is_manual_seed` / `meta_progression_eligible`;
         `OutpostViewModel.start_run_request().is_manual_seed`). Document WHERE the warning renders (run
-        summary + outpost) and that it is a READOUT of existing flags — no new field (FR28).
+        summary + outpost) and that it is a READOUT of existing flags — no new field (FR28). — DONE: §11 (flags + render locations + no-new-field §11.2).
 
-- [ ] **Task 5 — Settings + save/resume recovery states sections (AC1, AC2, AC3)**
-  - [ ] Settings screen: bind to `SettingsSnapshot` / `SettingsManager` / `SettingsApplyService` /
+- [x] **Task 5 — Settings + save/resume recovery states sections (AC1, AC2, AC3)**
+  - [x] Settings screen: bind to `SettingsSnapshot` / `SettingsManager` / `SettingsApplyService` /
         `SettingsRepository`. There is NO dedicated settings VIEW model — record that as Contract Gap G4
         for the owning story (the settings scene reads the snapshot directly, or a thin projection is
         added by the owning story). Include the ratified difficulty NON-GOAL guardrail: NO selectable
-        difficulty ladder appears in MVP (negative readiness criterion) — settings must not present one.
-  - [ ] Save/resume recovery states: cover the between-level resume flow surfaces and the structured
+        difficulty ladder appears in MVP (negative readiness criterion) — settings must not present one. — DONE: §12 (PREFERENCE_KEYS + G4 §12.2; difficulty non-goal §12.3).
+  - [x] Save/resume recovery states: cover the between-level resume flow surfaces and the structured
         recovery states the screens must render — the run save/resume path (`SaveManager` route delegators
         → `RunResumeService`; structured `ActionResult` codes: `save_not_found`, `save_parse_failed`,
         `unsupported_save_schema`, `invalid_tactical_snapshot`, `invalid_rng_snapshot`) AND the profile
         recovery surface on the outpost (`OutpostViewModel.recovery_state` {`has_recovery`, `code`,
         `is_recoverable`} + the loaded-profile-behind-retry-banner vs fresh-profile-fallback distinction).
-        Note NFR13 (resumed outcomes match uninterrupted play) as the invariant these screens must respect.
+        Note NFR13 (resumed outcomes match uninterrupted play) as the invariant these screens must respect. — DONE: §13 (SaveManager→RunResumeService codes §13.2; both profile-recovery modes §13.2; NFR13 §13.4).
 
-- [ ] **Task 6 — Layout + accessibility coverage pass across ALL screens (AC3)**
-  - [ ] For EACH screen section, add the four-layout treatment: `phone_portrait` (primary), `phone_landscape`
+- [x] **Task 6 — Layout + accessibility coverage pass across ALL screens (AC3)**
+  - [x] For EACH screen section, add the four-layout treatment: `phone_portrait` (primary), `phone_landscape`
         (side-rail per `TacticalLayoutProfile._build_side_rail_layout`), `tablet`, `desktop` (comfortable
         density; wider panels). Emphasize the board stays the dominant/readable region and primary actions
-        stay reachable (min touch target 44×44) on the compact profiles (FR66, NFR7).
-  - [ ] For EACH screen section, state the color-independence handling (every critical meaning carries a
+        stay reachable (min touch target 44×44) on the compact profiles (FR66, NFR7). — DONE: §14.1 global pass + each screen's layout subsection.
+  - [x] For EACH screen section, state the color-independence handling (every critical meaning carries a
         non-color channel from the `TacticalAccessibilityModel` vocabulary) and scalable-text handling
-        (respects the `TacticalTextScale` clamp; labels+icons where needed) (NFR8, NFR9).
-  - [ ] Cross-check the affinity/inspect visual cues against the APPROVED affinity treatments already in the
+        (respects the `TacticalTextScale` clamp; labels+icons where needed) (NFR8, NFR9). — DONE: §14.2 global pass (per-screen cue table) + each screen's accessibility subsection.
+  - [x] Cross-check the affinity/inspect visual cues against the APPROVED affinity treatments already in the
         repo (`godot/assets/tiles/affinities/affinity.{scorched,flooded,cursed,darkness}.png`) and the
         Recraft UI-frame kit (button/panel/modal) — the appendix references these as the visual treatment
-        baseline for 11.4; it does NOT author new art.
+        baseline for 11.4; it does NOT author new art. — DONE: §14.3 (all four affinity PNGs verified present in repo; Recraft frame kit; §15 affinity read).
 
-- [ ] **Task 7 — Contract-gap ledger + owning-story handoff (AC2)**
-  - [ ] Consolidate every `Contract gap → <owning story>` note into a single "Contract Gaps" section at
+- [x] **Task 7 — Contract-gap ledger + owning-story handoff (AC2)**
+  - [x] Consolidate every `Contract gap → <owning story>` note into a single "Contract Gaps" section at
         the end of the appendix (G1..Gn), each naming the gap, the screen(s) affected, and the owning
         Epic-11 story. This is the AC2 deliverable that keeps scope explicit (see the seed list G1–G4 in
-        Dev Notes; add any further gaps you find during authoring).
-  - [ ] Do NOT resolve the gaps in this story. Recording them IS the work; the owning stories implement them.
+        Dev Notes; add any further gaps you find during authoring). — DONE: §16 ledger (G1–G4); no further gaps found (§16 note); non-gaps recorded §16.1.
+  - [x] Do NOT resolve the gaps in this story. Recording them IS the work; the owning stories implement them. — DONE: §16 records only; resolves none.
 
 ## Dev Notes
 
@@ -401,10 +408,58 @@ on THIS story:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (claude-opus-4-8[1m])
 
 ### Debug Log References
 
+- No code, tests, or headless-suite runs apply to this docs-only story (Story Type & Scope Boundary:
+  "No production Godot code … no tests"). The headless suite (166 PASS at Epic-9 close) is untouched.
+- Contract-verification method: every pinned key set cited in the appendix was read directly from source
+  before authoring (the "read the actual source before writing each section" Dev-Notes mandate). Verified
+  files: `tactical_board_view_model.gd`, `tactical_layout_profile.gd`, `tactical_accessibility_model.gd`,
+  `tactical_text_scale.gd`, `tactical_inspect_view.gd`, `tactical_attack_commit_flow.gd`,
+  `tactical_command_bridge.gd`, `tactical_attack_preview.gd`, `tactical_movement_preview.gd`,
+  `passive_reward_modal_view_model.gd`, `passive_reward_commit_flow.gd`, `hero_select_view_model.gd`,
+  `outpost_view_model.gd`, `run_summary.gd`, `run_end_outcome.gd`, `first_death_narrative_beat.gd`,
+  `first_victory_reveal_beat.gd`, `route_state.gd`, `route_node.gd`, `settings_snapshot.gd`,
+  `save_manager.gd` (route delegators), `run_resume_service.gd` (structured codes), `affinity_view_model.gd`,
+  `darkness_read_view.gd`. Both narrative lines confirmed verbatim; the four affinity treatment PNGs
+  confirmed present in `godot/assets/tiles/affinities/`.
+
 ### Completion Notes List
 
+- Single deliverable authored: `_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (18 sections,
+  §0–§17). Discoverable by the `{planning_artifacts}/*ux*.md` glob (verified).
+- **AC1 met:** every roster screen has a section — §1 tactical HUD, §2 preview/confirm, §3 inspect, §4
+  passive modal, §5 run map, §6 hero select, §7 outpost/meta, §8 run summary, §12 settings, §13 save/resume
+  recovery — PLUS §9 first-death reveal + §10 first-victory reveal (both with skip/dismiss) + §11 manual-seed
+  no-progression warning.
+- **AC2 met:** each screen section names the exact existing contract(s) + the pinned key/method it binds to
+  (no invented surface); the four seed gaps are recorded as `Contract gap → owning story` notes and
+  consolidated in the §16 ledger (G1 HUD run-context→11.3, G2 route VM→11.3, G3 Oath-Shards summary↔profile
+  coupling→11.5, G4 settings VM→settings-scene owner). No further gaps found during authoring; §16.1 records
+  two explicit NON-gaps (no move commit-flow VM; no fail-loud table to extend for 11.1) so the scene stories
+  don't hunt for them.
+- **AC3 met:** §14 addresses all four layout profiles (`phone_portrait`/`phone_landscape`/`tablet`/`desktop`
+  via the existing `TacticalLayoutProfile.PROFILE_*` ids) + color-independence (the `shape`/`icon`/`label`/
+  `pattern`/`text` vocabulary) + scalable text (the `TacticalTextScale [0.85, 2.0]` clamp) for every screen;
+  each per-screen section also carries its own layout+accessibility subsection.
+- Scope held: ZERO production code / scenes / tests / save schema / RNG / content touched. The appendix maps
+  to EXISTING pinned surfaces only; it invents no view model, DTO, command, event, or field.
+- Story 10.7 does NOT yet exist as a file (Epic-10 §10.4–10.7 execute AFTER Epic 11 per the 2026-07-04 sprint
+  change), so the Task-1 "reference from Story 10.7's UX-prerequisite check" subtask is satisfied by the
+  appendix self-documenting the 10.7 AC5 linkage (§0.1); 10.7 will cite the appendix when authored. No 10.7
+  file was created (out of scope for this docs story, and creating a not-yet-scheduled story would be an
+  invention).
+
 ### File List
+
+- `_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (NEW — the UX appendix; the story's single deliverable)
+- `_bmad-output/implementation-artifacts/11-1-run-flow-ux-appendix-and-screen-contracts.md` (MODIFIED — frontmatter `baseline_commit`, tasks/subtasks checked, Dev Agent Record, Change Log, Status)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED — story status ready-for-dev → in-progress → review; `last_updated`)
+
+### Change Log
+
+| Date | Change |
+|---|---|
+| 2026-07-04 | Authored the run-flow UX appendix (`ux-appendix-run-flow.md`) — 13 screen sections + 2 reveal beats + manual-seed warning + the four-layout/accessibility pass + affinity read + the G1–G4 contract-gap ledger, all bound to existing pinned view-model/read-surface/command-bridge contracts (no new domain surface). Marked all Tasks 1–7 complete; moved story to review. |
