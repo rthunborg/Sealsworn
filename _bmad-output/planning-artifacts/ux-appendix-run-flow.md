@@ -26,7 +26,7 @@ pinned key/method it reads); the four-layout treatment; and the accessibility ha
 
 **Out of scope (owned by later stories):** pixel comps; final art; a component library; new view models,
 DTOs, commands, events, or fields. Where a screen needs data the existing contracts do not expose, this
-appendix records it as an explicit **`Contract gap → <owning story>`** note (see §14) and does **not**
+appendix records it as an explicit **`Contract gap → <owning story>`** note (see §16) and does **not**
 design the missing surface.
 
 ### 0.3 The one architectural rule this appendix obeys
@@ -191,7 +191,9 @@ turn, outcome, event_log_summary, layout, accessibility
 11.3's HUD must present **run-level context** the tactical board does not carry: **hero HP, node progress
 along the route, gold, and inventory/passive access**. `TacticalBoardViewModel` is board + layout +
 accessibility only — it exposes **none** of these. This is **Contract gap G1** (§16, owned by 11.3): the
-fields exist in the domain (`RunState` hero HP; `RouteState.cleared_node_ids` + node count for progress;
+fields exist in the domain (**hero HP** — sourced during a level from the hero `TacticalEntityState` on the
+board / `baseline_hp` on the class `StartingKit`; there is **no** run-level HP field on `RunState`, which is
+part of why a run-HUD projection is needed; `RouteState.cleared_node_ids` + node count for progress;
 `RiskEconomyState.gold`; the run inventory / consumed-passive surfaces) but there is **no single run-HUD
 projection** aggregating them for the `status` region. This appendix records the need and the field list;
 it does **not** design the aggregating surface. Story 11.3 AC2 requires the HUD present this "per the 11.1
@@ -243,8 +245,10 @@ scene reads availability, it does not execute directly.
   commit_available, cue_ids, metadata:{path, movement_cost, movement_budget, blocked_reason}}`. Cue ids:
   `move_preview_valid`/`move_preview_invalid` + `commit_available`/`commit_unavailable`.
 - **`TacticalAttackPreview.from_query(...)`** → `{kind:"attack", available, reason, target_entity_id,
-  commit_available, cue_ids, metadata:{weapon_id, targeting_shape, range, distance, blocker_state,
-  blocker_ignored, expected_base_damage, warnings, effects, explanation}}`. Cue ids include
+  commit_available, cue_ids, metadata:{weapon_id, targeting_shape, weapon_reach, distance, blocker_state,
+  blocker_ignored, expected_base_damage, warnings, effects, explanation}}`. (The preview-VM metadata key
+  is `weapon_reach`; `range` is the DISTINCT command-bridge attack-metadata key — do not conflate them.)
+  Cue ids include
   `attack_preview_valid`/`_invalid`, `attack_preview_blocked_line`, `attack_preview_blocker_ignored`,
   `attack_preview_adjacent_warning`, `commit_available`/`_unavailable`.
 - These land in the tactical VM's `preview` slot (§1.2), normalized by
@@ -978,7 +982,7 @@ other screens all bind cleanly to existing pinned surfaces).
 
 | Gap | What it is | Screen(s) affected | Owning story |
 |---|---|---|---|
-| **G1** | **In-run HUD run context.** Hero HP, node progress along the route, gold, and inventory/passive access are NOT on `TacticalBoardViewModel` (board + layout + accessibility only). No single run-HUD projection aggregates them for the HUD `status` region. Fields needed: hero HP (from `RunState`), node progress (`RouteState.cleared_node_ids` + node count), gold (`RiskEconomyState.gold`), inventory/passive access (run inventory / consumed-passive surfaces). Record the need + fields; do not design the surface. | Tactical HUD (§1) | **11.3** |
+| **G1** | **In-run HUD run context.** Hero HP, node progress along the route, gold, and inventory/passive access are NOT on `TacticalBoardViewModel` (board + layout + accessibility only). No single run-HUD projection aggregates them for the HUD `status` region. Fields needed: hero HP (sourced during a level from the hero `TacticalEntityState` on the board / `baseline_hp` on the class `StartingKit`; there is NO run-level HP field on `RunState`), node progress (`RouteState.cleared_node_ids` + node count), gold (`RiskEconomyState.gold`), inventory/passive access (run inventory / consumed-passive surfaces). Record the need + fields; do not design the surface. | Tactical HUD (§1) | **11.3** |
 | **G2** | **Route/run-map view model.** No dedicated route VIEW model exists; the run map reads `RouteState` / `RouteNode` directly today. A thin route projection MAY be added by the owning story. Do not design a new route VM here. | Run map (§5) | **11.3** |
 | **G3** | **"Oath Shards earned" summary↔profile coupling.** `RunSummary.profile_meta.oath_shards_earned` stays `0` / `not_yet_supported`; the AWARDED total lives on `profile.oath_shards` (surfaced via `OutpostViewModel.oath_shards`). The coupling decision (display the awarded total on the summary vs surface it via the outpost) is a deliberate deferral (Epic-8 T5 / Epic-9 T4). Document both options (§8.3); do not resolve. | Run summary (§8) | **11.5** (AC4) |
 | **G4** | **Settings view model.** No settings VIEW model exists; the settings scene reads `SettingsSnapshot` directly (through `SettingsManager`). The owning story reads the snapshot or adds a thin projection. Do not design one here. | Settings (§12) | settings-scene owner (**11.3 or 11.5** per the eventual scene split) |

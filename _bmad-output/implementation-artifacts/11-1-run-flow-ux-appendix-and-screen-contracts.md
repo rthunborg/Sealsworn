@@ -404,6 +404,84 @@ on THIS story:
   `_bmad-output/implementation-artifacts/epic-9-retro-2026-07-04.md` §7, §8 (Action P2 atomic finalize; T1
   the run-flow/HUD + outpost story = Epic 11), §10.
 
+## Review Findings
+
+**Round 1 of 3**
+
+Adversarial code review (auto-gds delegate, Opus 4.8 [1m], 2026-07-04). This is a DOCUMENTATION / UX-design
+story; the deliverable under review is `_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (plus the
+story-file + `sprint-status.yaml` bookkeeping). Review dimensions: contract accuracy against the actual
+GDScript source (pinned key sets, class/view-model/command-bridge/method names, constant values, verbatim
+narrative lines), AC1/AC2/AC3 coverage, internal consistency, and invented-surface errors. No production
+`godot/` code, scene, test, save-schema, RNG, or content was touched (verified) — the headless suite is
+unaffected.
+
+**Verdict: Approve** — 0 Critical / 0 High / 1 Med / 2 Low. The appendix's contract bindings are accurate:
+every pinned key set, method signature, constant, and narrative line spot-checked against source matches
+(details below). AC1 (roster + 2 reveal beats + manual-seed warning), AC2 (per-screen pinned-key bindings +
+G1–G4 gap ledger, no invented surface), and AC3 (four profiles + color-independence + scalable text) are all
+met. The three findings are localized accuracy/navigation fixes to the appendix; none blocks the paper design
+or the downstream scene stories.
+
+Contract-accuracy verification performed (all MATCH source unless flagged in a finding): `TacticalBoardViewModel`
+top-level projection keys (§1.2); `TacticalLayoutProfile.PROFILE_*` ids + region vocabulary + `DEFAULT_MINIMUM_TOUCH_TARGET
+= Vector2(44,44)` (§0.4/§14); `TacticalAccessibilityModel` `CHANNEL_*`/`SEVERITY_*` + the two feedback cues +
+`affinity_scorched_hazard`/`affinity_pathing_pressure` + Darkness cues (§0.5/§2.3/§3/§15); `TacticalTextScale`
+`[0.85, 2.0]` default `1.0` (§0.5/§12); `TacticalInspectView.from_context` fields + visibility-tier cues (§3.2);
+`TacticalCommandBridge.build_command` intents `move`/`attack`/`inspect` + `unsupported_intent` + result kinds
+(§2.2); `TacticalAttackCommitFlow.to_dictionary()` state + methods + `MODE_*` (§2.2); `TacticalMovementPreview`/
+`TacticalAttackPreview` shapes + cue ids (§2.2); `PassiveRewardModalViewModel.MODAL_KEYS` (10 keys incl.
+`passive_id`) + `PassiveRewardCommitFlow.to_dictionary()`/methods (§4.2); `HeroSelectViewModel.ENTRY_KEYS` +
+`is_class_selectable` + `ClassRepository.BASELINE_CLASS_IDS` order `warrior/pyromancer/ranger/necromancer/shadeblade`
+(§6.2); `OutpostViewModel.DICTIONARY_KEYS` (13) + `RECOVERY_STATE_KEYS` + `NAMED_SPACE_KEYS` + `NAMED_SPACES`
+(4 spaces, all `deferred`, `maps_to` values) + `START_REQUEST_KEYS` + both `for_recovery` modes (§7.2/§13.2);
+`RunSummary.DICTIONARY_KEYS`/`RUN_SCOPED_KEYS`/`PROFILE_META_KEYS`/`CONTENT_UNLOCK_KEYS` + `not_yet_supported`
+names `oath_shards_earned` (§8.2); `FirstDeathNarrativeBeat`/`FirstVictoryRevealBeat` `DICTIONARY_KEYS`
+(`has_beat/line_id/line/is_skippable`) + both lines VERBATIM ("Good. You remembered how to die." / "It did not
+die. It learned the way back.") (§9.2/§10.2); `RouteState` methods + `eligible_choice_ids` vs `available_choice_ids`
+distinction + `RouteNode.TYPE_*`/`REVEAL_*`/`CLUE_*` (§5.2); `SettingsSnapshot.PREFERENCE_KEYS` + `[-60,0]` dB +
+`INPUT_SCHEMES` + `SCHEMA_VERSION==1` + difficulty-non-goal regression test (§12); `SaveManager` route delegators
+→ `RunResumeService` structured codes `save_not_found/save_open_failed/save_parse_failed/unsupported_save_schema/
+invalid_tactical_snapshot/missing_tactical_snapshot/invalid_rng_snapshot` (§13.2); `AffinityViewModel.MODAL_KEYS`/
+`RULE_KEYS` + `DarknessReadView.MODAL_KEYS` + the two Darkness cue-id constants (§15.2); the 7 RNG streams
+`map/level/combat/loot/rewards/events/cosmetic` + `RunSnapshot.SCHEMA_VERSION==1` (§0.6); all four affinity PNGs
+present in `godot/assets/tiles/affinities/` (§0/§14.3); no move commit-flow VM exists — the §16.1 non-gap is
+correct.
+
+- [x] **[Review][Patch] (Med) Gap G1 mis-sources hero HP on `RunState` — no such field exists.** §1.3 and the
+  §16 ledger (G1 row) attribute the HUD's needed hero-HP field to "hero HP (from `RunState`)". Verified against
+  `godot/scripts/run/run_state.gd`: `RunState` carries `phase, root_seed, is_manual_seed, meta_progression_eligible,
+  route, selected_class_id, starting_kit, rules_resolver, inventory, pending_reward_offer, risk_economy,
+  pending_event_offer, assigned_affinities` — there is **no** live hero-HP field. Hero HP is a tactical-board
+  concept (the hero `TacticalEntityState`'s HP during a level) with `baseline_hp` on the class `StartingKit`; it
+  is not a run-level `RunState` field. The gap itself (no run-HUD projection aggregates HP/node/gold/inventory
+  for the `status` region) is real and correctly recorded as owned by 11.3 — only the parenthetical field-source
+  for HP is wrong, and it would send the 11.3 implementer to the wrong surface. Fix: correct the HP source in
+  §1.3 and the §16 G1 row (e.g. "hero HP — sourced during a level from the hero `TacticalEntityState` on the
+  board / `baseline_hp` on the class `StartingKit`; there is no run-level HP field, which is part of why a run-HUD
+  projection is needed"). The node-progress (`RouteState.cleared_node_ids` + node count) and gold
+  (`RiskEconomyState.gold`) sources in the same note were verified correct.
+
+- [x] **[Review][Patch] (Low) §2.2 attributes a `range` key to `TacticalAttackPreview` metadata; the actual key
+  is `weapon_reach`.** §2.2 (attack preview line) lists `metadata:{weapon_id, targeting_shape, range, distance,
+  blocker_state, ...}`. Verified against `godot/scripts/ui/view_models/tactical_attack_preview.gd`: the metadata
+  dict key is `weapon_reach` (`"weapon_reach": weapon_reach`), not `range`. `range` appears only in the
+  command-bridge attack metadata (`TacticalCommandBridge._command_metadata` copies `range` from the attack-command
+  validation), which is a different surface than the preview VM `§2.2` names. Fix: change `range` → `weapon_reach`
+  in the §2.2 attack-preview metadata enumeration (or note that `range` is the command-bridge metadata key while
+  `weapon_reach` is the preview-VM metadata key). The remaining metadata keys listed (`weapon_id, targeting_shape,
+  distance, blocker_state, blocker_ignored, expected_base_damage, warnings, effects, explanation`) were verified
+  present.
+
+- [x] **[Review][Patch] (Low) §0.2 points to "§14" for the contract-gap note location; the ledger is §16.** §0.2
+  reads "records it as an explicit `Contract gap → <owning story>` note (see §14) and does not design the missing
+  surface." §14 is the layout + accessibility coverage pass; the contract-gap ledger is **§16** (and §0.7's roster
+  table + §16 itself both correctly reference §16). Fix: change "(see §14)" → "(see §16)" in §0.2. Internal
+  navigation only — no contract-accuracy impact.
+
+No `[Review][Defer]` items (nothing punted to the cross-story ledger). No `[Review][Decision]` items (no human
+call required). All three findings are self-contained appendix edits the story owner can apply directly.
+
 ## Dev Agent Record
 
 ### Agent Model Used
