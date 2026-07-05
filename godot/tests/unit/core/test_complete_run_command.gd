@@ -11,6 +11,7 @@ extends "res://tests/unit/test_case.gd"
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const CompleteRunCommand = preload("res://scripts/core/commands/complete_run_command.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const ForcedStepTwoFailureRunState = preload("res://tests/unit/core/support/forced_step_two_failure_run_state.gd")
 const NodeResolvePlaceholderCommand = preload("res://scripts/core/commands/node_resolve_placeholder_command.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
@@ -25,6 +26,7 @@ func run() -> Dictionary:
 	_completion_resolves_to_completed_from_node_resolution()
 	_completion_resolves_to_completed_via_victory_outcome()
 	_two_step_completion_is_atomic_on_a_hypothetical_step_two_failure()
+	_two_step_completion_restores_phase_on_a_forced_step_two_failure()
 	_re_resolution_of_terminal_run_is_blocked_idempotent()
 	_double_fail_and_fail_then_complete_are_blocked()
 	_rejects_non_positive_sequence_id_first_with_no_mutation()
@@ -48,6 +50,23 @@ func _active_run_on_node() -> RunState:
 	var route: RouteState = RouteState.new([start, node, boss], "node-1-0", ["node-0-0"])
 	var run: RunState = RunState.new(RunState.PHASE_ACTIVE_ROUTE, 4242, false, true, route)
 	assert_true(run.validate().succeeded, "Setup: the active-route run should validate.")
+	return run
+
+
+# Story 11.2: an ACTIVE_ROUTE forced-step-two-failure run (the ForcedStepTwoFailureRunState subclass) parked on a combat
+# node, mirroring _active_run_on_node()'s route shape so it validates + the completion is admitted. The subclass rejects
+# ONLY the step-2 COMPLETED transition; step 1 (ACTIVE_ROUTE -> NODE_RESOLUTION) succeeds.
+func _forced_step_two_run() -> RunState:
+	var start: RouteNode = RouteNode.new("node-0-0", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["node-1-0"])
+	var node: RouteNode = RouteNode.new("node-1-0", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["node-2-0"])
+	var boss: RouteNode = RouteNode.new("node-2-0", RouteNode.TYPE_BOSS, 2, RouteNode.REVEAL_REVEALED, [])
+	var route: RouteState = RouteState.new([start, node, boss], "node-1-0", ["node-0-0"])
+	var run: RunState = ForcedStepTwoFailureRunState.new()
+	run.phase = RunState.PHASE_ACTIVE_ROUTE
+	run.root_seed = 4242
+	run.is_manual_seed = false
+	run.meta_progression_eligible = true
+	run.route = route
 	return run
 
 
@@ -239,6 +258,37 @@ func _two_step_completion_is_atomic_on_a_hypothetical_step_two_failure() -> void
 		# COMPLETED or, on a step-2 failure, restores ACTIVE_ROUTE — never NODE_RESOLUTION).
 		assert_false(run.phase == RunState.PHASE_NODE_RESOLUTION, "The two-step must NEVER leave the run parked in NODE_RESOLUTION (%s)." % String(outcome))
 		assert_equal(run.phase, RunState.PHASE_COMPLETED, "A committed %s two-step must reach COMPLETED (terminal)." % String(outcome))
+
+
+# ---- Story 11.2 (AC4 Task 4, Epic-9 retro T3): the step-2-failure restore is now DRIVEN (forcing test) --------------
+
+func _two_step_completion_restores_phase_on_a_forced_step_two_failure() -> void:
+	# Story 11.2 makes the ACTIVE_ROUTE -> NODE_RESOLUTION -> COMPLETED two-step REACHABLE for real (the live victory path,
+	# AC3). The step-2 restore (run.phase = phase_before at complete_run_command.gd:243) was UNREACHABLE (both edges always
+	# legal), so the sibling test above asserts only the observable invariant. HERE a TEST-ONLY RunState subclass FORCES
+	# step 2 (NODE_RESOLUTION -> COMPLETED) to reject while step 1 (ACTIVE_ROUTE -> NODE_RESOLUTION) succeeds, DRIVING the
+	# restore branch: the command must RESTORE the run to byte-identical phase_before (ACTIVE_ROUTE) — NOT leave it parked
+	# in the intermediate NODE_RESOLUTION phase — and surface a structured wrong_run_phase error with ZERO events.
+	for outcome: StringName in [&"completed", &"victory"]:
+		var run: RunState = _forced_step_two_run()
+		assert_true(run.validate().succeeded, "Setup: the forced-failure run should validate.")
+		assert_equal(run.phase, RunState.PHASE_ACTIVE_ROUTE, "Setup: the run starts in ACTIVE_ROUTE (the two-step source).")
+		var phase_before: String = String(run.phase)
+		var before_dict: Dictionary = run.to_dictionary()
+
+		var resolved: ActionResult = CompleteRunCommand.new(outcome, 1).execute(run)
+
+		# The command surfaces the step-2 failure as a structured wrong_run_phase error with ZERO events.
+		assert_true(resolved.is_error(), "A forced step-2 failure (%s) must surface a structured error." % String(outcome))
+		assert_equal(resolved.error_code, &"wrong_run_phase", "A forced step-2 failure uses the stable wrong_run_phase code (%s)." % String(outcome))
+		assert_false(resolved.has_events(), "A forced step-2 failure must emit ZERO events (%s)." % String(outcome))
+		# The forcing seam actually fired (step 2 was reached + rejected — not a step-1 short-circuit).
+		assert_true(run.forced_step_two_rejected, "The forcing seam must have rejected the step-2 COMPLETED transition (%s)." % String(outcome))
+		# ⭐ THE ATOMICITY RESTORE (the T3 forcing assertion): the run is restored to byte-identical phase_before — NOT parked
+		# in the intermediate NODE_RESOLUTION phase.
+		assert_equal(String(run.phase), phase_before, "A forced step-2 failure RESTORES the run to phase_before (ACTIVE_ROUTE), not NODE_RESOLUTION (%s)." % String(outcome))
+		assert_false(run.phase == RunState.PHASE_NODE_RESOLUTION, "A forced step-2 failure must NOT leave the run parked in NODE_RESOLUTION (%s)." % String(outcome))
+		assert_equal(run.to_dictionary(), before_dict, "A forced step-2 failure leaves the run BYTE-IDENTICAL (the atomicity fix — no mutation on reject) (%s)." % String(outcome))
 
 
 # ---- AC3: idempotency / no-double-grant -----------------------------------------------------------

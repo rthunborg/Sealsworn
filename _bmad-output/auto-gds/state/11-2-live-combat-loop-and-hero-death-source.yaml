@@ -1,0 +1,48 @@
+story_key: 11-2-live-combat-loop-and-hero-death-source
+epic_num: 11
+story_num: 2
+branch: story/11-2-live-combat-loop-and-hero-death-source
+status: done
+updated_at: "2026-07-05T15:09:35Z"
+started_at: "2026-07-05T11:06:49Z"
+completed_at: "2026-07-05T15:09:35Z"
+active_seconds: 6300
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform:
+  - unity
+  - unreal
+  - godot
+  - other
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: main
+epic_story_count: 6
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 2
+
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["80cb1bb", "553a74b", "1715dee", "33be2a4", "121adee", "6c9e630"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/53"
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides: {}
+constraints: []

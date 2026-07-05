@@ -36,6 +36,9 @@ const BossRepository = preload("res://scripts/content/repositories/boss_reposito
 const BossTurnResolver = preload("res://scripts/tactical/turns/boss_turn_resolver.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const FinaleRunFixture = preload("res://tests/fixtures/run/finale_run_fixture.gd")
+const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
+const RecordFirstDeathCommand = preload("res://scripts/core/commands/record_first_death_command.gd")
+const RecordFirstVictoryCommand = preload("res://scripts/core/commands/record_first_victory_command.gd")
 const RunEndOutcome = preload("res://scripts/run/run_end_outcome.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
@@ -56,6 +59,12 @@ func run() -> Dictionary:
 	_sequence_ids_are_unique_across_the_interleaved_stream()
 	_full_run_is_byte_deterministic_end_to_end()
 	_manual_seed_run_reaches_the_terminus_but_is_ineligible()
+	# Story 11.2 (AC3) — the boss-VICTORY production call site + the both-sides-simulated auto-play.
+	_auto_play_full_run_reaches_victory_through_resolve_boss_victory()
+	_auto_play_records_the_first_victory_latch_off_the_real_victory()
+	_auto_played_full_run_is_byte_deterministic()
+	_auto_play_boss_fight_hero_death_auto_fires_the_run_end_source()
+	_auto_play_sequence_ids_are_unique_across_the_interleaved_stream()
 	return result()
 
 
@@ -231,7 +240,124 @@ func _manual_seed_run_reaches_the_terminus_but_is_ineligible() -> void:
 	assert_equal(String(outcome.next_destination), "outpost", "A manual-seed victory still routes to the outpost.")
 
 
+# ---- Story 11.2 (AC3): the boss-VICTORY production call site + the both-sides-simulated auto-play -----------------
+
+# AC3: a full run AUTO-PLAYED through the shell — start -> run_to_completion (to the boss terminus, the DEFAULT driver) ->
+# auto_play_boss_fight (both sides simulated to the boss at 0 HP) -> resolve_boss_victory() (the PRODUCTION call site) ->
+# PHASE_COMPLETED + run_completed(victory) + next_destination == outpost + RunSummary.boss_cleared == true. The
+# resolve_boss_victory call site is now PRODUCTION (auto_play_full_run drives it), not test-only.
+func _auto_play_full_run_reaches_victory_through_resolve_boss_victory() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(FINALE_SEED, false).succeeded, "Setup: start should succeed.")
+
+	var auto: ActionResult = orchestrator.auto_play_full_run()
+	assert_true(auto.succeeded, "auto_play_full_run should reach a boss victory: %s" % auto.metadata)
+	assert_equal(String(auto.metadata.get("resolution")), "boss_victory", "The auto-play resolves to a boss_victory.")
+	assert_equal(String(auto.metadata.get("outcome")), "victory", "The auto-play outcome is victory.")
+	assert_equal(String(auto.metadata.get("next_destination")), "outpost", "The auto-play routes to the outpost.")
+
+	# The run reached PHASE_COMPLETED (terminal) via the production resolve_boss_victory call site.
+	assert_equal(orchestrator.run.phase, RunState.PHASE_COMPLETED, "An auto-played boss victory drives the run to PHASE_COMPLETED.")
+	assert_true(orchestrator.run.is_terminal(), "The auto-played completed run is terminal.")
+
+	# The interleaved fight+run-END events carry the boss_defeated + run_completed(victory) facts.
+	var events: Array = auto.metadata.get("events", [])
+	var boss_defeated: DomainEvent = _first_event_of_type(events, DomainEvent.Type.BOSS_DEFEATED)
+	assert_true(boss_defeated != null, "The auto-play emits a boss_defeated event (the boss reached 0 HP).")
+	assert_equal(String(boss_defeated.payload.get("boss_entity_id")), "larval_avatar", "The boss_defeated names the Larval Avatar.")
+	var run_completed: DomainEvent = _first_event_of_type(events, DomainEvent.Type.RUN_COMPLETED)
+	assert_true(run_completed != null, "The auto-play emits a run_completed event.")
+	assert_equal(String(run_completed.payload.get("outcome")), "victory", "The run_completed outcome is victory.")
+
+	# ⭐ The reconciliation: RunSummary.boss_cleared reads TRUE after the auto-played victory (resolve_boss_victory cleared
+	# the boss route node).
+	var summary: RunSummary = RunSummary.build(orchestrator.run, events)
+	assert_true(bool(summary.run_scoped.get("boss_cleared")), "RunSummary.boss_cleared is TRUE after the auto-played victory (the boss node was cleared).")
+	assert_equal(String(summary.outcome_or_cause), "victory", "RunSummary records the auto-played victory.")
+
+
+func _auto_play_records_the_first_victory_latch_off_the_real_victory() -> void:
+	# AC3: after the auto-played victory reaches PHASE_COMPLETED, RecordFirstVictoryCommand latches off the REAL terminal
+	# COMPLETED run (not a hand-built completed run).
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(FINALE_SEED, false).succeeded, "Setup: start should succeed.")
+	assert_true(orchestrator.auto_play_full_run().succeeded, "Setup: the auto-play should reach victory.")
+	assert_equal(orchestrator.run.phase, RunState.PHASE_COMPLETED, "Setup: the run is a real terminal COMPLETED run.")
+
+	var profile: ProfileSnapshot = ProfileSnapshot.fresh("auto_victory_profile")
+	assert_false(profile.first_victory_recorded, "Setup: the profile has no first victory yet.")
+	var latch: ActionResult = RecordFirstVictoryCommand.new(profile, 950000).execute(orchestrator.run)
+	assert_true(latch.succeeded, "The first-victory latch records off the REAL auto-played victory: %s" % latch.metadata)
+	assert_true(profile.first_victory_recorded, "first_victory_recorded flips off the real auto-played boss victory (AC3).")
+
+
+func _auto_played_full_run_is_byte_deterministic() -> void:
+	# AC4: the SAME seed auto-plays to a byte-identical terminal run + a byte-identical interleaved fight+run-END event
+	# stream (the boss AI + phase resolver + defeat are ZERO-RNG; the default sword hero draws ZERO combat RNG).
+	var first: Dictionary = _auto_play(FINALE_SEED)
+	var second: Dictionary = _auto_play(FINALE_SEED)
+	assert_equal(
+		JSON.stringify((first.get("run") as RunState).to_dictionary()),
+		JSON.stringify((second.get("run") as RunState).to_dictionary()),
+		"The same seed must auto-play to a byte-identical terminal run."
+	)
+	assert_equal(_event_dicts(first.get("events")), _event_dicts(second.get("events")), "The same seed must auto-play a byte-identical fight+run-END event stream.")
+	# ALSO assert the board_events (the hero/boss tactical action stream — damage_applied/move_committed, the part MOST
+	# exposed to any future combat-RNG regression) is byte-identical, not just the run-level interleaved stream.
+	assert_equal(_event_dicts(first.get("board_events")), _event_dicts(second.get("board_events")), "The same seed must auto-play a byte-identical board (hero/boss tactical action) event stream.")
+
+
+func _auto_play_boss_fight_hero_death_auto_fires_the_run_end_source() -> void:
+	# AC2/AC3: a HERO DEATH during the auto-played boss fight (a 1-HP hero) AUTO-FIRES the run-end source with the
+	# boss-context cause (boss_defeat, in RUN_FAILED_CAUSES) -> PHASE_FAILED + run_failed + outpost. This is the live
+	# hero-death source firing from the BOSS fight (not a driven death).
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(FINALE_SEED, false).succeeded, "Setup: start should succeed.")
+	var auto: ActionResult = orchestrator.auto_play_full_run(1, &"dagger")
+	assert_true(auto.succeeded, "The auto-play with a 1-HP hero should resolve (to a hero death): %s" % auto.metadata)
+	assert_equal(String(auto.metadata.get("resolution")), "boss_fight_hero_death", "A hero death in the boss fight reports boss_fight_hero_death.")
+	assert_equal(orchestrator.run.phase, RunState.PHASE_FAILED, "A hero death in the boss fight drives the run to PHASE_FAILED.")
+	var run_failed: DomainEvent = orchestrator.run_failed_event()
+	assert_true(run_failed != null, "The boss-fight hero death emits a run_failed event.")
+	assert_equal(String(run_failed.payload.get("cause")), "boss_defeat", "The boss-fight hero-death cause is boss_defeat (the boss-context death cause).")
+	assert_equal(String(run_failed.payload.get("next_destination")), "outpost", "The boss-fight hero death routes to the outpost.")
+	# The first-death latch records off this real boss-fight death too.
+	var profile: ProfileSnapshot = ProfileSnapshot.fresh("boss_death_profile")
+	assert_true(RecordFirstDeathCommand.new(profile, 970000).execute(orchestrator.run).succeeded, "The first-death latch records off the real boss-fight hero death.")
+	assert_true(profile.first_death_recorded, "first_death_recorded flips off the real boss-fight hero death.")
+
+
+func _auto_play_sequence_ids_are_unique_across_the_interleaved_stream() -> void:
+	# AC3 seam contract: the auto-played interleaved run log (boss-action + phase-change + boss_defeat + run_completed)
+	# has NO duplicate sequence ids (the shared cursor is threaded through resolve_phase_transitions -> detect_boss_defeat
+	# -> the run-END append, above the run's route-event ids).
+	var driven: Dictionary = _auto_play(FINALE_SEED)
+	var events: Array = driven.get("events")
+	var seen: Dictionary = {}
+	for event_value: Variant in events:
+		if not (event_value is DomainEvent):
+			continue
+		var event: DomainEvent = event_value
+		assert_false(seen.has(event.sequence_id), "Every auto-played sequence id must be UNIQUE across the interleaved stream: id %d repeated." % event.sequence_id)
+		seen[event.sequence_id] = true
+	assert_true(seen.size() >= 3, "The auto-played fight+run-END stream carries at least the phase changes + boss_defeat + run_completed.")
+
+
 # ---- helpers -------------------------------------------------------------------------------------
+
+# Drive a FULL run auto-played to a terminal END through the shell (start -> auto_play_full_run). Returns {orchestrator,
+# run, events} where events is the interleaved fight+run-END stream the auto-play surfaced.
+func _auto_play(seed_value: int) -> Dictionary:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	orchestrator.start(seed_value, false)
+	var auto: ActionResult = orchestrator.auto_play_full_run()
+	return {
+		"orchestrator": orchestrator,
+		"run": orchestrator.run,
+		"events": auto.metadata.get("events", []),
+		"board_events": auto.metadata.get("board_events", [])
+	}
+
 
 # Drive a FULL run to victory THROUGH the shell: start -> run_to_completion (to the boss terminus) -> the live boss fight
 # on the arena board (explicit 9.3 turns to 0 HP) -> the 9.4 victory resolution via the thin resolve_boss_victory
