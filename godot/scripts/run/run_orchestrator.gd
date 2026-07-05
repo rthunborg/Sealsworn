@@ -1103,15 +1103,29 @@ func auto_play_boss_fight(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, her
 	var definition: BossDefinition = BossRepository.create_baseline_repository().get_boss(BOSS_ID)
 	if definition == null:
 		return ActionResult.error(&"unknown_boss", {"command": "run_orchestrator", "boss_id": String(BOSS_ID)})
+	# The arena is the source of truth for BOTH placement cells — a missing boss_slot/entrance key is a malformed payload,
+	# NOT a cue to place onto a magic coordinate. Fail closed (mirrors the board_snapshot/board_result checks above) so a
+	# future arena-shape change that dropped/renamed either key fails loud on the missing key rather than a silent substitution.
 	var slot: Dictionary = payload.get("boss_slot", {})
-	var slot_cell: Vector2i = Vector2i(int(slot.get("x", 6)), int(slot.get("y", 1)))
+	if not (slot.has("x") and slot.has("y")):
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "reason": "no_boss_slot"})
+	var slot_cell: Vector2i = Vector2i(int(slot.get("x")), int(slot.get("y")))
 	var entrance: Dictionary = payload.get("entrance", {})
-	var entrance_cell: Vector2i = Vector2i(int(entrance.get("x", 6)), int(entrance.get("y", 10)))
+	if not (entrance.has("x") and entrance.has("y")):
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "reason": "no_entrance"})
+	var entrance_cell: Vector2i = Vector2i(int(entrance.get("x")), int(entrance.get("y")))
 	var resolved_hp: int = maxi(1, hero_hp)
+	# Check each placement result and surface a structured error (mirroring LiveCombatResolver.resolve's hero_placement_failed)
+	# so a placement failure (e.g. slot/entrance collision, wall, or out-of-bounds) reports its precise cause rather than
+	# failing generically downstream via the round loop's null-entity break.
 	var boss: TacticalEntityState = TacticalEntityState.new(BOSS_ID, TacticalEntityState.EntityType.ENEMY, &"boss", slot_cell, definition.max_hp, definition.max_hp, true, BOSS_ID)
-	board.place_entity_for_setup(boss)
+	var boss_place: ActionResult = board.place_entity_for_setup(boss)
+	if boss_place.is_error():
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "reason": "boss_placement_failed", "inner_error_code": String(boss_place.error_code)})
 	var hero: TacticalEntityState = TacticalEntityState.new(HERO_ID, TacticalEntityState.EntityType.PLAYER, &"player", entrance_cell, resolved_hp, resolved_hp, true, HERO_ID)
-	board.place_entity_for_setup(hero)
+	var hero_place: ActionResult = board.place_entity_for_setup(hero)
+	if hero_place.is_error():
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "reason": "hero_placement_failed", "inner_error_code": String(hero_place.error_code)})
 	for board_cell in board.cells():
 		board_cell.visible = true
 		board_cell.explored = true

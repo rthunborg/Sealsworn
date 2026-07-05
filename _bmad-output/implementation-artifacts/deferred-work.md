@@ -16,6 +16,16 @@ Still OPEN after 11.2 (the knowing splits — NOT 11.2's to resolve):
 
 ---
 
+## Deferred from: code review of 11-2-live-combat-loop-and-hero-death-source (2026-07-05)
+
+Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 2 Low / 0 Med. Full headless suite RE-RUN and independently verified green: **168 PASS / 0 `^FAIL`**, "Headless tests passed.", exit 0, ZERO `SCRIPT ERROR`; false-PASS grep clean (only the 6 documented negatives: int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — 11.2 added NO new negative); `git diff --check` clean; NO `tools/dump_*` / seed-regression fingerprint file touched. Diff vs `main` (merge-base `3467bd3`): 1 production new (`live_combat_resolver.gd`), 1 production modified (`run_orchestrator.gd` — additive live methods; the default methods are byte-additive, only the v0-boundary doc comment was extended), 4 test files. All 4 ACs met + independently test-substantiated; every load-bearing seam contract re-verified against source.
+
+**No NEW `[Review][Defer]` items from this review.** The two Low findings are both `[Review][Patch]` items (self-contained fail-closed hardening in `RunOrchestrator.auto_play_boss_fight`: (1) error-check the two `place_entity_for_setup` calls; (2) treat a missing `boss_slot`/`entrance` arena key as a structured error instead of a hardcoded-coordinate fallback) — recorded in the story's `### Review Findings`, non-blocking (both dead today: the canonical arena supplies both keys + a free slot, the finale seed 4242 auto-plays green). One `[Review][Decision]` (a human-awareness note, no code change): the LIVE pre-boss path (`run_to_completion_live`) and the boss auto-play (`auto_play_full_run`, which uses the DEFAULT fingerprint-preserving `run_to_completion`) are intentionally un-composed in 11.2 — surfaced for 11.3's awareness. This heading is retained for ledger completeness; there is nothing to carry forward from this story's review.
+
+Re-carried (NOT new — already in this ledger under the `dev of 11-2` entry above, unchanged by the review): the `NodeResolvePlaceholderCommand._resolve_boss` two-step atomicity twin (stays parked — 11.2's live boss path uses `BossNodeEnterCommand`+`resolve_boss_victory`, not the placeholder boss branch); the 11.3 HUD/scenes; the 11.4 live affinity call sites; the 11.5/11.6 outpost render + meta-spend; the later in-node-save story. The review added no deferral of its own.
+
+---
+
 ## Deferred from: code review of 11-1-run-flow-ux-appendix-and-screen-contracts (2026-07-04)
 
 Round 1 adversarial code review (auto-gds delegate, Opus 4.8 [1m]). Verdict **Approve** — 0 Critical / 0 High / 1 Med / 2 Low. **No `[Review][Defer]` items** — nothing punted to this cross-story ledger. All three findings are self-contained edits to the appendix (`_bmad-output/planning-artifacts/ux-appendix-run-flow.md`) and are recorded in the story's `### Review Findings` as `[Review][Patch]` items (Med: Gap G1 mis-sources hero HP on `RunState`, which has no HP field; Low: §2.2 lists a `range` key that is actually `weapon_reach` on the attack-preview metadata; Low: §0.2 cross-references "§14" for the gap ledger, which is §16). No `[Review][Decision]` (no human call). This heading is retained for ledger completeness; there is nothing to carry forward from this story.

@@ -531,3 +531,75 @@ Opus 4.8 (1M context) — `claude-opus-4-8[1m]`, via the auto-gds `gds-dev-story
 - `_bmad-output/implementation-artifacts/deferred-work.md` — the 2026-07-05 11.2 entry (resolved fences + re-recorded still-open splits).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — story 11-2 → in-progress → review.
 - `_bmad-output/implementation-artifacts/11-2-live-combat-loop-and-hero-death-source.md` — this story file (tasks, Dev Agent Record, status).
+
+## Review Findings
+
+**Round 1 of 3**
+
+Adversarial code review (auto-gds delegate, Opus 4.8 [1m]) of the branch diff vs `main` (merge-base `3467bd3`),
+excluding `_bmad` / `_bmad-output/auto-gds` / caches. Production surface: 1 new
+(`godot/scripts/run/live_combat_resolver.gd`, 376 lines) + 1 modified
+(`godot/scripts/run/run_orchestrator.gd`, +402/-7 — the 7 deletions are the OLD v0-boundary doc comment ONLY,
+ZERO code-logic deletions; the default `_resolve_combat`/`resolve_current_node`/`run_to_completion`/`_resolve_boss`/
+`resolve_run_end`/`resolve_boss_victory` are byte-additive) + 4 test files. Every load-bearing seam contract was
+re-read against source (`EnemyTurnResolver.resolve_after_player_action` turn-phase/actor gate;
+`AttackCommand`/`MoveCommand` leave `turn_state` untouched + return `advances_turn:true`; `AttackCommand` draws the
+`combat` stream ONLY for a shield block / axe-mace proc, so the default `sword` hero draws ZERO combat RNG;
+`BossTurnResolver.active_phase_index_for_hp`/`resolve_phase_transitions`/`detect_boss_defeat` + the
+`next_sequence_id_after` cursor seam; `CombatOutcomeEvaluator.evaluate` reads HP only; `BossNodeEnterCommand` arena
+payload keys `board_snapshot`/`boss_slot`/`entrance`; `TacticalEntityState` ctor arg order; `RUN_FAILED_CAUSES[0] ==
+hero_death`; `STREAM_COMBAT` present; the 7 `required_streams`). All four ACs verified met + independently
+test-substantiated. Full headless suite RE-RUN and independently verified: **168 PASS / 0 `^FAIL`**, "Headless tests
+passed.", exit 0, ZERO `SCRIPT ERROR`; false-PASS grep clean — exactly the 6 documented stderr negatives
+(int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1), 11.2 added NO new negative. `git diff --check` clean;
+NO `tools/dump_*` / seed-regression fingerprint file touched.
+
+**Verdict: Approve** — 0 Critical / 0 High / 2 Low / 0 Med. 1 `[Review][Decision]` (a human-awareness note, no code
+change required). No `[Review][Defer]` items originate from this review (the story's own knowing splits — the
+`_resolve_boss` twin, 11.3 HUD, 11.4 affinity, 11.5/11.6 outpost/meta, the in-node save — are already carried in
+`deferred-work.md`; this review adds nothing to that ledger).
+
+- [x] [Review][Patch] (Low) **RESOLVED (Round 1, 2026-07-05)** — see FIX at end of item. `RunOrchestrator.auto_play_boss_fight` does NOT error-check the two
+  `board.place_entity_for_setup(...)` calls (`run_orchestrator.gd:1112` boss, `:1114` hero), unlike its sibling
+  `LiveCombatResolver.resolve` which checks the hero placement (`live_combat_resolver.gd:166-168`) and surfaces a
+  structured `hero_placement_failed`. A silent placement failure here (e.g. a malformed arena payload whose
+  `boss_slot`/`entrance` collide or fall on a wall/out-of-bounds) is NOT a state-corruption or fabricated-outcome
+  risk — it fails loud downstream (`board.get_entity(BOSS_ID)` returns null → the round loop's
+  `if boss == null ...: break` fires → `final_boss == null` → the `boss_fight_did_not_resolve` error at `:1248`) — but
+  it loses the precise placement cause (the caller sees a generic "fight didn't resolve" instead of "boss/hero
+  couldn't be placed"). RECOMMENDED: capture each `place_entity_for_setup` result and return a structured
+  `invalid_boss_arena_payload` (mirroring the existing `board_result` check at `:1099`) on error, matching the
+  resolver's fail-closed discipline. Non-blocking (the canonical 12x12 arena reserves a free slot + a distinct
+  entrance, so both placements succeed for every shipped seed; the pinned finale seed 4242 auto-plays green).
+  **FIX (Round 1, 2026-07-05):** both `place_entity_for_setup` results are now captured (`boss_place`/`hero_place`,
+  `run_orchestrator.gd:1122`/`:1126`) and return a structured `invalid_boss_arena_payload`
+  (`reason: boss_placement_failed`/`hero_placement_failed` + `inner_error_code`) on error, matching the resolver's
+  fail-closed discipline. Full headless suite re-run post-fix: 168 PASS / 0 FAIL, false-PASS grep clean.
+
+- [x] [Review][Patch] (Low) **RESOLVED (Round 1, 2026-07-05)** — see FIX at end of item. The hardcoded slot/entrance fallbacks in `auto_play_boss_fight` — `Vector2i(int(slot.get("x",
+  6)), int(slot.get("y", 1)))` (`run_orchestrator.gd:1107`) and `Vector2i(int(entrance.get("x", 6)),
+  int(entrance.get("y", 10)))` (`:1109`), mirrored in the `_drive_full_run_to_victory` test helper
+  (`test_finale_full_run.gd:370-372`) — silently paper over a MISSING `boss_slot`/`entrance` key (the arena builder
+  always supplies both today, so the fallback is dead). Combined with Finding 1's unchecked placement, a future arena
+  payload shape change that dropped/renamed either key would place onto a magic cell instead of failing loud on the
+  missing key. RECOMMENDED: treat a missing `boss_slot`/`entrance` as a structured `invalid_boss_arena_payload`
+  (fail-closed) rather than defaulting to a hardcoded coordinate — the arena is the source of truth for both cells.
+  Non-blocking (both keys are present in every shipped arena payload).
+  **FIX (Round 1, 2026-07-05):** the production resolver now validates each key (`slot.has("x")/has("y")` at
+  `run_orchestrator.gd:1110`, `entrance.has("x")/has("y")` at `:1114`) and returns `invalid_boss_arena_payload`
+  (`reason: no_boss_slot`/`no_entrance`) on a miss — the hardcoded `(6,1)`/`(6,10)` fallbacks are removed; the arena is
+  the sole source of truth for both cells. (The `_drive_full_run_to_victory` test helper retains its literal fallbacks —
+  it is a test harness always driving the canonical seed 4242, which supplies both keys, so its fallbacks are inert; the
+  fail-closed hardening is the production concern the finding names.) Full headless suite re-run post-fix: 168 PASS /
+  0 FAIL.
+
+- [x] [Review][Decision] (human-awareness, no code change) There is NO single entry point that plays live combat nodes
+  AND then auto-plays the boss to a run-END. `run_to_completion_live` (`:1030`) drives live combat nodes but STOPS at
+  the boss-setup terminus (returns `boss_encounter_started`) — it does NOT chain into `auto_play_boss_fight`.
+  `auto_play_full_run` (`:1174`) reaches the boss victory but deliberately drives the DEFAULT `run_to_completion`
+  (v0-auto-resolved pre-boss combat) to keep every route/reward/finale fingerprint byte-identical (documented at
+  `:1168-1173`). So the LIVE pre-boss path and the boss auto-play are intentionally un-composed in 11.2. This is a
+  correct scope boundary (a fully-live start→boss→victory driver would perturb the pre-boss fingerprints, out of
+  11.2's additive/opt-in remit), surfaced so 11.3 (the HUD/scene driver that will sequence live combat nodes into the
+  live boss fight from real play) inherits the seam knowingly rather than discovering the gap. No action for 11.2.
+  **Resolved 2026-07-05: acknowledged, no action — intentional 11.2 scope boundary; carried to 11.3.**
