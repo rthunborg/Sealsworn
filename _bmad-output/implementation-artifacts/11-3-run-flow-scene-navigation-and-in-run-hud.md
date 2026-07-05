@@ -1,6 +1,10 @@
+---
+baseline_commit: d98d72c9f70b353ea6446729278896d18da00ab1
+---
+
 # Story 11.3: Run Flow Scene Navigation and In-Run HUD
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -146,28 +150,28 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.3, lines ~2646-2672). Four A
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — App-flow scene navigation via SceneManager (AC1)**
-  - [ ] EXTEND `SceneManager` (`godot/scripts/autoloads/scene_manager.gd`) — keep it a thin autoload — with a
+- [x] **Task 1 — App-flow scene navigation via SceneManager (AC1)**
+  - [x] EXTEND `SceneManager` (`godot/scripts/autoloads/scene_manager.gd`) — keep it a thin autoload — with a
         **named flow-transition surface**: a route table mapping the flow stages (launch/boot → hero_select →
         route_map → tactical_board → run_end) to their `.tscn` paths, and a `next_destination`→destination
         transition (the run-end return routes off `RunEndOutcome.next_destination`, the pinned
         `RUN_END_DESTINATION_OUTPOST` marker, NOT a hardcoded string at the call site). Do NOT put gameplay
         decisions in `SceneManager` — it navigates; it owns no tactical/run truth. It reads the destination
         the DOMAIN reports (via `GameSession` / the orchestrator result) and changes scene.
-  - [ ] Build the scene set (all under `godot/scenes/` per project structure): a **hero-select scene**
+  - [x] Build the scene set (all under `godot/scenes/` per project structure): a **hero-select scene**
         (`scenes/ui/`), a **route-map scene** (`scenes/ui/`), and a real **tactical board scene**
         (`scenes/game/tactical_board.tscn` — replace the empty `Node2D` placeholder) + a **gameplay shell**
         (`scenes/game/gameplay_shell.tscn` — replace the empty placeholder) that hosts the board + HUD. Each
         scene gets a presenter under `godot/scripts/ui/presenters/` that READS its bound view model and
         SUBMITS intent through the bridge/orchestrator — NEVER mutates domain state.
-  - [ ] Wire the launch→hero-select→route-map→board→run-end walk: boot enters hero select; a confirmed class
+  - [x] Wire the launch→hero-select→route-map→board→run-end walk: boot enters hero select; a confirmed class
         selection hands a `class_id` to the run start (`OutpostViewModel.start_run_request` / a fresh
         `RunOrchestrator.start(root_seed, is_manual_seed, class_id)` — the AUTHORITATIVE fail-closed start,
         appendix §6.2/§7.2); the route map presents the eligible choices (G2, Task 3) and reports the picked
         node; entering a combat/elite node loads the tactical board scene for the live node; a live node
         outcome advances the flow (victory → next route choice; the run-end return routes to the outpost
         destination). The scene layer SEQUENCES the orchestrator's live methods — it adds no new run logic.
-  - [ ] **The composition seam 11.3 INHERITS from 11.2 (do NOT rediscover it — 11.2's review surfaced it):**
+  - [x] **The composition seam 11.3 INHERITS from 11.2 (do NOT rediscover it — 11.2's review surfaced it):**
         11.2 left the LIVE pre-boss path (`run_to_completion_live` / `resolve_current_node_live` /
         `resolve_combat_node_live`) and the boss auto-play (`auto_play_full_run`, which drives the DEFAULT
         fingerprint-preserving `run_to_completion`) **intentionally un-composed** — there is NO single domain
@@ -180,7 +184,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.3, lines ~2646-2672). Four A
         `resolve_boss_victory()`. Preserve the fingerprint-safety posture: the DEFAULT `run_to_completion` (the
         v0 auto-resolve pre-boss) stays available for non-live simulation; the LIVE flow is the on-screen
         path. Read 11.2's `run_orchestrator.gd` live-method region + `test_finale_full_run.gd` before wiring.
-  - [ ] **The hero loadout is DRIVER-SUPPLIED (11.2's documented boundary, inherited).** 11.2's live methods
+  - [x] **The hero loadout is DRIVER-SUPPLIED (11.2's documented boundary, inherited).** 11.2's live methods
         take `hero_hp` / `hero_weapon_id` (defaulting to `LiveCombatResolver.DEFAULT_HERO_HP` /
         `DEFAULT_HERO_WEAPON == &"sword"`) because the class-kit → combat-loadout wiring is a LATER story. For
         11.3's on-screen play, the hero HP/weapon are still driver-supplied from the class start (read the
@@ -191,32 +195,32 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.3, lines ~2646-2672). Four A
         the human replaces the scripted driver for live play — but any auto-play / smoke path must use
         VERIFIED seeds (the approved-seed-catalog discipline, seed 4242 canonical for the finale).
 
-- [ ] **Task 2 — In-run tactical HUD + the G1 run-context projection (AC2)**
-  - [ ] Build the tactical board rendering + control bands from `TacticalBoardViewModel.to_dictionary()` (the
+- [x] **Task 2 — In-run tactical HUD + the G1 run-context projection (AC2)**
+  - [x] Build the tactical board rendering + control bands from `TacticalBoardViewModel.to_dictionary()` (the
         pinned top-level keys: `width, height, cells, occupants, selected_cell, selected_entity_id, preview,
         commit_flow, inspect, zoom, action_availability, turn, outcome, event_log_summary, layout,
         accessibility`). Honor the **region → slot map** (appendix §1.2): `board`←cells/occupants/zoom,
         `preview`←preview, `confirm_cancel`←commit_flow/action_availability, `inspect`←inspect, `status`←turn +
         G1, `log_or_outcome`←event_log_summary/outcome. The scene reads the VM's pinned keys ONLY (a key
         outside the pinned set is an AC2 violation — the 11.1 exact-key-projection discipline).
-  - [ ] Wire player intent through **`TacticalCommandBridge.build_command(context, intent)`** (intents
+  - [x] Wire player intent through **`TacticalCommandBridge.build_command(context, intent)`** (intents
         `move`/`attack`/`inspect`; any other id → `unsupported_intent`, disabled). Render the **two-step
         attack commit** via `TacticalAttackCommitFlow` (a first tap ARMS `attack_preview`; a second tap on the
         same target/weapon/actor CONFIRMS; `cancel()` clears with zero mutation). The `confirm_cancel` region
         binds `commit_flow.confirm_available`/`.cancel_available` (flow-gated). Movement commits via a `move`
         bridge intent (a symmetric move-confirm is a 11.3 presentation choice, NOT a required new VM —
         appendix §2.2 note / §16.1 non-gap).
-  - [ ] Render the **preview-vs-committed distinction with the non-color channels** (appendix §2.3): bind
+  - [x] Render the **preview-vs-committed distinction with the non-color channels** (appendix §2.3): bind
         `feedback_preview` (channels `[shape, label]`) vs `feedback_committed` (channels `[pattern, label,
         text]`) from the `accessibility.feedback` slot so the distinction survives with audio muted (NFR9).
         Render inspect visibility tiers (`inspect_visible`/`inspect_memory`/`inspect_hidden_unexplored`) and
         telegraph cues from the `accessibility.cues` catalog — the scene MAPS the emitted `cue_ids` to
         visuals, it invents no new reasons/cues.
-  - [ ] Render the **passive-reward modal** (`PassiveRewardModalViewModel` pinned `MODAL_KEYS` + the two-step
+  - [x] Render the **passive-reward modal** (`PassiveRewardModalViewModel` pinned `MODAL_KEYS` + the two-step
         `PassiveRewardCommitFlow` arm/confirm/cancel/dismiss) and the reward-pickup flow through the EXISTING
         Epic-6 contracts. `icon` is an id/placeholder STRING (11.4 supplies the art) — do NOT treat it as a
         texture path.
-  - [ ] **Resolve Contract gap G1 — the in-run HUD run-context projection** (appendix §1.3, §16 G1; owned by
+  - [x] **Resolve Contract gap G1 — the in-run HUD run-context projection** (appendix §1.3, §16 G1; owned by
         11.3). Add a thin fail-closed RefCounted read surface (name it e.g. `RunHudViewModel` under
         `godot/scripts/ui/view_models/`) that AGGREGATES the run-level context the tactical board VM does NOT
         carry, from the EXISTING domain sources: **hero HP** (during a level: the hero `TacticalEntityState`
@@ -227,12 +231,12 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.3, lines ~2646-2672). Four A
         exact key set, projects a `has_*`-style gate for the absent/empty state, mints NO event, consumes NO
         RNG, mutates NOTHING. The HUD `status` region composes the tactical VM's `turn` slot with this G1
         read — it NEVER reaches into scene state for run context.
-  - [ ] Give the G1 projection a headless unit test (`godot/tests/unit/ui/`): assert it reads the correct
+  - [x] Give the G1 projection a headless unit test (`godot/tests/unit/ui/`): assert it reads the correct
         pinned fields from a composed domain fixture, fail-closes on null/absent inputs (empty projection, not
         a crash), and leaks no live handle into the domain (a returned field mutation never perturbs source).
 
-- [ ] **Task 3 — The route-map scene + the G2 route view model (AC1, AC2)**
-  - [ ] **Resolve Contract gap G2 — the route/run-map view model** (appendix §5.2, §16 G2; owned by 11.3).
+- [x] **Task 3 — The route-map scene + the G2 route view model (AC1, AC2)**
+  - [x] **Resolve Contract gap G2 — the route/run-map view model** (appendix §5.2, §16 G2; owned by 11.3).
         Today the run map would read `RouteState` / `RouteNode` DIRECTLY (there is NO dedicated route VIEW
         model). Add a thin fail-closed RefCounted route projection (name it e.g. `RouteMapViewModel` under
         `godot/scripts/ui/view_models/`) that projects, from the pinned route reads: `current_node_id`,
@@ -241,71 +245,71 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.3, lines ~2646-2672). Four A
         `reveal_state` (`REVEAL_HIDDEN`/`REVEALED`/`CLEARED`), `depth`, `outgoing_link_ids`, and `clues`
         (`CLUE_*`). It owns NO route truth (the commit of a chosen node is the EXISTING route-advance command
         the flow submits — the map presents choices and reports the pick).
-  - [ ] Build the route-map scene from the G2 projection: present the current node + eligible choices with
+  - [x] Build the route-map scene from the G2 projection: present the current node + eligible choices with
         their clue chips + cleared history; node TYPE via icon + label (not color-only), reveal state via
         pattern + label (appendix §5.4). Report the picked node to the flow; the flow submits the
         route-advance command through the orchestrator.
-  - [ ] Give the G2 projection a headless unit test (`godot/tests/unit/ui/`): assert it projects
+  - [x] Give the G2 projection a headless unit test (`godot/tests/unit/ui/`): assert it projects
         `eligible_choice_ids()` (not `available_*`), the pinned node fields, the reveal-state vocabulary, and
         fail-closes on an empty/terminal route (no crash).
 
-- [ ] **Task 4 — On-screen resume + recovery states (AC3)**
-  - [ ] Wire the between-level resume path to real screens: `SaveManager.resume_route_position(save_path)` /
+- [x] **Task 4 — On-screen resume + recovery states (AC3)**
+  - [x] Wire the between-level resume path to real screens: `SaveManager.resume_route_position(save_path)` /
         `SaveManager.resume_run(save_path)` (the route delegators → `RunResumeService`) drive a resume from
         the persisted snapshot; the autosave entry points (`autosave_route_position` / `autosave_between_level`)
         fire at the between-node/between-level boundary the flow already reaches. The scene reads the
         structured `ActionResult` code — NOT stderr — as truth (a parse-failure emits one expected `ERROR:
         Parse JSON failed` line and still returns a structured error).
-  - [ ] Map each of the seven structured recovery codes to a clear on-screen message + a recovery affordance
+  - [x] Map each of the seven structured recovery codes to a clear on-screen message + a recovery affordance
         (retry / start fresh), per appendix §13.3: `save_not_found`, `save_open_failed`, `save_parse_failed`,
         `unsupported_save_schema`, `invalid_tactical_snapshot`/`missing_tactical_snapshot`,
         `invalid_rng_snapshot`. On failure NO partial state becomes active (the "no partial corrupt state"
         guarantee — the restore exposes zero restored objects). The profile-recovery surface at the outpost
         destination is 11.5's; 11.3 handles the RUN save/resume recovery on the run-flow side (§13.1 splits
         11.3 = run-resume path, 11.5 = outpost recovery surface).
-  - [ ] **The resume invariant (NFR13) the scene MUST respect:** a recovery screen may present a message + a
+  - [x] **The resume invariant (NFR13) the scene MUST respect:** a recovery screen may present a message + a
         retry/fresh-start choice, but it must NOT itself perturb the restored run (consume RNG, run a command,
         advance a turn). The domain does the restore; the screen renders the `ActionResult` and offers the
         choice. EXTEND the existing resume-invariant coverage (`test_run_resume_service.gd` /
         `test_between_level_save.gd`) to prove interrupted==uninterrupted holds through the seam the scene
         drives — do NOT rebuild the resume domain.
 
-- [ ] **Task 5 — Four-layout reach + rule-invariance (AC4)**
-  - [ ] Every scene honors the **semantic `TacticalLayoutProfile` region plan** (the testable source of truth)
+- [x] **Task 5 — Four-layout reach + rule-invariance (AC4)**
+  - [x] Every scene honors the **semantic `TacticalLayoutProfile` region plan** (the testable source of truth)
         rather than hardcoding geometry: inject the real viewport/safe-area, read the profile, and lay out the
         region vocabulary (`board`/`preview`/`confirm_cancel`/`inspect`/`status`/`log_or_outcome`) per profile
         (`phone_portrait` stacked / `phone_landscape` side-rail / `tablet`/`desktop` comfortable). The board
         stays the dominant region on every profile; primary actions stay ≥44×44
         (`DEFAULT_MINIMUM_TOUCH_TARGET`). The invalid-viewport fallback (`layout.available: false` → portrait
         stacked) is honored, not re-derived.
-  - [ ] Honor the accessibility contract (appendix §0.5, §14.2): every critical meaning carries a non-color
+  - [x] Honor the accessibility contract (appendix §0.5, §14.2): every critical meaning carries a non-color
         channel from the `TacticalAccessibilityModel` vocabulary; text respects the `TacticalTextScale` clamp
         `[0.85, 2.0]` (default 1.0) driven by `SettingsSnapshot.text_scale`. Changing the scale/profile NEVER
         alters board/RNG/turn/preview legality/outcome/log.
-  - [ ] Prove rule-invariance across profiles at the TESTABLE layer: extend the existing scene-free layout
+  - [x] Prove rule-invariance across profiles at the TESTABLE layer: extend the existing scene-free layout
         coverage (`test_tactical_layout_profiles.gd` / the `TacticalBoardViewModel.layout` slot) to assert the
         same board/preview/commit-flow/inspect/action-availability contract holds byte-identically across a
         `phone_portrait`→`desktop` profile change (the Story 2.5 pattern — feed the contracts through the VM
         across profile changes; state is preserved, rules unchanged). The `.tscn` geometry itself is verified
         by construction against the semantic plan.
 
-- [ ] **Task 6 — Invariants regression + full-suite green (AC4)**
-  - [ ] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
+- [x] **Task 6 — Invariants regression + full-suite green (AC4)**
+  - [x] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
         `ProfileSnapshot.SCHEMA_VERSION == 1` (`test_profile_snapshot.gd`), `SettingsSnapshot.SCHEMA_VERSION ==
         1` (`test_settings_snapshot.gd`), `RngStreamSet.required_streams()` == 7 (`test_rng_stream_set.gd`),
         the `DomainEvent.Type` enum tail UNCHANGED (`test_domain_event.gd` — a scene mints no event).
-  - [ ] Re-run every seed-regression fingerprint suite + confirm byte-identical (small/medium level, route,
+  - [x] Re-run every seed-regression fingerprint suite + confirm byte-identical (small/medium level, route,
         seed batch, finale). 11.3 is scene/presentation + two READ-ONLY view-model projections — it MUST NOT
         move any fingerprint. The `tools/dump_*` files stay untouched.
-  - [ ] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project
+  - [x] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project
         Context Rules): `godot --headless --path C:\Sealsworn\godot --scene
         res://tests/headless/test_runner.tscn --quit-after 10`. Apply the false-PASS grep guard (the only
         acceptable stderr `ERROR:` lines are the 6 documented negatives: int64-overflow ×2, malformed-JSON ×3,
         `invalid_node_type` ×1 — plus any NEW documented negative-path test 11.3 adds, of which it should add
         none on the domain side). Run `git diff --check`.
 
-- [ ] **Task 7 — Update the deferred-work ledger + tracking (AC4, hygiene)**
-  - [ ] In `deferred-work.md` (new 11.3 entry): mark **RESOLVED** — Contract gap **G1** (the in-run HUD
+- [x] **Task 7 — Update the deferred-work ledger + tracking (AC4, hygiene)**
+  - [x] In `deferred-work.md` (new 11.3 entry): mark **RESOLVED** — Contract gap **G1** (the in-run HUD
         run-context projection) and **G2** (the route/run-map view model) from the 11.1 appendix; and the
         **polished-HUD-scene deferral carried from Story 2.5** (the `Control`/scene presenter under
         `godot/scripts/ui/presenters/` + `godot/scenes/ui/layouts/<profile>/` "left for a later story that
@@ -649,10 +653,65 @@ THIS story:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]` (auto-gds dev-story delegate)
 
 ### Debug Log References
 
+- Full headless suite (canonical PowerShell command `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`): **175 PASS / 0 `^FAIL` / 0 SCRIPT ERROR**, "Headless tests passed.", exit 0 (baseline was 168; 11.3 added 7 new tests). False-PASS grep clean — exactly the 6 documented negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1); NO new negative-path noise.
+- `git diff --check` clean (only benign LF→CRLF Windows line-ending warnings).
+- Invariant source files (`domain_event.gd`, `run_snapshot.gd`, `rng_stream_set.gd`, every `tools/dump_*`) confirmed UNTOUCHED via `git status`/`git diff --stat`; the finale + level + route seed-regression suites pass (byte-identical fingerprints).
+- Composition-seam probe: the `RunFlowController` hands-off flow (live pre-boss walk via `run_to_completion_live` → `auto_play_boss_fight` → `resolve_boss_victory()`) reaches `boss_victory` on the verified finale seed 4242 with the `LiveCombatResolver.DEFAULT_HERO_HP` (60) live-combat loadout. NOTE: the class `StartingKit.baseline_hp` (warrior 18) is a balance number, NOT a viable live-combat driver HP — threading it makes the scripted hero die; the live-combat driver therefore uses the resolver default HP while the G1 HUD *displays* the class baseline between levels (two distinct concerns; documented in `run_flow_controller.gd`).
+
 ### Completion Notes List
 
+- **Task 1 (AC1) — app-flow scene navigation.** Extended the thin `SceneManager` with `go_to_stage(stage)` + `route_after_run_end(next_destination)`, both delegating to the new testable `RunFlowRouter` (the named flow-stage→`.tscn` route table + the `RunEndOutcome.next_destination`→stage mapping, pulled into a `RefCounted` so the scene-free harness can unit-test the routing LOGIC). Built the scene-free `RunFlowController` that COMPOSES the 11.2-inherited live-pre-boss + boss-auto-play seam into one hands-off start→boss→victory flow (drives `run_to_completion_live` to the boss terminus, then `auto_play_boss_fight` to `resolve_boss_victory()`) — NEVER touching the DEFAULT fingerprint-preserving `run_to_completion`; the scene-driven boss placement reuses `auto_play_boss_fight`'s fail-closed validate-then-reject discipline. Built the six presenters + scenes for the launch→hero-select→route-map→board→run-end walk (boot routes to hero select; hero-select confirm hands a `class_id` to `RunFlowController.start`; the route map reports the picked node → `RunOrchestrator.advance_to`; the board resolves the live node; a run-end routes off `next_destination`). The live run-flow handle is held across scene changes on a thin `GameSession` field.
+- **Task 2 (AC2) — in-run HUD + G1.** The `tactical_board_presenter` renders `TacticalBoardViewModel.to_dictionary()` into the region→slot map (board/preview/confirm_cancel/inspect/status/log_or_outcome), wires the two-step attack commit via `TacticalAttackCommitFlow`, move/attack/inspect via `TacticalCommandBridge`, the passive-reward modal via `PassiveRewardModalViewModel`, and the accessibility feedback via `TacticalAccessibilityModel` — all the EXISTING Epic-2/6 contracts, pinned keys only. Resolved **G1**: `RunHudViewModel` aggregates hero HP (board entity / `StartingKit.baseline_hp` baseline), node progress (`RouteState`), gold (`RiskEconomyState`), inventory occupancy (`InventoryState`) — fail-closed, exact-key, no-live-handle; unit-tested. The status region composes the VM `turn` slot with the G1 read.
+- **Task 3 (AC1/AC2) — route map + G2.** Resolved **G2**: `RouteMapViewModel` projects `current_node_id`/`cleared_node_ids`/`eligible_choice_ids()` (the reveal-gated selection-legal set — NOT `available_choice_ids()`) + per-node fields; unit-tested (incl. the eligible-vs-available discipline). The `route_map_presenter` renders node TYPE via icon+label and reveal state via a pattern marker (non-color channels) and reports the pick to `RunOrchestrator.advance_to`.
+- **Task 4 (AC3) — on-screen resume + recovery.** The `save_recovery_presenter` drives `SaveManager.resume_route_position` and maps the structured `ActionResult` code (NOT stderr) to a message + retry/fresh-start affordance via the new testable `RunResumeRecoveryView` (all seven §13.3 codes, unit-tested, fail-closed on an unknown code). On success it seats the restored run via `RunOrchestrator.start_from` (no RNG/command/turn). Extended the EXISTING `test_run_route_position_save.gd` with a proof that interrupted==uninterrupted holds through the SaveManager AUTOLOAD delegators the scene drives (autosave→resume→start_from) AND that the resume consumes NO RNG (a next-draw peek).
+- **Task 5 (AC4) — four-layout + rule invariance.** Every presenter builds geometry from the semantic `TacticalLayoutProfile` (injected viewport), never hardcoded pixels; primary actions are ≥44×44. Added `test_run_flow_layout_invariance.gd`: the board VM's rule-bearing slots are byte-identical across a `phone_portrait`→`desktop` change (only `layout` differs), the G1 HUD read is profile- AND text-scale-invariant, and the board stays dominant + controls reachable on both profiles.
+- **Task 6 (AC4) — invariants regression.** 23-key `RunSnapshot` gate, `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1`, `RngStreamSet.required_streams()` == 7, the `DomainEvent.Type` enum tail, and every seed-regression fingerprint all verified unmoved (the tests pass + the source files are untouched). Full suite green; false-PASS grep clean.
+- **Task 7 — ledger + tracking.** `deferred-work.md` new 11.3 entry marks G1/G2 + the Story-2.5 polished-HUD deferral + the 11.2 composition seam RESOLVED, and re-records the still-open splits (11.4 affinity, 11.5 outpost render/G3, 11.6 meta-spend, the later in-node save, G4 parked). Sprint status + story status updated.
+- **Testability reality honored:** the `.tscn`/Control wiring is verified BY CONSTRUCTION (a scene-load compile guardrail — `test_run_flow_scenes_load.gd` — proves every presenter compiles + every scene loads) + the AC1 read-only-projection discipline. The TESTABLE logic (G1/G2/recovery projections, the router, the composed controller flow, the layout invariance, the SaveManager resume invariant) is unit-tested. No SceneTree test is claimed (the harness is scene-free).
+- **No breaking change.** No public interface removed/renamed, no config key/schema/CLI change, no migration step. `GameSession` gained additive `run_flow()`/`set_run_flow()`/`clear_run_flow()` accessors + a private handle field (thin, non-gameplay); `SceneManager` gained additive `go_to_stage`/`route_after_run_end` (the bare `change_scene` is unchanged); `BootController` now routes to the hero-select stage instead of the empty gameplay shell (a behavior change to the boot destination, not an interface change).
+
 ### File List
+
+**New — production:**
+- `godot/scripts/ui/flow/run_flow_router.gd` (AC1 — route table + next_destination mapping)
+- `godot/scripts/ui/flow/run_flow_controller.gd` (AC1 — composed live-pre-boss + boss-auto-play flow sequencer)
+- `godot/scripts/ui/view_models/run_hud_view_model.gd` (AC2 — G1 in-run HUD run-context projection)
+- `godot/scripts/ui/view_models/route_map_view_model.gd` (AC1/AC2 — G2 route/run-map view model)
+- `godot/scripts/ui/view_models/run_resume_recovery_view.gd` (AC3 — resume recovery-code mapping)
+- `godot/scripts/ui/presenters/hero_select_presenter.gd`
+- `godot/scripts/ui/presenters/route_map_presenter.gd`
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd`
+- `godot/scripts/ui/presenters/gameplay_shell_presenter.gd`
+- `godot/scripts/ui/presenters/run_end_presenter.gd`
+- `godot/scripts/ui/presenters/save_recovery_presenter.gd`
+- `godot/scenes/ui/hero_select.tscn`
+- `godot/scenes/ui/route_map.tscn`
+- `godot/scenes/ui/run_end.tscn`
+- `godot/scenes/ui/save_recovery.tscn`
+
+**New — tests:**
+- `godot/tests/unit/ui/test_run_flow_router.gd`
+- `godot/tests/unit/run/test_run_flow_controller.gd`
+- `godot/tests/unit/ui/test_run_hud_view_model.gd`
+- `godot/tests/unit/ui/test_route_map_view_model.gd`
+- `godot/tests/unit/ui/test_run_resume_recovery_view.gd`
+- `godot/tests/unit/ui/test_run_flow_layout_invariance.gd`
+- `godot/tests/unit/ui/test_run_flow_scenes_load.gd`
+
+**Modified:**
+- `godot/scripts/autoloads/scene_manager.gd` (additive named-flow surface)
+- `godot/scripts/autoloads/game_session.gd` (additive run-flow handle)
+- `godot/scripts/ui/presenters/boot_controller.gd` (route to hero-select stage)
+- `godot/scenes/game/gameplay_shell.tscn` (empty `Node2D` → real shell + presenter)
+- `godot/scenes/game/tactical_board.tscn` (empty `Node2D` → real board + presenter)
+- `godot/tests/unit/save/test_run_route_position_save.gd` (extended — SaveManager-delegated resume invariant)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (11.3 entry)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (status)
+
+### Change Log
+
+- 2026-07-05 — Story 11.3 implemented (auto-gds dev-story). Built the run-flow scene navigation (extended `SceneManager` + `RunFlowRouter` + `RunFlowController`), the in-run tactical HUD (the board presenter + the G1 `RunHudViewModel`), the route-map scene + the G2 `RouteMapViewModel`, on-screen resume + recovery (the `RunResumeRecoveryView` + the save-recovery presenter, extending the resume-invariant coverage), and four-layout reach + rule-invariance (the layout-invariance test). Composed the 11.2-inherited live-pre-boss + boss-auto-play seam into one hands-off flow (proven on seed 4242). No fingerprint moved; no save key/RNG stream/event added. Full headless suite green (175 PASS / 0 FAIL). Status → review.

@@ -11,3 +11,4 @@
 
 ## Story 11-3-run-flow-scene-navigation-and-in-run-hud
 - [Phase 3 — create-story] Scene layer is near-zero as-built and the headless harness is scene-free (script.new().run(), no SceneTree): 11.3's .tscn/Control surface is not directly unit-testable by the current runner. Story steers testable logic into RefCounted seams (G1/G2 projections, delegated SceneManager route resolver); scene wiring verified by construction + code-audit. Reviewers should not expect SceneTree tests.
+- [Phase 5 — dev-story] StartingKit.baseline_hp (warrior 18) is a balance number, NOT a viable live-combat driver HP — the scripted focus-fire hero dies on a full live pre-boss walk with it. Live driver uses LiveCombatResolver.DEFAULT_HERO_HP (60); the G1 HUD displays the class baseline between levels (two distinct concerns). The 11.2 "class-kit -> combat-loadout wiring is a later story" boundary is load-bearing.
