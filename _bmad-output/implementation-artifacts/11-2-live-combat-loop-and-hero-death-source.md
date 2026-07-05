@@ -4,7 +4,7 @@ baseline_commit: 80cb1bb8267f133fd90e8c59a490fc0ce8a2adaa
 
 # Story 11.2: Live Combat Loop and Hero Death Source
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
