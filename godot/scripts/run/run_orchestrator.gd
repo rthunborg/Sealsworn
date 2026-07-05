@@ -22,11 +22,21 @@ extends RefCounted
 #     NodeResolvePlaceholderCommand.execute(run) -> NodeExitCommand.execute(run) (the 4.5 round-trip).
 #   - boss: NodeResolvePlaceholderCommand.execute(run) (-> COMPLETED + run_completed); STOP (no exit/advance).
 #
-# V0 COMBAT-AUTO-RESOLVE BOUNDARY ([Decision], documented per the story): there is NO real tactical play loop
-# wired into the headless orchestrator. Combat is auto-resolved as "level generated successfully -> node
-# cleared" — the orchestrator proves the level GENERATES and is playable (the route<->level handoff +
-# determinism, which is what AC1/AC2 require), then exits. Wiring the real tactical board play into the
-# orchestrator is a presentation/HUD concern for a later story.
+# V0 COMBAT-AUTO-RESOLVE BOUNDARY ([Decision], documented per the story): the DEFAULT run driver
+# (resolve_current_node / run_to_completion) AUTO-RESOLVES combat as "level generated successfully -> node
+# cleared" — it proves the level GENERATES and is playable (the route<->level handoff + determinism), then
+# exits. This auto-resolve path is RETAINED for the explicitly-NON-LIVE simulation / headless seed-batch use
+# (a fast deterministic driver whose stream advancement the interrupted==uninterrupted route-position save
+# depends on; it must NOT change).
+#
+# STORY 11.2 — THE LIVE RUN FLOW (additive, opt-in; the DEFAULT path above is UNCHANGED): resolve_current_node_live
+# / run_to_completion_live resolve a combat/elite node from REAL tactical play on the board (LiveCombatResolver —
+# the generalized Epic-1 micro-combat loop) to a terminal CombatOutcomeState, and a live DEFEAT auto-fires the
+# run-end hero-death SOURCE (resolve_run_end -> PHASE_FAILED). auto_play_boss_fight / auto_play_full_run auto-play
+# the Larval Avatar fight (both sides simulated) to the boss VICTORY production call site (resolve_boss_victory).
+# These are OPT-IN live drivers layered ON TOP of the unchanged default methods — a live fight is NEVER silently
+# auto-resolved, and the default run_to_completion (used by the reward/route/finale fingerprints) is byte-identical.
+# The on-screen HUD that RENDERS this live loop is Story 11.3; 11.2 wires the scene-free domain seam only.
 #
 # CLEARED-SET LOCKSTEP (4.4/4.5): the orchestrator does NOT clear nodes itself — NodeExitCommand clears
 # non-boss nodes on exit, NodeResolvePlaceholderCommand clears the boss on resolve, RouteAdvanceCommand's
@@ -40,7 +50,11 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
+const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const BossDefinition = preload("res://scripts/content/definitions/boss_definition.gd")
 const BossNodeEnterCommand = preload("res://scripts/core/commands/boss_node_enter_command.gd")
+const BossRepository = preload("res://scripts/content/repositories/boss_repository.gd")
+const BossTurnResolver = preload("res://scripts/tactical/turns/boss_turn_resolver.gd")
 const CompleteRunCommand = preload("res://scripts/core/commands/complete_run_command.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
@@ -52,6 +66,7 @@ const GoldRewardDefinition = preload("res://scripts/content/definitions/gold_rew
 const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 const NodeEnterCommand = preload("res://scripts/core/commands/node_enter_command.gd")
 const NodeExitCommand = preload("res://scripts/core/commands/node_exit_command.gd")
 const NodeResolvePlaceholderCommand = preload("res://scripts/core/commands/node_resolve_placeholder_command.gd")
@@ -66,6 +81,20 @@ const RouteState = preload("res://scripts/run/route_state.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
+const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
+const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
+const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
+
+# Story 11.2: the live-flow entity ids (the hero the LiveCombatResolver/boss auto-play place on the board) + the boss
+# entity id. The hero + boss are placed by the run flow (generation places enemies only); these match the ids the
+# existing tactical resolvers key off (EnemyTurnResolver HERO_ID default, BossTurnResolver larval_avatar).
+const HERO_ID := &"hero"
+const BOSS_ID := &"larval_avatar"
+# Story 11.2: the caller-reserved sequence-id base for the boss auto-play's interleaved fight log (above any run-level
+# route-event id so the merged boss-action + phase-change + boss_defeat ids never collide with the run_completed id the
+# orchestrator assigns from its own lower counter — the sequence-id seam contract). Mirrors test_finale_full_run's
+# fight_base = 100000.
+const BOSS_FIGHT_SEQUENCE_BASE: int = 100000
 
 # The live run-progression state (set by start()/start_from). The orchestrator threads exactly ONE.
 var run: RunState = null
@@ -864,6 +893,369 @@ func boss_arena_payload() -> Dictionary:
 
 func boss_encounter_pending() -> bool:
 	return _boss_encounter_pending
+
+
+# ---- Story 11.2: the LIVE run flow (additive, opt-in — the DEFAULT methods above are UNCHANGED) --------------------
+
+# Resolve the parked node LIVE (Story 11.2, AC1/AC2), mirroring resolve_current_node's guards + dispatch but routing a
+# combat/elite node through the LIVE combat driver (resolve_combat_node_live) instead of the v0 auto-resolve. A boss node
+# still SETS UP the encounter (_resolve_boss — the fight is auto-played separately via auto_play_boss_fight); a non-combat
+# node still resolves through the placeholder round-trip (no live tactical play). `hero_hp` / `hero_weapon_id` are the
+# driver-supplied hero loadout threaded to the live combat driver (the class-kit -> combat wiring is a later story). The
+# LIVE hero-death SOURCE lives inside resolve_combat_node_live (a live DEFEAT auto-fires resolve_run_end).
+func resolve_current_node_live(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if run.is_terminal():
+		return ActionResult.error(&"run_already_terminal", {"phase": String(run.phase)})
+	var current: RouteNode = run.route.node_by_id(run.route.current_node_id)
+	if current == null:
+		return ActionResult.error(&"no_current_node", {"command": "run_orchestrator"})
+
+	# Already-cleared no-op guard (mirrors resolve_current_node): a parked-on-a-cleared-node position advances forward
+	# rather than re-resolving.
+	if run.route.cleared_node_ids.has(current.id):
+		return ActionResult.ok([], {
+			"node_id": current.id,
+			"node_type": String(current.type),
+			"resolution": "already_cleared_noop",
+			"run_completed": false
+		})
+
+	if current.type == RouteNode.TYPE_BOSS:
+		return _resolve_boss(current)
+	if NodeEnterCommand.NODE_TYPE_RECIPE.has(current.type):
+		return resolve_combat_node_live(current, hero_hp, hero_weapon_id)
+	return _resolve_non_combat_placeholder(current)
+
+
+# Resolve a combat/elite node from REAL tactical play (Story 11.2, AC1/AC2). The LIVE counterpart of _resolve_combat: it
+# ENTERS the node (NodeEnterCommand) + GENERATES the level (LevelGenerator.generate) EXACTLY as the v0 path does, then
+# instead of auto-resolving on a successful generation it DRIVES a live fight on the generated board (LiveCombatResolver
+# — the generalized Epic-1 micro-combat loop) to a terminal CombatOutcomeState:
+#   - LIVE VICTORY: the node is CLEARED + EXITED (NodeExitCommand) exactly as the v0 path does, so the run advances
+#     forward. The node is decided by the BOARD OUTCOME (STATE_VICTORY), not by "the level generated".
+#   - LIVE DEFEAT: the LIVE hero-death SOURCE (AC2) auto-fires the run-end resolution (resolve_run_end(&"hero_death") ->
+#     CompleteRunCommand -> PHASE_FAILED + run_failed cause hero_death + next_destination == outpost). A dead hero ENDS
+#     the run — the node is NOT exited/cleared (death is a terminal resolution, not a forward node clear). The auto-fire
+#     runs BEHIND the CompleteRunCommand run_already_terminal guard (a re-detection never double-fires — AC4 idempotency).
+# The live loop draws gameplay RNG ONLY through the run-level `streams` (the `combat` stream, via AttackCommand's existing
+# draws); the default staff/sword hero draws ZERO combat RNG. This is ADDITIVE: _resolve_combat (the v0 auto-resolve) is
+# UNCHANGED + still the default path, so the non-live route-position determinism is untouched.
+func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+
+	var enter: ActionResult = NodeEnterCommand.new(_next_sequence_id).execute(run)
+	if enter.is_error():
+		return enter
+	_advance_sequence_past(enter)
+
+	var request = enter.metadata.get("level_request")
+	var generation: GenerationResult = LevelGenerator.generate(request, _recipe_repository, _enemy_repository)
+	if generation.is_error():
+		return ActionResult.error(&"level_generation_failed", {
+			"command": "run_orchestrator",
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"inner_failed_phase": String(generation.failed_phase),
+			"inner_error_code": String(generation.error_code),
+			"inner_reason": String(generation.reason)
+		})
+
+	# Drive the LIVE fight on the generated board (restore board + place the hero at the entrance + scripted-hero loop +
+	# enemy turns -> a terminal CombatOutcomeState). The run-level `streams` is the ONLY RNG source (the `combat` stream).
+	var combat: ActionResult = LiveCombatResolver.new(_enemy_repository).resolve(
+		generation.payload.get("board", {}),
+		generation.payload.get("entrance", {}),
+		streams,
+		hero_hp,
+		hero_weapon_id
+	)
+	if combat.is_error():
+		# A live fight that could not resolve (a stalled board within the driver's bound) is a hard run-progression error:
+		# surface it structurally + STOP (no partial progression — the node is neither cleared nor failed).
+		return ActionResult.error(&"live_combat_failed", {
+			"command": "run_orchestrator",
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"inner_error_code": String(combat.error_code),
+			"level_seed": String(generation.payload.get("level_seed", ""))
+		})
+
+	var is_victory: bool = bool(combat.metadata.get("is_victory", false))
+	if not is_victory:
+		# LIVE DEFEAT -> the live hero-death SOURCE (AC2): auto-fire the run-end resolution. hero_death is the general
+		# level/encounter death cause (already in RUN_FAILED_CAUSES). Do NOT exit the node (a dead hero ends the run).
+		var death: ActionResult = resolve_run_end(DomainEvent.RUN_FAILED_CAUSES[0])  # &"hero_death"
+		if death.is_error():
+			return death
+		return ActionResult.ok(death.events, {
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"resolution": "live_combat_defeat",
+			"outcome": String(combat.metadata.get("outcome", "")),
+			"rounds": int(combat.metadata.get("rounds", 0)),
+			"level_seed": String(generation.payload.get("level_seed", "")),
+			"run_failed": true,
+			"cause": run_failed_cause(),
+			"next_destination": run_end_destination(),
+			"run_completed": false
+		})
+
+	# LIVE VICTORY -> clear + exit the node (the v0 forward-advance), so the run continues. The board outcome decided it.
+	var exit: ActionResult = NodeExitCommand.new(_next_sequence_id).execute(run)
+	if exit.is_error():
+		return exit
+	_advance_sequence_past(exit)
+
+	return ActionResult.ok([], {
+		"node_id": node.id,
+		"node_type": String(node.type),
+		"resolution": "live_combat_victory",
+		"outcome": String(combat.metadata.get("outcome", "")),
+		"rounds": int(combat.metadata.get("rounds", 0)),
+		"level_seed": String(generation.payload.get("level_seed", "")),
+		"level_recipe_id": String(generation.payload.get("recipe_id", "")),
+		"run_completed": false
+	})
+
+
+# Drive the run start-to-end through the LIVE flow (Story 11.2 — the opt-in live counterpart of run_to_completion). Loops
+# resolve_current_node_live -> (if not terminal AND not the boss terminus) advance-to-first-eligible, until the run is
+# terminal (a live DEFEAT ends it) OR it parks at the boss-setup terminus (the boss fight is auto-played separately via
+# auto_play_boss_fight / auto_play_full_run). Surfaces the FIRST error verbatim + STOPS. The DEFAULT run_to_completion is
+# UNCHANGED; this is a separate driver so the non-live fingerprints + the interrupted==uninterrupted route-position
+# determinism hold. `hero_hp` / `hero_weapon_id` thread the live hero loadout.
+func run_to_completion_live(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+
+	var max_steps: int = 256
+	var steps: int = 0
+	while not run.is_terminal() and steps < max_steps:
+		var resolved: ActionResult = resolve_current_node_live(hero_hp, hero_weapon_id)
+		if resolved.is_error():
+			return resolved
+		if run.is_terminal():
+			break
+		if _boss_encounter_pending:
+			break
+		var advance: ActionResult = advance_to_first_eligible()
+		if advance.is_error():
+			return advance
+		steps += 1
+
+	if _boss_encounter_pending and not run.is_terminal():
+		return ActionResult.ok([], {
+			"run": run,
+			"outcome": "",
+			"resolution": "boss_encounter_started",
+			"boss_encounter_pending": true,
+			"cleared_node_count": run.route.cleared_node_ids.size()
+		})
+
+	if not run.is_terminal():
+		return ActionResult.error(&"run_did_not_complete", {"command": "run_orchestrator", "steps": steps})
+
+	# Terminal via the live flow: a live hero DEATH (PHASE_FAILED) is the expected non-boss live terminus (a run the hero
+	# lost on the board). Surface the run-end outcome/cause for the caller.
+	return ActionResult.ok([], {
+		"run": run,
+		"outcome": _run_completed_outcome,
+		"cause": _run_failed_cause,
+		"phase": String(run.phase),
+		"cleared_node_count": run.route.cleared_node_ids.size()
+	})
+
+
+# Auto-play the Larval Avatar boss fight to VICTORY from the boss-setup terminus (Story 11.2, AC3 — the resolve_boss_victory
+# PRODUCTION call site + the both-sides-simulated boss auto-play). PRECONDITION: the run is parked at the boss terminus
+# (boss_encounter_pending() — reached via run_to_completion / run_to_completion_live). It:
+#   (1) restores the boss arena BoardState from boss_arena_payload() + places the live boss (larval_avatar, BossRepository
+#       max_hp) at the arena slot + the hero at the entrance (the 9.1 arena reserves the slot; the run flow places both),
+#   (2) AUTO-PLAYS the fight — BOTH sides simulated: the boss via BossTurnResolver.resolve_boss_turn, the hero via a
+#       deterministic scripted driver (the same focus-fire pattern the level combat uses, generalized to one boss target)
+#       — until the boss reaches 0 HP OR the hero dies,
+#   (3) threads the SHARED sequence-id cursor through resolve_phase_transitions -> detect_boss_defeat -> the run-end append
+#       (the seam contract — a caller-reserved base above the run's route-event ids), and
+#   (4) on boss DEFEAT drives resolve_boss_victory() (clears the boss node + resolve_run_end(victory) -> PHASE_COMPLETED +
+#       run_completed(victory) + outpost); on a HERO DEATH during the boss fight auto-fires resolve_run_end(&"boss_defeat")
+#       (the boss-context death cause, already in RUN_FAILED_CAUSES) -> PHASE_FAILED.
+# ZERO-new-RNG (the boss AI + phase resolver + defeat are ZERO-RNG; a hero attack proc would draw only the `combat`
+# stream — the default sword hero draws none). Returns ok with the interleaved fight+run-end events + the outcome.
+func auto_play_boss_fight(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if not _boss_encounter_pending:
+		return ActionResult.error(&"no_boss_encounter_pending", {"command": "run_orchestrator", "phase": String(run.phase)})
+
+	# Restore the arena board + place the boss + hero.
+	var payload: Dictionary = _boss_arena_payload
+	var snapshot: Dictionary = payload.get("board_snapshot", {})
+	if snapshot.is_empty():
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "reason": "no_board_snapshot"})
+	var board_result: ActionResult = BoardState.try_from_snapshot(snapshot)
+	if board_result.is_error():
+		return ActionResult.error(&"invalid_boss_arena_payload", {"command": "run_orchestrator", "inner_error_code": String(board_result.error_code)})
+	var board: BoardState = board_result.metadata.get("board") as BoardState
+
+	var definition: BossDefinition = BossRepository.create_baseline_repository().get_boss(BOSS_ID)
+	if definition == null:
+		return ActionResult.error(&"unknown_boss", {"command": "run_orchestrator", "boss_id": String(BOSS_ID)})
+	var slot: Dictionary = payload.get("boss_slot", {})
+	var slot_cell: Vector2i = Vector2i(int(slot.get("x", 6)), int(slot.get("y", 1)))
+	var entrance: Dictionary = payload.get("entrance", {})
+	var entrance_cell: Vector2i = Vector2i(int(entrance.get("x", 6)), int(entrance.get("y", 10)))
+	var resolved_hp: int = maxi(1, hero_hp)
+	var boss: TacticalEntityState = TacticalEntityState.new(BOSS_ID, TacticalEntityState.EntityType.ENEMY, &"boss", slot_cell, definition.max_hp, definition.max_hp, true, BOSS_ID)
+	board.place_entity_for_setup(boss)
+	var hero: TacticalEntityState = TacticalEntityState.new(HERO_ID, TacticalEntityState.EntityType.PLAYER, &"player", entrance_cell, resolved_hp, resolved_hp, true, HERO_ID)
+	board.place_entity_for_setup(hero)
+	for board_cell in board.cells():
+		board_cell.visible = true
+		board_cell.explored = true
+
+	var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, HERO_ID)
+	var context: TacticalActionContext = TacticalActionContext.new(board, turn_state, streams, [])
+	var resolver: BossTurnResolver = BossTurnResolver.new(definition, BOSS_ID, HERO_ID)
+
+	# AUTO-PLAY the fight (both sides). A bounded round cap guards against a non-progressing board; the hero out-damages
+	# the boss deterministically. `run_events` is the run-level SYSTEM stream (boss_phase_changed + boss_defeated, from the
+	# reserved high base); `board_events` is the tactical board log (hero/boss actions, the board's own id space).
+	var play: ActionResult = _auto_play_boss_rounds(board, context, resolver, definition, hero_weapon_id)
+	if play.is_error():
+		return play
+	var run_events: Array = play.metadata.get("run_events", [])
+	var board_events: Array = play.metadata.get("board_events", [])
+	var hero_dead: bool = bool(play.metadata.get("hero_dead", false))
+
+	if hero_dead:
+		# A live hero death DURING the boss fight -> the live hero-death SOURCE with the boss-context cause (boss_defeat).
+		# The run_failed event uses the orchestrator's OWN (lower) monotonic cursor — a separate id space from the reserved
+		# fight base, so it never collides with the interleaved boss SYSTEM ids.
+		var death: ActionResult = resolve_run_end(&"boss_defeat")
+		if death.is_error():
+			return death
+		return ActionResult.ok([], {
+			"run": run,
+			"outcome": "",
+			"cause": run_failed_cause(),
+			"resolution": "boss_fight_hero_death",
+			"next_destination": run_end_destination(),
+			"events": run_events + death.events,
+			"board_events": board_events,
+			"phase": String(run.phase)
+		})
+
+	# Boss DEFEATED -> the boss-VICTORY production call site (AC3). resolve_boss_victory clears the boss node + drives
+	# resolve_run_end(victory) -> PHASE_COMPLETED + run_completed(victory) + outpost. The run_completed event uses the
+	# orchestrator's OWN (lower) monotonic cursor — distinct from the reserved fight base, so no id collides.
+	var victory: ActionResult = resolve_boss_victory()
+	if victory.is_error():
+		return victory
+	return ActionResult.ok([], {
+		"run": run,
+		"outcome": _run_completed_outcome,
+		"resolution": "boss_victory",
+		"next_destination": run_end_destination(),
+		"events": run_events + victory.events,
+		"board_events": board_events,
+		"phase": String(run.phase)
+	})
+
+
+# Auto-play a FULL run to a run-END through the shell (Story 11.2, AC3 — "run_to_completion can auto-play the full boss
+# fight headlessly"). Drives run_to_completion() to the boss-setup terminus (the DEFAULT driver — the pre-boss combat is
+# v0 auto-resolved, keeping the fingerprints byte-identical), then auto-plays the boss fight (auto_play_boss_fight) to the
+# boss VICTORY (or a hero death during the boss fight). This is the OPT-IN full-run auto-play the seed-batch / simulation
+# tests call; the DEFAULT run_to_completion (which STOPS at the boss terminus) is UNCHANGED. Returns the boss auto-play
+# result (the terminal run + the interleaved fight+run-end events + the outcome).
+func auto_play_full_run(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+
+	var completion: ActionResult = run_to_completion()
+	if completion.is_error():
+		return completion
+	# If the run already ended (no boss node — a structurally-degenerate run), surface the completion verbatim.
+	if run.is_terminal():
+		return completion
+	if not _boss_encounter_pending:
+		return ActionResult.error(&"run_did_not_reach_boss_terminus", {"command": "run_orchestrator", "phase": String(run.phase)})
+	return auto_play_boss_fight(hero_hp, hero_weapon_id)
+
+
+# Auto-play the boss fight ROUNDS (both sides): each round the hero acts (focus-fire the boss — attack when in range/
+# aligned, else approach), then (if the boss lives) the boss takes its turn (BossTurnResolver.resolve_boss_turn), then the
+# phase transitions are re-resolved from the boss's post-hit HP (the seam-contract shared cursor). Loops until the boss is
+# dead OR the hero is dead OR the round cap is hit. On the boss's death it emits the phase chain (through the defeat HP) +
+# the boss_defeated event (threading the shared cursor). Returns TWO event streams (kept distinct because they live in
+# DIFFERENT id spaces): `run_events` — the run-level interleaved SYSTEM stream (boss_phase_changed + boss_defeated), which
+# the caller extends with the run_completed/run_failed run-END event, ALL sequenced from the reserved high base
+# (BOSS_FIGHT_SEQUENCE_BASE) so they are mutually UNIQUE (the seam contract); and `board_events` — the tactical board log
+# (the hero/boss action events, which carry the ARENA board's OWN sequence ids, a separate id space). Also returns whether
+# the hero died. The hero driver reuses the LiveCombatResolver's scripted-hit discipline against the single boss target.
+func _auto_play_boss_rounds(board: BoardState, context: TacticalActionContext, resolver: BossTurnResolver, definition: BossDefinition, hero_weapon_id: StringName) -> ActionResult:
+	var run_events: Array = []
+	var board_events: Array = []
+	var weapon = _live_hero_weapon(hero_weapon_id)
+	if weapon == null:
+		return ActionResult.error(&"unknown_hero_weapon", {"command": "run_orchestrator", "weapon_id": String(hero_weapon_id)})
+	var live_driver: LiveCombatResolver = LiveCombatResolver.new(_enemy_repository)
+	var fight_base: int = BOSS_FIGHT_SEQUENCE_BASE
+	var max_rounds: int = 128
+	var rounds: int = 0
+	while rounds < max_rounds:
+		rounds += 1
+		var boss: TacticalEntityState = board.get_entity(BOSS_ID)
+		var hero: TacticalEntityState = board.get_entity(HERO_ID)
+		if boss == null or boss.is_dead():
+			break
+		if hero == null or hero.is_dead():
+			return ActionResult.ok([], {"run_events": run_events, "board_events": board_events, "hero_dead": true, "rounds": rounds})
+
+		# Hero turn: a scripted hit against the boss (attack when the AttackCommand accepts it, else approach). Reuses the
+		# LiveCombatResolver's public single-target step so the hero AI is one implementation. Its events are board-log
+		# events (the board's own id space) — collected in board_events, NOT the run-level uniqueness stream.
+		var phase_before_hit: int = resolver.active_phase_index_for_hp(boss.current_hp)
+		var hero_step: ActionResult = live_driver.drive_hero_step_against(context, weapon, BOSS_ID)
+		if hero_step.is_error():
+			return hero_step
+		board_events.append_array(hero_step.events)
+
+		# Re-resolve the boss phase from its post-hit HP (the live phase seam) — SYSTEM events threaded from the reserved
+		# shared cursor (the seam contract).
+		boss = board.get_entity(BOSS_ID)
+		var phase_result: ActionResult = resolver.resolve_phase_transitions(context, phase_before_hit, fight_base)
+		run_events.append_array(phase_result.events)
+		fight_base = int(phase_result.metadata.get("next_sequence_id_after", fight_base))
+		if boss.is_dead():
+			break
+
+		# Boss turn (both sides simulated) — the boss acts if it still lives. Board-log events (board id space).
+		var boss_turn: ActionResult = resolver.resolve_boss_turn(context)
+		if boss_turn.is_error():
+			return boss_turn
+		board_events.append_array(boss_turn.events)
+
+	var final_boss: TacticalEntityState = board.get_entity(BOSS_ID)
+	if final_boss == null or not final_boss.is_dead():
+		# The hero could not fell the boss within the bound (a stalled fight) — fail loud (never a fabricated victory).
+		var final_hero: TacticalEntityState = board.get_entity(HERO_ID)
+		if final_hero != null and final_hero.is_dead():
+			return ActionResult.ok([], {"run_events": run_events, "board_events": board_events, "hero_dead": true, "rounds": rounds})
+		return ActionResult.error(&"boss_fight_did_not_resolve", {"command": "run_orchestrator", "rounds": rounds})
+
+	# Boss defeated: emit the boss_defeated SYSTEM event (threading the shared cursor — the seam contract).
+	var defeat_result: ActionResult = resolver.detect_boss_defeat(context, fight_base)
+	run_events.append_array(defeat_result.events)
+	fight_base = int(defeat_result.metadata.get("next_sequence_id_after", fight_base))
+	return ActionResult.ok([], {"run_events": run_events, "board_events": board_events, "hero_dead": false, "rounds": rounds})
+
+
+func _live_hero_weapon(hero_weapon_id: StringName):
+	return LiveCombatResolver.new(_enemy_repository).hero_weapon(hero_weapon_id)
 
 
 # ---- internal dispatch ---------------------------------------------------------------------------

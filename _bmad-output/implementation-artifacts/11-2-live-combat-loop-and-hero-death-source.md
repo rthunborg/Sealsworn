@@ -4,7 +4,7 @@ baseline_commit: 80cb1bb8267f133fd90e8c59a490fc0ce8a2adaa
 
 # Story 11.2: Live Combat Loop and Hero Death Source
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -124,141 +124,104 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.2). Four AC groups (Given/Wh
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Live combat resolution for live nodes (AC1)**
-  - [ ] Build the scene-free **live combat driver** that resolves a combat / elite node from real tactical
-        play. Reuse the EXISTING building blocks (do NOT reinvent a combat loop): `NodeEnterCommand` →
-        `LevelGenerator.generate(request, recipe_repo, enemy_repo)` → restore a live `BoardState` from
-        `generation.payload["board"]` (the board snapshot; NOT `payload.level_seed`, which is the seed
-        string) → a `TacticalActionContext(board, TacticalTurnState, streams, pending_telegraphs)` → drive
-        player commands (`MoveCommand`/`AttackCommand` through `TacticalCommandBridge`) threaded with
+- [x] **Task 1 — Live combat resolution for live nodes (AC1)**
+  - [x] Build the scene-free **live combat driver** — `LiveCombatResolver` (`godot/scripts/run/live_combat_resolver.gd`),
+        the generalized `Epic1MicroCombatScenario`. `RunOrchestrator.resolve_combat_node_live` reuses the EXISTING blocks:
+        `NodeEnterCommand` → `LevelGenerator.generate(request, recipe_repo, enemy_repo)` → restore a live `BoardState`
+        from `generation.payload["board"]` (the board snapshot; NOT `payload.level_seed`) → place the hero at
+        `payload["entrance"]` → a `TacticalActionContext(board, TacticalTurnState, streams, [])` → drive a deterministic
+        focus-fire scripted hero (`MoveCommand`/`AttackCommand` on the board) threaded with
         `EnemyTurnResolver.resolve_after_player_action(context, player_result)` → evaluate with
-        `CombatOutcomeEvaluator.new(HERO_ID).evaluate(board, CombatOutcomeState, event_log)` until the
-        outcome state is terminal (`STATE_VICTORY` / `STATE_DEFEAT`). This is the
-        `Epic1MicroCombatScenario` pattern GENERALIZED for a run node — read that scenario as the reference
-        (`scripts/tactical/scenarios/epic_1_micro_combat_scenario.gd`).
-  - [ ] On a live VICTORY: clear + exit the node exactly as the v0 path does (`NodeExitCommand`), so the run
-        advances forward. The node is decided by the BOARD OUTCOME, not by "the level generated".
-  - [ ] On a live DEFEAT: hand off to the hero-death source (Task 2) — do NOT exit the node (a dead hero ends
-        the run, it does not clear the node forward).
-  - [ ] Keep the v0 `_resolve_combat` auto-resolve reachable ONLY behind an explicit non-live label (the
-        headless seed-batch / simulation path may keep auto-resolving so `run_to_completion` stays a fast
-        deterministic driver). Name the seam clearly (e.g. a `live` flag / a separate live-resolve method) so
-        a live fight is NEVER silently auto-resolved. Document the boundary in the method's doc comment (the
-        v0 `_resolve_combat` doc comment already declares the auto-resolve boundary — extend it).
-  - [ ] **Determinism guard (AC4):** the live loop draws gameplay RNG ONLY through the run-level
-        `RngStreamSet` on the `combat` stream (attack procs) / `level` stream (already drawn by generation) —
-        NEVER `randi`/`randf`/a fresh `RandomNumberGenerator`. A route-position save composed in a
-        non-live `run_to_completion` must stay byte-identical (the interrupted==uninterrupted invariant) —
-        the live loop must not perturb the auto-resolve simulation path's stream advancement. Prove a live
-        combat run is byte-deterministic for a fixed seed.
+        `CombatOutcomeEvaluator.new(HERO_ID).evaluate(board, CombatOutcomeState, event_log)` until terminal
+        (`STATE_VICTORY` / `STATE_DEFEAT`). (The command bridge is the SCENE's tap-submission seam — 11.3; the headless
+        driver drives commands directly like `Epic1MicroCombatScenario`.)
+  - [x] On a live VICTORY: clear + exit the node exactly as the v0 path does (`NodeExitCommand`), so the run advances
+        forward. `resolve_combat_node_live` returns `resolution == live_combat_victory`; the BOARD outcome decides it.
+  - [x] On a live DEFEAT: hand off to the hero-death source (Task 2) — do NOT exit the node (a dead hero ends the run).
+  - [x] Keep the v0 `_resolve_combat` auto-resolve reachable ONLY on the DEFAULT (non-live) path — `_resolve_combat` /
+        `resolve_current_node` / `run_to_completion` are UNCHANGED and still return `combat_auto_resolved`. The live path
+        is a SEPARATE `resolve_current_node_live` / `run_to_completion_live` — a live fight is NEVER silently
+        auto-resolved. The v0 boundary doc comment on the class was EXTENDED with the 11.2 live-flow boundary.
+  - [x] **Determinism guard (AC4):** the live loop draws gameplay RNG ONLY through the run-level `RngStreamSet` on the
+        `combat` stream (via `AttackCommand`) — NEVER `randi`/`randf`/a fresh RNG. The DEFAULT sword hero has no proc/
+        shield → draws ZERO combat RNG (a test asserts the injected stream set is byte-identical before/after). The
+        DEFAULT `run_to_completion` save-stream is byte-identical across two runs (proven). A live combat run is
+        byte-deterministic for a fixed seed (`test_live_combat_resolver.gd` — same outcome + rounds + event log).
 
-- [ ] **Task 2 — The live hero-death SOURCE (AC2)**
-  - [ ] Wire the combat-DEFEAT → run-END seam: when the live combat driver (Task 1) OR the boss fight (Task
-        3) detects the hero at 0 HP (`CombatOutcomeState.STATE_DEFEAT` / `CombatOutcomeEvaluator`
-        `primary_player_dead == true` / the hero `TacticalEntityState.is_dead()`), auto-fire
-        `RunOrchestrator.resolve_run_end(&"hero_death")` (which runs `CompleteRunCommand(&"hero_death")` →
-        `PHASE_FAILED` + `run_failed` cause `hero_death` + `next_destination == outpost`). `hero_death` is
-        already in `DomainEvent.RUN_FAILED_CAUSES = [hero_death, level_defeat, boss_defeat, abandoned]` — do
-        NOT add a cause. (Use `boss_defeat` as the cause for a hero death DURING the boss fight if you want to
-        distinguish the context; `hero_death` is the general level/encounter death. Pick the cause that
-        matches the encounter and document it — both are pre-allowlisted.)
-  - [ ] The death source is AUTO (not caller-supplied): the loop DETECTS 0 HP and FIRES the run-end itself
-        (the AC2 "auto-fires"), unlike the driven death `test_finale_full_run.gd` uses today
-        (`resolve_run_end(&"hero_death")` called explicitly by the test). This is the SOURCE the deferred-work
-        ledger + Epic-9 retro T2 named as the missing piece.
-  - [ ] Prove the first-death latch records off the REAL terminal state: after a live hero death, drive
-        `RecordFirstDeathCommand` on the terminal FAILED run and assert it latches
-        (`ProfileSnapshot.first_death_recorded` flips) — the AC2 "first-death latch recordable off the real
-        terminal state". The latch command is UNCHANGED (`scripts/core/commands/record_first_death_command.gd`);
-        11.2 gives it a real live source instead of a driven death.
-  - [ ] **Idempotency (AC4):** the run-end auto-fire must run BEHIND the `run_already_terminal` guard — a
-        second detection (or a re-drive) never re-fires the run-end / never double-latches. A live death that
-        already resolved the run is terminal; a re-evaluation is a stable no-op / `run_already_terminal`.
+- [x] **Task 2 — The live hero-death SOURCE (AC2)**
+  - [x] Wired the combat-DEFEAT → run-END seam: `resolve_combat_node_live` (Task 1) AND the boss auto-play (Task 3)
+        detect the hero at 0 HP (`CombatOutcomeState.STATE_DEFEAT` / `TacticalEntityState.is_dead()`) and AUTO-FIRE
+        `RunOrchestrator.resolve_run_end(&"hero_death")` (level/encounter death) → `PHASE_FAILED` + `run_failed` cause
+        `hero_death` + `next_destination == outpost`. A hero death DURING the boss fight uses `&"boss_defeat"` (the
+        boss-context cause). Both are pre-allowlisted in `DomainEvent.RUN_FAILED_CAUSES` — NO cause added.
+  - [x] The death source is AUTO (not caller-supplied): the loop DETECTS 0 HP + FIRES the run-end itself (unlike the
+        driven death `test_finale_full_run.gd` uses). This is the SOURCE Epic-9 retro T2 + the deferred-work ledger named.
+  - [x] Proved the first-death latch records off the REAL terminal state: `test_live_run_flow.gd` +
+        `test_finale_full_run.gd` drive a real live death, then `RecordFirstDeathCommand` on the terminal FAILED run and
+        assert `first_death_recorded` flips. The latch command is UNCHANGED.
+  - [x] **Idempotency (AC4):** the auto-fire runs BEHIND the `CompleteRunCommand` `run_already_terminal` guard — a
+        second `resolve_run_end` on the terminal live-death run is the stable `run_already_terminal` error + byte-
+        identical run (proven in `test_live_run_flow.gd`).
 
-- [ ] **Task 3 — Boss-victory production call site + full-boss auto-play (AC3)**
-  - [ ] Give `RunOrchestrator.resolve_boss_victory()` (already built in 9.5, `run_orchestrator.gd:784`) its
-        PRODUCTION call site. Today it is invoked ONLY from `test_finale_full_run.gd`. Build the auto-play
-        driver that: drives `run_to_completion` to the 9.1 boss-setup terminus (the run parks non-terminal in
-        `NODE_RESOLUTION` with `boss_encounter_pending()`), restores the boss arena `BoardState` from
-        `boss_arena_payload()`, places the live boss (`larval_avatar`, `BossRepository` `max_hp`) + the hero,
-        AUTO-PLAYS the fight (both sides simulated — `BossTurnResolver.resolve_boss_turn` for the boss;
-        player/AI-driven hero turns to damage the boss to 0 HP), threads the SHARED sequence-id cursor through
-        `resolve_phase_transitions → detect_boss_defeat → resolve_boss_victory` (the seam contract — see
-        Dev Notes), and on boss defeat calls `resolve_boss_victory()` (which clears the boss node +
-        `resolve_run_end(victory)`).
-  - [ ] Record the first-victory latch off the real victory: after `resolve_boss_victory()` reaches
-        `PHASE_COMPLETED`, drive `RecordFirstVictoryCommand` on the terminal COMPLETED run and assert it
-        latches (`ProfileSnapshot.first_victory_recorded`). The command is UNCHANGED
-        (`scripts/core/commands/record_first_victory_command.gd`).
-  - [ ] **`run_to_completion` auto-play (AC3 "can auto-play the full boss fight headlessly"):** either extend
-        `run_to_completion` with an OPTIONAL auto-play mode (a flag / a callback) that plays the boss fight
-        instead of stopping at the boss-setup terminus, OR build the auto-play as a separate orchestrator
-        driver the seed-batch / simulation tests call. The DEFAULT `run_to_completion` (used by
-        `FinaleRunFixture.drive_to_boss_terminus` + the reward/route determinism tests) MUST stay unchanged in
-        its default behavior (stop at the boss terminus) so the existing fingerprints + the
-        interrupted==uninterrupted route-position determinism hold — add auto-play as an OPT-IN, never change
-        the default. Confirm `test_finale_full_run.gd` + `test_finale_seed_regression.gd` still pass (the
-        auto-play must reproduce the driven-fight outcome for a fixed seed).
-  - [ ] **Both-sides-simulated (AC3):** the boss auto-play simulates BOTH the boss (existing `BossTurnResolver`)
-        AND the hero (a deterministic hero driver — reuse the `PrototypeEnemyAi` / a scripted-hit pattern like
-        `test_finale_full_run.gd::_damage_boss` does, or a minimal hero-AI). It must be ZERO-new-RNG (the boss
-        AI + phase resolver + defeat are ZERO-RNG; a hero attack proc draws only the `combat` stream). Prove
-        the auto-played full run is byte-deterministic for a fixed seed (extend the existing
-        `_full_run_is_byte_deterministic_end_to_end` assertion).
+- [x] **Task 3 — Boss-victory production call site + full-boss auto-play (AC3)**
+  - [x] Gave `RunOrchestrator.resolve_boss_victory()` its PRODUCTION call site: `auto_play_boss_fight` /
+        `auto_play_full_run` drive `run_to_completion` to the 9.1 boss-setup terminus (`boss_encounter_pending()`),
+        restore the arena `BoardState` from `boss_arena_payload()`, place the live boss (`larval_avatar`, `BossRepository`
+        `max_hp`) + the hero, AUTO-PLAY the fight (both sides — `BossTurnResolver.resolve_boss_turn` for the boss; a
+        deterministic scripted hero via `LiveCombatResolver.drive_hero_step_against`), thread the SHARED sequence-id
+        cursor through `resolve_phase_transitions → detect_boss_defeat → the run-end append`, and on boss defeat call
+        `resolve_boss_victory()` (clears the boss node + `resolve_run_end(victory)`).
+  - [x] Recorded the first-victory latch off the real victory: `test_finale_full_run.gd::
+        _auto_play_records_the_first_victory_latch_off_the_real_victory` drives `RecordFirstVictoryCommand` on the
+        terminal COMPLETED auto-played run + asserts `first_victory_recorded`. The command is UNCHANGED.
+  - [x] **`run_to_completion` auto-play:** built the auto-play as a SEPARATE opt-in orchestrator driver
+        (`auto_play_full_run` — `run_to_completion` to the terminus, then auto-play the boss). The DEFAULT
+        `run_to_completion` is UNCHANGED (stops at the boss terminus) — `test_finale_full_run.gd` +
+        `test_finale_seed_regression.gd` still pass; the auto-play reproduces the fixed-seed outcome.
+  - [x] **Both-sides-simulated (AC3):** the boss auto-play simulates BOTH the boss (`BossTurnResolver`) AND the hero
+        (the `LiveCombatResolver` scripted-hit driver against the single boss target). ZERO-new-RNG (the boss AI + phase
+        resolver + defeat are ZERO-RNG; the default sword hero draws ZERO combat RNG). The auto-played full run is
+        byte-deterministic for a fixed seed (`_auto_played_full_run_is_byte_deterministic` — byte-identical terminal run
+        + interleaved fight+run-END event stream).
 
-- [ ] **Task 4 — Forcing tests for the now-reachable defensive branches (AC4)**
-  - [ ] **`CompleteRunCommand._resolve_completed` step-2 restore (Epic-9 retro T3):** the atomicity fix
-        (capture `phase_before` at `complete_run_command.gd:222`, restore at `:243` on a step-2 failure) is
-        currently UNREACHABLE (both edges always legal), so `test_complete_run_command.gd::
-        _two_step_completion_is_atomic_on_a_hypothetical_step_two_failure` asserts only the OBSERVABLE
-        invariant (a committed two-step is never parked in `NODE_RESOLUTION`). The live victory path (AC3)
-        drives the ACTIVE_ROUTE → NODE_RESOLUTION → COMPLETED two-step for real, so add a FORCING test that
-        makes step 2 fail (a test-only subclass / a run stubbed so the second `transition_to` rejects) and
-        asserts the run restores to byte-identical `phase_before` (not parked in `NODE_RESOLUTION`). If a
-        forcing seam is genuinely infeasible without a production change, keep the observable-invariant test
-        and RECORD why the forcing test can't exist (do not silently drop T3).
-  - [ ] **`NodeResolvePlaceholderCommand._resolve_boss` atomicity TWIN (Epic-9 retro T3):** the identical
-        two-step in `node_resolve_placeholder_command.gd:211` (the `_resolve_boss` boss branch) is NOT
-        hardened (it lacks the `phase_before` capture/restore `_resolve_completed` has). It is unreachable in
-        the LIVE flow (since 9.1 the live boss dispatch is `BossNodeEnterCommand`, NOT the placeholder boss
-        branch — the placeholder boss branch is retained but no longer the orchestrator's live boss path). So:
-        IF 11.2's auto-play does NOT drive the placeholder boss branch (the recommended live path uses
-        `BossNodeEnterCommand` + `resolve_boss_victory`, which do NOT touch `_resolve_boss`), the twin STAYS
-        parked — RE-RECORD it in `deferred-work.md` as still deferred (unchanged, unreached). Only IF a live
-        driver of the placeholder boss branch is added does the twin get hardened + a forcing test. Do not
-        harden a branch nothing drives (dead defensive change) — but do not silently drop the T3 item either.
-  - [ ] Add the forcing test for the `RunEndOutcome` allowlist fallback ONLY if the live path makes it
-        reachable (it is directly covered today via a garbage marker per the 9.4 review — likely no new work).
+- [x] **Task 4 — Forcing tests for the now-reachable defensive branches (AC4)**
+  - [x] **`CompleteRunCommand._resolve_completed` step-2 restore (Epic-9 retro T3):** added the FORCING test
+        `test_complete_run_command.gd::_two_step_completion_restores_phase_on_a_forced_step_two_failure` via a test-only
+        `ForcedStepTwoFailureRunState` subclass (`godot/tests/unit/core/support/forced_step_two_failure_run_state.gd`)
+        that makes step 2 (`NODE_RESOLUTION → COMPLETED`) reject while step 1 succeeds, DRIVING the restore branch
+        (`run.phase = phase_before` at `complete_run_command.gd:243`) and asserting the run RESTORES to byte-identical
+        `phase_before` (ACTIVE_ROUTE) — for BOTH `completed` and `victory`. No longer only the observable-invariant test.
+  - [x] **`NodeResolvePlaceholderCommand._resolve_boss` atomicity TWIN (Epic-9 retro T3):** 11.2's auto-play uses
+        `BossNodeEnterCommand` + `resolve_boss_victory` (which do NOT touch `_resolve_boss`), so the placeholder boss
+        branch is NOT driven — the twin STAYS PARKED. RE-RECORDED as still deferred + unreached in `deferred-work.md` (not
+        hardened — hardening a branch nothing drives would be a dead defensive change; not silently dropped either).
+  - [x] The `RunEndOutcome` allowlist fallback stays directly covered (the 9.4 garbage-marker note) — no new work.
 
-- [ ] **Task 5 — Invariants regression + full-suite green (AC4)**
-  - [ ] Assert / re-verify every durable invariant the live wiring must not perturb: the 23-key `RunSnapshot`
-        gate stays 23 (`test_*run_snapshot*` — NO new save key); `ProfileSnapshot.SCHEMA_VERSION == 1` (NO
-        migration — 8.7's matrix stays green); `RngStreamSet.required_streams()` returns the 7 named streams
-        (NO new stream); the `DomainEvent.Type` enum tail is unchanged UNLESS a new event was genuinely added
-        + fully wired (`expected_ids` exhaustiveness pin updated in lockstep).
-  - [ ] Re-run every seed-regression fingerprint tool + suite and confirm byte-identical: the Small/Medium
-        level fingerprints (`tools/dump_*`), the route fingerprints (`tools/dump_route_fingerprints.gd`), the
-        boss/finale seed catalog (`test_finale_seed_regression.gd`). If the live loop legitimately changes a
-        stream's advancement on the NON-live path (it must not — the default `run_to_completion` is unchanged),
-        STOP and re-pin deliberately in the same change (never edit a fingerprint to make a drifting test
-        pass). Expectation: ZERO fingerprint moves (the default paths are untouched; the live loop is additive
-        / opt-in).
-  - [ ] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH):
-        `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`
-        — assert "Headless tests passed.", exit 0, `0 ^FAIL`, and apply the false-PASS grep guard (grep the
-        raw runner output; the ONLY acceptable stderr `ERROR:` lines are the documented negatives: the
-        int64-overflow saturation ×2, the deliberate malformed-JSON ×3, `invalid_node_type` ×1 — plus any
-        NEW deliberate negative-path test THIS story adds, which must be documented). Run `git diff --check`.
+- [x] **Task 5 — Invariants regression + full-suite green (AC4)**
+  - [x] Re-verified every durable invariant: the 23-key `RunSnapshot` gate stays 23 (`test_run_snapshot.gd` PASS — NO new
+        save key; the in-node fight state is EPHEMERAL); `ProfileSnapshot.SCHEMA_VERSION == 1` (`test_profile_snapshot.gd`
+        PASS — NO migration); `RngStreamSet.required_streams()` = the 7 named streams (`test_rng_stream_set.gd` PASS — NO
+        new stream); the `DomainEvent.Type` enum tail UNCHANGED (`test_domain_event.gd` PASS — the run-end/victory/death
+        vocabulary REUSED, NO new event, so NO `expected_ids` change).
+  - [x] Re-ran every seed-regression fingerprint suite + confirmed byte-identical: the Small/Medium level
+        (`test_small_level_layout_seed_regression.gd` / `test_medium_level_layout_seed_regression.gd`), the route
+        (`test_route_generation_seed_regression.gd`), the seed batch (`test_seed_batch_regression.gd`), the boss/finale
+        (`test_finale_seed_regression.gd`) — ALL PASS. ZERO fingerprint moves (the default paths are untouched; the live
+        loop is additive/opt-in). `git diff HEAD` on the orchestrator is purely additive (ZERO code-logic deletions;
+        only the doc comment was extended); the `tools/dump_*` fingerprint files are untouched.
+  - [x] Ran the FULL headless suite: **168 PASS / 0 `^FAIL`**, "Headless tests passed.", exit 0. False-PASS grep clean —
+        exactly the 6 documented stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1), ZERO
+        `SCRIPT ERROR`, and 11.2 added NO new negative-path test. `git diff --check` clean.
 
-- [ ] **Task 6 — Update the deferred-work ledger + tracking (AC4, hygiene)**
-  - [ ] In `deferred-work.md`, mark the RESOLVED fences: the **LIVE combat-death CALL SITE / hero-death →
-        `PHASE_FAILED` live SOURCE** (deferred across Epics 8-9) is now RESOLVED by 11.2; the
-        **`resolve_boss_victory()` production call site** (9.5 review Decision) is now RESOLVED; the
-        `_resolve_completed` step-2 forcing test (Epic-9 T3) is RESOLVED (or record why it can't be forced).
-        RE-RECORD any still-open item (the `_resolve_boss` atomicity twin if unreached; the live affinity call
-        sites → 11.4; the outpost render / meta-spend → 11.5/11.6). Note the originating story/date.
-  - [ ] Do NOT reopen or re-defer items unrelated to this story's surface. The ledger is project-wide; only
-        the live-combat / hero-death / boss-victory / atomicity-twin entries are 11.2's to resolve.
+- [x] **Task 6 — Update the deferred-work ledger + tracking (AC4, hygiene)**
+  - [x] In `deferred-work.md` (new 2026-07-05 11.2 entry): marked RESOLVED — the **LIVE combat-death CALL SITE /
+        hero-death → `PHASE_FAILED` live SOURCE** (Epics 8-9), the **`resolve_boss_victory()` production call site** (9.5
+        Decision), the **`_resolve_completed` step-2 forcing test** (Epic-9 T3). RE-RECORDED still-open — the
+        `_resolve_boss` atomicity twin (unreached — stays parked), the HUD/scenes (11.3), the live affinity call sites
+        (11.4), the outpost render / meta-spend (11.5/11.6), the live in-node save (a later story). Noted the
+        originating story/date.
+  - [x] Did NOT reopen or re-defer items unrelated to this story's surface (only the live-combat / hero-death /
+        boss-victory / atomicity-twin entries are 11.2's).
 
 ## Dev Notes
 
@@ -528,8 +491,43 @@ on THIS story:
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]`, via the auto-gds `gds-dev-story` delegate.
+
 ### Debug Log References
+
+- Baseline suite (pre-change): 166 PASS / 0 FAIL, "Headless tests passed.", the 6 documented stderr negatives only.
+- Final suite (post-change): **168 PASS / 0 `^FAIL`**, "Headless tests passed.", exit 0; false-PASS grep clean (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1, ZERO `SCRIPT ERROR`); `git diff --check` clean.
+- Hero-driver tuning probes (scratchpad, not committed): the scripted focus-fire hero is fully DETERMINISTIC for a fixed seed (same outcome + round count every run). Verified winning combat seeds: 4242/99/12345/55/314159 (a strong sword hero clears the generated Small board); a 1-HP dagger hero deterministically LOSES in 2 rounds (the live hero-death source). The boss auto-play kills the boss at round 15 with a 60-HP sword hero comfortably alive (deterministic).
 
 ### Completion Notes List
 
+- **Design: wire the EXISTING seams, additive + opt-in.** The whole story is a scene-free DOMAIN wiring — NO `.tscn`/`Control`/presenter/autoload (that is 11.3). `LiveCombatResolver` is the generalized `Epic1MicroCombatScenario`; the `RunOrchestrator` live methods (`resolve_current_node_live` / `resolve_combat_node_live` / `run_to_completion_live` / `auto_play_boss_fight` / `auto_play_full_run`) are ADDITIVE — the DEFAULT `_resolve_combat` / `resolve_current_node` / `run_to_completion` are byte-identical (ZERO code-logic deletions; only the class doc comment was extended). This preserves every seed-regression fingerprint + the interrupted==uninterrupted route-position determinism.
+- **The hero loadout is DRIVER-SUPPLIED (a documented scope boundary).** 11.2 wires the run-combat SEAM, not the class-kit → combat loadout (a later story). The scripted hero's HP + weapon are caller-supplied (a strong melee `sword` hero by default — reliable adjacent damage, ZERO combat RNG). A weak/low-HP hero drives a real board DEFEAT (the live hero-death source). This mirrors how `test_finale_full_run.gd` supplies the hero for the boss fight. The hero is placed at the generated level's `entrance` cell (generation places enemies only).
+- **Robustness posture (recorded, worth the retro):** the scripted hero (attack-in-range / focus-fire-approach, bounded round cap) is DETERMINISTIC but does NOT win every conceivable generated seed — a genuinely mutually-unreachable straggler (e.g. an ash_seer boxed behind a wall the melee hero can't path to) deterministically hits the cap and `LiveCombatResolver` FAILS LOUD (`live_combat_did_not_resolve` — never a fabricated outcome), which `resolve_combat_node_live` surfaces as `live_combat_failed` (a hard run-progression error, no partial progression). The live-flow tests + the boss auto-play use VERIFIED seeds (4242 canonical), the same approved-seed-catalog discipline the finale suite uses. A future story that needs a universally-winning live run should invest in a stronger hero driver (line-of-sight-aware ranged targeting) or the class-kit loadout wiring — 11.2's live loop is the seed-batch/simulation + AC-proof driver, not yet the shipped hands-off game loop (that is 11.3's HUD pass).
+- **Death cause split (documented, both pre-allowlisted):** a live LEVEL/encounter death fires `resolve_run_end(&"hero_death")`; a hero death DURING the boss auto-play fires `resolve_run_end(&"boss_defeat")` (the boss-context cause). Both are in `DomainEvent.RUN_FAILED_CAUSES` — NO cause added.
+- **Sequence-id seam (the review-class trap avoided):** the boss auto-play keeps TWO event streams DISTINCT because they live in different id spaces — `run_events` (the run-level SYSTEM stream: `boss_phase_changed` + `boss_defeated` from the reserved `BOSS_FIGHT_SEQUENCE_BASE = 100000`, extended with the `run_completed`/`run_failed` from the orchestrator's own lower counter) is asserted UNIQUE (the seam contract); `board_events` (the hero/boss tactical action events, the arena board's OWN counter) is surfaced separately, NOT mixed into the run-level uniqueness stream. Mixing them was the first cut and produced a real duplicate-id (`id 31 repeated`) — fixed by the split.
+- **NO new event / stream / save key / schema bump / fingerprint move.** The run-end/victory/death/combat-outcome vocabulary was REUSED. The 23-key `RunSnapshot` gate stays 23 (in-node fight state is EPHEMERAL); `ProfileSnapshot.SCHEMA_VERSION == 1`; the 7 named RNG streams; the `DomainEvent.Type` enum tail unchanged. All invariant + seed-regression tests PASS.
+- **Forcing test (Epic-9 T3 discharged):** the `_resolve_completed` step-2 restore is now DRIVEN via a test-only `ForcedStepTwoFailureRunState` subclass (`super(next_phase)` delegation; the test builds + seats it). The `_resolve_boss` atomicity TWIN stays PARKED (11.2's live path doesn't drive the placeholder boss branch) — re-recorded in `deferred-work.md`, not silently dropped.
+- **NOT done (correct scope fences):** no scenes/HUD (11.3), no live affinity call sites (11.4 — `assign_affinity` stays un-wired; the live combat runs a plain generated level), no outpost render / meta-spend (11.5/11.6), no live in-node save.
+
 ### File List
+
+**Production (new):**
+- `godot/scripts/run/live_combat_resolver.gd` — the scene-free live combat driver (the generalized Epic-1 micro-combat loop + the deterministic scripted hero + the single-target `drive_hero_step_against` the boss auto-play reuses).
+
+**Production (modified):**
+- `godot/scripts/run/run_orchestrator.gd` — additive live methods (`resolve_current_node_live`, `resolve_combat_node_live`, `run_to_completion_live`, `auto_play_boss_fight`, `auto_play_full_run`, `_auto_play_boss_rounds`, `_live_hero_weapon`) + the `HERO_ID`/`BOSS_ID`/`BOSS_FIGHT_SEQUENCE_BASE` consts + the tactical/boss/live-combat preloads + the extended V0/live-flow boundary doc comment. The default methods (`_resolve_combat`, `resolve_current_node`, `run_to_completion`, `_resolve_boss`, `resolve_run_end`, `resolve_boss_victory`) are UNCHANGED.
+
+**Tests (new):**
+- `godot/tests/unit/run/test_live_combat_resolver.gd` — the LiveCombatResolver unit test (AC1 victory-from-board + AC2 defeat-is-real-hero-death + AC4 byte-determinism + zero-combat-RNG + edge/error paths).
+- `godot/tests/unit/run/test_live_run_flow.gd` — the live orchestrator wiring (AC1 live combat node through the run flow + the v0 auto-resolve is unchanged/distinct; AC2 the live hero-death source + the first-death latch off the real terminal state; AC4 idempotency + the default loop is unperturbed).
+- `godot/tests/unit/core/support/forced_step_two_failure_run_state.gd` — the test-only RunState subclass for the AC4 step-2-restore forcing test.
+
+**Tests (modified):**
+- `godot/tests/integration/finale/test_finale_full_run.gd` — extended with the AC3 auto-play tests (`auto_play_full_run` → `resolve_boss_victory` production call site + `RunSummary.boss_cleared`; the first-victory latch off the real auto-played victory; the auto-played run byte-determinism; the boss-fight hero-death auto-fire; the interleaved sequence-id uniqueness).
+- `godot/tests/unit/core/test_complete_run_command.gd` — added the AC4 forcing test (`_two_step_completion_restores_phase_on_a_forced_step_two_failure`) + the `_forced_step_two_run()` helper.
+
+**Tracking:**
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the 2026-07-05 11.2 entry (resolved fences + re-recorded still-open splits).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — story 11-2 → in-progress → review.
+- `_bmad-output/implementation-artifacts/11-2-live-combat-loop-and-hero-death-source.md` — this story file (tasks, Dev Agent Record, status).
