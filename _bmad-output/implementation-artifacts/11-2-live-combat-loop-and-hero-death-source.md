@@ -516,7 +516,7 @@ Opus 4.8 (1M context) — `claude-opus-4-8[1m]`, via the auto-gds `gds-dev-story
 - `godot/scripts/run/live_combat_resolver.gd` — the scene-free live combat driver (the generalized Epic-1 micro-combat loop + the deterministic scripted hero + the single-target `drive_hero_step_against` the boss auto-play reuses).
 
 **Production (modified):**
-- `godot/scripts/run/run_orchestrator.gd` — additive live methods (`resolve_current_node_live`, `resolve_combat_node_live`, `run_to_completion_live`, `auto_play_boss_fight`, `auto_play_full_run`, `_auto_play_boss_rounds`, `_live_hero_weapon`) + the `HERO_ID`/`BOSS_ID`/`BOSS_FIGHT_SEQUENCE_BASE` consts + the tactical/boss/live-combat preloads + the extended V0/live-flow boundary doc comment. The default methods (`_resolve_combat`, `resolve_current_node`, `run_to_completion`, `_resolve_boss`, `resolve_run_end`, `resolve_boss_victory`) are UNCHANGED.
+- `godot/scripts/run/run_orchestrator.gd` — additive live methods (`resolve_current_node_live`, `resolve_combat_node_live`, `run_to_completion_live`, `auto_play_boss_fight`, `auto_play_full_run`, `_auto_play_boss_rounds`) + the `HERO_ID`/`BOSS_ID`/`BOSS_FIGHT_SEQUENCE_BASE` consts + the tactical/boss/live-combat preloads + the extended V0/live-flow boundary doc comment. The default methods (`_resolve_combat`, `resolve_current_node`, `run_to_completion`, `_resolve_boss`, `resolve_run_end`, `resolve_boss_victory`) are UNCHANGED.
 
 **Tests (new):**
 - `godot/tests/unit/run/test_live_combat_resolver.gd` — the LiveCombatResolver unit test (AC1 victory-from-board + AC2 defeat-is-real-hero-death + AC4 byte-determinism + zero-combat-RNG + edge/error paths).
@@ -603,3 +603,90 @@ change required). No `[Review][Defer]` items originate from this review (the sto
   11.2's additive/opt-in remit), surfaced so 11.3 (the HUD/scene driver that will sequence live combat nodes into the
   live boss fight from real play) inherits the seam knowingly rather than discovering the gap. No action for 11.2.
   **Resolved 2026-07-05: acknowledged, no action — intentional 11.2 scope boundary; carried to 11.3.**
+
+**Round 2 of 3**
+
+Model-diverse second adversarial pass (auto-gds delegate, Opus 4.8 [1m]) over the same branch diff vs `main`
+(merge-base `3467bd3`), excluding `_bmad` / `_bmad-output/auto-gds` / caches. Independently re-derived the diff surface
+(1 production new `live_combat_resolver.gd` 376 lines; 1 production modified `run_orchestrator.gd` +416/-7 where the 7
+deletions are EXACTLY the old v0-boundary doc comment — verified by isolating the diff's deletion lines, ZERO
+code-logic deletions; the default `_resolve_combat`/`resolve_current_node`/`run_to_completion`/`_resolve_boss`/
+`resolve_run_end`/`resolve_boss_victory` are byte-additive; 4 test files) and re-read every load-bearing seam against
+source (`BossTurnResolver.resolve_phase_transitions`/`detect_boss_defeat` sequence-id-base seam + the
+`next_sequence_id_after` cursor threading in `_auto_play_boss_rounds`; `EnemyTurnResolver`/`BossTurnResolver`
+`_copy_context_for_simulation` — the enemy/boss AI resolves on a RngStreamSet COPY so the run-level `streams` is never
+advanced by enemy/boss turns, only by the hero's `AttackCommand`; `CombatOutcomeEvaluator.evaluate` HP-only reads;
+`CompleteRunCommand._resolve_completed:243` step-2 restore + the `ForcedStepTwoFailureRunState` override targeting ONLY
+the `completed` edge; `resolve_run_end`/`resolve_boss_victory`/`_advance_sequence_past`/`_resolve_non_combat_placeholder`
+dispatch). Full headless suite RE-RUN and INDEPENDENTLY verified: **168 PASS / 0 `^FAIL`**, "Headless tests passed.",
+exit 0, ZERO `SCRIPT ERROR`; false-PASS grep clean — exactly the 6 documented stderr negatives (int64-overflow ×2:
+`Cannot represent 99999999999999999999`; malformed-JSON ×3: two `Expected key` + one `got 'this'`; `invalid_node_type`
+×1), 11.2 added NO new negative. Invariant gate re-confirmed green: `test_run_snapshot` (23-key), `test_profile_snapshot`
+(`SCHEMA_VERSION == 1`), `test_rng_stream_set` (7 streams), `test_domain_event` (`domain_event.gd` has ZERO diff — NO new
+`DomainEvent.Type`), and ALL 5 seed-regression fingerprint suites (small/medium level, route, seed batch, finale) PASS.
+`git diff --check` clean; NO `tools/dump_*` / fingerprint file touched.
+
+**Both Round 1 fixes VERIFIED in place** in `run_orchestrator.gd::auto_play_boss_fight`:
+- **Fix 1 (place_entity_for_setup error-check):** both `boss_place` and `hero_place` results are captured and return a
+  structured `invalid_boss_arena_payload` (`reason: boss_placement_failed`/`hero_placement_failed` + `inner_error_code`)
+  on error — matching `LiveCombatResolver.resolve`'s `hero_placement_failed` fail-closed discipline. CONFIRMED present.
+- **Fix 2 (validate boss_slot/entrance keys):** the production resolver validates `slot.has("x") and slot.has("y")` →
+  `no_boss_slot` and `entrance.has("x") and entrance.has("y")` → `no_entrance`, and the hardcoded `(6,1)`/`(6,10)`
+  fallbacks are REMOVED from the production path (`int(slot.get("x"))` with no default). CONFIRMED present. (The
+  `_drive_full_run_to_victory` test-harness helper retains its inert literal fallbacks — a harness always driving the
+  canonical seed 4242 that supplies both keys; that is the correct scope, the fail-closed hardening is production-only.)
+
+The open Round-1 `[Review][Decision]` (the intentionally-un-composed live-pre-boss vs boss-auto-play seam) remains a
+correct, human-acknowledged scope boundary — re-affirmed, no action.
+
+**Verdict: Approve** — 0 Critical / 0 High / 0 Med / 3 Low (all new, all cosmetic/test-completeness; none blocking). NO
+new `[Review][Decision]`. NO `[Review][Defer]` originates from this round (the story's knowing splits — the
+`_resolve_boss` twin, 11.3 HUD, 11.4 affinity, 11.5/11.6 outpost/meta, the in-node save — are already carried in
+`deferred-work.md`; this round adds nothing to that ledger). The three Low findings are deferrable polish; recording
+them here (not fixed this round) is the sensible default rather than churning the diff on cosmetics.
+
+- [x] [Review][Patch] (Low) **RESOLVED (Round 2, 2026-07-05)** — see FIX at end of item. **Stale doc-comment: default hero weapon named `staff`, actual is `sword`.** The
+  `LiveCombatResolver` class header says "The DEFAULT hero weapon (`staff`) has NO proc and carries NO shield" and "a
+  strong staff hero by default" (`live_combat_resolver.gd:22`, `:29`, `:135-136` docstring), but the actual constant is
+  `DEFAULT_HERO_WEAPON := &"sword"` (`:65`), and the inline comment at `:58-63` correctly documents `sword`. The
+  `run_orchestrator.gd` region comment hedges as "the default staff/sword hero" (`:929`, `:1027` docstrings). NO
+  behavioral impact — the `sword` constant governs, and `sword` (melee, no proc) is what actually draws ZERO `combat`
+  RNG, so the zero-RNG determinism guarantee holds regardless. But the header misnames the very weapon its determinism
+  argument rests on, which could mislead a future maintainer (a `staff` is ranged and could stall the focus-fire loop
+  the header claims never stalls). RECOMMENDED: replace `staff` with `sword` in the three header/docstring sites (and
+  drop the hedged "staff/sword" in the orchestrator). One-word doc fix, no code change. Non-blocking (cosmetic).
+  **FIX (Round 2, 2026-07-05):** the three header/docstring misnamings in `live_combat_resolver.gd` (the RNG-discipline
+  header `:22`, the driver-loadout docstring `:28`, the `resolve()` docstring `:135`) now say `sword`, and the
+  orchestrator's hedged "staff/sword" (`run_orchestrator.gd:943`) is now "sword". The one legitimate `staff` mention —
+  the inline note that ranged weapons (`staff/bow`) can stall against a non-moving seer, which is exactly WHY the melee
+  `sword` is the default (`live_combat_resolver.gd:63`) — is retained (it names `staff` as a real contrasting weapon,
+  not the default). Doc-only; no code change. Full headless suite re-run post-fix: 168 PASS / 0 FAIL, false-PASS grep clean.
+
+- [x] [Review][Patch] (Low) **RESOLVED (Round 2, 2026-07-05)** — see FIX at end of item. **The auto-play byte-determinism test does not assert `board_events` determinism.**
+  `test_finale_full_run.gd::_auto_played_full_run_is_byte_deterministic` asserts the terminal `run` dict and the
+  run-level interleaved `events` (the boss SYSTEM `boss_phase_changed`/`boss_defeated` + `run_completed`/`run_failed`)
+  are byte-identical across two same-seed auto-plays, but it does NOT assert `board_events` (the hero/boss tactical
+  action stream carrying the `damage_applied`/`move_committed` events — the part MOST exposed to any future
+  combat-RNG regression) is byte-identical. The risk is covered INDIRECTLY (the terminal `run` is byte-identical + the
+  `LiveCombatResolver` unit test's `_default_hero_draws_zero_combat_rng` proves the injected stream is untouched), so a
+  board-level nondeterminism would surface elsewhere — but the auto-play's own determinism proof leaves its richest
+  stream unasserted. RECOMMENDED: extend the assertion to compare `_event_dicts(first.board_events)` vs the second's
+  (the auto-play already surfaces `board_events` in metadata). Test-completeness only; no production change. Non-blocking.
+  **FIX (Round 2, 2026-07-05):** the `_auto_play` helper now surfaces `board_events` (from the `auto_play_full_run`
+  result metadata), and `_auto_played_full_run_is_byte_deterministic` now asserts
+  `_event_dicts(first.board_events) == _event_dicts(second.board_events)` alongside the existing run + `events`
+  byte-identity checks — so the auto-play's own determinism proof now covers the hero/boss tactical action stream.
+  Test-only; no production change. Full headless suite re-run post-fix: 168 PASS / 0 FAIL, false-PASS grep clean.
+
+- [x] [Review][Patch] (Low) **RESOLVED (Round 2, 2026-07-05)** — see FIX at end of item. **Redundant throwaway `LiveCombatResolver` allocation in `_auto_play_boss_rounds`.**
+  `_auto_play_boss_rounds` calls `_live_hero_weapon(hero_weapon_id)` — which constructs a fresh `LiveCombatResolver`
+  purely to resolve the weapon via `hero_weapon(...)` (`run_orchestrator.gd` `_live_hero_weapon`) — and THEN constructs
+  a SECOND `LiveCombatResolver live_driver` for the actual `drive_hero_step_against` loop. Two throwaway `RefCounted`
+  instances (each re-building a baseline `EnemyRepository`/`WeaponRepository`) where one suffices: build `live_driver`
+  first, then `live_driver.hero_weapon(hero_weapon_id)` for the null-check. Trivial allocation waste; ZERO correctness
+  or determinism impact (both instances are pure lookups). Non-blocking (micro-optimization).
+  **FIX (Round 2, 2026-07-05):** `_auto_play_boss_rounds` now builds `live_driver` FIRST and resolves the weapon via
+  `live_driver.hero_weapon(hero_weapon_id)` for the null-check — a single `LiveCombatResolver` now serves both the
+  weapon lookup and the scripted-hero step loop. The now-dead `_live_hero_weapon` helper (its only caller) is REMOVED.
+  ZERO correctness/determinism impact (both were pure lookups). Full headless suite re-run post-fix: 168 PASS / 0 FAIL,
+  false-PASS grep clean.

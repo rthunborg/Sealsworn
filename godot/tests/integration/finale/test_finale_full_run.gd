@@ -302,6 +302,9 @@ func _auto_played_full_run_is_byte_deterministic() -> void:
 		"The same seed must auto-play to a byte-identical terminal run."
 	)
 	assert_equal(_event_dicts(first.get("events")), _event_dicts(second.get("events")), "The same seed must auto-play a byte-identical fight+run-END event stream.")
+	# ALSO assert the board_events (the hero/boss tactical action stream — damage_applied/move_committed, the part MOST
+	# exposed to any future combat-RNG regression) is byte-identical, not just the run-level interleaved stream.
+	assert_equal(_event_dicts(first.get("board_events")), _event_dicts(second.get("board_events")), "The same seed must auto-play a byte-identical board (hero/boss tactical action) event stream.")
 
 
 func _auto_play_boss_fight_hero_death_auto_fires_the_run_end_source() -> void:
@@ -351,7 +354,8 @@ func _auto_play(seed_value: int) -> Dictionary:
 	return {
 		"orchestrator": orchestrator,
 		"run": orchestrator.run,
-		"events": auto.metadata.get("events", [])
+		"events": auto.metadata.get("events", []),
+		"board_events": auto.metadata.get("board_events", [])
 	}
 
 

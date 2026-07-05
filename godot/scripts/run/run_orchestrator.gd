@@ -940,7 +940,7 @@ func resolve_current_node_live(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP
 #     the run — the node is NOT exited/cleared (death is a terminal resolution, not a forward node clear). The auto-fire
 #     runs BEHIND the CompleteRunCommand run_already_terminal guard (a re-detection never double-fires — AC4 idempotency).
 # The live loop draws gameplay RNG ONLY through the run-level `streams` (the `combat` stream, via AttackCommand's existing
-# draws); the default staff/sword hero draws ZERO combat RNG. This is ADDITIVE: _resolve_combat (the v0 auto-resolve) is
+# draws); the default sword hero draws ZERO combat RNG. This is ADDITIVE: _resolve_combat (the v0 auto-resolve) is
 # UNCHANGED + still the default path, so the non-live route-position determinism is untouched.
 func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON) -> ActionResult:
 	if run == null:
@@ -1213,10 +1213,12 @@ func auto_play_full_run(hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP, hero_
 func _auto_play_boss_rounds(board: BoardState, context: TacticalActionContext, resolver: BossTurnResolver, definition: BossDefinition, hero_weapon_id: StringName) -> ActionResult:
 	var run_events: Array = []
 	var board_events: Array = []
-	var weapon = _live_hero_weapon(hero_weapon_id)
+	# ONE LiveCombatResolver for BOTH the weapon lookup AND the scripted-hero step loop (both are pure lookups on the same
+	# driver — a second throwaway instance to resolve the weapon would re-build a baseline repository for nothing).
+	var live_driver: LiveCombatResolver = LiveCombatResolver.new(_enemy_repository)
+	var weapon = live_driver.hero_weapon(hero_weapon_id)
 	if weapon == null:
 		return ActionResult.error(&"unknown_hero_weapon", {"command": "run_orchestrator", "weapon_id": String(hero_weapon_id)})
-	var live_driver: LiveCombatResolver = LiveCombatResolver.new(_enemy_repository)
 	var fight_base: int = BOSS_FIGHT_SEQUENCE_BASE
 	var max_rounds: int = 128
 	var rounds: int = 0
@@ -1266,10 +1268,6 @@ func _auto_play_boss_rounds(board: BoardState, context: TacticalActionContext, r
 	run_events.append_array(defeat_result.events)
 	fight_base = int(defeat_result.metadata.get("next_sequence_id_after", fight_base))
 	return ActionResult.ok([], {"run_events": run_events, "board_events": board_events, "hero_dead": false, "rounds": rounds})
-
-
-func _live_hero_weapon(hero_weapon_id: StringName):
-	return LiveCombatResolver.new(_enemy_repository).hero_weapon(hero_weapon_id)
 
 
 # ---- internal dispatch ---------------------------------------------------------------------------

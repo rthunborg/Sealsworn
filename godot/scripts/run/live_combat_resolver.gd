@@ -19,13 +19,13 @@ extends RefCounted
 #
 # ⭐ RNG DISCIPLINE (AC4 — the determinism guard): the loop draws gameplay RNG ONLY through the run-level RngStreamSet
 # handed in, on the `combat` stream (an attack proc / a shield block — via AttackCommand's existing draws). It NEVER calls
-# randi/randf/constructs a fresh RandomNumberGenerator. The DEFAULT hero weapon (`staff`) has NO proc and carries NO
+# randi/randf/constructs a fresh RandomNumberGenerator. The DEFAULT hero weapon (`sword`) has NO proc and carries NO
 # shield, so a default live fight draws ZERO `combat` RNG — keeping the live loop from perturbing any stream the
 # non-live / auto-resolve simulation path advances (the additive, opt-in posture). A caller that arms the hero with a
 # proc weapon (axe/mace) draws the `combat` stream deterministically (reproducible from the seed/state).
 #
 # ⭐ THE HERO LOADOUT IS DRIVER-SUPPLIED (documented scope boundary): 11.2 wires the run-combat SEAM, not the class-kit ->
-# combat loadout (that is a later story). The hero's starting HP + weapon are supplied by the caller (a strong staff hero
+# combat loadout (that is a later story). The hero's starting HP + weapon are supplied by the caller (a strong sword hero
 # by default). This mirrors how test_finale_full_run.gd supplies the hero for the boss fight. The hero is placed at the
 # generated level's ENTRANCE cell (the run-flow hero-placement seam — generation places enemies only, never the hero).
 #
@@ -132,7 +132,7 @@ func drive_hero_step_against(context: TacticalActionContext, weapon: WeaponDefin
 # Resolve a live combat from a generated level payload's board snapshot to a TERMINAL CombatOutcomeState. `board_snapshot`
 # is generation.payload["board"] (the board snapshot — NOT payload.level_seed, the seed string). `entrance` is
 # generation.payload["entrance"] (the {x,y} hero-placement cell). `streams` is the RUN-LEVEL RngStreamSet (the ONLY RNG
-# source — the `combat` stream). `hero_hp` / `hero_weapon_id` are the driver-supplied loadout (a strong staff hero by
+# source — the `combat` stream). `hero_hp` / `hero_weapon_id` are the driver-supplied loadout (a strong sword hero by
 # default; a weak/low-HP hero drives a real board DEFEAT). Returns ok with metadata carrying the terminal outcome
 # (`outcome` == victory/defeat), the live board, the event log, and the round count — or a structured error (a rejected
 # board restore / an unresolved fight / a driver step failure) with ZERO partial progression.
