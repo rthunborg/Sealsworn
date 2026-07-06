@@ -35,6 +35,7 @@ const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunResumeService = preload("res://scripts/save/run_resume_service.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
+const SaveManager = preload("res://scripts/autoloads/save_manager.gd")
 const SaveRepository = preload("res://scripts/save/save_repository.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
 
@@ -71,6 +72,12 @@ func run() -> Dictionary:
 	# "future systems can query the resulting risk flags"), through the EXISTING 7.1 nested plumbing (no new top-level
 	# key — the 23-key gate stays 23).
 	_risk_flag_change_via_choose_event_command_survives_route_position_resume()
+	# Story 11.3 (AC3) — the interrupted == uninterrupted invariant holds through the SaveManager AUTOLOAD delegators
+	# the run-flow SCENE drives (autosave_route_position + resume_route_position), not just the SaveRepository /
+	# RunResumeService directly. This closes the "through the seam the scene drives" gap: the save-recovery presenter
+	# calls SaveManager.autosave_route_position (compose+persist) then SaveManager.resume_route_position (restore) then
+	# RunOrchestrator.start_from (seat) — this proves that exact chain matches the uninterrupted path + consumes no RNG.
+	_save_manager_delegated_resume_equals_uninterrupted()
 	_cleanup()
 	return result()
 
@@ -718,6 +725,52 @@ func _risk_flag_change_via_choose_event_command_survives_route_position_resume()
 	var json_data: Variant = JSON.parse_string(JSON.stringify(snapshot.to_dictionary()))
 	var allowed: Dictionary = _allowed_run_snapshot_keys()
 	assert_equal((json_data as Dictionary).keys().size(), allowed.size(), "Story 7.3: the snapshot key COUNT must stay 23 (risk flags nest under route_state).")
+
+
+# Story 11.3 (AC3): the interrupted == uninterrupted invariant holds through the SaveManager AUTOLOAD delegators the
+# run-flow SCENE drives — SaveManager.autosave_route_position (compose the snapshot via the orchestrator, then persist
+# through the thin autoload) then SaveManager.resume_route_position (restore through the thin autoload) then start_from
+# (seat the restored run). This is the EXACT chain save_recovery_presenter.gd drives; it must reach the SAME terminal
+# run state as an uninterrupted run AND the resume path must consume NO RNG / run NO command / advance NO turn (a peek
+# of the restored streams' next draw equals the saved streams' next draw — the restore drew nothing).
+func _save_manager_delegated_resume_equals_uninterrupted() -> void:
+	for seed_value: int in [42, 777]:
+		# Uninterrupted reference run.
+		var uninterrupted: RunOrchestrator = RunOrchestrator.new()
+		assert_true(uninterrupted.start(seed_value, false).succeeded, "Seed %d: SaveManager-delegated uninterrupted start should succeed." % seed_value)
+		assert_true(uninterrupted.run_to_completion().succeeded, "Seed %d: SaveManager-delegated uninterrupted run should complete." % seed_value)
+		var uninterrupted_final: String = JSON.stringify(uninterrupted.run.to_dictionary())
+
+		# Park partway; compose + persist through the SaveManager autoload delegator (the scene's autosave seam).
+		var parked: RunOrchestrator = _orchestrator_parked_after_clearing(seed_value, 2)
+		var snapshot: RunSnapshot = parked.compose_route_position_snapshot()
+		var manager: Node = SaveManager.new()
+		var autosave: ActionResult = manager.autosave_route_position(snapshot, SAVE_PATH)
+		assert_true(autosave.succeeded, "Seed %d: SaveManager.autosave_route_position should persist the snapshot: %s" % [seed_value, autosave.metadata])
+
+		# Restore through the SaveManager autoload delegator (the scene's resume seam).
+		var restore: ActionResult = manager.resume_route_position(SAVE_PATH)
+		assert_true(restore.succeeded, "Seed %d: SaveManager.resume_route_position should restore: %s" % [seed_value, restore.metadata])
+		var restored_run: RunState = restore.metadata.get("run_state") as RunState
+		var restored_streams: RngStreamSet = restore.metadata.get("rng_streams") as RngStreamSet
+		assert_true(restored_run != null and restored_streams != null, "Seed %d: the delegated resume must return the restored run + streams." % seed_value)
+
+		# The resume path consumed NO RNG: the restored streams' next draw equals the SAVED streams' next draw (a peek
+		# via a copy so neither live set is perturbed) — proving the restore advanced no stream (the snapshot-purity contract).
+		var saved_peek: RngStreamSet = RngStreamSet.new(0)
+		assert_true(saved_peek.try_restore(parked.streams.to_snapshot()).succeeded, "Seed %d: the saved streams snapshot should restore for the no-RNG peek." % seed_value)
+		var saved_next: ActionResult = saved_peek.rand_int(RngStreamSet.STREAM_MAP, 0, 1000000, {})
+		var restored_peek: RngStreamSet = RngStreamSet.new(0)
+		assert_true(restored_peek.try_restore(restored_streams.to_snapshot()).succeeded, "Seed %d: the restored streams snapshot should restore for the no-RNG peek." % seed_value)
+		var restored_next: ActionResult = restored_peek.rand_int(RngStreamSet.STREAM_MAP, 0, 1000000, {})
+		assert_equal(restored_next.metadata.get("value"), saved_next.metadata.get("value"), "Seed %d: the delegated resume must consume NO RNG (restored next draw == saved next draw)." % seed_value)
+
+		# Continue the RESTORED run to the SAME terminal state as the uninterrupted path (interrupted == uninterrupted).
+		var resumed: RunOrchestrator = RunOrchestrator.new()
+		assert_true(resumed.start_from(restored_run, restored_streams).succeeded, "Seed %d: seating the SaveManager-restored run should succeed." % seed_value)
+		assert_true(resumed.run_to_completion().succeeded, "Seed %d: the SaveManager-resumed run should complete." % seed_value)
+		assert_equal(JSON.stringify(resumed.run.to_dictionary()), uninterrupted_final, "Seed %d: SaveManager-delegated interrupted == uninterrupted — the resumed final run state must match." % seed_value)
+		manager.free()
 
 
 # Write a snapshot through the repository and return the save path (a small helper so the populated-economy test can
