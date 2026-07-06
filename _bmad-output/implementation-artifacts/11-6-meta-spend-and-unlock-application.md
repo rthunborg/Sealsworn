@@ -4,7 +4,7 @@ baseline_commit: 4902fe2ac66ef5d8fa32e92b6bd3c367b93ad852
 
 # Story 11.6: Meta Spend and Unlock Application
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
