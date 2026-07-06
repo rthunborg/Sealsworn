@@ -80,11 +80,11 @@ var _weapon_repository: WeaponRepository = null
 # until it is dead before re-picking, so it never OSCILLATES between two equidistant enemies (which would stall the loop
 # without ever closing on either). Re-picked (to the nearest living enemy) only when the locked target dies / vanishes.
 var _locked_target_id: StringName = &""
-# Story 11.4 (AC1) — whether the live board carries STAMPED Scorched HAZARD cells (the affinity effect was applied), so
-# the per-turn Scorched DoT tick only runs on a Scorched level. A neutral / non-Scorched board has NO HAZARD cells, so
-# even were the tick attempted the AffinityHazardDamageCommand would reject `target_not_in_hazard` — this flag keeps the
-# neutral / non-Scorched live loop byte-identical to 11.2/11.3 (the tick is never even entered) rather than relying on
-# the command's reject.
+# Story 11.4 (AC1) — whether the live board carries Scorched HAZARD cells (derived from the affinity EFFECT PLAN, not the
+# apply's stamped-diff — see resolve() / L1), so the per-turn Scorched DoT tick only runs on a Scorched level. A neutral /
+# non-Scorched board yields an empty plan, so even were the tick attempted the AffinityHazardDamageCommand would reject
+# `target_not_in_hazard` — this flag keeps the neutral / non-Scorched live loop byte-identical to 11.2/11.3 (the tick is
+# never even entered) rather than relying on the command's reject.
 var _scorched_hazard_active: bool = false
 
 func _init(enemy_repository: EnemyRepository = null, weapon_repository: WeaponRepository = null) -> void:
@@ -177,15 +177,22 @@ func resolve(
 	# stamps HAZARD cells; Flooded/Cursed/Darkness/neutral stamp nothing). CALLS the existing AffinityEffectResolver
 	# (validate-then-mutate — a rejected stamp aborts with ZERO partial mutation, surfaced as an error). A null repo / the
 	# neutral `none` id is a no-op (no effect), keeping the plain live path byte-identical.
+	# The Scorched-DoT gate is derived from the affinity EFFECT PLAN (resolve_board_plan's scorched_hazard_cells), NOT the
+	# apply's stamped-DIFF: the plan reports EVERY Scorched hazard cell the affinity affects (it includes cells already
+	# HAZARD — see _eligible_effect_cells), so the tick fires whenever the board carries Scorched hazard cells, with no
+	# hidden "fresh all-FLOOR board" precondition. A pre-stamped Scorched board (or a memoized restore) still ticks; the
+	# apply's diff only being empty when everything was already stamped can no longer silently disable the DoT (L1).
 	_scorched_hazard_active = false
 	if affinity_repository != null and String(affinity_id) != String(AffinityDefinition.AFFINITY_NONE):
-		var apply_result: ActionResult = AffinityEffectResolver.new().apply_board_effects(board, affinity_id, affinity_repository)
+		var resolver: AffinityEffectResolver = AffinityEffectResolver.new()
+		var plan: Dictionary = resolver.resolve_board_plan(board, affinity_id, affinity_repository)
+		_scorched_hazard_active = not (plan.get("scorched_hazard_cells", []) as Array).is_empty()
+		var apply_result: ActionResult = resolver.apply_board_effects(board, affinity_id, affinity_repository)
 		if apply_result.is_error():
 			return _error(&"affinity_effect_failed", {
 				"affinity_id": String(affinity_id),
 				"inner_error_code": String(apply_result.error_code)
 			})
-		_scorched_hazard_active = not (apply_result.metadata.get("stamped_hazard_cells", []) as Array).is_empty()
 
 	# Resolve the hero weapon through the repository boundary (validated weapons only; fail-closed on a miss).
 	var weapon: WeaponDefinition = _weapon_repository.get_weapon(hero_weapon_id)

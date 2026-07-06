@@ -18,6 +18,12 @@ Still OPEN after 11.4 (RE-RECORDED — NOT 11.4's to resolve):
 
 ---
 
+## Deferred from: code review of 11-4-live-affinity-pressure-on-screen (2026-07-06)
+
+Round 1 code review (Verdict: **Approve**; no Critical/High; 1 Med + 3 Low, all `[Review][Decision]` — a human call) produced **no new `[Review][Defer]` items.** The live affinity wiring calls the existing Epic-7 surfaces from the live combat node, moves no fingerprint, adds no save key/RNG stream/event, and the full headless suite is green (177 PASS / 0 `^FAIL`, false-PASS grep clean beyond the 6 documented negatives, `git diff --check` clean, invariant/fingerprint files provably unmoved vs main). Every still-open cross-story residual surfaced during the review (the Flooded `_placeholder` electric interaction → Epic-10; the seated-Cursed rule-source re-derive-on-resume → a later in-node-save story; the affinity-driven GENERATION modifier → a later generation-modifier story; the outpost SCENE + reveal RENDER + G3 → 11.5; the meta-SPEND / unlock APPLICATION → 11.6; the boss-arena-no-affinity, the Cursed-resolve+explain-only-no-economy-penalty, and the full L3 auto-resolve→tap-loop handoff → recorded decisions) is ALREADY recorded above under the `Tracked from: dev of 11-4` entry, unchanged by this review. The four review findings (M1 fairness-violation live-path test coverage; L1 `_scorched_hazard_active` derived from the stamped-diff; L2 the DEFAULT-path byte-identity test wording; L3 the per-render second baseline repository) are human-decision items held in the story file `### Review Findings` (Round 1 of 3), NOT cross-story deferrals.
+
+---
+
 ## Deferred from: code review of 11-3-run-flow-scene-navigation-and-in-run-hud (2026-07-05)
 
 Round 1 code review (Changes Requested; H1 High + M1 Med as `[Review][Patch]`, L1/L2/L3 Low as `[Review][Decision]`) produced **no new `[Review][Defer]` items**. The still-open items surfaced during the review (11.4 live affinity, 11.5 outpost render + G3, 11.6 meta-spend, the later in-node board/pending-fight save, G4 settings VM) are the story's already-acknowledged scope splits, recorded under the dev entry below — this review did not open any new cross-story deferral. See the story file `### Review Findings` (Round 1 of 3) for the H1/M1 patch findings and the L1/L2/L3 human-decision items.
