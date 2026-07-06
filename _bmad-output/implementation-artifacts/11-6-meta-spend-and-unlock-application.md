@@ -1,6 +1,10 @@
+---
+baseline_commit: 4902fe2ac66ef5d8fa32e92b6bd3c367b93ad852
+---
+
 # Story 11.6: Meta Spend and Unlock Application
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -304,8 +308,8 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Author the spend command (AC1; the run-domain mutation)**
-  - [ ] Add the spend command under `godot/scripts/core/commands/` (e.g. `spend_oath_shards_command.gd` — imperative
+- [x] **Task 1 — Author the spend command (AC1; the run-domain mutation)**
+  - [x] Add the spend command under `godot/scripts/core/commands/` (e.g. `spend_oath_shards_command.gd` — imperative
         name), extending `game_command.gd`, mirroring `AwardMetaProgressCommand` VERBATIM in shape: `_init(profile,
         <spend inputs>, sequence_id)`; `validate(state)` rejects `sequence_id <= 0` FIRST; validate-then-mutate; ZERO
         events + byte-identical no-mutation profile on ANY reject; event built ONLY after mutation; ZERO RNG. The `state`
@@ -313,14 +317,14 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
         terminal run). DECIDE the `state` contract — the profile + spend inputs are the real context; the `state` arg
         may be unused/null (the `RunStartCommand` "state unused" precedent) or carry a minimal spend-context. Record the
         decision.
-  - [ ] Fail-close an unaffordable spend: `profile.oath_shards < cost` → a stable error (e.g. `insufficient_oath_shards`)
+  - [x] Fail-close an unaffordable spend: `profile.oath_shards < cost` → a stable error (e.g. `insufficient_oath_shards`)
         with the shortfall in `metadata`, ZERO mutation, ZERO event. On success subtract `profile.oath_shards` (floor at
         0 — a spend never drives a negative total) and record the applied effect (an unlock flag in `unlock_progress`,
         or the new applied-unlock field — see Task 2/3).
-  - [ ] Cost config: if a spend has a cost, author a pure const-config calculator (`MetaSpendRules` under
+  - [x] Cost config: if a spend has a cost, author a pure const-config calculator (`MetaSpendRules` under
         `godot/scripts/save/`, the `MetaAwardRules`/`UnlockProgressRules` template — declared const, test-pinned, ZERO
         RNG, does not scale by difficulty). Do NOT hardcode the cost inline. Keep it capped/sparse (FR95).
-  - [ ] Emit the spend event (decide: a NEW `oath_shards_spent`/`unlock_applied` SYSTEM event, OR reuse an existing one
+  - [x] Emit the spend event (decide: a NEW `oath_shards_spent`/`unlock_applied` SYSTEM event, OR reuse an existing one
         — but the award/merge events are the ADD side and do not fit a SPEND record honestly; a new event is the likely
         correct choice). If new: append at the `DomainEvent.Type` enum TAIL (after `BOSS_DEFEATED`), add the
         `EVENT_ID_*` const + factory + `_validate_payload_for_event` arm + validator (honest-record arithmetic:
@@ -328,11 +332,11 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
         wire BOTH id maps, add JSON round-trip + malformed-negative tests, AND **add it to `expected_ids` in
         `test_domain_event.gd`** (the enum-count assertion `expected_ids.size() == Type.size() - 1` FAILS LOUD otherwise
         — see the fail-loud-on-new-event constraint). ZERO RNG (no `roll`/`draw_index`).
-  - [ ] Unit-test the command: valid spend (subtract + event + profile round-trip), unaffordable reject (stable code +
+  - [x] Unit-test the command: valid spend (subtract + event + profile round-trip), unaffordable reject (stable code +
         ZERO mutation + ZERO event), `sequence_id <= 0` reject.
 
-- [ ] **Task 2 — Wire the profile → class-selectability application (AC2; the crux)**
-  - [ ] DECIDE the AC2 seam (record it — see "The AC2 seam decision"). The likely-minimal shape: make
+- [x] **Task 2 — Wire the profile → class-selectability application (AC2; the crux)**
+  - [x] DECIDE the AC2 seam (record it — see "The AC2 seam decision"). The likely-minimal shape: make
         `HeroSelectViewModel` **profile-aware** by accepting an optional `ProfileSnapshot` (or an already-derived
         "applied unlocks" set) so `is_selectable`/`is_class_selectable`/`selectable_class_ids` OR each entry's
         `selectable` field consults the profile's applied-unlock state for a formerly-locked class — WITHOUT mutating
@@ -340,24 +344,24 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
         unlock requirement is met on the profile). Keep the pinned `ENTRY_KEYS` unchanged (the `selectable` field's
         VALUE becomes profile-aware; no new key). If a null profile is passed, behavior is byte-identical to today
         (fail-closed default — every existing caller stays correct).
-  - [ ] Make the AUTHORITATIVE `RunStartCommand` class gate profile-aware in LOCKSTEP (both read the SAME unlock
+  - [x] Make the AUTHORITATIVE `RunStartCommand` class gate profile-aware in LOCKSTEP (both read the SAME unlock
         source): a genuinely-unlocked class must START (not `class_not_selectable`), and a still-locked class must still
         REJECT. Thread the profile (or the derived applied-unlock set) into `RunStartCommand`/`RunOrchestrator.start`
         the same way. Preserve every existing call site (the profile is optional/last-arg; a null profile → today's
         static behavior). This symmetry is load-bearing: the VM grey-out is a hint; the command is the gate; they must
         agree.
-  - [ ] Define the unlock→class mapping (which unlock flag / class-mastery count / Seal-Fragment threshold unlocks which
+  - [x] Define the unlock→class mapping (which unlock flag / class-mastery count / Seal-Fragment threshold unlocks which
         class). Necromancer/Shadeblade are the two locked classes (FR43). Author it as pure const config (the
         `UnlockProgressRules`/`MetaSpendRules` template) — capped/sparse, NO raw-stat key
         (`is_raw_stat_unlock_key` produces none). Record the mapping.
-  - [ ] Idempotent application: re-applying an already-met unlock is a no-op (a class already selectable stays
+  - [x] Idempotent application: re-applying an already-met unlock is a no-op (a class already selectable stays
         selectable; the applied-unlock set is a SET — a duplicate add is not a second unlock). Test it.
-  - [ ] Unit-test AC2: profile-with-unlock → formerly-locked class `selectable: true` + `is_class_selectable == true`;
+  - [x] Unit-test AC2: profile-with-unlock → formerly-locked class `selectable: true` + `is_class_selectable == true`;
         profile-without-unlock → still locked; `RunStartCommand` starts the unlocked class + rejects the locked one; no
         raw-stat unlock key produced.
 
-- [ ] **Task 3 — Profile save state + migration + idempotency (AC3)**
-  - [ ] DECIDE whether the spend/applied-unlock state needs a NEW `ProfileSnapshot` field or fits the EXISTING
+- [x] **Task 3 — Profile save state + migration + idempotency (AC3)**
+  - [x] DECIDE whether the spend/applied-unlock state needs a NEW `ProfileSnapshot` field or fits the EXISTING
         `unlock_progress` dict (e.g. an `applied_unlocks` set OR a `oath_shards_spent` ledger under `unlock_progress`,
         mirroring how Seal Fragments live under `unlock_progress["seal_fragments"]` and the merge marker under
         `unlock_progress["_last_merged_run_seed"]` — a namespaced key inside `unlock_progress` merges WITHOUT a schema
@@ -365,24 +369,24 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
         migration) unless a top-level field is genuinely warranted. If a top-level field IS added: additive at
         `SCHEMA_VERSION == 1` (the 8.5/9.4 precedent — lenient decode, pin `DICTIONARY_KEYS` + `test_profile_snapshot.gd`,
         NO version bump), reconciled with the 8.7 migration matrix. Record the decision.
-  - [ ] JSON round-trip test (`JSON.stringify` → `parse_string`, per the save-testing rule): the spend/applied-unlock
+  - [x] JSON round-trip test (`JSON.stringify` → `parse_string`, per the save-testing rule): the spend/applied-unlock
         state survives a real round-trip; int-coercion-aware if it's a nested int-valued dict (the 8.7 `class_mastery`
         lesson — `{"x": 3} != {"x": 3.0}` across JSON). Extend `test_profile_snapshot.gd` +/or
         `test_meta_summary_save_load.gd` (the 8.7 comprehensive matrix).
-  - [ ] Idempotency + caller-ordering test: the spend command reads/writes NONE of the four run-end markers; a spend
+  - [x] Idempotency + caller-ordering test: the spend command reads/writes NONE of the four run-end markers; a spend
         interleaved with award/merge/first-death/first-victory leaves each independent + correct; a re-applied unlock is
         a no-op; a persist-failure retry does not double-charge (mirror the 11.5 retry semantics — re-read profile →
         re-run idempotently → re-write).
 
-- [ ] **Task 4 — Spend/apply bridge + outpost meta-menu render (AC1/AC-wide; the caller seam + the on-screen surface)**
-  - [ ] Add the caller-driven spend seam (a `RefCounted` bridge/controller mirroring `RunEndProfileBridge`, OR a
+- [x] **Task 4 — Spend/apply bridge + outpost meta-menu render (AC1/AC-wide; the caller seam + the on-screen surface)**
+  - [x] Add the caller-driven spend seam (a `RefCounted` bridge/controller mirroring `RunEndProfileBridge`, OR a
         `RunFlowController` method): LOAD the profile (`ProfileRepository.read_profile` → `fresh()` on
         `profile_not_found`) → run the spend/apply command (threaded `sequence_id > 0`) → PERSIST
         (`ProfileRepository.write_profile`, handling `profile_save_*` write failure with the 11.5 real-totals-behind-retry
         recovery) → REBUILD the `OutpostViewModel` so the meta readout / `class_options` / `selectable_class_ids`
         reflect the spend. Draw ZERO RNG; mutate ONLY the profile. Keep the orchestrator unchanged (or add ONE additive
         read-only accessor).
-  - [ ] Render the shallow meta menu (AC1, FR59) on `outpost_presenter.gd` (the `seal_table`/`hall_of_oaths` named-space
+  - [x] Render the shallow meta menu (AC1, FR59) on `outpost_presenter.gd` (the `seal_table`/`hall_of_oaths` named-space
         tiles are the GDD homes): a spend affordance (≥44×44) that shows the cost + can-afford state, submits a spend
         REQUEST to the bridge (not a raw command), and re-renders on success/failure (an unaffordable spend shows the
         insufficient-shards message, fail-loud — never a silent no-op). Put the spend render DECISIONS (can-afford,
@@ -391,26 +395,26 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.6, lines ~2725-2746). Three 
         (text/icon/label — appendix §14). The `named_spaces` that gain a live spend affordance flip from `deferred` to a
         live status where realized (decide: keep them `deferred` if the spend menu is a distinct surface, or mark the
         realized space live — record it; do NOT silently leave a live affordance marked `deferred`).
-  - [ ] Update `test_outpost_render_view.gd` (spend render decisions) + `test_run_flow_scenes_load.gd` if a new
+  - [x] Update `test_outpost_render_view.gd` (spend render decisions) + `test_run_flow_scenes_load.gd` if a new
         scene/presenter is added; the scene-load compile guardrail covers any new `.tscn`. NO SceneTree test (the
         Epic-11 scene-free-harness constraint — the render DECISION lives in the RefCounted seam).
 
-- [ ] **Task 5 — Invariants regression + full-suite green (AC-wide)**
-  - [ ] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
+- [x] **Task 5 — Invariants regression + full-suite green (AC-wide)**
+  - [x] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
         `SettingsSnapshot.SCHEMA_VERSION == 1`, `RngStreamSet.required_streams()` == 7 (`test_rng_stream_set.gd`); every
         `tools/dump_*` seed-regression fingerprint byte-identical (11.6 touches the PROFILE + view models + presenter —
         the generators + the DEFAULT `run_to_completion` are untouched). `ProfileSnapshot.SCHEMA_VERSION` stays 1
         (unless a justified bump — then the migration test is present + green). If a new event was added,
         `test_domain_event.gd`'s `expected_ids` pin + the enum-count assertion are updated + green.
-  - [ ] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project Context
+  - [x] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project Context
         Rules): `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
         --quit-after 10`. Apply the false-PASS grep guard (`SCRIPT ERROR|Parse Error|^FAIL` + only the 6 documented
         stderr negatives: int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — plus any NEW documented
         negative 11.6 adds, e.g. a `profile_save_*` forcing case, which MUST be documented in the story + the ledger).
         Run `git diff --check`.
 
-- [ ] **Task 6 — Update the deferred-work ledger + tracking (AC-wide, hygiene)**
-  - [ ] In `deferred-work.md` (new 11.6 entry): mark **RESOLVED** the **meta-SPEND / unlock APPLICATION** fence (the
+- [x] **Task 6 — Update the deferred-work ledger + tracking (AC-wide, hygiene)**
+  - [x] In `deferred-work.md` (new 11.6 entry): mark **RESOLVED** the **meta-SPEND / unlock APPLICATION** fence (the
         canonical "unlock-SPEND / meta-power APPLICATION" entry carried since Epic 8, re-recorded by
         8.4/8.6/8.7/11.2/11.3/11.4/11.5 as "the meta-SPEND / unlock APPLICATION (11.6)") — 11.6 authors the spend
         command + the profile→class-selectability application (FR43) + the capped/sparse posture (FR95). Note whether the
@@ -743,10 +747,64 @@ them (the rest of the ledger is out of scope):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
 
 ### Debug Log References
 
+- Full headless suite (Godot 4.6.3, PowerShell): `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` → **"Headless tests passed." / 182 PASS / 0 `^FAIL`**. False-PASS grep (`SCRIPT ERROR|Parse Error|^FAIL`) clean; only the 6 documented stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1). `git diff --check` clean.
+- One iteration fix: `test_meta_summary_save_load._spend_then_persist_round_trips_the_applied_unlock` initially compared `to_dictionary()` byte-identical and tripped the 8.7 int-coercion artifact (`_oath_shards_spent: 3` decodes as `3.0` across JSON). Fixed by asserting the ledger via `MetaSpendRules.oath_shards_spent_in` (int-coercion-aware) + the flag/total individually, mirroring how `class_mastery` is tested.
+
 ### Completion Notes List
 
+**Decisions recorded (per the story's DECIDE prompts):**
+
+- **The spend command `state` arg — Option A (unused/null):** a spend fires at the outpost with NO live run, so `SpendOathShardsCommand.validate(_state)/execute(_state)` ignore `state` (accepts null) — the profile + `unlock_id` in the constructor are the real context (the `RunStartCommand` "state unused, context via constructor" precedent).
+- **AC2 seam — Option A (profile-aware view model + gate, minimal):** `HeroSelectViewModel` + the authoritative `RunStartCommand` class gate both gained an OPTIONAL trailing `ProfileSnapshot`; a locked class is selectable iff (static `LOCK_STATE_SELECTABLE`) OR (its class id is in `MetaSpendRules.unlocked_class_ids_for(profile.unlock_progress)` — the SINGLE source both read, so they AGREE). The static `ClassDefinition.lock_state` is NEVER mutated (a profile-aware OVERLAY). The pinned `HeroSelectViewModel.ENTRY_KEYS` + `OutpostViewModel.DICTIONARY_KEYS` are UNCHANGED (the `selectable` VALUE becomes profile-aware; `OutpostViewModel` threads its EXISTING `profile` arg into the composed VM — no new positional arg re-shift). A null profile => byte-identical static Story-5.2 behavior. `RunOrchestrator.start` / `RunFlowController.start` gained a matching optional trailing profile arg (fingerprint-safe: the default is unchanged).
+- **Unlock→class mapping (pure const `MetaSpendRules.CLASS_UNLOCKS`):** `necromancer` (cost 3 → `necromancer_unlocked`), `shadeblade` (cost 5 → `shadeblade_unlocked`) — the two locked baselines (FR43). Capped/sparse: exactly two variety gates, each a one-time purchase; NO raw-stat key (`UnlockProgressRules.is_raw_stat_unlock_key` produces none — asserted in `test_meta_spend_rules`).
+- **Spend-state home — Option: inside the existing `unlock_progress` dict (no new top-level field, no migration).** The `<class>_unlocked` applied-unlock flags + the underscore-namespaced `_oath_shards_spent` ledger live under `unlock_progress` (the seal-fragments / `_last_merged_run_seed` precedent), so `ProfileSnapshot.SCHEMA_VERSION` stays 1, `DICTIONARY_KEYS` is UNCHANGED, and there is NO migration. `profile_snapshot.gd` is UNTOUCHED.
+- **Spend idempotency mechanism:** the APPLICATION is idempotent via the applied-unlock flag — re-applying an already-applied unlock rejects `unlock_already_applied` (ZERO charge, ZERO event), which is ALSO the retry-safety (a persist-failure retry re-reads the profile with the flag set + rejects without double-charging). A spend reads/writes NONE of the four run-end markers (`last_awarded_run_seed`, `_last_merged_run_seed`, `first_death_recorded`, `first_victory_recorded`) — proven order-independent in `test_meta_summary_save_load`. A spend is a PLAYER-INITIATED REPEATABLE action: buying a DIFFERENT class unlock is a separate legitimate spend.
+- **The new event — `oath_shards_spent` (a NEW SYSTEM event):** the `oath_shards_awarded` counterpart at the OPPOSITE sign (`before - amount == after`, `amount` POSITIVE, both non-negative — a spend never drives a negative total). Wired end-to-end (enum tail after `BOSS_DEFEATED`, `EVENT_ID_*` const, factory, `_validate_payload_for_event` arm + `_validate_oath_shards_spent_payload` validator, both id maps, JSON round-trip + malformed-negative tests, AND the `expected_ids` pin). ZERO RNG.
+- **The spend/apply bridge — a NEW `OutpostSpendBridge` (mirroring `RunEndProfileBridge`), NOT a `RunFlowController` method:** load → spend → persist → rebuild off the LOADED profile. Its own monotonic `sequence_id` source (a spend at the outpost has no live run/orchestrator; keeps `sequence_id > 0`). The 11.5 write-failure real-totals-behind-retry recovery. The retro H1 shared-seam test (`test_outpost_spend_bridge`) proves two spends in a row each load the LATEST persisted profile (never a stale one).
+- **The named-space status — the spend menu is a DISTINCT surface, the four overview tiles STAY `deferred`:** the shallow meta menu renders as its own "Seal Table — Class Unlocks" section on `outpost_presenter.gd` (the realized live spend surface); the four `named_spaces` overview tiles remain `deferred` markers (not mislabeled — the live affordance is the distinct menu, not the overview tile). The spend render DECISIONS (`class_unlock_options`/`can_spend_unlock`/`has_affordable_unlock` — can-afford/insufficient/applied + cost, all non-color text+icon) live in `OutpostRenderView` (the retro G1/G2 posture — testable without a SceneTree).
+
+**FR28 (verified structural):** the manual-seed exclusion is on the AWARD side (a manual-seed run never awarded shards — `AwardMetaProgressCommand` Gate 2). The spend command does NOT re-gate for manual-seed and CANNOT fabricate shards (it only subtracts) — proven in `test_spend_oath_shards_command._spend_cannot_fabricate_shards_fr28`.
+
+**Known v0 limitation (recorded in `deferred-work.md`):** the baseline `necromancer`/`shadeblade` `ClassDefinition`s carry NO kit, so starting a run with an unlocked baseline locked class would fail `RunStartCommand`'s kit/passive resolution. 11.6's applied-unlock flips their SELECTABILITY (the VM + the authoritative gate honor it — proven with a fixture repo whose locked class carries a valid baseline kit); authoring the real Necromancer/Shadeblade class-kit content is a later content story (the "no new content family" fence).
+
 ### File List
+
+**New (production):**
+- `godot/scripts/core/commands/spend_oath_shards_command.gd` — the meta-SPEND command (the `AwardMetaProgressCommand` idiom at the opposite sign).
+- `godot/scripts/save/meta_spend_rules.gd` — the pure const-config spend calculator (cost table + unlock→flag mapping + the single AC2 seam source `unlocked_class_ids_for`).
+- `godot/scripts/ui/flow/outpost_spend_bridge.gd` — the caller-driven load→spend→persist→rebuild bridge (mirrors `RunEndProfileBridge`).
+
+**Modified (production):**
+- `godot/scripts/core/events/domain_event.gd` — appended the `oath_shards_spent` SYSTEM event (enum tail, const, factory, validator + match arm, both id maps, `OATH_SHARDS_SPENT_REASONS` allowlist).
+- `godot/scripts/ui/view_models/hero_select_view_model.gd` — profile-aware selectability (optional trailing `ProfileSnapshot`; `_class_is_selectable` overlay; `ENTRY_KEYS` unchanged).
+- `godot/scripts/core/commands/run_start_command.gd` — profile-aware authoritative class gate (optional trailing `ProfileSnapshot`; `_class_is_selectable` mirrors the VM).
+- `godot/scripts/run/run_orchestrator.gd` — `start(...)` gained an optional trailing `profile` arg (threaded into `RunStartCommand`); added the `ProfileSnapshot` preload.
+- `godot/scripts/ui/flow/run_flow_controller.gd` — `start(...)` gained an optional trailing `profile` arg (forwarded to the orchestrator).
+- `godot/scripts/ui/view_models/outpost_view_model.gd` — composes a PROFILE-AWARE `HeroSelectViewModel` off its existing `profile` arg (no new positional arg; `DICTIONARY_KEYS` unchanged).
+- `godot/scripts/ui/view_models/outpost_render_view.gd` — the spend render decisions (`class_unlock_options`/`can_spend_unlock`/`has_affordable_unlock` + the state/note consts).
+- `godot/scripts/ui/presenters/outpost_presenter.gd` — the shallow meta menu (the Seal Table spend tiles) + the spend-request handler driving `OutpostSpendBridge`.
+
+**New (tests):**
+- `godot/tests/unit/core/test_spend_oath_shards_command.gd`
+- `godot/tests/unit/save/test_meta_spend_rules.gd`
+- `godot/tests/unit/ui/test_outpost_spend_bridge.gd`
+
+**Modified (tests):**
+- `godot/tests/unit/core/test_domain_event.gd` — the `oath_shards_spent` round-trip + malformed tests + the `expected_ids` pin.
+- `godot/tests/unit/ui/test_hero_select_view_model.gd` — the profile-aware selectability overlay tests.
+- `godot/tests/unit/core/test_run_start_command.gd` — the profile-aware authoritative-gate symmetry tests + the locked-but-runnable fixture.
+- `godot/tests/unit/save/test_profile_snapshot.gd` — the spend-state-inside-`unlock_progress` round-trip test.
+- `godot/tests/integration/save/test_meta_summary_save_load.gd` — the spend×run-end-markers caller-ordering test + the spend-then-persist end-to-end AC2 round-trip.
+- `godot/tests/unit/ui/test_outpost_render_view.gd` — the spend render-decision tests.
+
+**Tracking:**
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the 11.6 entry (meta-SPEND / unlock APPLICATION RESOLVED; the still-open residuals RE-RECORDED; the new Necromancer/Shadeblade class-kit content defer).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — 11.6 → `review`.
+
+### Change Log
+
+- 2026-07-06 — Story 11.6 implemented: the meta-SPEND command + the profile→class-selectability application (FR43) + the capped/sparse posture (FR95) + the outpost shallow meta menu. Status → review.

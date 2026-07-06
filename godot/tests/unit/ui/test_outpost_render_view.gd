@@ -52,6 +52,12 @@ func run() -> Dictionary:
 	_start_descent_is_available_with_both_beats_absent()
 	_absent_run_summary_renders_no_just_ended_run()
 	_render_view_is_a_pure_read()
+	# Story 11.6 — the shallow meta menu spend render decisions (AC1/FR59)
+	_spend_options_are_affordable_when_shards_suffice()
+	_spend_options_are_insufficient_when_shards_short()
+	_spend_option_is_applied_when_already_unlocked()
+	_can_spend_unlock_is_fail_closed()
+	_has_affordable_unlock_rolls_up_the_options()
 	return result()
 
 
@@ -231,3 +237,68 @@ func _render_view_is_a_pure_read() -> void:
 	assert_false(empty.is_recovery(), "A null VM render view is fail-closed (no recovery).")
 	assert_false(empty.shows_first_death_beat(), "A null VM render view shows no beats.")
 	assert_false(empty.can_start_descent(), "A null VM render view is fail-closed (no start affordance without a projection).")
+
+
+# ---- Story 11.6: the shallow meta menu spend render decisions (AC1/FR59) -------------------------
+
+func _profile_with_shards(shards: int) -> ProfileSnapshot:
+	var profile: ProfileSnapshot = ProfileSnapshot.new()
+	profile.oath_shards = shards
+	return profile
+
+
+func _options_by_unlock_id(view: OutpostRenderView) -> Dictionary:
+	var by_id: Dictionary = {}
+	for option: Variant in view.class_unlock_options():
+		by_id[String((option as Dictionary).get("unlock_id", ""))] = option
+	return by_id
+
+
+func _spend_options_are_affordable_when_shards_suffice() -> void:
+	# A profile with enough shards: both class unlocks are AFFORDABLE (not yet applied). The cost + state are readable.
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_profile_with_shards(10)))
+	var options: Dictionary = _options_by_unlock_id(view)
+	assert_equal(options.size(), 2, "Both spendable class unlocks are rendered.")
+	var necro: Dictionary = options.get("necromancer", {})
+	assert_equal(necro.get("state"), OutpostRenderView.SPEND_STATE_AFFORDABLE, "With 10 shards, necromancer (cost 3) is affordable.")
+	assert_equal(necro.get("cost"), 3, "The necromancer cost is surfaced.")
+	assert_equal(necro.get("display_name"), "Necromancer", "The class display name is surfaced.")
+	assert_true(bool(necro.get("can_afford")), "With 10 shards, necromancer is affordable.")
+	assert_false(bool(necro.get("is_applied")), "necromancer is not yet applied.")
+	assert_true(view.can_spend_unlock("necromancer"), "An affordable, unapplied unlock is spendable.")
+
+
+func _spend_options_are_insufficient_when_shards_short() -> void:
+	# A profile short on shards: an unlock the player cannot afford reads INSUFFICIENT with a positive shortfall.
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_profile_with_shards(2)))
+	var options: Dictionary = _options_by_unlock_id(view)
+	var necro: Dictionary = options.get("necromancer", {})
+	assert_equal(necro.get("state"), OutpostRenderView.SPEND_STATE_INSUFFICIENT, "With 2 shards, necromancer (cost 3) is insufficient.")
+	assert_equal(necro.get("shortfall"), 1, "The shortfall (3 - 2) is surfaced.")
+	assert_false(bool(necro.get("can_afford")), "With 2 shards, necromancer is not affordable.")
+	assert_false(view.can_spend_unlock("necromancer"), "An unaffordable unlock is NOT spendable (fail-loud, not silent).")
+
+
+func _spend_option_is_applied_when_already_unlocked() -> void:
+	# A profile that already unlocked a class: that unlock reads APPLIED (not spendable — no double-charge).
+	var profile: ProfileSnapshot = _profile_with_shards(10)
+	profile.unlock_progress["necromancer_unlocked"] = true
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(profile))
+	var options: Dictionary = _options_by_unlock_id(view)
+	assert_equal((options.get("necromancer", {}) as Dictionary).get("state"), OutpostRenderView.SPEND_STATE_APPLIED, "An already-unlocked class reads APPLIED.")
+	assert_true(bool((options.get("necromancer", {}) as Dictionary).get("is_applied")), "The applied flag is surfaced.")
+	assert_false(view.can_spend_unlock("necromancer"), "An already-applied unlock is NOT spendable (idempotent — no double-charge).")
+	# Shadeblade (still locked, affordable) stays spendable.
+	assert_true(view.can_spend_unlock("shadeblade"), "A still-locked, affordable unlock stays spendable.")
+
+
+func _can_spend_unlock_is_fail_closed() -> void:
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_profile_with_shards(10)))
+	assert_false(view.can_spend_unlock("buy_max_hp"), "An unknown unlock is fail-closed (not spendable).")
+	assert_false(view.can_spend_unlock(""), "An empty unlock id is fail-closed (not spendable).")
+
+
+func _has_affordable_unlock_rolls_up_the_options() -> void:
+	# The roll-up: a profile with an affordable unapplied unlock -> true; a 0-shard profile -> false.
+	assert_true(OutpostRenderView.from_view_model(OutpostViewModel.new(_profile_with_shards(10))).has_affordable_unlock(), "A profile with affordable unlocks reports has_affordable_unlock.")
+	assert_false(OutpostRenderView.from_view_model(OutpostViewModel.new(_profile_with_shards(0))).has_affordable_unlock(), "A 0-shard profile has no affordable unlock.")

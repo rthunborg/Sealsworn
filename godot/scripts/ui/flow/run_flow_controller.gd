@@ -97,8 +97,12 @@ func current_node_needs_board() -> bool:
 # RunOrchestrator.start (the class-picker confirm hands a class_id here; a locked/unknown class is rejected
 # fail-closed and seats NO run). Returns a small structured result the presenter reads. This is the launch ->
 # hero-select confirm -> run-start hand-off.
-func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = &"") -> Dictionary:
-	var start_result: ActionResult = _orchestrator.start(root_seed, is_manual_seed, class_id)
+#
+# Story 11.6 (AC2): an OPTIONAL trailing ProfileSnapshot threads the profile-aware unlock into the authoritative
+# start gate so a genuinely-unlocked formerly-locked class STARTS (in lockstep with HeroSelectViewModel). A null
+# profile => the static gate (byte-identical). The LAST positional arg so every existing .start(...) caller is untouched.
+func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = &"", profile = null) -> Dictionary:
+	var start_result: ActionResult = _orchestrator.start(root_seed, is_manual_seed, class_id, profile)
 	if start_result.is_error():
 		return {
 			"started": false,

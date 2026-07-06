@@ -34,6 +34,10 @@ extends RefCounted
 # the latch was set by the record command independently). OFF THE CRITICAL PATH (FR64): the outpost surface + the start-
 # descent affordance are COMPLETE without either beat.
 
+const MetaSpendRules = preload("res://scripts/save/meta_spend_rules.gd")
+const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
+const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
+
 const RECOVERY_MODE_NONE := "none"
 const RECOVERY_MODE_LOAD_FAILURE := "load_failure"
 const RECOVERY_MODE_WRITE_FAILURE := "write_failure"
@@ -46,6 +50,18 @@ const MANUAL_SEED_WARNING_LINE := "Manual seed — no meta progression earned."
 # differently from "save failed — retry"). Keyed by mode. The presenter pairs each with a distinct icon.
 const RECOVERY_NOTE_LOAD_FAILURE := "Your saved progress could not be loaded. Starting a fresh outpost."
 const RECOVERY_NOTE_WRITE_FAILURE := "Your progress could not be saved this session. Your totals are shown; retry the save."
+
+# Story 11.6 (AC1, FR59 — the shallow meta menu render decisions, centralized + testable per the retro G1/G2 posture).
+# The spend can-afford/insufficient/applied states + the cost carry text+icon (a non-color channel — appendix §14): the
+# affordable/insufficient state reads differently by label (not color), the applied state by an "Unlocked" marker, the
+# cost by a number+label. The presenter maps these to Control tiles; it invents no spend render vocabulary.
+const SPEND_STATE_APPLIED := "applied"          # already unlocked (the spend was made — the variety gate is open).
+const SPEND_STATE_AFFORDABLE := "affordable"    # not yet unlocked, and the profile can afford the cost.
+const SPEND_STATE_INSUFFICIENT := "insufficient"  # not yet unlocked, and the profile CANNOT afford the cost.
+
+# The insufficient-shards message (a fail-loud non-color channel — never a silent no-op; appendix §14). The presenter
+# pairs it with a distinct icon; the shortfall wording is centralized here so it is testable without a SceneTree.
+const INSUFFICIENT_SHARDS_NOTE := "Not enough Oath Shards to unlock this yet."
 
 # The projection this render view reads (OutpostViewModel.to_dictionary() — the pinned DICTIONARY_KEYS). A deep copy is
 # stored so a mutation of a caller's dict never perturbs this seam's reads.
@@ -200,3 +216,58 @@ func named_space_markers() -> Array:
 			"is_deferred": String(space.get("status", "")) == "deferred"
 		})
 	return markers
+
+
+# AC1 (FR59 — the shallow meta menu): the spendable class-unlock options each as a render dict the presenter maps to a
+# spend tile. PURE read over the projection's oath_shards (affordability) + unlock_progress (applied state) + the
+# MetaSpendRules cost/flag config. Each entry: {unlock_id, class_id, display_name, cost, state (applied/affordable/
+# insufficient), is_applied, can_afford, shortfall}. The state + cost carry text+icon (non-color — appendix §14). The
+# presenter renders a spend button (>=44x44) per entry, disabled when applied or unaffordable, labeled with the cost +
+# the state. Ordered by the MetaSpendRules declaration order (necromancer, shadeblade). A class_repository is composed
+# for the display name (baseline default — the OutpostViewModel / HeroSelectViewModel injection posture).
+func class_unlock_options() -> Array:
+	var available: int = awarded_oath_shards()
+	var unlock_progress: Dictionary = _projection.get("unlock_progress", {})
+	var repository: ClassRepository = ClassRepository.create_baseline_repository()
+	var options: Array = []
+	for unlock_id: String in MetaSpendRules.CLASS_UNLOCKS.keys():
+		var class_id: String = MetaSpendRules.class_id_for_unlock(unlock_id)
+		var cost: int = MetaSpendRules.class_unlock_cost(unlock_id)
+		var flag_key: String = MetaSpendRules.class_unlock_flag_key(unlock_id)
+		var is_applied: bool = bool(unlock_progress.get(flag_key, false))
+		var can_afford: bool = available >= cost
+		var state: String = SPEND_STATE_APPLIED if is_applied else (SPEND_STATE_AFFORDABLE if can_afford else SPEND_STATE_INSUFFICIENT)
+		var definition: ClassDefinition = repository.get_class_definition(StringName(class_id))
+		var display_name: String = definition.display_name if definition != null else class_id
+		options.append({
+			"unlock_id": unlock_id,
+			"class_id": class_id,
+			"display_name": display_name,
+			"cost": cost,
+			"state": state,
+			"is_applied": is_applied,
+			"can_afford": can_afford,
+			"shortfall": maxi(0, cost - available)
+		})
+	return options
+
+
+# AC1 (FR59): the spend affordance for a specific unlock (the presenter reads it when wiring a spend button — whether the
+# button submits a spend or is disabled). Fail-closed: an unknown/applied/unaffordable unlock returns false. A spend is
+# submittable iff the unlock is a declared class unlock, NOT already applied, AND affordable.
+func can_spend_unlock(unlock_id: String) -> bool:
+	if not MetaSpendRules.is_class_unlock(unlock_id):
+		return false
+	var unlock_progress: Dictionary = _projection.get("unlock_progress", {})
+	if bool(unlock_progress.get(MetaSpendRules.class_unlock_flag_key(unlock_id), false)):
+		return false
+	return awarded_oath_shards() >= MetaSpendRules.class_unlock_cost(unlock_id)
+
+
+# AC1 (FR59): whether ANY spendable class unlock is affordable-and-unapplied right now (the presenter reads it to decide
+# whether the spend menu shows a live affordance or only "coming soon"/applied tiles). A convenience roll-up.
+func has_affordable_unlock() -> bool:
+	for option: Variant in class_unlock_options():
+		if String((option as Dictionary).get("state", "")) == SPEND_STATE_AFFORDABLE:
+			return true
+	return false

@@ -57,12 +57,24 @@ extends "res://scripts/core/commands/game_command.gd"
 # run.to_dictionary() + the same run_started event. The command draws RNG ONLY via the delegated
 # RouteGenerator.generate (the `map` stream); it touches no other stream directly.
 
+# STORY 11.6 EXTENSION — PROFILE-AWARE CLASS GATE (AC2, FR43 — the authoritative half of the crux): the constructor
+# gained an OPTIONAL trailing ProfileSnapshot (default null = the byte-identical Story-5.2 STATIC gate). This is the
+# AUTHORITATIVE fail-closed counterpart to HeroSelectViewModel's profile-aware affordance: a genuinely-unlocked class
+# (its `<class>_unlocked` applied-unlock flag set on the profile) must START (NOT class_not_selectable), and a still-
+# locked class must STILL reject. The gate reads the SAME single unlock source the VM reads (MetaSpendRules.
+# unlocked_class_ids_for) so the VM grey-out (a hint) and the command (the gate) AGREE — a mis-enabled confirm cannot
+# start a still-locked class, and a genuinely-unlocked class is not rejected. The profile is the LAST positional arg so
+# every existing .new(...) call (the 4.6 seed-only start, the 5.2/5.3/5.4 kit/passive starts, RunOrchestrator.start) is
+# untouched; a null profile => today's STATIC is_selectable() gate. It does NOT mutate the static ClassDefinition.
+
 # ActionResult is already declared on the GameCommand parent (inherited here); do not redeclare it.
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const MetaSpendRules = preload("res://scripts/save/meta_spend_rules.gd")
 const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
 const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
+const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
 const RouteGenerator = preload("res://scripts/generation/route/route_generator.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
@@ -96,6 +108,11 @@ var _support_repository: SupportRepository = null
 # weapon/support repos) so every existing .new(...) call still compiles unchanged. Constructor-injected so
 # tests can supply a fixture passive repository (e.g. one missing a class's passive id, to prove fail-closed).
 var _passive_repository: PassiveRepository = null
+# Story 11.6: the OPTIONAL cross-run profile (the AC2 profile-aware class gate). Default null = the STATIC gate
+# (byte-identical Story-5.2 behavior). When supplied, its unlock_progress applied-unlock flags widen selectability
+# (a genuinely-unlocked formerly-locked class starts). The LAST positional constructor arg so every existing .new(...)
+# call is untouched. Read-only — the command never mutates the profile.
+var _profile: ProfileSnapshot = null
 
 func _init(
 	new_root_seed: int = 0,
@@ -105,7 +122,8 @@ func _init(
 	new_class_repository: ClassRepository = null,
 	new_weapon_repository: WeaponRepository = null,
 	new_support_repository: SupportRepository = null,
-	new_passive_repository: PassiveRepository = null
+	new_passive_repository: PassiveRepository = null,
+	new_profile: ProfileSnapshot = null
 ) -> void:
 	command_id = &"run_start"
 	root_seed = new_root_seed
@@ -116,6 +134,7 @@ func _init(
 	_weapon_repository = new_weapon_repository if new_weapon_repository != null else WeaponRepository.create_baseline_repository()
 	_support_repository = new_support_repository if new_support_repository != null else SupportRepository.create_baseline_repository()
 	_passive_repository = new_passive_repository if new_passive_repository != null else PassiveRepository.create_baseline_repository()
+	_profile = new_profile
 
 
 # Pure read: validate the sequence id and the seed. No mutation, no event, no RNG. Option-A context: the
@@ -152,9 +171,10 @@ func validate(_state: Variant) -> ActionResult:
 				"command": String(command_id),
 				"class_id": String(class_id)
 			})
-		if not def.is_selectable():
-			# Resolves but is a LOCKED/non-selectable future class — fail closed ("no run can start with the
-			# locked class").
+		if not _class_is_selectable(def):
+			# Resolves but is a LOCKED/non-selectable future class the profile has NOT unlocked — fail closed
+			# ("no run can start with the still-locked class"). Story 11.6: a profile-UNLOCKED formerly-locked class
+			# passes this gate (the profile-aware overlay), in LOCKSTEP with HeroSelectViewModel's affordance.
 			return ActionResult.error(&"class_not_selectable", {
 				"command": String(command_id),
 				"class_id": String(class_id),
@@ -226,6 +246,20 @@ func _validate_passives_resolve(def: ClassDefinition) -> ActionResult:
 			"passive_id": String(def.equipment_synergy_passive_id)
 		})
 	return ActionResult.ok()
+
+
+# Story 11.6 (AC2 — the authoritative half of the crux): the profile-aware selectability decision, mirroring
+# HeroSelectViewModel._class_is_selectable VERBATIM so the VM affordance + this authoritative gate AGREE. A class is
+# selectable iff it is STATICALLY LOCK_STATE_SELECTABLE OR the supplied profile has unlocked it (its class id is in the
+# applied-unlock set derived from MetaSpendRules.unlocked_class_ids_for — the SAME single source the VM reads). With no
+# profile the overlay is empty, so this is byte-identical to def.is_selectable() (the static Story-5.2 gate). It does NOT
+# mutate the static ClassDefinition (approved static content is selected-from, not rewritten).
+func _class_is_selectable(def: ClassDefinition) -> bool:
+	if def.is_selectable():
+		return true
+	if _profile == null:
+		return false
+	return MetaSpendRules.unlocked_class_ids_for(_profile.unlock_progress).has(String(def.class_id))
 
 
 # Validate-then-mutate. On success: generate + rehydrate the route, park the start node, transition

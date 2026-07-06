@@ -22,6 +22,7 @@ func run() -> Dictionary:
 	_populated_8_4_homes_round_trip_without_a_migration()
 	_set_first_death_flag_round_trips_without_a_migration()
 	_set_first_victory_flag_round_trips_without_a_migration()
+	_spend_state_round_trips_inside_unlock_progress_without_a_migration()
 	return result()
 
 
@@ -241,6 +242,42 @@ func _populated_8_4_homes_round_trip_without_a_migration() -> void:
 	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
 	expected_keys.sort()
 	assert_equal(actual_keys, expected_keys, "A populated 8.4 profile must still project EXACTLY the pinned DICTIONARY_KEYS set (no new top-level key).")
+
+
+func _spend_state_round_trips_inside_unlock_progress_without_a_migration() -> void:
+	# Story 11.6 (AC3 — the additive round-trip): the meta-SPEND state (the `<class>_unlocked` applied-unlock flags + the
+	# `_oath_shards_spent` ledger) lives INSIDE the existing unlock_progress Dictionary home (the seal-fragments / merge-
+	# marker precedent), so it round-trips losslessly through to_dictionary()/parse AND a real JSON stringify->parse at the
+	# SAME SCHEMA_VERSION == 1 (NO migration, NO new top-level key). The ledger is int-coercion-aware (the 8.7 class_mastery
+	# lesson: an int survives a JSON round-trip as an int here — asserted via int(...)).
+	var snapshot: ProfileSnapshot = ProfileSnapshot.new()
+	snapshot.oath_shards = 2  # what remains after a spend
+	snapshot.unlock_progress = {
+		"necromancer_unlocked": true,
+		"shadeblade_unlocked": true,
+		"_oath_shards_spent": 8
+	}
+
+	var json_text: String = JSON.stringify(snapshot.to_dictionary())
+	var parsed_variant: Variant = JSON.parse_string(json_text)
+	var parse_result: ActionResult = ProfileSnapshot.parse(parsed_variant)
+	assert_true(parse_result.succeeded, "A spent profile must parse back at SCHEMA_VERSION == 1 (no migration).")
+	var parsed: ProfileSnapshot = parse_result.metadata.get("snapshot")
+
+	# NO migration: the schema version is unchanged.
+	assert_equal(parsed.schema_version, ProfileSnapshot.SCHEMA_VERSION, "A spent profile must round-trip at the SAME schema version (no bump).")
+	# The applied-unlock flags + the spend ledger survive verbatim.
+	assert_true(bool(parsed.unlock_progress.get("necromancer_unlocked")), "The necromancer applied-unlock flag must round-trip.")
+	assert_true(bool(parsed.unlock_progress.get("shadeblade_unlocked")), "The shadeblade applied-unlock flag must round-trip.")
+	assert_equal(int(parsed.unlock_progress.get("_oath_shards_spent")), 8, "The spend ledger must round-trip losslessly (int-coercion-aware).")
+	assert_equal(parsed.oath_shards, 2, "The remaining Oath-Shard total must round-trip.")
+
+	# The exact top-level key set is UNCHANGED (11.6 adds NO new top-level profile key — the spend state is inside unlock_progress).
+	var actual_keys: Array = snapshot.to_dictionary().keys()
+	actual_keys.sort()
+	var expected_keys: Array = ProfileSnapshot.DICTIONARY_KEYS.duplicate()
+	expected_keys.sort()
+	assert_equal(actual_keys, expected_keys, "A spent profile must still project EXACTLY the pinned DICTIONARY_KEYS set (no new top-level key).")
 
 
 func _set_first_death_flag_round_trips_without_a_migration() -> void:

@@ -25,6 +25,8 @@ func run() -> Dictionary:
 	_run_failed_rejects_malformed_payloads()
 	_oath_shards_awarded_serializes_and_parses_stable_payload()
 	_oath_shards_awarded_rejects_malformed_payloads()
+	_oath_shards_spent_serializes_and_parses_stable_payload()
+	_oath_shards_spent_rejects_malformed_payloads()
 	_content_discovered_serializes_and_parses_stable_payload()
 	_content_discovered_rejects_malformed_payloads()
 	_profile_progress_merged_serializes_and_parses_stable_payload()
@@ -1037,6 +1039,103 @@ func _oath_shards_awarded_rejects_malformed_payloads() -> void:
 	})
 	assert_true(bad_profile.is_error(), "oath_shards_awarded with a non-string profile_id should be rejected.")
 	assert_equal(bad_profile.metadata.get("field"), "profile_id", "A non-string profile_id should name the profile_id field.")
+
+
+func _oath_shards_spent_serializes_and_parses_stable_payload() -> void:
+	# Story 11.6 (AC1/FR59): an oath_shards_spent SYSTEM event (no actor) — the meta-SPEND record (the oath_shards_awarded
+	# counterpart at the OPPOSITE sign). reason is lower_snake AND in the allowlist; unlock_id is lower_snake; amount is a
+	# POSITIVE int; oath_shards_before/after are non-negative integral; before - amount == after; ZERO roll/draw_index.
+	var event: DomainEvent = DomainEvent.oath_shards_spent(31, {
+		"amount": 3,
+		"oath_shards_before": 10,
+		"oath_shards_after": 7,
+		"reason": "class_unlock",
+		"unlock_id": "necromancer",
+		"profile_id": "default"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "oath_shards_spent", "oath_shards_spent should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "oath_shards_spent is a system event with an empty actor id.")
+	assert_false((serialized.get("payload") as Dictionary).has("roll"), "oath_shards_spent must NOT carry a roll (ZERO RNG).")
+	assert_false((serialized.get("payload") as Dictionary).has("draw_index"), "oath_shards_spent must NOT carry a draw_index (ZERO RNG).")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "oath_shards_spent should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.OATH_SHARDS_SPENT, "oath_shards_spent should parse back to OATH_SHARDS_SPENT.")
+	assert_equal(restored.payload.get("amount"), 3, "The amount must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("oath_shards_before"), 10, "oath_shards_before must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("oath_shards_after"), 7, "oath_shards_after must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("reason"), "class_unlock", "The reason must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("unlock_id"), "necromancer", "The unlock_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("profile_id"), "default", "The profile_id must survive a JSON round-trip.")
+
+	# id_for_type / type_for_id round-trip for the new event.
+	assert_equal(DomainEvent.id_for_type(DomainEvent.Type.OATH_SHARDS_SPENT), &"oath_shards_spent", "id_for_type must map the new event.")
+	assert_equal(DomainEvent.type_for_id(&"oath_shards_spent"), DomainEvent.Type.OATH_SHARDS_SPENT, "type_for_id must map the new event back.")
+
+
+func _oath_shards_spent_rejects_malformed_payloads() -> void:
+	# A missing reason is rejected.
+	var missing_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 3, "oath_shards_before": 10, "oath_shards_after": 7, "unlock_id": "necromancer", "profile_id": "default"}
+	})
+	assert_true(missing_reason.is_error(), "oath_shards_spent missing reason should be rejected.")
+	assert_equal(missing_reason.error_code, &"invalid_event_payload", "Malformed oath_shards_spent should use the stable code.")
+	assert_equal(missing_reason.metadata.get("field"), "reason", "oath_shards_spent should name the missing reason field.")
+
+	# An OFF-ALLOWLIST reason (lower_snake but not in OATH_SHARDS_SPENT_REASONS) is rejected.
+	var bad_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 3, "oath_shards_before": 10, "oath_shards_after": 7, "reason": "buy_stats", "unlock_id": "necromancer", "profile_id": "default"}
+	})
+	assert_true(bad_reason.is_error(), "oath_shards_spent with an off-allowlist reason should be rejected.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "An off-allowlist reason should name the reason field.")
+
+	# A missing unlock_id is rejected.
+	var missing_unlock: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 3, "oath_shards_before": 10, "oath_shards_after": 7, "reason": "class_unlock", "profile_id": "default"}
+	})
+	assert_true(missing_unlock.is_error(), "oath_shards_spent missing unlock_id should be rejected.")
+	assert_equal(missing_unlock.metadata.get("field"), "unlock_id", "oath_shards_spent should name the missing unlock_id field.")
+
+	# A ZERO amount is rejected (a spend of 0 is not a spend — the amount must be positive).
+	var zero_amount: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 0, "oath_shards_before": 10, "oath_shards_after": 10, "reason": "class_unlock", "unlock_id": "necromancer", "profile_id": "default"}
+	})
+	assert_true(zero_amount.is_error(), "oath_shards_spent with a zero amount should be rejected (a spend must be positive).")
+	assert_equal(zero_amount.metadata.get("field"), "amount", "A zero amount should name the amount field.")
+
+	# A dishonest arithmetic (before - amount != after) is rejected (the OPPOSITE sign of the award check).
+	var dishonest: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 3, "oath_shards_before": 10, "oath_shards_after": 9, "reason": "class_unlock", "unlock_id": "necromancer", "profile_id": "default"}
+	})
+	assert_true(dishonest.is_error(), "oath_shards_spent whose after diverges from before-amount should be rejected.")
+	assert_equal(dishonest.metadata.get("field"), "oath_shards_after", "A dishonest arithmetic should name the oath_shards_after field.")
+
+	# A spend that would drive the total negative (before - amount < 0) is rejected via the non-negative after check.
+	var negative_after: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "oath_shards_spent",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"amount": 3, "oath_shards_before": 1, "oath_shards_after": -2, "reason": "class_unlock", "unlock_id": "necromancer", "profile_id": "default"}
+	})
+	assert_true(negative_after.is_error(), "oath_shards_spent whose after is negative should be rejected (a spend never drives a negative total).")
+	assert_equal(negative_after.metadata.get("field"), "oath_shards_after", "A negative after should name the oath_shards_after field.")
 
 
 func _content_discovered_serializes_and_parses_stable_payload() -> void:
@@ -2919,7 +3018,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		# the first-victory narrative marker (the OPPOSITE-terminal-phase twin of first_death_recorded) + the tactical
 		# boss-defeat fact (DISTINCT from the run_completed + victory run-END record).
 		DomainEvent.Type.FIRST_VICTORY_RECORDED: &"first_victory_recorded",
-		DomainEvent.Type.BOSS_DEFEATED: &"boss_defeated"
+		DomainEvent.Type.BOSS_DEFEATED: &"boss_defeated",
+		# Story 11.6: the oath_shards_spent SYSTEM event appended at the enum end (never renumbered) — the meta-SPEND
+		# record (the oath_shards_awarded counterpart at the OPPOSITE sign; before - amount == after).
+		DomainEvent.Type.OATH_SHARDS_SPENT: &"oath_shards_spent"
 	}
 
 	for event_type: int in expected_ids.keys():
