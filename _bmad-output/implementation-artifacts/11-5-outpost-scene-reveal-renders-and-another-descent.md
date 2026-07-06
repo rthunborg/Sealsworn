@@ -853,3 +853,92 @@ Findings:
   is_startable: true}`) — the empty class id is unconditionally startable per `OutpostViewModel.start_run_request`'s
   `class_is_startable`, so no throwaway `OutpostViewModel`/`HeroSelectViewModel` construction is needed for the fixed
   one-tap re-descend. Same values fed to `RunFlowController.start(...)`; behavior byte-identical. Suite green.
+
+**Round 2 of 3** — second, independent adversarial pass on a different model (2026-07-06, auto-gds Round-2 delegate,
+Opus 4.8 [1m]). Verdict: **Approve**. Scope: current-branch diff vs `main` (18 files incl. `sprint-status.yaml`;
+production surface: bridge, controller, orchestrator accessor, router, presenter, render view, VM). Independently re-ran
+the full headless suite: **179 PASS / 0 `^FAIL`**, "Headless tests passed."; false-PASS grep clean — EXACTLY the 6
+documented stderr negatives (int64-overflow ×2 [lines 58,98], `invalid_node_type` ×1 [line 137], malformed-JSON ×3
+[lines 154,163,178]); 11.5 adds none. `git diff --check` clean.
+
+Severity tally: **Critical 0 / High 0 / Med 0 / Low 0** (no new findings). Open `[Review][Decision]` (human call): **0**.
+
+**Round 1 fix verification (both verified in place at source):**
+- **P1 — VERIFIED.** `test_run_end_profile_bridge.gd:145` now carries the explicit
+  `assert_true(bool(data.get("has_profile")), "profile_not_found builds off ProfileSnapshot.fresh() -> has_profile ==
+  true ...")` on the `_profile_not_found_starts_and_persists_a_fresh_profile()` path, with the clarifying comment
+  (lines 142-144) explaining the intended-but-counter-intuitive `has_profile == true` (a `fresh()` is a non-null
+  supplied profile; the returning-vs-brand-new distinction is `recovery_state.has_recovery`). The fresh-path intent is
+  now pinned.
+- **P3 — VERIFIED (byte-identical request values confirmed).** `outpost_presenter._on_descend_pressed()` (lines
+  219-224) builds the request inline as `{root_seed: str(DEFAULT_DESCENT_SEED)=="4242", is_manual_seed: false,
+  class_id: String(&"")=="", is_startable: true}` — no throwaway `OutpostViewModel`/`HeroSelectViewModel`. I traced the
+  equivalence: the retired `OutpostViewModel.new(null).start_run_request(4242, false, &"")` would have produced
+  `{root_seed:"4242", is_manual_seed:false, class_id:"", is_startable:true}` (empty class id → `class_is_startable ==
+  true` unconditionally, `outpost_view_model.gd:365`). The inline dict is byte-identical; the same three values feed
+  `RunFlowController.start(4242, false, &"")`. Behavior byte-identical, one fewer allocation.
+- **P2 — correctly left for finalize (NOT flipped).** `sprint-status.yaml:145` still reads
+  `11-5-...: ready-for-dev` (story `Status: review`, 11-1..11-4 `done`, 11-6 `backlog`). This is the expected
+  mid-pipeline state; advancing it to `done` alongside the story `Status` + `last_updated` is the auto-gds finalize
+  step's action, not a code-review fix. Left untouched this round (as the R1 finding itself specifies).
+
+**Independent deep-scrutiny of the core 11.5 surface (all re-derived from source, all sound):**
+- **Bridge idempotency + first-victory latch + fail-loud persist/retry:** correct. `build_outpost` runs load →
+  record-latch (off the REAL terminal `RunState.phase`, `run_end_profile_bridge.gd:132/142`) → persist → build. The
+  threaded `sequence_id` is genuinely UNIQUE: `resolve_run_end` (`run_orchestrator.gd:780`) calls
+  `_advance_sequence_past(resolved)` after the terminal `CompleteRunCommand`, and `_advance_sequence_past` sets
+  `_next_sequence_id = max_emitted + 1` (`:1496-1501`), so `next_sequence_id()` (`:885-886`, a pure read that does not
+  advance) returns strictly greater than every id the run emitted — NOT a hardcoded 1 that could collide. A second
+  finalize re-reads the now-latched profile and the record command rejects idempotently (`first_death_already_recorded`
+  / `first_victory_already_recorded`, ZERO mutation). The `_on_retry_save_pressed` re-entry re-drives a fresh
+  `build_outpost` (a fresh `ProfileSnapshot` re-read from disk each call — stateless across retries; a failed write
+  left the prior valid profile intact via `ProfileRepository.write_profile`'s backup rollback, `:65-74`), fail-loud
+  (a repeated failure re-renders the banner).
+- **Production vs test bridge path separation:** the ONLY production caller is `outpost_presenter.gd:68` →
+  `flow.finalize_run_end()` (no bridge arg) → `run_flow_controller.gd:207` → `RunEndProfileBridge.new()` → the default
+  `ProfileRepository.DEFAULT_PROFILE_PATH == user://profile.json`. Every test caller injects a throwaway path
+  (`test_run_end_profile_bridge_profile.json` / `test_run_flow_controller_bridge_profile.json` / the missing-dir path).
+  No shared file.
+- **OutpostViewModel positional-arg break (missed-caller hunt):** exhaustive grep of every `OutpostViewModel.new(...)`
+  / `.for_recovery(...)` across `scripts/` + `tests/`. The `first_victory_beat` at `_init` position 4 shifts
+  `class_repository`→5 / `new_recovery_state`→6. The ONLY in-repo caller passing `class_repository` positionally —
+  `test_meta_summary_save_load.gd:208-209` — correctly carries 5 args with `null` at position 4. All
+  `test_outpost_render_view.gd` + `test_outpost_view_model.gd` first-victory constructions use position 4 correctly.
+  Both bridge `for_recovery` call sites bind all 7 positions correctly (write-failure `:156-164`: code, profile,
+  summary, death_beat@4, null@5, true@6, victory_beat@7; load-failure `:106-114`: code, null, summary, empty-death@4,
+  null@5, true@6, empty-victory@7). `for_recovery`'s `first_victory_beat` is a TRAILING optional (position 7) so its
+  existing `(code)` / `(code, loaded_profile)` call sites stay byte-identical. NO missed caller.
+- **Router re-point (no stale run_end routing):** `_DESTINATION_STAGES = {"outpost": "outpost"}` (was `"run_end"`);
+  grep confirms no residual `"outpost": "run_end"` mapping in code (only documentary comments). `run_end` survives ONLY
+  as the gameplay shell's fail-loud NON-terminal dead-end (`gameplay_shell_presenter.gd:171` →
+  `go_to_stage("run_end")`); the terminal run routes to the real outpost. `run_end.tscn` still exists + is covered by
+  the scenes-load guardrail. Router/scenes-load/controller pins all updated + green.
+- **G3 honesty (oath_shards_earned stays 0):** verified at source. `RunSummary` hardcodes
+  `profile_meta.oath_shards_earned = 0` (build `:327`, empty fact `:437`) and `NOT_YET_SUPPORTED_FIELDS ==
+  ["oath_shards_earned"]` (`:130-132`) is always folded into `not_yet_supported` (`:350/:443`). The render view's
+  `awarded_oath_shards()` reads `profile.oath_shards`; `summary_oath_shards_not_yet_tallied()` reads the always-present
+  `not_yet_supported` membership. The summary DTO field is NOT wired non-zero — the 8.2/8.4 pinned contract holds.
+- **Determinism/fingerprint preservation:** the bridge draws ZERO RNG + the record commands are ZERO-RNG deterministic
+  flag sets + `RunSummary`/`OutpostViewModel`/the beats are pure reads (the bridge mutates ONLY the profile — the
+  terminal run is byte-identical before/after, `test_run_end_profile_bridge:268/276`). `domain_event.gd` /
+  `run_snapshot.gd` (23-key gate) / `profile_snapshot.gd` + `settings_snapshot.gd` (`SCHEMA_VERSION == 1`;
+  `first_victory_recorded` already homed at `:80`, SET not added) / `rng_stream_set.gd` (7 streams) / every
+  `tools/dump_*` are NOT in the diff. The orchestrator's only change is the additive read-only `next_sequence_id()`;
+  `run_to_completion` is untouched (fingerprint-safe).
+- **Dead has_method/probe sweep (bit this epic twice):** NO `has_method` probe anywhere in the new production code. The
+  `has_node("/root/Diagnostics")` / `has_node("/root/GameSession")` / `has_node("/root/SceneManager")` guards in
+  `outpost_presenter.gd` all resolve to REAL registered autoloads (`project.godot:15/16/20`) — the same guard posture
+  as the 11.3 presenters, not a dead probe. `Diagnostics.info(...)`, `GameSession.run_flow/set_run_flow/clear_run_flow`,
+  `SceneManager.go_to_stage`, `RunFlowController.start`, `ProfileSnapshot.parse`'s `{"snapshot": ...}` metadata key,
+  and the record commands' `metadata.line_id/is_skippable` all match source.
+
+**Testability convention (calibrated as instructed):** no SceneTree tests demanded — the AC1/AC3 scene-level
+assertions are correctly satisfied by the RefCounted render-decision seam (`test_outpost_render_view.gd`) + the
+scene-load compile guardrail covering `outpost.tscn` (`test_run_flow_scenes_load.gd:41`), per the ratified Epic-11
+scene-free-harness posture.
+
+- **[Review][Patch/Decision/Defer] — NONE.** No new findings. The two accepted Round-1 `[Review][Defer]` items (blank
+  `outcome_or_cause` under empty events — a faithful, non-crashing consequence of the ratified Option (a) empty-events
+  decision, since the summary's victory/death distinction survives via `run.phase`, `run_summary.gd:342`; and the
+  missing summary outcome label) remain ledgered in `deferred-work.md` and are NOT reopened. Both Round-1 `[Review]
+  [Patch]` fixes (P1, P3) are verified in place; the P2 sprint-status flip is correctly deferred to finalize.
