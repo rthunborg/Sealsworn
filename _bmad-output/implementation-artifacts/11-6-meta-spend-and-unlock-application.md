@@ -808,3 +808,88 @@ Claude Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
 ### Change Log
 
 - 2026-07-06 — Story 11.6 implemented: the meta-SPEND command + the profile→class-selectability application (FR43) + the capped/sparse posture (FR95) + the outpost shallow meta menu. Status → review.
+
+### Review Findings
+
+**Round 1 of 3**
+
+Primary adversarial code review (2026-07-06, Opus 4.8 delegate). Reviewed the current branch's diff against `main`
+(excluding `_bmad`, `_bmad-output/auto-gds`, cache/non-code files) with this story as the spec. Independently re-ran the
+full headless suite: **"Headless tests passed." / 182 PASS / 0 `^FAIL`**, false-PASS grep (`SCRIPT ERROR|Parse Error|^FAIL`)
+clean, exactly the 6 documented stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — the
+`test_outpost_spend_bridge` forced `profile_save_open_failed` produced NO new negative, confirming the silent-code claim);
+`git diff --check` clean.
+
+**Verdict: Approve.** Critical 0 / High 0 / Med 0 / Low 2. The implementation is faithful to the story's hard
+constraints — all VERIFIED against source:
+
+- **SpendOathShardsCommand validate-then-mutate discipline (VERIFIED):** mirrors `AwardMetaProgressCommand` verbatim at
+  the opposite sign. `sequence_id <= 0` rejected FIRST (`invalid_event_sequence_id`); null profile → `invalid_context`;
+  `unknown_unlock` / `unlock_already_applied` / `insufficient_oath_shards` all fail-close with ZERO event + a
+  byte-identical no-mutation profile (proven by `to_dictionary()` equality across every reject path in
+  `test_spend_oath_shards_command.gd`); the event is built ONLY after the mutation; ZERO RNG. Application-idempotency +
+  retry-safety ride the `<class>_unlocked` applied-unlock flag (a re-apply rejects `unlock_already_applied`, ZERO charge)
+  — the correct mechanism for a player-initiated repeatable action (a second DISTINCT unlock is a separate legitimate
+  spend, tested).
+- **MetaSpendRules as the SINGLE selectability source (VERIFIED — no second derivation):** grepped all selectability
+  derivations. `MetaSpendRules.unlocked_class_ids_for(unlock_progress)` is read by EXACTLY two sites —
+  `hero_select_view_model.gd:69` (the overlay VM) and `run_start_command.gd:262` (the authoritative gate) — both routed
+  through a `_class_is_selectable(def)` helper that is mirrored VERBATIM (`static OR profile-overlay`). The VM affordance
+  and the authoritative start gate therefore agree by construction; the symmetry is proven from both sides
+  (`test_hero_select_view_model.gd` + `test_run_start_command.gd::_profile_unlocked_class_starts_locked_class_still_rejects`).
+- **Static-content invariant (VERIFIED):** `ClassDefinition.lock_state` is NEVER mutated anywhere; the applied-unlock is
+  a profile-aware OVERLAY read at the VM/gate layer. `OutpostViewModel` threads its EXISTING `profile` arg into the
+  composed profile-aware VM (no new positional arg; `DICTIONARY_KEYS`/`ENTRY_KEYS` unchanged).
+- **`oath_shards_spent` event (VERIFIED end-to-end):** appended at the enum TAIL (`OATH_SHARDS_SPENT`, after
+  `BOSS_DEFEATED`); `EVENT_ID_*` const, factory, `_validate_payload_for_event` arm, `_validate_oath_shards_spent_payload`
+  validator (honest-record `before - amount == after`, `amount > 0`, non-negative floors — `_is_integral_number` rejects
+  bools), both id maps, JSON round-trip + 5 malformed tests, AND the `expected_ids` pin (`test_domain_event.gd:3021`) —
+  the fail-loud enum-count tripwire is satisfied. Deterministic past-tense system event (no actor, no roll/draw_index).
+- **`unlock_progress` dict storage / no schema bump (VERIFIED):** the `<class>_unlocked` flags + the
+  underscore-namespaced `_oath_shards_spent` ledger live INSIDE the existing `unlock_progress` home (the seal-fragments /
+  `_last_merged_run_seed` precedent). `profile_snapshot.gd` is UNTOUCHED (`SCHEMA_VERSION == 1`; `DICTIONARY_KEYS`
+  unchanged). Round-trip proven with a real `JSON.stringify → parse_string` (`test_profile_snapshot.gd` + the end-to-end
+  restart in `test_meta_summary_save_load.gd`), int-coercion-aware for the ledger (the 8.7 lesson). A pre-11.6 profile
+  without these keys loads clean (lenient `get(..., default)` reads; the empty-`unlock_progress` cases are tested).
+- **Optional-trailing-arg API additions (VERIFIED — no missed callers, no arg-order mistakes):** `HeroSelectViewModel`
+  (+`ProfileSnapshot` at pos 2), `RunStartCommand` (+`ProfileSnapshot` at pos 9), `RunOrchestrator.start` /
+  `RunFlowController.start` (+`profile` trailing). `RunOrchestrator.start` calls `RunStartCommand.new(seed, manual, seq,
+  class_id, null, null, null, null, profile)` — the four nulls map exactly to the class/weapon/support/passive repos and
+  `profile` lands in pos 9 (verified against the `_init` signature). Every existing `.start(...)` caller
+  (`hero_select_presenter.gd:102`, `outpost_presenter.gd:309`) omits the new arg → the null-profile static path
+  (byte-identical). No default changed → fingerprint-safe.
+- **FR28 (VERIFIED structural):** `AwardMetaProgressCommand` Gate 2 rejects `run.meta_progression_eligible == false`
+  (== `not is_manual_seed`) with `run_not_meta_eligible`, so a manual-seed run NEVER awards shards. The spend command
+  only SUBTRACTS and cannot fabricate shards (`test_spend_oath_shards_command._spend_cannot_fabricate_shards_fr28`). No
+  redundant manual-seed gate on the spend — correct.
+- **Determinism / fingerprints (VERIFIED):** ZERO RNG in the whole spend/apply surface; no generator / `RunSnapshot` /
+  `RngStreamSet` / `SettingsSnapshot` touch; the finale + route + level seed-regression suites and the default
+  `run_to_completion` are all green and unchanged (the 23-key gate stays 23; 7 streams stay 7).
+- **Dead has_method/probe sweep (VERIFIED clean):** no `has_method`/`.call(` probes in any new/modified spend file. The
+  `has_node("/root/Diagnostics")` / `has_node("/root/GameSession")` / `has_node("/root/SceneManager")` checks in
+  `outpost_presenter.gd` are legitimate optional-autoload presence guards (the established codebase pattern), not dead
+  probes.
+
+Findings (both non-blocking):
+
+- [x] [Review][Decision] **The standalone hero-select scene (`hero_select_presenter.gd`) is NOT profile-aware — it builds
+  `HeroSelectViewModel.new()` (no profile, line 30) and calls `controller.start(seed, false, class_id)` (no profile,
+  line 102).** So a spend-unlocked class would appear locked in the STANDALONE hero-select flow, while the OUTPOST flow
+  (the surface 11.6 explicitly chose) correctly reflects it via `OutpostViewModel` → the profile-aware VM (wired +
+  tested end-to-end through `OutpostSpendBridge`). This is INTERNALLY CONSISTENT (the standalone scene's VM grey-out and
+  its start gate are BOTH static — there is no mis-enabled-confirm hazard) and has ZERO player-visible effect in v0 (the
+  two unlockable classes necromancer/shadeblade carry no kit content, so they cannot be started until the class-kit
+  content story lands — the already-recorded v0 limitation). AC2's verification is met at the unit level (the
+  profile-aware VM + command are proven). But it is a real forward-looking wiring gap: once class-kit content exists, the
+  standalone hero-select scene must thread the loaded profile into both the VM and `controller.start(...)` or a genuinely
+  unlocked class will read locked there. HUMAN CALL: wire the standalone hero-select scene's profile-awareness now (small:
+  load the profile in `hero_select_presenter._ready` and thread it) or defer it to the class-kit content story that first
+  makes it observable. Recommended: defer (bundle with the kit content that makes it testable/observable), and record it.
+  Resolved 2026-07-06: deferred to the class-kit content story per human direction (recorded as a `[Review][Defer]` entry in `deferred-work.md`).
+- [Review][Defer] **`OutpostRenderView.class_unlock_options()` instantiates a fresh
+  `ClassRepository.create_baseline_repository()` on every call, and `has_affordable_unlock()` calls
+  `class_unlock_options()` (which rebuilds the repo + re-derives the whole option list) just to check a boolean.** A
+  minor, non-correctness inefficiency on the outpost render path (a display-name lookup + a roll-up), off the hot
+  gameplay loop and drawing ZERO RNG — no functional impact. Consider caching the baseline repository or the derived
+  option list on the render view, and having `has_affordable_unlock()` short-circuit without the repo build. Defer as
+  cleanup — not worth churn in this story.
