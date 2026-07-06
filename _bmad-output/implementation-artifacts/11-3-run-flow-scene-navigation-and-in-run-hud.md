@@ -4,7 +4,7 @@ baseline_commit: d98d72c9f70b353ea6446729278896d18da00ab1
 
 # Story 11.3: Run Flow Scene Navigation and In-Run HUD
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
