@@ -74,6 +74,18 @@ func _render_map() -> void:
 		_route_to_run_end(flow)
 		return
 
+	# ⭐ RESOLVE-THEN-ADVANCE (the H1 fix): if the run is parked on an UNRESOLVED live node (the depth-0 opening
+	# combat node on a fresh run, or any current combat/elite node not yet cleared), it must be PLAYED on a
+	# board BEFORE the map offers the next choices — mirroring run_to_completion_live's resolve-current-then-
+	# advance order. Offering eligible_choice_ids() here would let RouteAdvanceCommand silently SEAL the
+	# unplayed current node into cleared_node_ids. Route to the board first (the shell plays it, then returns
+	# to this map with the node cleared + the successors revealed). The shared seam owns this decision.
+	if flow.current_node_needs_board():
+		_status_label.text = "A foe blocks the path — stand and fight."
+		if has_node("/root/SceneManager"):
+			SceneManager.go_to_stage("tactical_board")
+		return
+
 	var projection: Dictionary = RouteMapViewModel.from_route(run.route).to_dictionary()
 	var eligible: Array = projection.get("eligible_choice_ids", [])
 	_status_label.text = "Cleared %d / %d" % [

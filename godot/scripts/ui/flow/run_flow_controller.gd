@@ -41,6 +41,13 @@ const RunEndOutcome = preload("res://scripts/run/run_end_outcome.gd")
 const RunFlowRouter = preload("res://scripts/ui/flow/run_flow_router.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
+const RouteNode = preload("res://scripts/run/route_node.gd")
+
+# The node types that HOST A LIVE TACTICAL BOARD (combat / elite). The ONE shared source for the "which nodes
+# are played on a board" decision — both presenters (the route map and the gameplay shell) read this so the
+# resolve-then-advance sequencing is defined in one place, NOT re-listed per presenter. The boss terminus is a
+# DISTINCT case (boss_encounter_pending() / boss_arena_payload()), so it is intentionally not in this set.
+const LIVE_BOARD_NODE_TYPES: Array[StringName] = [RouteNode.TYPE_COMBAT, RouteNode.TYPE_ELITE_COMBAT]
 
 var _orchestrator: RunOrchestrator = null
 
@@ -58,6 +65,30 @@ func run() -> RunState:
 # The underlying orchestrator (for the presenters that drive per-node live resolution + read the live board).
 func orchestrator() -> RunOrchestrator:
 	return _orchestrator
+
+
+# ⭐ THE SHARED SEQUENCING SEAM (AC1/AC2 — the H1 fix). True when the run is parked on an UNRESOLVED live node
+# (a combat/elite node NOT yet in cleared_node_ids) that MUST be hosted on a board BEFORE the route map offers
+# the next choices — mirroring the domain live driver run_to_completion_live's resolve-current-THEN-advance
+# order (run_orchestrator.gd:1036-1047). Without this seam the on-screen path advanced-THEN-resolved: the route
+# map offered the depth-1 successors while the depth-0 opening combat node (RouteGenerator GUARANTEES depth 0 is
+# always a combat node; RunStartCommand parks current_node_id there with cleared_node_ids empty) was still
+# unresolved, and picking a depth-1 choice made RouteAdvanceCommand SEAL the unplayed depth-0 node into
+# cleared_node_ids without ever hosting it on a board. The presenters call this to route to the board first.
+# Pure read — draws no RNG, mutates nothing, owns no run truth (the boss terminus is a DISTINCT case both
+# presenters check via boss_encounter_pending() before consulting this seam).
+func current_node_needs_board() -> bool:
+	var current: RunState = _orchestrator.run
+	if current == null or current.is_terminal() or current.route == null:
+		return false
+	if _orchestrator.boss_encounter_pending():
+		return false
+	var node: RouteNode = current.route.node_by_id(current.route.current_node_id)
+	if node == null:
+		return false
+	if current.route.cleared_node_ids.has(node.id):
+		return false
+	return LIVE_BOARD_NODE_TYPES.has(node.type)
 
 
 # AC1: start a FRESH run from (root_seed, is_manual_seed, class_id) via the AUTHORITATIVE fail-closed

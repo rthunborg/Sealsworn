@@ -20,7 +20,8 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 
-# The canonical finale seed (test_finale_full_run's verified seed; the boss auto-play reaches victory on it).
+# The canonical finale seed (test_finale_full_run's verified seed; the boss auto-play reaches victory on it). Its
+# depth-0 combat start node a strong sword hero clears live (the approved-seed-catalog discipline).
 const FINALE_SEED: int = 4242
 
 func run() -> Dictionary:
@@ -28,6 +29,8 @@ func run() -> Dictionary:
 	_hands_off_full_run_reaches_a_terminal_outcome_and_routes_to_outpost()
 	_unstarted_controller_is_fail_closed()
 	_run_end_outcome_routes_off_next_destination()
+	_current_node_needs_board_gates_the_depth_0_opener()
+	_current_node_needs_board_is_fail_closed_off_a_run()
 	return result()
 
 
@@ -79,3 +82,47 @@ func _run_end_outcome_routes_off_next_destination() -> void:
 	# A completed finale run reports the victory completion outcome (the RunEndOutcome COMPLETED_OUTCOMES set).
 	assert_equal(outcome.get("has_ended"), true, "The finale run must have ended.")
 	assert_equal(outcome.get("outcome_or_cause"), String(DomainEvent.RUN_COMPLETED_OUTCOME_VICTORY), "A boss-victory finale reports the victory outcome.")
+
+
+# ⭐ H1 REGRESSION — the SHARED SEQUENCING SEAM enforces resolve-THEN-advance for the depth-0 opener. The
+# on-screen path previously advanced-then-resolved: the route map offered the depth-1 successors while the
+# depth-0 opening combat node (RouteGenerator GUARANTEES depth 0 is always combat; RunStartCommand parks
+# current_node_id there with cleared_node_ids empty) was still unplayed, and picking a depth-1 choice made
+# RouteAdvanceCommand SEAL the unplayed depth-0 node into cleared_node_ids without ever hosting it on a board.
+# The presenters now consult current_node_needs_board() (this seam) BEFORE offering choices. This proves the
+# depth-0 node is flagged for the board on a fresh run, and is CLEARED ONLY after a live resolution (mirroring
+# run_to_completion_live's resolve-current-then-advance order) — NOT silently skipped.
+func _current_node_needs_board_gates_the_depth_0_opener() -> void:
+	var controller: RunFlowController = RunFlowController.new()
+	assert_equal(controller.start(FINALE_SEED, false, &"warrior").get("started"), true, "Setup: the finale-seed run should seat.")
+	var run: RunState = controller.run()
+
+	# The fresh run is parked on the depth-0 opener, which the generator GUARANTEES is a combat node, still uncleared.
+	var start_node_id: String = run.route.current_node_id
+	assert_false(start_node_id.is_empty(), "Setup: a fresh run parks on the depth-0 start node.")
+	var start_node: RouteNode = run.route.node_by_id(start_node_id)
+	assert_equal(start_node.depth, 0, "Setup: the parked node is the depth-0 opener.")
+	assert_equal(String(start_node.type), String(RouteNode.TYPE_COMBAT), "Setup: the depth-0 opener is always a combat node.")
+	assert_false(run.route.cleared_node_ids.has(start_node_id), "Setup: the depth-0 opener starts UNCLEARED.")
+
+	# The seam FLAGS the opener for the board: the on-screen path must PLAY it (route to the board), NOT offer past
+	# it. This is the assertion the depth-0 node is not silently skipped on the on-screen path.
+	assert_true(controller.current_node_needs_board(), "The unresolved depth-0 combat opener MUST be flagged for the board (resolve-then-advance) — never skipped.")
+
+	# Play the node LIVE through the orchestrator the shell drives (the shell's resolve-current-node-live seam).
+	var resolved = controller.orchestrator().resolve_current_node_live()
+	assert_true(resolved.succeeded, "The live depth-0 resolution should succeed on the verified seed: %s" % resolved.metadata)
+	assert_equal(String(resolved.metadata.get("resolution")), "live_combat_victory", "The depth-0 node is decided by a real board outcome (played), not skipped.")
+
+	# NOW the opener is cleared — and it was cleared by a LIVE PLAY (NodeExitCommand on victory), NOT by an advance
+	# off an unplayed node. The seam no longer flags it, so the map correctly offers the (now revealed) successors.
+	assert_true(run.route.cleared_node_ids.has(start_node_id), "After a live play, the depth-0 node joins cleared_node_ids (it was HOSTED on a board, not silently sealed).")
+	assert_false(controller.current_node_needs_board(), "Once the current node is played/cleared, the seam clears — the map may offer the successors.")
+
+
+# Fail-closed: an unstarted controller (no seated run) reports current_node_needs_board() == false (never a crash),
+# so a presenter that consults it before a run exists routes nowhere rather than dereferencing a null run.
+func _current_node_needs_board_is_fail_closed_off_a_run() -> void:
+	var controller: RunFlowController = RunFlowController.new()
+	assert_true(controller.run() == null, "Setup: an unstarted controller has no run.")
+	assert_false(controller.current_node_needs_board(), "An unstarted controller's shared seam is fail-closed (false).")

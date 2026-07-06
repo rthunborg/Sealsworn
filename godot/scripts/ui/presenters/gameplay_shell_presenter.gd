@@ -55,6 +55,18 @@ func _drive_current_stage() -> void:
 	# The boss terminus -> drive the live boss fight to a run-END (the composed seam).
 	if orchestrator.boss_encounter_pending():
 		var boss = orchestrator.auto_play_boss_fight(flow.hero_hp())
+		# M1 fix: a boss-fight ERROR (the bounded round loop failed to progress — a real possibility the story
+		# flags: "the scripted hero is deterministic but NOT universally-winning") leaves the run NON-terminal, so
+		# run_end_outcome() yields has_ended == false / next_destination == "" and route_after_run_end("") no-ops
+		# into a silent soft-lock. FAIL LOUD (mirroring the combat-node branch): log the error, then surface a
+		# recoverable dead-end by routing to the run-end/recovery surface rather than stranding the player on the
+		# shell with no navigation and no breadcrumb.
+		if boss.is_error():
+			if has_node("/root/Diagnostics"):
+				Diagnostics.info(&"ui", &"gameplay_shell_boss_fight_failed", {"error_code": String(boss.error_code)})
+			_render_between_levels(run)
+			_route_to_dead_end(flow)
+			return
 		_render_between_levels(run)
 		_route_to_run_end(flow)
 		return
@@ -126,6 +138,16 @@ func _route_to_run_end(flow: RunFlowController) -> void:
 	var destination: String = String(flow.run_end_outcome().get("next_destination", ""))
 	if has_node("/root/SceneManager"):
 		SceneManager.route_after_run_end(StringName(destination))
+
+
+# M1: the recoverable dead-end for a NON-TERMINAL run-progression failure (a boss fight that could not resolve).
+# route_after_run_end would no-op here (next_destination == "" for a non-terminal run), stranding the player on
+# the shell. Route DIRECTLY to the run-end stage instead: the run-end landing surfaces "no completed run" +
+# a "Return to the Outpost" affordance (boots back to hero select with the run-flow handle cleared), so the
+# player is never soft-locked. This is a fail-loud recovery, NOT a claim the run ended (the run did not).
+func _route_to_dead_end(_flow: RunFlowController) -> void:
+	if has_node("/root/SceneManager"):
+		SceneManager.go_to_stage("run_end")
 
 
 # The current text scale from SettingsManager (SettingsSnapshot.text_scale), clamped by TacticalTextScale.
