@@ -29,6 +29,7 @@ extends "res://tests/unit/test_case.gd"
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const FirstDeathNarrativeBeat = preload("res://scripts/run/first_death_narrative_beat.gd")
+const FirstVictoryRevealBeat = preload("res://scripts/run/first_victory_reveal_beat.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const ProfileRepository = preload("res://scripts/save/profile_repository.gd")
 const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
@@ -48,6 +49,7 @@ const EXPECTED_TOP_LEVEL_KEYS: Array[String] = [
 	"echoes",
 	"first_death_beat",
 	"first_death_recorded",
+	"first_victory_beat",
 	"has_profile",
 	"named_spaces",
 	"oath_shards",
@@ -92,6 +94,10 @@ func run() -> Dictionary:
 	_first_death_beat_is_rendered_when_present()
 	_first_death_beat_is_empty_when_absent_and_off_critical_path()
 	_first_death_dismiss_is_a_structural_no_op()
+	# Story 11.5 AC2 — the first-VICTORY reveal embed (Option A — the first-death-symmetric embed)
+	_first_victory_beat_is_rendered_when_present()
+	_first_victory_beat_is_empty_when_absent_and_off_critical_path()
+	_both_reveal_beats_embed_alongside_the_run_summary()
 	# AC4
 	_fresh_profile_outpost_is_a_valid_zero_shard_surface()
 	_null_profile_projects_the_fresh_profile_default()
@@ -502,6 +508,56 @@ func _first_death_dismiss_is_a_structural_no_op() -> void:
 	assert_equal(run.to_dictionary(), run_before, "A dismiss leaves the run byte-identical.")
 	# The profile's first-death flag was ALREADY set (by 8.5's command) independently of the beat display.
 	assert_true(profile.first_death_recorded, "The first-death flag stays set (it was set independently of the beat display).")
+
+
+# ---- Story 11.5 AC2: the first-VICTORY reveal embed (Option A) -----------------------------------
+
+func _first_victory_beat_is_rendered_when_present() -> void:
+	# Story 11.5 AC2 (Option A — the first-death-symmetric embed): the outpost includes the FirstVictoryRevealBeat sub-dict
+	# when a beat is present (the resolved line + is_skippable == true), symmetric with the first-death embed. This is the
+	# 9.4 AC3 render defer resolved (the first-victory reveal wired onto OutpostViewModel).
+	var beat: FirstVictoryRevealBeat = FirstVictoryRevealBeat.for_first_victory()
+	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile(), null, null, beat)
+	var beat_data: Dictionary = view_model.to_dictionary().get("first_victory_beat")
+
+	assert_true(bool(beat_data.get("has_beat")), "A present first-victory beat is rendered (has_beat == true).")
+	assert_equal(String(beat_data.get("line_id")), "first_victory", "The beat carries the first-victory line id.")
+	assert_equal(String(beat_data.get("line")), FirstVictoryRevealBeat.FIRST_VICTORY_LINE, "The beat carries the resolved first-victory line prose.")
+	assert_true(bool(beat_data.get("is_skippable")), "The first-victory beat is skippable (FR65).")
+
+	# The beat is also readable from a first_victory_recorded event (the from_event seam).
+	var event: DomainEvent = DomainEvent.first_victory_recorded(1, {"line_id": "first_victory", "is_skippable": true})
+	var event_beat_vm: OutpostViewModel = OutpostViewModel.new(_populated_profile(), null, null, FirstVictoryRevealBeat.from_event(event))
+	assert_true(bool(event_beat_vm.to_dictionary().get("first_victory_beat").get("has_beat")), "The beat is rendered from a first_victory_recorded event too.")
+
+
+func _first_victory_beat_is_empty_when_absent_and_off_critical_path() -> void:
+	# Story 11.5 AC2 / FR64 off-critical-path: a null/absent first-victory beat projects the fail-closed empty beat
+	# (has_beat == false) and NEVER blocks the rest of the outpost surface (the summary, the class options, the start-run
+	# action all still work). Symmetric with the first-death off-critical-path assertion.
+	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile())  # no beat
+	var data: Dictionary = view_model.to_dictionary()
+	assert_false(bool((data.get("first_victory_beat") as Dictionary).get("has_beat")), "An absent first-victory beat projects the fail-closed empty beat (has_beat == false).")
+	assert_true(bool(data.get("can_start_run")), "A start is possible without a victory beat (lore reading is NOT required to start another descent).")
+	assert_true(bool(view_model.start_run_request(1, false, &"warrior").get("is_startable")), "The start-run action does not read the victory beat as a precondition.")
+
+
+func _both_reveal_beats_embed_alongside_the_run_summary() -> void:
+	# Story 11.5 AC2 (Option A — the symmetric embed): BOTH reveal beats ride alongside run_summary as embedded sub-dicts.
+	# A run has exactly one terminal phase, so in practice only one beat is present at a time (a death OR a victory), but the
+	# VM shape carries both keys unconditionally (the exact-key pin). Here a death run: first_death present, first_victory
+	# absent — both keys exist; the summary is present too (all three embed side-by-side).
+	var run: RunState = _terminal_run(RunState.PHASE_FAILED, 4242, false)
+	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_failed(1, {"cause": "hero_death"})])
+	var death_beat: FirstDeathNarrativeBeat = FirstDeathNarrativeBeat.for_first_death()
+	var view_model: OutpostViewModel = OutpostViewModel.new(_populated_profile(), summary, death_beat)  # no victory beat
+	var data: Dictionary = view_model.to_dictionary()
+
+	assert_true(bool((data.get("run_summary") as Dictionary).get("has_summary")), "The run summary embeds alongside the beats.")
+	assert_true(bool((data.get("first_death_beat") as Dictionary).get("has_beat")), "The first-death beat embeds (this is a death run).")
+	assert_false(bool((data.get("first_victory_beat") as Dictionary).get("has_beat")), "The first-victory beat is absent (a death run has no first victory) but its key still exists.")
+	# The victory-beat sub-dict is present with the pinned shape even when empty (a consumer branches on has_beat).
+	assert_true((data.get("first_victory_beat") as Dictionary).has("line"), "The empty first-victory beat still carries the pinned sub-dict shape.")
 
 
 # ---- AC4: the structured recovery / fresh-profile path -------------------------------------------

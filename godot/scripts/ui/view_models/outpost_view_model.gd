@@ -27,6 +27,10 @@ extends RefCounted
 #   - FirstDeathNarrativeBeat (8.5) — the (OPTIONAL) first-death narrative beat. RENDERED as a sub-dict; the DISMISS is a
 #     PURE PRESENTATION NO-OP (the flag was set independently by 8.5's RecordFirstDeathCommand; the DTO is read-only). The
 #     beat is OFF THE CRITICAL PATH — a null/absent beat never blocks the outpost surface.
+#   - FirstVictoryRevealBeat (9.4) — Story 11.5 (AC2, Option A) added the OPPOSITE-phase twin as the SECOND embedded reveal
+#     sub-dict (first_victory_beat), symmetric with first_death_beat (the 9.4 AC3 render [Decision] deferred wiring the
+#     first-victory reveal onto OutpostViewModel to "a later UI story" = 11.5; this embed resolves it). Same PURE-READ /
+#     structural-no-op-dismiss / off-critical-path posture as the first-death beat.
 #   - RunEndOutcome (8.1) — the next_destination == outpost flow signal is the DOMAIN fact that "the app should show the
 #     outpost now". 8.6 produces the outpost DATA the navigation lands on; it does NOT perform the navigation
 #     (UI-scene-last).
@@ -71,6 +75,7 @@ extends RefCounted
 # re-evaluate unlock thresholds (the merge command owns the flip; the outpost DISPLAYS the recorded progress).
 
 const FirstDeathNarrativeBeat = preload("res://scripts/run/first_death_narrative_beat.gd")
+const FirstVictoryRevealBeat = preload("res://scripts/run/first_victory_reveal_beat.gd")
 const HeroSelectViewModel = preload("res://scripts/ui/view_models/hero_select_view_model.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
@@ -93,6 +98,7 @@ const DICTIONARY_KEYS: Array[String] = [
 	"selectable_class_ids",
 	"named_spaces",
 	"first_death_beat",
+	"first_victory_beat",
 	"can_start_run"
 ]
 
@@ -191,6 +197,13 @@ var recovery_state: Dictionary = {}
 var _run_summary: RunSummary = null
 # The (OPTIONAL) first-death narrative beat (or the fail-closed empty beat). Its OWN has_beat gate distinguishes them.
 var _first_death_beat: FirstDeathNarrativeBeat = null
+# Story 11.5 (AC2 first-victory decision — Option A, the minimal first-death-symmetric embed): the (OPTIONAL) first-
+# victory reveal beat (or the fail-closed empty beat). The 9.4 AC3 render [Decision] deferred wiring the first-victory
+# reveal onto OutpostViewModel to "a later UI story" = 11.5; this resolves it by embedding the beat alongside
+# _first_death_beat (both ride beside run_summary, symmetric). Its OWN has_beat gate distinguishes present/absent. The
+# DISMISS is a PURE PRESENTATION NO-OP (the flag was set independently by 9.4's RecordFirstVictoryCommand; the DTO is
+# read-only). OFF THE CRITICAL PATH — a null/absent beat never blocks the outpost surface (FR64).
+var _first_victory_beat: FirstVictoryRevealBeat = null
 # The composed class-options roster projection (5.2). DELEGATED to for the class roster + the fail-closed selectable
 # pre-gate (the AC3 start-run gate). The roster is NOT re-projected here.
 var _hero_select: HeroSelectViewModel = null
@@ -199,6 +212,7 @@ func _init(
 	profile: ProfileSnapshot = null,
 	run_summary: RunSummary = null,
 	first_death_beat: FirstDeathNarrativeBeat = null,
+	first_victory_beat: FirstVictoryRevealBeat = null,
 	class_repository: ClassRepository = null,
 	new_recovery_state: Dictionary = {}
 ) -> void:
@@ -229,6 +243,11 @@ func _init(
 	# OFF THE CRITICAL PATH (a null/absent beat never blocks the outpost surface).
 	_first_death_beat = first_death_beat if first_death_beat != null else FirstDeathNarrativeBeat.for_first_death(&"")
 
+	# Story 11.5 (AC2 render / the 9.4 hand-off): the OPTIONAL first-victory reveal beat (or the fail-closed empty beat
+	# when none — for_first_victory(&"") yields has_beat == false). The beat is OFF THE CRITICAL PATH (a null/absent beat
+	# never blocks the outpost surface — FR64), symmetric with _first_death_beat.
+	_first_victory_beat = first_victory_beat if first_victory_beat != null else FirstVictoryRevealBeat.for_first_victory(&"")
+
 	# AC1: the class-options roster is DELEGATED to a composed HeroSelectViewModel (the same class repository the caller's
 	# start seam uses; baseline default — the HeroSelectViewModel / RunStartCommand injection posture). The roster is NOT
 	# re-projected here.
@@ -252,12 +271,17 @@ static func for_recovery(
 	run_summary: RunSummary = null,
 	first_death_beat: FirstDeathNarrativeBeat = null,
 	class_repository: ClassRepository = null,
-	is_recoverable: bool = true
+	is_recoverable: bool = true,
+	first_victory_beat: FirstVictoryRevealBeat = null
 ) -> OutpostViewModel:
+	# Story 11.5: first_victory_beat is a TRAILING optional arg so the EXISTING for_recovery(...) call sites (which never
+	# passed a victory beat) stay byte-identical; a write-failure recovery after a live VICTORY passes the beat so the
+	# reveal still renders behind the retry banner (a load-failure fresh recovery leaves it null -> the empty beat).
 	return load("res://scripts/ui/view_models/outpost_view_model.gd").new(
 		loaded_profile,
 		run_summary,
 		first_death_beat,
+		first_victory_beat,
 		class_repository,
 		{
 			"has_recovery": true,
@@ -313,6 +337,12 @@ func first_death_beat() -> Dictionary:
 	return _first_death_beat.to_dictionary()
 
 
+# Story 11.5 (AC2): the first-victory reveal beat sub-dict (or the fail-closed empty beat). A FRESH dict
+# (FirstVictoryRevealBeat.to_dictionary() already returns a fresh dict). Symmetric with first_death_beat().
+func first_victory_beat() -> Dictionary:
+	return _first_victory_beat.to_dictionary()
+
+
 # AC3 start-run affordance: whether a start is possible RIGHT NOW (there is at least one selectable class OR an empty
 # no-class start is always available). In the baseline there is always at least one selectable class, so this is true;
 # an empty-repository outpost still permits the legacy no-class start (start_run_request(&"") is startable), so a start
@@ -361,6 +391,7 @@ func to_dictionary() -> Dictionary:
 		"selectable_class_ids": selectable_class_ids(),
 		"named_spaces": named_spaces(),
 		"first_death_beat": _first_death_beat.to_dictionary(),
+		"first_victory_beat": _first_victory_beat.to_dictionary(),
 		"can_start_run": can_start_run()
 	}
 

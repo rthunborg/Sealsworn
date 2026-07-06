@@ -22,6 +22,7 @@ func _every_run_flow_presenter_script_compiles() -> void:
 		"res://scripts/ui/presenters/tactical_board_presenter.gd",
 		"res://scripts/ui/presenters/gameplay_shell_presenter.gd",
 		"res://scripts/ui/presenters/run_end_presenter.gd",
+		"res://scripts/ui/presenters/outpost_presenter.gd",
 		"res://scripts/ui/presenters/save_recovery_presenter.gd"
 	]
 	for script_path: String in presenter_scripts:
@@ -37,6 +38,7 @@ func _every_run_flow_scene_loads_with_its_script() -> void:
 		"res://scenes/ui/hero_select.tscn",
 		"res://scenes/ui/route_map.tscn",
 		"res://scenes/ui/run_end.tscn",
+		"res://scenes/ui/outpost.tscn",
 		"res://scenes/ui/save_recovery.tscn",
 		"res://scenes/game/gameplay_shell.tscn",
 		"res://scenes/game/tactical_board.tscn",

@@ -26,13 +26,16 @@ extends RefCounted
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 
 # The ordered run-flow stage vocabulary (the AC1 walk: launch -> hero select -> route map -> tactical board per
-# node -> run-end return). Pinned by test.
+# node -> run-end return -> outpost). Pinned by test. Story 11.5 APPENDS the `outpost` stage (the real
+# OutpostViewModel-bound scene the run-end return now lands on); `run_end` STAYS as the minimal fail-loud dead-end
+# landing (the gameplay shell's recoverable NON-terminal dead-end still routes there), so it is NOT removed.
 const STAGES: Array[String] = [
 	"launch",
 	"hero_select",
 	"route_map",
 	"tactical_board",
-	"run_end"
+	"run_end",
+	"outpost"
 ]
 
 # The named flow-stage -> .tscn route table (the AC1 route table). `launch` is the boot-chain app entry
@@ -43,15 +46,20 @@ const _STAGE_SCENES: Dictionary = {
 	"hero_select": "res://scenes/ui/hero_select.tscn",
 	"route_map": "res://scenes/ui/route_map.tscn",
 	"tactical_board": "res://scenes/game/gameplay_shell.tscn",
-	"run_end": "res://scenes/ui/run_end.tscn"
+	"run_end": "res://scenes/ui/run_end.tscn",
+	# Story 11.5: the real OutpostViewModel-bound outpost scene (the run-end return lands here — the polished
+	# meta dashboard + reveal beats + start-another-descent). `run_end` STAYS the minimal dead-end landing.
+	"outpost": "res://scenes/ui/outpost.tscn"
 }
 
-# The RunEndOutcome.next_destination marker -> flow-stage transition (the AC1 routing signal). The pinned outpost
-# marker routes the run-end return to the run_end stage (a minimal run-end landing that then navigates to the
-# outpost destination — the polished outpost SCENE is 11.5's, not 11.3's). A non-terminal run's "" destination is
-# intentionally absent (routes nowhere).
+# The RunEndOutcome.next_destination marker -> flow-stage transition (the AC1 routing signal). Story 11.5 RE-POINTS
+# the pinned outpost marker to the real `outpost` stage (the OutpostViewModel-bound scene), NOT the minimal `run_end`
+# landing (which 11.3 used as a placeholder). The run-end return now lands on the polished outpost dashboard directly
+# — there are NOT two competing outpost surfaces (`run_end` is retired as a nav TARGET for the outpost destination; it
+# survives ONLY as the gameplay shell's fail-loud NON-terminal dead-end landing). A non-terminal run's "" destination
+# is intentionally absent (routes nowhere).
 const _DESTINATION_STAGES: Dictionary = {
-	"outpost": "run_end"
+	"outpost": "outpost"
 }
 
 # The .tscn path for a named flow stage, or "" for an unknown stage (fail-closed).

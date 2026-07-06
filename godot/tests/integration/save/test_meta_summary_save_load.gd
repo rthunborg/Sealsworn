@@ -203,8 +203,10 @@ func _reloaded_profile_drives_the_outpost_identically() -> void:
 	assert_true(read_result.succeeded, "The profile should reload for the outpost capstone.")
 	var reloaded: ProfileSnapshot = read_result.metadata.get("snapshot")
 
-	var outpost_before: OutpostViewModel = OutpostViewModel.new(pre_save, null, null, class_repository)
-	var outpost_after: OutpostViewModel = OutpostViewModel.new(reloaded, null, null, class_repository)
+	# Story 11.5: the constructor gained a first_victory_beat arg (position 4, before class_repository) — pass null for it
+	# (no reveal beat needed for this profile-round-trip assertion) so class_repository lands in its (now 5th) slot.
+	var outpost_before: OutpostViewModel = OutpostViewModel.new(pre_save, null, null, null, class_repository)
+	var outpost_after: OutpostViewModel = OutpostViewModel.new(reloaded, null, null, null, class_repository)
 
 	# The profile-derived readout is identical pre-save vs reloaded (class_mastery int-normalized — JSON int -> float; the
 	# other fields round-trip as their JSON-native type with no nested int value).
