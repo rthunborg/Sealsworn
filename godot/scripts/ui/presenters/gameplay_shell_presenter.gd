@@ -25,6 +25,7 @@ const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 # target — the compile guardrail still covers it). The instanced root exposes bind_live_state/render as before.
 const TacticalBoardScene = preload("res://scenes/game/tactical_board.tscn")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
+const TacticalTextScale = preload("res://scripts/ui/view_models/tactical_text_scale.gd")
 
 # The combat/elite node types that play a live board here.
 const LIVE_COMBAT_NODE_TYPES: Array[String] = ["combat", "elite_combat"]
@@ -157,11 +158,18 @@ func _route_to_dead_end(_flow: RunFlowController) -> void:
 
 
 # The current text scale from SettingsManager (SettingsSnapshot.text_scale), clamped by TacticalTextScale.
+# M2 fix (Round 2): the prior probe called SettingsManager.has_method("current_text_scale") — a method that
+# exists NOWHERE (the guard was permanently false, so the HUD text scale was hardcoded to 1.0 and the player's
+# saved SettingsSnapshot.text_scale never reached the run-flow HUD, defeating AC4/NFR8 scalable text on device).
+# Read the real field: SettingsManager.current() -> SettingsSnapshot, .text_scale (a clamped float), and run it
+# through the canonical TacticalTextScale.from_value(...) clamp (the same seam settings_snapshot._sanitize_text_scale
+# uses — .scale is exposed via to_dictionary(), there is no public .scale property). The has_node guard + the 1.0
+# fallback are kept.
 func _text_scale() -> float:
 	if has_node("/root/SettingsManager"):
-		var settings = SettingsManager
-		if settings.has_method("current_text_scale"):
-			return float(settings.current_text_scale())
+		var snapshot = SettingsManager.current()
+		if snapshot != null:
+			return float(TacticalTextScale.from_value(snapshot.text_scale).to_dictionary().get("scale", 1.0))
 	return 1.0
 
 

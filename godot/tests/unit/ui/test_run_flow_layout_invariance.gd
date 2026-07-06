@@ -18,6 +18,7 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RiskEconomyState = preload("res://scripts/run/risk_economy_state.gd")
+const SettingsSnapshot = preload("res://scripts/settings/settings_snapshot.gd")
 const TacticalBoardViewModel = preload("res://scripts/ui/view_models/tactical_board_view_model.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
@@ -31,6 +32,7 @@ func run() -> Dictionary:
 	_board_contract_is_byte_identical_across_phone_and_desktop()
 	_g1_hud_read_is_profile_invariant()
 	_g1_hud_read_is_text_scale_invariant()
+	_settings_text_scale_reaches_the_hud_clamp()
 	_board_stays_dominant_and_controls_reachable_on_both_profiles()
 	return result()
 
@@ -88,6 +90,35 @@ func _g1_hud_read_is_text_scale_invariant() -> void:
 		assert_true(float(scale.get("scale", 0.0)) >= TacticalTextScale.MIN_TEXT_SCALE, "The text scale clamps to >= MIN.")
 		var hud: Dictionary = RunHudViewModel.from_run(run, board).to_dictionary()
 		assert_equal(JSON.stringify(hud), JSON.stringify(hud_default), "The G1 HUD read must not change with the text scale (scale %s)." % scale_value)
+
+
+# AC4 / NFR8 (M2 regression guard, Round 2): the run-flow HUD text scale must be DRIVEN by the saved
+# SettingsSnapshot.text_scale, not hardcoded to 1.0. The presenter's `_text_scale()` is a Control method (not
+# testable by the scene-free harness), but the pure PLUMBING seam it now uses is —
+# `TacticalTextScale.from_value(SettingsManager.current().text_scale).to_dictionary().get("scale")`. This pins that
+# seam end-to-end at the testable layer: the DEFAULT snapshot resolves the 1.0 default (proving the fallback is a
+# real read, not a coincidence), a SAVED larger scale is DELIVERED (not collapsed to 1.0 — the exact M2 defect),
+# and an out-of-clamp value is clamped to the named bound. A regression that re-deadens the source read (e.g. a
+# probe on a non-existent method) would make the "saved scale delivered" assertion fail here.
+func _settings_text_scale_reaches_the_hud_clamp() -> void:
+	# The default snapshot's text_scale flows through the clamp unchanged (the fallback value is a real read).
+	var defaults: SettingsSnapshot = SettingsSnapshot.defaults()
+	var default_scale: float = float(TacticalTextScale.from_value(defaults.text_scale).to_dictionary().get("scale", 0.0))
+	assert_equal(default_scale, TacticalTextScale.DEFAULT_TEXT_SCALE, "The default SettingsSnapshot.text_scale must resolve the 1.0 default through the HUD clamp seam.")
+
+	# A SAVED, in-range, non-default preference is DELIVERED to the HUD (this is exactly what M2 defeated: the dead
+	# probe meant a saved 1.5 collapsed to a hardcoded 1.0).
+	var large: SettingsSnapshot = SettingsSnapshot.defaults()
+	large.text_scale = 1.5
+	var large_scale: float = float(TacticalTextScale.from_value(large.text_scale).to_dictionary().get("scale", 0.0))
+	assert_equal(large_scale, 1.5, "A saved in-range SettingsSnapshot.text_scale (1.5) must reach the HUD, not collapse to the 1.0 default.")
+	assert_true(large_scale != TacticalTextScale.DEFAULT_TEXT_SCALE, "A saved non-default text scale must not be silently hardcoded to 1.0 at the HUD.")
+
+	# An out-of-range saved value is clamped to the named bound (the clamp still governs the delivered value).
+	var over: SettingsSnapshot = SettingsSnapshot.defaults()
+	over.text_scale = TacticalTextScale.MAX_TEXT_SCALE + 5.0
+	var over_scale: float = float(TacticalTextScale.from_value(over.text_scale).to_dictionary().get("scale", 0.0))
+	assert_equal(over_scale, TacticalTextScale.MAX_TEXT_SCALE, "An out-of-clamp saved text scale must be clamped to MAX at the HUD.")
 
 
 # AC4: on BOTH profiles the board stays the dominant region + the primary controls stay >=44x44 reachable inside
