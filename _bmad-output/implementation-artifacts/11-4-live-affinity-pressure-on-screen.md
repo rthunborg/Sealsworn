@@ -4,7 +4,7 @@ baseline_commit: b5edc5e
 
 # Story 11.4: Live Affinity Pressure On Screen
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
