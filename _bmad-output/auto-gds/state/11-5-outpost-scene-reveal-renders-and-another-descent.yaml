@@ -2,11 +2,11 @@ story_key: 11-5-outpost-scene-reveal-renders-and-another-descent
 epic_num: 11
 story_num: 5
 branch: story/11-5-outpost-scene-reveal-renders-and-another-descent
-status: in-progress
-updated_at: "2026-07-06T15:20:07Z"
+status: done
+updated_at: "2026-07-06T15:24:00Z"
 started_at: "2026-07-06T14:15:49Z"
-completed_at: null
-active_seconds: 3575
+completed_at: "2026-07-06T15:24:00Z"
+active_seconds: 3635
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -22,7 +22,7 @@ document_output_language: English
 git_mode: remote
 base_branch: main
 epic_story_count: 6
-completed_phases: [0, 1, 3, 5]
+completed_phases: [0, 1, 3, 5, 7, 9]
 code_review_iterations: 2
 code_review_loop_done: true
 external_review_iterations: 0
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["3cba24e", "fccd982", "31a8a29", "29e3f29"]
+commits: ["3cba24e", "fccd982", "31a8a29", "29e3f29", "9047971", "67d2da9"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/56"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

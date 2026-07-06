@@ -1,6 +1,6 @@
 # Story 11.5: Outpost Scene, Reveal Renders, and Another Descent
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

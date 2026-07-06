@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-06T18:00:00+00:00
+last_updated: 2026-07-06T15:24:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -142,7 +142,7 @@ development_status:
   11-2-live-combat-loop-and-hero-death-source: done
   11-3-run-flow-scene-navigation-and-in-run-hud: done
   11-4-live-affinity-pressure-on-screen: done
-  11-5-outpost-scene-reveal-renders-and-another-descent: ready-for-dev
+  11-5-outpost-scene-reveal-renders-and-another-descent: done
   11-6-meta-spend-and-unlock-application: backlog
   epic-11-retrospective: optional
   epic-10: backlog
