@@ -37,7 +37,9 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
+const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const RunEndOutcome = preload("res://scripts/run/run_end_outcome.gd")
+const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
 const RunFlowRouter = preload("res://scripts/ui/flow/run_flow_router.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
@@ -191,3 +193,16 @@ func run_end_stage() -> String:
 	if not bool(outcome.get("has_ended", false)):
 		return ""
 	return RunFlowRouter.stage_for_destination(StringName(String(outcome.get("next_destination", ""))))
+
+
+# Story 11.5 (AC-wide — the run-end -> profile BRIDGE crux): finalize the run-END into the OUTPOST surface. This is the
+# thin controller seam the outpost presenter drives at the run-end return: it hands the TERMINAL run + the orchestrator
+# (for the sequence-id cursor) to the caller-driven RunEndProfileBridge, which LOADS the profile, RECORDS the first-death/
+# victory latch off the REAL terminal state, PERSISTS it (or falls back to the AC3 write-failure recovery outpost), and
+# BUILDS the OutpostViewModel + RunSummary. Returns the built OutpostViewModel, or null for a non-terminal/unstarted run
+# (fail-closed — the presenter branches on null). The RunOrchestrator is UNCHANGED (the record commands are caller-driven;
+# this controller is the caller, mirroring the 8.3/8.4/8.5/9.4 posture); ZERO gameplay RNG is drawn (the bridge is a
+# deterministic flag set + pure reads). A test-supplied bridge (a throwaway profile path) makes the seam headless-testable.
+func finalize_run_end(bridge: RunEndProfileBridge = null) -> OutpostViewModel:
+	var resolved_bridge: RunEndProfileBridge = bridge if bridge != null else RunEndProfileBridge.new()
+	return resolved_bridge.build_outpost(_orchestrator.run, _orchestrator)

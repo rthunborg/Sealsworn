@@ -16,9 +16,16 @@ extends "res://tests/unit/test_case.gd"
 # universally-winning; the hands-off/smoke path uses a verified seed).
 
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
+const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
+const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
+const ProfileRepository = preload("res://scripts/save/profile_repository.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+
+# Story 11.5: a throwaway profile path for the finalize_run_end bridge seam (so the controller test does not touch the
+# real user://profile.json).
+const BRIDGE_PROFILE_PATH := "user://test_run_flow_controller_bridge_profile.json"
 
 # The canonical finale seed (test_finale_full_run's verified seed; the boss auto-play reaches victory on it). Its
 # depth-0 combat start node a strong sword hero clears live (the approved-seed-catalog discipline).
@@ -31,6 +38,11 @@ func run() -> Dictionary:
 	_run_end_outcome_routes_off_next_destination()
 	_current_node_needs_board_gates_the_depth_0_opener()
 	_current_node_needs_board_is_fail_closed_off_a_run()
+	# Story 11.5 — the run-end -> profile bridge seam (finalize_run_end) + the sequence-id accessor
+	_finalize_run_end_builds_the_outpost_off_a_terminal_run()
+	_finalize_run_end_is_null_on_an_unstarted_controller()
+	_next_sequence_id_is_a_readonly_cursor_past_the_start()
+	_cleanup()
 	return result()
 
 
@@ -54,11 +66,12 @@ func _hands_off_full_run_reaches_a_terminal_outcome_and_routes_to_outpost() -> v
 	var result_data: Dictionary = controller.play_hands_off_to_run_end()
 	assert_true(result_data.get("ok", false), "The composed hands-off flow must reach a run-end without error: %s" % result_data)
 	assert_true(controller.run().is_terminal(), "The composed flow must drive the run to a terminal state.")
-	# The RunEndOutcome is surfaced + routes to the outpost destination -> the run_end stage.
+	# The RunEndOutcome is surfaced + routes to the outpost destination -> the outpost stage (Story 11.5 re-pointed the
+	# outpost destination from the 11.3 minimal run_end placeholder to the real OutpostViewModel-bound outpost scene).
 	var outcome: Dictionary = controller.run_end_outcome()
 	assert_equal(outcome.get("has_ended"), true, "A terminal run must surface an ended RunEndOutcome.")
 	assert_equal(outcome.get("next_destination"), "outpost", "The run-end must route to the outpost destination.")
-	assert_equal(controller.run_end_stage(), "run_end", "The run-end destination must map to the run_end flow stage.")
+	assert_equal(controller.run_end_stage(), "outpost", "The run-end destination must map to the outpost flow stage (Story 11.5).")
 
 
 # Fail-closed: an unstarted controller has no run + play_hands_off returns a structured not-started result (never a crash).
@@ -126,3 +139,50 @@ func _current_node_needs_board_is_fail_closed_off_a_run() -> void:
 	var controller: RunFlowController = RunFlowController.new()
 	assert_true(controller.run() == null, "Setup: an unstarted controller has no run.")
 	assert_false(controller.current_node_needs_board(), "An unstarted controller's shared seam is fail-closed (false).")
+
+
+# Story 11.5 (AC-wide — the run-end -> profile bridge crux): finalize_run_end drives the caller-driven bridge off the
+# controller's terminal run, building the OutpostViewModel (the profile latch recorded off the REAL terminal state + the
+# run summary). This proves the controller SEAM the outpost presenter drives — the H1 retro discipline (test the shared
+# bridge seam, not just the individual commands). A test-supplied bridge (a throwaway profile path) keeps it headless.
+func _finalize_run_end_builds_the_outpost_off_a_terminal_run() -> void:
+	_cleanup()
+	var controller: RunFlowController = RunFlowController.new()
+	assert_equal(controller.start(FINALE_SEED, false, &"warrior").get("started"), true, "Setup: start the finale-seed run.")
+	assert_true(controller.play_hands_off_to_run_end().get("ok", false), "Setup: the hands-off flow reaches a terminal victory.")
+	assert_true(controller.run().is_terminal(), "Setup: the run is terminal.")
+
+	var bridge: RunEndProfileBridge = RunEndProfileBridge.new(ProfileRepository.new(), BRIDGE_PROFILE_PATH)
+	var outpost: OutpostViewModel = controller.finalize_run_end(bridge)
+	assert_true(outpost != null, "finalize_run_end builds an outpost off a terminal run.")
+	var data: Dictionary = outpost.to_dictionary()
+	# A finale victory -> the first-victory reveal + the run summary (has_summary).
+	assert_true(bool((data.get("first_victory_beat") as Dictionary).get("has_beat")), "The finalized outpost renders the first-victory reveal (a terminal victory).")
+	assert_true(bool((data.get("run_summary") as Dictionary).get("has_summary")), "The finalized outpost embeds the just-ended run summary.")
+
+
+# Fail-closed: finalize_run_end on an unstarted / non-terminal controller yields null (the presenter branches on null).
+func _finalize_run_end_is_null_on_an_unstarted_controller() -> void:
+	_cleanup()
+	var controller: RunFlowController = RunFlowController.new()
+	var bridge: RunEndProfileBridge = RunEndProfileBridge.new(ProfileRepository.new(), BRIDGE_PROFILE_PATH)
+	assert_true(controller.finalize_run_end(bridge) == null, "finalize_run_end on an unstarted controller yields null (fail-closed).")
+
+	assert_equal(controller.start(FINALE_SEED, false, &"warrior").get("started"), true, "Setup: seat a fresh (non-terminal) run.")
+	assert_true(controller.finalize_run_end(bridge) == null, "finalize_run_end on a non-terminal run yields null (fail-closed).")
+
+
+# Story 11.5: next_sequence_id() (the additive read-only accessor the bridge threads) is the run-level cursor — it starts
+# past the run-start emitted ids and does NOT advance on read (a pure read; two reads agree).
+func _next_sequence_id_is_a_readonly_cursor_past_the_start() -> void:
+	var controller: RunFlowController = RunFlowController.new()
+	assert_equal(controller.start(FINALE_SEED, false, &"warrior").get("started"), true, "Setup: seat a run.")
+	var cursor: int = controller.orchestrator().next_sequence_id()
+	assert_true(cursor > 0, "The sequence cursor is a positive id (a valid record sequence id).")
+	assert_equal(controller.orchestrator().next_sequence_id(), cursor, "next_sequence_id() is a PURE READ — it does not advance on read (two reads agree).")
+
+
+func _cleanup() -> void:
+	for path: String in [BRIDGE_PROFILE_PATH, "%s.tmp" % BRIDGE_PROFILE_PATH, "%s.bak" % BRIDGE_PROFILE_PATH]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)

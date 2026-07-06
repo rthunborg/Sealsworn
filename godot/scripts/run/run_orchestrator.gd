@@ -875,6 +875,17 @@ func run_end_destination() -> String:
 	return _run_end_destination
 
 
+# Story 11.5 (the run-end -> profile bridge): the NEXT FREE run-level sequence id (the id the next command emitted
+# on this run would use). A PURE READ-ONLY accessor — it does NOT advance the counter or touch any state; it exposes
+# the monotonic cursor the orchestrator threads so a run-end CALLER (the 11.5 profile bridge running the caller-driven
+# RecordFirstDeath/VictoryCommand behind the run-end seam) can thread a UNIQUE sequence_id > 0 into the record command
+# rather than a hardcoded 1 that could collide with an id the run already emitted. The bridge does NOT need to advance
+# the orchestrator's cursor after recording (the run is already terminal; no further run command runs on it), so a
+# read-only peek is sufficient. Additive; the default run_to_completion path is UNCHANGED (fingerprint-safe).
+func next_sequence_id() -> int:
+	return _next_sequence_id
+
+
 func last_route_position_snapshot() -> RunSnapshot:
 	return _last_route_position_snapshot
 

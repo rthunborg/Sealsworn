@@ -20,3 +20,6 @@
 - [Phase 3 — create-story] The Flooded `_placeholder` electric interaction remains an Epic-10 readiness item (replace/de-scope/block) that 11.4 deliberately does NOT realize — the epic retro should confirm it stays tracked, not silently closed by the "Flooded per its ratified MVP placeholder posture" AC wording.
 - [Phase 5 — dev-story] Boss arena carries NO affinity by decision (fixed finale board, not an affinity-assigned generated level) — deliberate scope call, not an omission.
 - [Phase 5 — dev-story] Scorched DoT makes live fights resolve slightly faster (enemies burn too: seed 4242 12→11 rounds) — expected; changes live-combat round counts on affinity levels only; neutral/DEFAULT path byte-identical.
+
+## Story 11-5-outpost-scene-reveal-renders-and-another-descent
+- [Phase 3 — create-story] The run-end→profile→outpost bridge does not exist in the live flow (run_orchestrator has zero ProfileRepository/RecordFirstVictory/RunSummary/OutpostViewModel references; 11.2/11.3 drive the run terminal but never load/record/persist the profile) — 11.5's real crux and largest new-code surface, though the AC wording reads as pure render.

@@ -1,0 +1,944 @@
+# Story 11.5: Outpost Scene, Reveal Renders, and Another Descent
+
+Status: done
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want to return to a real outpost after a run — see what happened, read the line, and descend again,
+so that the return loop and its story beats are experienced, not implied.
+
+## Story Type & Scope Boundary (READ FIRST)
+
+**This IS a CODE story — the OUTPOST-SCENE + REVEAL-RENDER + run-end↔profile-BRIDGE story of Epic 11.** It is the
+counterpart to 11.3 at the *other* end of the loop: 11.3 built the launch→hero-select→route-map→board→run-end
+navigation and a **deliberately minimal** run-end landing (`run_end_presenter.gd`) that only shows "the run ended;
+return to the outpost" and boots back to hero select. **11.5 replaces that minimal landing with the real outpost
+scene bound to `OutpostViewModel`, renders the first-death/first-victory reveal beats + the manual-seed warning,
+wires the run-end→profile bridge the live flow is missing, and closes the loop with a working "start another
+descent" (FR1 loop closure).**
+
+- **The single most load-bearing as-built fact (VERIFY by reading — the DATA surfaces already EXIST, un-wired to the
+  live flow):** every read surface this story renders was SHIPPED by Epic 8/9 as a pure `RefCounted` DTO, but the
+  live run flow (11.2/11.3) **never touches the profile, never records the first-death/first-victory latch, and
+  never builds a `RunSummary` or an `OutpostViewModel`.** The live `RunOrchestrator.resolve_run_end(...)` transitions
+  the run to `PHASE_COMPLETED`/`PHASE_FAILED` and captures the run-end cause/outcome, but it does **NOT** import
+  `ProfileRepository`, `RecordFirstDeathCommand`, `RecordFirstVictoryCommand`, `RunSummary`, or `OutpostViewModel`
+  (grep-verified: 0 references in `run_orchestrator.gd`). **The run-end→profile→outpost bridge is 11.5's crux — it
+  does not exist yet.** 11.3's `run_end_presenter` reads only `RunEndOutcome` (phase/cause/eligibility) off the live
+  `RunFlowController`; it builds no summary and no profile.
+
+- **The as-built surfaces 11.5 BINDS to (read the source; do not re-implement):**
+  - **`OutpostViewModel`** (`godot/scripts/ui/view_models/outpost_view_model.gd`) — the pure-read outpost assembly
+    (Story 8.6). Pinned `DICTIONARY_KEYS = [has_profile, recovery_state, oath_shards, echoes, unlock_progress,
+    class_mastery, first_death_recorded, run_summary, class_options, selectable_class_ids, named_spaces,
+    first_death_beat, can_start_run]`. Constructor `_init(profile, run_summary, first_death_beat, class_repository,
+    recovery_state)`; the recovery static `for_recovery(recovery_code, loaded_profile=null, run_summary=null,
+    first_death_beat=null, class_repository=null, is_recoverable=true)`; the start seam
+    `start_run_request(request_root_seed:int, request_is_manual_seed:=false, request_class_id:=&"") ->
+    {root_seed(decimal-string), is_manual_seed, class_id, is_startable}`. **⭐ NOTE: it embeds `first_death_beat` but
+    NOT a first-victory beat** — the 9.4 AC3 render decision explicitly deferred wiring the first-victory reveal onto
+    `OutpostViewModel` to "a later UI story" = 11.5 (see the G3/reveal decision below).
+  - **`RunSummary`** (`godot/scripts/run/run_summary.gd`) — the pure-read run-summary aggregator (Story 8.2/8.4).
+    Pinned `DICTIONARY_KEYS = [has_summary, phase, outcome_or_cause, seed, is_manual_seed, meta_progression_eligible,
+    run_scoped, profile_meta, content_unlock, not_yet_supported]`. `run_scoped` = `[nodes_cleared, boss_cleared,
+    elite_nodes_cleared, passives_consumed, passives_destroyed, notable_loot, gold, curse_count, corruption]`.
+    `profile_meta.oath_shards_earned` STAYS `0` and is named in `not_yet_supported` (the G3 decision below). Built via
+    `RunSummary.build(run: RunState, events: Array = [])` — the route/economy facts derive from the terminal
+    `RunState`; the passives/loot/discovery lists derive from the SUPPLIED ordered `events` list (v0 has NO run-level
+    event store — see the event-sourcing constraint below).
+  - **`FirstDeathNarrativeBeat`** (`godot/scripts/run/first_death_narrative_beat.gd`) — pinned `DICTIONARY_KEYS =
+    [has_beat, line_id, line, is_skippable]`; `line` resolves `"Good. You remembered how to die."` (const
+    `FIRST_DEATH_LINE`, `line_id: "first_death"`). Build via `for_first_death(line_id := DomainEvent.FIRST_DEATH_LINE_ID,
+    is_skippable := true)` or `from_event(event)`. A skip/dismiss is STRUCTURALLY a no-op (the DTO owns no truth).
+  - **`FirstVictoryRevealBeat`** (`godot/scripts/run/first_victory_reveal_beat.gd`) — the OPPOSITE-phase twin; pinned
+    `DICTIONARY_KEYS = [has_beat, line_id, line, is_skippable]`; `line` resolves `"It did not die. It learned the way
+    back."` (const `FIRST_VICTORY_LINE`, `line_id: "first_victory"`). Build via `for_first_victory(...)` or
+    `from_event(event)`.
+  - **The run-end→profile command family (Epic 8/9 — the mutations 11.5's bridge orchestrates):**
+    - `RecordFirstDeathCommand` (`godot/scripts/core/commands/record_first_death_command.gd`) — `_init(profile:
+      ProfileSnapshot, sequence_id: int)`; `execute(state)` takes the terminal `RunState` as `state`; DEATH-only gate
+      (`run.phase == PHASE_FAILED`, else `run_not_failed`); once-only latch (`first_death_already_recorded`); sets
+      `profile.first_death_recorded = true`; ELIGIBILITY-INDEPENDENT (a manual-seed first death still records + shows
+      the line — the ratified 8.5 Option A).
+    - `RecordFirstVictoryCommand` (`godot/scripts/core/commands/record_first_victory_command.gd`) — the twin;
+      VICTORY-only gate (`run.phase == PHASE_COMPLETED`, else `run_not_completed`); once-only
+      (`first_victory_already_recorded`); sets `profile.first_victory_recorded = true`; ELIGIBILITY-INDEPENDENT
+      (Option A). Both reject `sequence_id <= 0` FIRST (`invalid_event_sequence_id`); both mutate the profile
+      IN-PLACE on success and return the beat data in `result.metadata`; the CALLER persists via
+      `ProfileRepository.write_profile`.
+    - `AwardMetaProgressCommand` / `MergeRunDiscoveriesCommand` — the 8.3 award + 8.4 merge. **These are 11.6's SPEND/
+      application concern, NOT 11.5's** — see the scope fences. 11.5 may record the first-death/victory latch (a
+      NARRATIVE flag, eligibility-independent) but does NOT drive the award/merge GRANT (that is meta progression;
+      11.6 owns it end-to-end).
+  - **`ProfileRepository`** (`godot/scripts/save/profile_repository.gd`) — `read_profile(save_path :=
+    "user://profile.json") -> ActionResult` (returns `profile_not_found` when absent → the CALLER starts
+    `ProfileSnapshot.fresh()`; `profile_open_failed`; `profile_parse_failed`; else `ProfileSnapshot.parse(...)` which
+    surfaces `unsupported_profile_schema`). `write_profile(snapshot, save_path) -> ActionResult` (atomic
+    temp→backup→replace; structured `profile_save_open_failed` / `_backup_remove_failed` / `_backup_failed` /
+    `_replace_failed` on failure; a failed write leaves the prior valid profile intact). **⭐ There is NO
+    `SaveManager` profile delegator** (project-context: "Epics 8-9 added NO SaveManager profile delegator — the
+    caller drives ProfileRepository directly; no live boot-flow wiring exists yet"). 11.5 drives `ProfileRepository`
+    directly (the outpost/run-end bridge is the first live profile caller) — decide whether to add a thin
+    `SaveManager` profile delegator (mirroring `resume_route_position`) or call the repository directly; do NOT put
+    run/profile LOGIC in the autoload (keep it thin).
+  - **`ProfileSnapshot`** (`godot/scripts/save/snapshots/profile_snapshot.gd`) — `SCHEMA_VERSION == 1`; carries
+    `oath_shards`, `echoes`, `unlock_progress`, `class_mastery`, `first_death_recorded`, `first_victory_recorded`;
+    `ProfileSnapshot.fresh(profile_id := "default")` is the fresh/recovery default. **DO NOT bump SCHEMA_VERSION or
+    add a key** — both latches already have homes.
+  - **The 11.3 scene-flow scaffolding 11.5 EXTENDS (read the source):**
+    - `RunFlowController` (`godot/scripts/ui/flow/run_flow_controller.gd`) — exposes `run() -> RunState`,
+      `orchestrator() -> RunOrchestrator`, `run_end_outcome() -> Dictionary`, `run_end_stage() -> String`. It does
+      NOT today expose a `RunSummary`, a `ProfileSnapshot`, or the first-victory beat — 11.5 adds the bridge (decide:
+      extend the controller with a run-end→profile→summary/outpost seam, or add a separate thin outpost-bridge
+      surface the outpost presenter drives).
+    - `RunFlowRouter` (`godot/scripts/ui/flow/run_flow_router.gd`) — the pure route table. `STAGES = [launch,
+      hero_select, route_map, tactical_board, run_end]`; `_STAGE_SCENES` maps each stage to a `.tscn`;
+      `_DESTINATION_STAGES = {"outpost": "run_end"}` (the run-end `next_destination == outpost` marker currently
+      routes to the minimal `run_end` stage). **⭐ 11.5 must add a real `outpost` stage + scene** and re-point the
+      `outpost` destination (and/or the run-end landing) to it. Pinned by `test_run_flow_router.gd` — update the pin.
+    - `SceneManager` (`godot/scripts/autoloads/scene_manager.gd`) — thin; `go_to_stage(stage)` +
+      `route_after_run_end(next_destination)` DELEGATE to `RunFlowRouter`. Keep it thin.
+    - `GameSession` (`godot/scripts/autoloads/game_session.gd`) — holds the live `RunFlowController` handle across
+      scene changes (`run_flow()` / `set_run_flow()` / `clear_run_flow()`). The outpost reads the terminal run-flow
+      handle to build the summary/outpost, then clears it before a fresh descent.
+    - `run_end_presenter.gd` — the MINIMAL 11.3 landing (reads `RunEndOutcome`, "Return to the Outpost" → hero
+      select). 11.5 either replaces it with the real outpost scene or repoints navigation so `outpost` lands on the
+      new outpost scene. Do not leave two competing "the run ended" surfaces.
+    - `RunResumeRecoveryView` (`godot/scripts/ui/view_models/run_resume_recovery_view.gd`) — 11.3's RUN-side resume
+      recovery. Its class doc pins the SPLIT: "11.3 handles the RUN save/resume recovery on the run-flow side; the
+      PROFILE-recovery surface at the outpost is 11.5's (the `OutpostViewModel.recovery_state`)." **11.5 owns the
+      PROFILE-recovery render** (AC3), NOT the run-resume recovery.
+    - The pattern presenters 11.5's outpost presenter MIRRORS: `route_map_presenter.gd` / `hero_select_presenter.gd`
+      (a `Control` that reads a pinned VM projection, maps fields to non-color visuals, submits intent through the
+      existing seam, owns no truth) — follow this posture verbatim.
+  - **Approved treatment baseline (already merged to `main`; bind the id/tag hooks, author NO new art):** the Recraft
+    UI-frame kit (button/panel/modal) is the frame baseline for the outpost + run summary (appendix §14.3). The
+    outpost binds frame/id hooks; 11.4's affinity treatment is the pre-boss board's, not the outpost's.
+
+- **What 11.5 delivers (four AC groups):**
+  1. **Outpost scene + start-another-descent (AC1).** A `Control` outpost scene renders the `OutpostViewModel`
+     contract (currency totals from `profile.oath_shards`/`echoes`, the four `deferred` named spaces, the embedded
+     `run_summary`, `unlock_progress`), and starting another descent works through the
+     `start_run_request(...)`/`is_startable` seam → a FRESH `RunOrchestrator.start(...)` (FR1 loop closure).
+  2. **Reveal renders (AC2).** The first-death / first-victory beats render as OPTIONAL, skippable/dismissible beats
+     (FR61/FR62/FR64/FR65); a skip/dismiss is a pure presentation no-op that NEVER blocks the outpost surface or a
+     new descent.
+  3. **Profile recovery render (AC3).** The write-failure path uses the loaded-profile `for_recovery(code,
+     loaded_profile)` representation (real totals behind a retry banner); the load-failure path uses the
+     fresh-profile fallback `for_recovery(code)`; the previously untested loaded-profile + recovery combination gains
+     its SCENE-level test (carried Epic-8 T4).
+  4. **Oath-Shards-earned coupling decision (AC4) + manual-seed warning.** The G3 summary↔profile coupling decision
+     (carried Epic-8 T5 / Epic-9 T4) is MADE and implemented; manual-seed runs show the no-progression warning
+     (FR28 surface).
+
+- **What 11.5 does NOT do (hard scope fences — do not cross):**
+  - **No meta SPEND / unlock APPLICATION (that is 11.6).** 11.5 DISPLAYS `oath_shards` / `unlock_progress` /
+    `class_mastery` and CLOSES the loop with a fresh descent; it does NOT build the spend menu, does NOT run
+    `AwardMetaProgressCommand`/`MergeRunDiscoveriesCommand` as a GRANT, and does NOT turn `unlock_progress` into a
+    playable-class unlock (the locked-class-hint → selectability flip is 11.6's FR43 concern). The four named spaces
+    stay `status: "deferred"` (rendered with an explicit "deferred" marker, never silently omitted). **If a summary/
+    outpost cross-read needs the AWARDED Oath-Shard total, read `profile.oath_shards` (already awarded state) — do
+    NOT introduce a new award call site here.**
+  - **No new save key, no schema bump, no new RNG stream, no new fingerprint, no new event.** The 23-key `RunSnapshot`
+    gate stays 23; `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1` (both latches already have homes — set
+    them, do not add them); the 7 named RNG streams (`map`/`level`/`combat`/`loot`/`rewards`/`events`/`cosmetic`) are
+    untouched; every pinned level/route/arena/finale seed-regression fingerprint stays byte-identical; the
+    `DomainEvent.Type` enum tail is UNCHANGED (the `first_death_recorded` / `first_victory_recorded` events already
+    exist — the record commands REUSE them; NO new event). The outpost/summary/beats are DERIVED reads, not save
+    state.
+  - **No new domain surface / no new autoload.** Bind the existing pinned surfaces. `OutpostViewModel` /
+    `RunSummary` / the beats already exist. If a first-victory reveal needs surfacing on the outpost, prefer the
+    minimal seam (compose the `FirstVictoryRevealBeat` alongside, OR add ONE sub-dict to `OutpostViewModel` — see
+    AC2 decision); do NOT invent a parallel outpost DTO. No new registered autoload (Epics 8-9 added none; keep
+    `SceneManager`/`GameSession`/`SaveManager` thin).
+  - **No difficulty knob, no in-run/mid-encounter save.** The manual-seed warning is a presentation READOUT of
+    existing `is_manual_seed`/`meta_progression_eligible` flags — no new field (FR28). No mid-encounter save (the
+    23-key gate stays 23; the in-node fight state stays ephemeral — the later in-node-save story owns that).
+  - **No affinity work (11.4, done).** The pre-boss board's affinity treatment is 11.4's; the outpost has no
+    affinity.
+
+## Acceptance Criteria
+
+Sourced verbatim from `epics.md` (Epic 11, Story 11.5, lines ~2697-2723). Four AC groups (Given/When/Then + And):
+
+1. **Outpost scene + another descent (AC1).** GIVEN a run ends in death or victory, WHEN I return to the outpost,
+   THEN an outpost scene renders the `OutpostViewModel` contract (currency totals, named spaces, run summary, unlock
+   progress) — AND starting another descent works through the `start_run_request`/`is_startable` seam (FR1 loop
+   closure).
+
+2. **Reveal renders (AC2).** GIVEN the profile's first death or first victory has just been recorded, WHEN the
+   outpost presents the narrative beat, THEN "Good. You remembered how to die." / "It did not die. It learned the way
+   back." render as optional, skippable/dismissible beats (FR61, FR62, FR64, FR65) — AND skipping or dismissing is a
+   pure presentation no-op that never blocks the outpost surface or a new descent.
+
+3. **Profile recovery render (AC3).** GIVEN a profile load or write failure occurred, WHEN the outpost renders
+   recovery, THEN the write-failure path uses the loaded-profile `_init` representation (real totals behind a retry
+   banner) and the load-failure path uses the fresh-profile fallback — AND the previously untested loaded-profile +
+   recovery combination gains its scene-level test (carried Epic-8 T4).
+
+4. **Oath-Shards-earned coupling + manual-seed warning (AC4).** GIVEN the run summary displays, WHEN "Oath Shards
+   earned" is shown, THEN the summary-to-profile coupling decision (carried Epic-8 T5 / Epic-9 T4) is made and
+   implemented — display the awarded total on the summary or surface it via the outpost — AND manual-seed runs show
+   their no-progression warning (FR28 surface).
+
+### AC Verification (how "done" is checked)
+
+- **AC1 —** an outpost `Control` scene under `godot/scenes/ui/` reads the `OutpostViewModel.to_dictionary()`
+  projection and renders: the meta readout (`oath_shards` + `echoes` count as number+label, non-color), the four
+  `named_spaces` (each with its `display_name` + an explicit `deferred` marker — icon/label, not color-only), the
+  embedded `run_summary` sub-dict (via its own `has_summary` gate), and `unlock_progress` (displayed, not spent). The
+  "descend again" affordance (≥44×44) calls `start_run_request(root_seed, is_manual_seed, class_id)` and, on
+  `is_startable`, hands the request to a FRESH `RunOrchestrator.start(...)` (via `RunFlowController.start(...)`) — a
+  new seed → a new route → a new run (the prior run is NOT reused, structural). Verified by: (a) a headless test that
+  the outpost VM projection the scene reads renders every pinned key + the start-request round-trips to a fresh run
+  on a verified seed (extend `test_outpost_view_model.gd` / a new `test_run_flow_*` case); (b) the scene-load compile
+  guardrail covers the new outpost scene (`test_run_flow_scenes_load.gd`); (c) a code-level audit that the outpost
+  presenter READS the pinned VM keys + submits ONLY the start request (a read-only + start-seam binding, no domain
+  mutation, no live-handle leak).
+- **AC2 —** the outpost renders BOTH beats (first-death via the already-embedded `OutpostViewModel.first_death_beat`
+  sub-dict; first-victory via the AC2 decision below) with a Skip/Dismiss affordance (≥44×44, always reachable). The
+  render branches on the `has_beat` gate (absent beat → not rendered, nothing blocked). The Skip/Dismiss is
+  STRUCTURALLY a no-op: it stops rendering the beat and mutates NOTHING (no command, no flag — the latch is set by
+  the record command independently). Verified by: (a) a headless test that a present beat projects `has_beat: true`
+  with the correct line + `is_skippable: true`, an absent beat projects `has_beat: false`, and the outpost surface is
+  COMPLETE without either beat (the off-critical-path FR64 assertion — the summary/start-descent are reachable with a
+  null beat); (b) a code audit that the Skip path submits no command (a pure presentation no-op).
+- **AC2 first-victory decision (the 9.4 render defer 11.5 OWNS — pick ONE, record it in Completion Notes):**
+  `OutpostViewModel` embeds `first_death_beat` but NOT a first-victory beat (the 9.4 AC3 render `[Decision]`
+  explicitly deferred wiring the first-victory reveal onto `OutpostViewModel` to "a later UI story" = 11.5). Two
+  acceptable shapes:
+  - **Option A (RECOMMENDED — minimal, mirrors the first-death embed):** add ONE `first_victory_beat` sub-dict to
+    `OutpostViewModel` (a new constructor arg + a new pinned `DICTIONARY_KEYS` entry — a KEY addition, NOT a schema
+    bump; update `test_outpost_view_model.gd`'s pinned-key assertion + all its recovery-mode constructions). This
+    keeps the outpost the single embedded reveal surface (both beats ride alongside `run_summary`, symmetric).
+  - **Option B:** the outpost presenter composes the `FirstVictoryRevealBeat` DIRECTLY (built from the run-end
+    first-victory fact the bridge threads), leaving `OutpostViewModel`'s pinned key set unchanged. Lower blast radius
+    on the VM's exact-key pin + recovery tests, but the reveal surface is split (first-death embedded, first-victory
+    composed).
+  Whichever is chosen, the reveal is OFF THE CRITICAL PATH (FR64): the outpost is complete without it. Do NOT add a
+  narrative field to `RunSummary` (8.5/9.4 forbade it — the beats are SEPARATE surfaces).
+- **AC3 —** the outpost renders BOTH profile-recovery modes through the EXISTING
+  `OutpostViewModel.for_recovery(...)`:
+  - **Profile-LOAD failure** (`profile_not_found` / `unsupported_profile_schema` from `ProfileRepository.read_profile
+    → ProfileSnapshot.parse`): `for_recovery(code)` (NO loaded profile) → the fresh-profile fallback
+    (`has_profile: false`, `oath_shards: 0`, empty homes) + the structured `recovery_state`. The scene shows a fresh
+    0-shard outpost with a recovery note.
+  - **Profile-WRITE failure** (`profile_save_*` from `write_profile`): the profile was READ fine + the player earned
+    REAL progress this session; only the WRITE failed → `for_recovery(code, loaded_profile)` shows the REAL totals
+    (`has_profile: true`) BEHIND a retry banner — NOT a misleading 0-shard surface.
+  The **scene-level test** (Epic-8 T4 — the "previously untested loaded-profile + recovery combination"): the VM
+  path is already unit-tested (`test_outpost_view_model.gd::_write_failure_recovery_with_loaded_profile_shows_real_totals`),
+  but no SCENE renders it — add a test that the OUTPOST SCENE/PRESENTER correctly branches on `recovery_state` and
+  renders the loaded-profile real-totals-behind-retry surface (vs the fresh fallback), and that the retry affordance
+  is reachable. The recovery render consumes NO RNG, runs NO command, mutates nothing (a pure read of the structured
+  result — the resume-invariant discipline, mirrored on the profile side).
+- **AC4 —** the G3 coupling decision is MADE + implemented (pick ONE, record it in Completion Notes):
+  - **Option A (the honest as-is):** the run-summary render reads `RunSummary.profile_meta.oath_shards_earned` (which
+    STAYS `0`, named in `not_yet_supported`) and shows an honest "not yet tallied" note; the AWARDED total is shown
+    at the OUTPOST level via `OutpostViewModel.oath_shards` (== `profile.oath_shards`). No summary→profile coupling.
+  - **Option B:** the run-summary render surfaces the awarded delta via a cross-surface read (the outpost/profile) so
+    the summary itself displays the awarded total. This couples the summary render to the profile.
+  Either satisfies AC4 as long as the decision is made, implemented, and the surface reads the CORRECT source
+  (`profile.oath_shards` for the AWARDED total; `RunSummary.profile_meta.oath_shards_earned` STAYS `0` — do NOT wire
+  the summary DTO's field to a non-zero value; that would break the 8.2/8.4 `not_yet_supported` contract + its
+  pinned test). The **manual-seed warning** is a presentation READOUT of the EXISTING flags (no new field, FR28):
+  when `RunSummary.is_manual_seed` is true (and thus `meta_progression_eligible` is false, lockstep), the summary
+  render shows a "manual seed — no meta progression earned" banner (text+icon, not color-only); the outpost's
+  start-another-descent affordance surfaces the same warning if a manual seed is being used
+  (`start_run_request(...).is_manual_seed`). Verified by: a headless test that a manual-seed terminal run's summary
+  reports `is_manual_seed: true` / `meta_progression_eligible: false` and the render surfaces the warning; a
+  normal-seed run shows none.
+- **AC-wide (the run-end→profile BRIDGE — 11.5's crux):** the live run flow must, at run end, LOAD the profile
+  (`ProfileRepository.read_profile` → `ProfileSnapshot.fresh()` on `profile_not_found`), record the appropriate
+  latch off the REAL terminal state (`RecordFirstDeathCommand` on a `PHASE_FAILED` run / `RecordFirstVictoryCommand`
+  on a `PHASE_COMPLETED` run — each threaded with a `sequence_id > 0` from the run-level cursor), PERSIST the mutated
+  profile (`ProfileRepository.write_profile`), and BUILD the outpost surface from the loaded/mutated profile + the
+  terminal-run `RunSummary`. On a write failure it uses the loaded-profile recovery path (AC3). The latch record is
+  ELIGIBILITY-INDEPENDENT (a manual-seed first death/victory still records the flag + shows the line — the ratified
+  Option A). A DTO-only `RunSummary.build(run)` with an EMPTY events list is acceptable for the run-scoped route/
+  economy facts (see the event-sourcing constraint) as long as the choice is documented. This bridge is the seam a
+  headless test drives end-to-end on a verified seed (a live victory records first-victory + builds the outpost; a
+  live death records first-death + builds the outpost).
+- **AC-wide (invariants) —** full headless suite green (`godot --headless … test_runner.tscn`), false-PASS grep clean
+  beyond the 6 documented negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — plus any NEW
+  documented negative 11.5 adds, e.g. a `profile_save_*`/`unsupported_profile_schema` forcing case, which must be
+  documented); `git diff --check` clean. `RunSnapshot` 23-key gate == 23; `ProfileSnapshot`/`SettingsSnapshot`
+  `SCHEMA_VERSION == 1`; `RngStreamSet.required_streams()` == 7; every `tools/dump_*` seed-regression fingerprint
+  byte-identical; `domain_event.gd` UNCHANGED (no new event); the DEFAULT `run_to_completion` (v0 auto-resolve)
+  byte-identical.
+
+## Tasks / Subtasks
+
+- [x] **Task 1 — Wire the run-end → profile bridge (AC-wide crux; AC2/AC4 depend on it)**
+  - [x] At the live run-END (after `RunOrchestrator.resolve_run_end(...)` / `resolve_boss_victory()` drives the
+        terminal `RunState`), add the profile bridge the flow is missing. **Done:** a thin `RunEndProfileBridge`
+        RefCounted (`godot/scripts/ui/flow/run_end_profile_bridge.gd`) owns the load→record→persist→build sequence; the
+        `RunFlowController.finalize_run_end(bridge)` seam delegates to it (the presenter drives that). The ORCHESTRATOR
+        is UNCHANGED except ONE additive read-only accessor `next_sequence_id()` (no behavior change; the record command
+        family stays caller-driven — 11.5 IS the caller, mirroring the 8.3/8.4/8.5/9.4 posture). `run_to_completion` is
+        NOT auto-wired (fingerprint-safe).
+  - [x] **Load the profile fail-closed:** `ProfileRepository.read_profile()` → on `profile_not_found` start
+        `ProfileSnapshot.fresh()`; on `unsupported_profile_schema` (+ `profile_open_failed`/`profile_parse_failed`)
+        route to the AC3 load-failure recovery (do NOT overwrite an incompatible profile — proven byte-identical); on
+        success read the loaded profile verbatim.
+  - [x] **Record the latch off the REAL terminal state (AC2):** a `PHASE_FAILED` run runs `RecordFirstDeathCommand.
+        new(profile, sequence_id).execute(run)`; a `PHASE_COMPLETED` run runs `RecordFirstVictoryCommand.new(profile,
+        sequence_id).execute(run)`. `sequence_id` is threaded from `orchestrator.next_sequence_id()` (the run-level
+        cursor — NOT a hardcoded 1; test asserts the cursor is > 1 after a live run). A subsequent death/victory rejects
+        idempotently with ZERO mutation (EXPECTED — the beat simply does not re-show). ELIGIBILITY-INDEPENDENT (a
+        manual-seed death still records + shows the line — Option A; tested).
+  - [x] **Persist the mutated profile:** `ProfileRepository.write_profile(profile)`. On success, build the outpost from
+        the (mutated) loaded profile. On a `profile_save_*` write failure, build via
+        `OutpostViewModel.for_recovery(code, loaded_profile)` (AC3 write-failure — the in-memory profile behind a retry
+        banner, `has_profile == true`; tested by forcing an open-failure under a missing dir).
+  - [x] **Build the run summary:** `RunSummary.build(run, [])` — **[Decision] Option (a): an EMPTY events list.** v0 has
+        NO run-level event store (grep-verified: `run_events`/`board_events` are LOCAL to the boss auto-play; the 11.3
+        live flow discards intermediate `ActionResult.events`). Consequence recorded: the route/economy run-scoped facts
+        (nodes_cleared/boss_cleared/elite/gold/curse/corruption) populate from the terminal `RunState`; the
+        passives/loot/discovery lists come out EMPTY (an honest v0 limitation, NOT a bug). No presentation/combat log
+        read as source truth; no persisted event-log field added (the 23-key gate stays 23).
+  - [x] **Determinism/purity guard:** the bridge draws ZERO gameplay RNG; the record commands are ZERO-RNG deterministic
+        flag sets; `RunSummary`/`OutpostViewModel`/the beats are pure reads. Tested: the terminal run is byte-identical
+        before/after the bridge (mutates ONLY the profile), and two builds from the same starting profile state are
+        byte-identical.
+
+- [x] **Task 2 — Build the outpost scene + start-another-descent (AC1)**
+  - [x] Added the outpost `Control` scene (`godot/scenes/ui/outpost.tscn`) + its presenter
+        (`godot/scripts/ui/presenters/outpost_presenter.gd`, mirroring `route_map_presenter`/`hero_select_presenter`:
+        reads the pinned VM projection via the `OutpostRenderView` render-decision seam, maps fields to non-color
+        visuals, submits ONLY the start request, owns no truth, leaks no live handle). It reads the `OutpostViewModel`
+        the Task-1 bridge builds via `finalize_run_end()`.
+  - [x] Renders the pinned surface: the meta readout (the AWARDED `oath_shards` as number+label), the four
+        `named_spaces` (each `display_name` + an EXPLICIT "coming soon" deferred marker — icon/label, never silently
+        omitted), the embedded `run_summary` (branches on `has_summary` — "No just-ended run." when absent), and the
+        recovery banner + warning banner. Layout: a `ScrollContainer` stack (the phone_portrait baseline that reaches
+        every profile; the desktop multi-panel is a later polish on the same VM); the descend affordance is ≥44×44.
+  - [x] Wired the start-another-descent seam (FR1 loop closure): the descend button routes through
+        `OutpostViewModel.start_run_request(...)`; on `is_startable` it hands a FRESH `RunFlowController.start(...)` the
+        request, clears the terminal run-flow handle (`GameSession.clear_run_flow()`), seats the new controller, and
+        navigates to `route_map`. **[Decision] a one-tap re-descend** (a default seed + the legacy no-class start, which
+        is always startable) — a new seed → a new route → a new run (the prior run is NOT reused, structural via
+        `RunState.new_run`). The terminal run's route is never reused.
+  - [x] Re-pointed the run-end return to the REAL outpost: `RunFlowRouter` gained the `outpost` stage (`STAGES` +
+        `_STAGE_SCENES` → `outpost.tscn`) and `_DESTINATION_STAGES["outpost"]` now maps to the `outpost` stage (was the
+        minimal `run_end`). `test_run_flow_router.gd`'s pinned route table updated. **[Decision] the minimal
+        `run_end`/`run_end_presenter` is retired as the outpost nav TARGET** but SURVIVES as the gameplay shell's
+        fail-loud NON-terminal dead-end landing (`gameplay_shell_presenter._route_to_dead_end`) — no two competing
+        outpost surfaces.
+
+- [x] **Task 3 — Render the reveal beats (AC2)**
+  - [x] **[Decision] Option A (the minimal first-death-symmetric embed):** added a `first_victory_beat` sub-dict to
+        `OutpostViewModel` (new constructor arg at position 4 + new `DICTIONARY_KEYS` entry + `first_victory_beat()`
+        accessor + wired `to_dictionary()`/`for_recovery()`), symmetric with `first_death_beat`. Updated
+        `test_outpost_view_model.gd`'s pinned-key set + added first-victory render tests; fixed the ONE positional
+        caller (`test_meta_summary_save_load.gd` — inserted `null` for the new arg). Each beat renders its resolved
+        `line` (FR61/FR62 prose) with a Dismiss control (≥44×44). The presenter reads the render decisions via
+        `OutpostRenderView.shows_first_death_beat()`/`shows_first_victory_beat()`.
+  - [x] The Dismiss is a PURE PRESENTATION NO-OP (FR65): the presenter frees the beat card (`card.queue_free`) — NO
+        command, NO flag mutation (the latch was set by the record command in Task 1, independently of the display).
+        There is NO "skip command". Confirmed by the render-view test (no command/mutation) + the VM structural-no-op
+        test (a dismiss leaves the profile byte-identical).
+  - [x] OFF THE CRITICAL PATH (FR64): a null/absent beat NEVER blocks the outpost surface, the run summary, or a new
+        descent. Tested: `_start_descent_is_available_with_both_beats_absent` + the VM's off-critical-path assertions
+        (both first-death and first-victory) — `can_start_descent()` is true with both beats absent.
+
+- [x] **Task 4 — Profile recovery render + scene-level test (AC3)**
+  - [x] The presenter branches on the recovery mode via `OutpostRenderView.recovery_mode()` (derived from
+        `recovery_state.has_recovery` + `has_profile`): `none` (healthy) renders the normal surface; `load_failure`
+        (`has_profile: false`, 0 shards) renders the fresh 0-shard outpost + a recovery note; `write_failure`
+        (`has_profile: true`, real totals) renders the REAL totals BEHIND a retry banner. Each mode carries a DISTINCT
+        text note (`RECOVERY_NOTE_LOAD_FAILURE` vs `RECOVERY_NOTE_WRITE_FAILURE`) + a distinct icon (`[?]` vs `[!]`),
+        so "could not load" reads differently from "could not save — retry" (appendix §13.5). The retry affordance
+        (≥44×44) re-drives the bridge (`_on_retry_save_pressed`), re-attempting the write.
+  - [x] Added the SCENE-LEVEL test (Epic-8 T4) as a RefCounted render-decision test (per the scene-free-harness
+        constraint — NO SceneTree test): `test_outpost_render_view.gd` asserts the presenter's render seam branches
+        correctly — `_write_failure_is_the_real_totals_behind_retry_mode` (has_profile true, oath_shards 12, retry
+        reachable) vs `_load_failure_is_the_fresh_fallback_mode_no_retry` (has_profile false, 0 shards, no retry) +
+        `_recovery_modes_carry_distinct_text_notes`. The scene-load compile guardrail covers `outpost.tscn`. The
+        recovery render consumes NO RNG, runs NO command, mutates nothing (proven).
+
+- [x] **Task 5 — Oath-Shards-earned coupling decision + manual-seed warning (AC4)**
+  - [x] **[Decision] G3 Option A (the honest as-is):** the outpost shows the AWARDED total via
+        `OutpostRenderView.awarded_oath_shards()` (== `profile.oath_shards`) at the outpost level; the summary shows an
+        honest "Oath Shards earned this run: not yet tallied" note (driven by `summary_oath_shards_not_yet_tallied()`,
+        which reads the summary's `not_yet_supported` list). `RunSummary.profile_meta.oath_shards_earned` STAYS `0`
+        (NOT wired non-zero — the 8.2/8.4 `not_yet_supported` contract + `test_run_summary.gd` are intact; no
+        summary→profile coupling). Rationale: reads the CORRECT source for the AWARDED total (the profile) without
+        breaking the pinned summary contract. Tested by `_g3_awarded_total_reads_the_profile_summary_stays_zero_not_yet_tallied`.
+  - [x] Manual-seed warning as a READOUT of EXISTING flags (no new field — FR28): `OutpostRenderView.
+        shows_manual_seed_warning()` reads the summary's `is_manual_seed`; the presenter renders a labeled banner
+        (`[!] Manual seed — no meta progression earned.`, text+icon). A normal-seed run + a fresh session (no summary)
+        show none. Tested: `_manual_seed_run_shows_the_no_progression_warning` / `_normal_seed_run_shows_no_warning` /
+        `_fresh_session_with_no_summary_shows_no_warning` + the bridge's eligibility-independent manual-seed test.
+
+- [x] **Task 6 — Invariants regression + full-suite green (AC-wide)** — DONE: 179 PASS / 0 `^FAIL`, "Headless tests
+  passed."; false-PASS grep clean beyond the 6 documented negatives (11.5 added NONE — the forced write failure returns
+  a structured code silently); `git diff --check` clean; `run_snapshot.gd`/`profile_snapshot.gd`/`settings_snapshot.gd`/
+  `rng_stream_set.gd`/`domain_event.gd`/`tools/dump_*` ALL untouched (23-key gate 23, SCHEMA_VERSION 1, 7 streams, enum
+  tail unchanged, fingerprints byte-identical; the orchestrator's only change is an additive read-only accessor).
+  - [x] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
+        `ProfileSnapshot.SCHEMA_VERSION == 1` (`test_profile_snapshot.gd` — the latches are SET, not added),
+        `SettingsSnapshot.SCHEMA_VERSION == 1`, `RngStreamSet.required_streams()` == 7 (`test_rng_stream_set.gd`),
+        the `DomainEvent.Type` enum tail UNCHANGED (`test_domain_event.gd` — the record commands REUSE the existing
+        `first_death_recorded` / `first_victory_recorded` events; NO new event). The outpost/summary/beats are
+        DERIVED reads — NO new save key.
+  - [x] Re-run every seed-regression fingerprint suite + confirm byte-identical (small/medium level, route, seed
+        batch, finale). The bridge is a run-END caller (post-terminal); the GENERATOR + the DEFAULT `run_to_completion`
+        stay untouched — every `tools/dump_*` fingerprint stays byte-identical.
+  - [x] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project Context
+        Rules): `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
+        --quit-after 10`. Apply the false-PASS grep guard (the only acceptable stderr `ERROR:` lines are the 6
+        documented negatives: int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — plus any NEW documented
+        negative 11.5 adds, e.g. a `profile_save_*`/`unsupported_profile_schema`/`profile_parse_failed` forcing case,
+        which MUST be documented in the story + the ledger). Run `git diff --check`.
+
+- [x] **Task 7 — Update the deferred-work ledger + tracking (AC-wide, hygiene)**
+  - [x] In `deferred-work.md` (new 11.5 entry): mark **RESOLVED** — the **outpost SCENE + reveal RENDER** (the fence
+        carried across Epics 8/9, re-recorded by 11.2/11.3/11.4 as "the outpost SCENE + reveal RENDER + G3 (11.5)");
+        the **first-victory REVEAL RENDER on the outpost** (the 9.4 AC3 render defer — "a later UI story wires the
+        reveal onto `OutpostViewModel`"); the **G3 Oath-Shard EARNED-count summary↔profile coupling** (Epic-8 T5 /
+        Epic-9 T4 — the coupling decision MADE + implemented); the **Epic-8 T4 loaded-profile + recovery scene-level
+        test**; and the **first-death BEAT render on the outpost scene** (8.5/8.6 shipped the beat DATA; 11.5 renders
+        it). RE-RECORD still-open (NOT 11.5's): the **meta-SPEND / unlock APPLICATION** (11.6 — the spend menu +
+        `unlock_progress` → selectability flip + `AwardMetaProgressCommand`/`MergeRunDiscoveriesCommand` GRANT); the
+        **live in-node board / pending-fight SAVE** (a later in-node-save story — the 23-key gate stays 23); **G4 the
+        settings view model** (if 11.5 does not build a settings scene, RE-RECORD it PARKED — the settings-scene owner
+        is 11.3-or-11.5 per the eventual split; 11.5 may leave it parked). Note the originating story/date. Do NOT
+        reopen or re-defer items unrelated to this story's surface.
+
+## Dev Notes
+
+### What this story is (and is not)
+
+Epic 8 shipped the outpost/summary/first-death DATA (`OutpostViewModel` + `RunSummary` + `FirstDeathNarrativeBeat` +
+`ProfileRepository`/`ProfileSnapshot` + the run-end command family) as pure `RefCounted` surfaces, and 9.4 added the
+first-victory twin — all UI-scene-last, all "a later HUD/boot-flow story renders them." 11.3 built the on-screen
+run-flow shell + a MINIMAL run-end landing (`run_end_presenter`, which reads only `RunEndOutcome`). **11.5 is the
+outpost-scene story: it renders the `OutpostViewModel` contract on a real scene, renders the two reveal beats + the
+manual-seed warning, and — crucially — wires the run-end→profile BRIDGE the live flow is missing (load profile →
+record the first-death/victory latch → persist → build the outpost + summary), closing the FR1 loop with a working
+"start another descent."**
+
+**The single most important rule: RENDER + WIRE THE EXISTING SURFACES; do not fork a parallel outpost/summary path.**
+Every DTO already exists (enumerated in the seam map). Read the ACTUAL source before wiring — a wrong method/
+constant/pinned-key name is the primary review-cycle cause (the 11.1 Round-1 review caught an HP field mis-sourced on
+`RunState`; the 11.3 Round-2 review caught a dead `has_method("current_text_scale")` probe that read as "wired" but
+no-op'd). Cite the EXACT as-built method/const/key names, verified against source; grep every probed method name
+against source before trusting a guarded-accessor claim.
+
+### The crux (read the source): the run-end → profile bridge does NOT exist yet
+
+The live run flow (11.2/11.3) drives the run to a terminal `RunState` and emits `run_completed`/`run_failed`, but the
+**profile side is entirely unwired**:
+
+- `RunOrchestrator.resolve_run_end(outcome)` (`run_orchestrator.gd:774`) runs `CompleteRunCommand`, captures the
+  next-destination + cause/outcome, and returns — it imports NO `ProfileRepository`, NO `RecordFirstDeathCommand`, NO
+  `RecordFirstVictoryCommand`, NO `RunSummary`, NO `OutpostViewModel` (grep-verified: 0 references in the whole
+  `run_orchestrator.gd`). After a live run ends, **no profile is read, no first-death/victory latch is set, and no
+  outpost surface can be built.**
+- `RunFlowController` exposes `run()` / `orchestrator()` / `run_end_outcome()` — but NO summary/profile/beat seam.
+- `run_end_presenter` reads only `RunEndOutcome` (phase/cause/eligibility) — it builds no summary and no profile.
+
+So 11.5's Task 1 is the load-bearing new work: at the live run-END, LOAD the profile
+(`ProfileRepository.read_profile` → `ProfileSnapshot.fresh()` on `profile_not_found`), RECORD the appropriate latch
+off the REAL terminal state (`RecordFirstDeathCommand`/`RecordFirstVictoryCommand`, threaded with a `sequence_id > 0`
+from the run-level cursor), PERSIST (`ProfileRepository.write_profile`, handling the AC3 write-failure recovery), and
+BUILD the outpost + summary from the loaded/mutated profile + the terminal `RunState`. The record commands are
+CALLER-DRIVEN by design (the 8.3/8.4/8.5/9.4 posture — "NOT auto-wired into `run_to_completion`; the caller drives
+them behind the run-end seam"); 11.5 IS that caller. Keep the orchestrator unchanged (or add ONE additive caller
+method); do NOT auto-wire the profile into `run_to_completion` (fingerprint safety — the default v0 auto-resolve must
+stay byte-identical).
+
+### The event-sourcing constraint (RunSummary.events)
+
+`RunSummary.build(run, events)` derives its passives/loot/discovery lists from the SUPPLIED ordered `events` list —
+but **v0 has NO run-level event store.** The orchestrator threads sequence ids and RETURNS events in each command's
+`ActionResult.events`, but does NOT accumulate a run-wide log (the `run_events`/`board_events` accumulators are LOCAL
+to `_auto_play_boss_rounds`, the boss auto-play — not run-wide; grep-verified). The 11.3 live flow drives node-by-node
+and discards intermediate `ActionResult.events`. So 11.5 must decide: (a) build the summary with an EMPTY events list
+(the route/economy run-scoped facts — nodes_cleared/boss_cleared/elite/gold/curse/corruption — still populate from the
+terminal `RunState`; only passives_consumed/passives_destroyed/notable_loot/echoes_discovered/unlock_progress come out
+empty), OR (b) add a lightweight event-collection seam through the flow (thread the run's ordered events into the
+bridge). Option (a) is the minimal, defensible v0 choice (the summary's headline facts — victory/death, nodes
+cleared, boss/elite progress, gold/curse/corruption — all populate; the empty passive/loot lists are an honest v0
+limitation, NOT a bug). Record the choice. Do NOT read a presentation/combat log as source truth (8.2 AC2 forbids it),
+and do NOT add a persisted event-log field to `RunState`/`RunSnapshot` (the 23-key gate stays 23; a persisted summary
+is a later save-shape story).
+
+### The G3 decision + the first-victory render decision (the two deferrals 11.5 OWNS + resolves)
+
+The 11.1 appendix (§8.3, §16 G3) and the deferred-work ledger both assign TWO carried decisions to 11.5:
+
+- **G3 — Oath-Shards-earned summary↔profile coupling (carried Epic-8 T5 / Epic-9 T4):** `RunSummary.profile_meta.
+  oath_shards_earned` reports `0` (named in `not_yet_supported`); the AWARDED total lives on `profile.oath_shards`
+  (surfaced via `OutpostViewModel.oath_shards`). The coupling decision — display the awarded total ON the summary vs
+  surface it via the outpost — is 11.5 AC4. Both options are documented in AC4 above; MAKE the call, implement it,
+  and record it. The load-bearing constraint: the AWARDED source is `profile.oath_shards`;
+  `RunSummary.profile_meta.oath_shards_earned` STAYS `0` (wiring the DTO field non-zero breaks the 8.2/8.4
+  `not_yet_supported` pinned contract).
+- **First-victory reveal render (the 9.4 AC3 render `[Decision]`):** `OutpostViewModel` embeds `first_death_beat`
+  but NOT a first-victory beat — 9.4 explicitly deferred wiring the first-victory reveal onto `OutpostViewModel` to
+  "a later UI story" = 11.5. The AC2 decision (Option A: add a `first_victory_beat` sub-dict to `OutpostViewModel`;
+  Option B: compose `FirstVictoryRevealBeat` in the presenter) resolves it. Record the call.
+
+### Project Context Rules
+
+Extracted from `project-context.md` (the canonical AI rulebook) — the rules that BIND 11.5's implementation:
+
+- **Presentation observes; it owns no tactical truth.** Godot scenes / `Control` nodes / audio / VFX / animation are
+  presentation; the scene-independent domain model owns tactical truth. The outpost scene READS view-model
+  projections and SUBMITS intent (the start request) through the existing seam; it never mutates domain/profile state
+  directly. Use signals for UI feedback, not hidden domain control flow.
+- **Commands validate before mutation and return `ActionResult`; successful commands emit deterministic past-tense
+  `DomainEvent` records.** The record commands (`RecordFirstDeathCommand`/`RecordFirstVictoryCommand`) are the ONLY
+  profile mutators 11.5 drives; they validate-then-mutate with ZERO events on reject. No new command, no new event.
+- **Named RNG streams only; ZERO `randi`/`randf`/`RandomNumberGenerator`.** The bridge + the reads are ZERO-RNG
+  deterministic. Cosmetic randomness (none here) must not affect outcomes.
+- **Headless simulation is a first-class target; it runs without rendering/audio/UI scenes/presentation nodes/
+  scene-tree-only state.** The scene-free headless harness runs `script.new().run()` with NO SceneTree — see the
+  scene-free-harness constraint below.
+- **Save truth is versioned domain snapshots.** `ProfileSnapshot.SCHEMA_VERSION == 1` (do NOT bump — both latches
+  have homes); the 23-key `RunSnapshot` gate stays 23; snapshots are pure reads (composing/restoring consumes no RNG,
+  runs no command, advances no turn, mutates neither source nor save file). JSON int64 fields (root_seed) stay
+  decimal-string-encoded.
+- **Repositories own atomic writes + structured read/write errors.** `ProfileRepository` writes atomically
+  (temp→backup→replace) and returns structured codes; read errors are `ActionResult` codes, NOT exceptions; a real
+  parse-failure path emits one expected `ERROR: Parse JSON failed` stderr line and STILL returns a structured error
+  (read the CODE as truth, not stderr).
+- **Autoloads stay thin.** `SceneManager`/`GameSession`/`SaveManager` delegate; they own no run/profile logic. A new
+  registered autoload is out of scope (Epics 8-9 added none).
+- **Manual seed/debug runs must not grant meta progression (FR28)** — the manual-seed warning is a READOUT of the
+  existing eligibility flags; the first-death/victory NARRATIVE latch is eligibility-INDEPENDENT (Option A — a
+  narrative flag is not "granting meta progression").
+- **Difficulty is a hard non-goal.** No difficulty knob/selector anywhere (the outpost/settings surfaces must not
+  present one).
+- **Godot binary path (this machine):** `godot` is NOT on the Bash/`where` PATH — it resolves as
+  `C:\Users\Rasmus\bin\godot.cmd` via PowerShell. Run the headless suite through PowerShell (`powershell.exe
+  -NoProfile -Command ...`), not the Bash tool's PATH lookup. Apply the false-PASS grep guard.
+
+### Epic-11 retro constraints that BIND 11.5 (from `_bmad-output/auto-gds/retro-notes/epic-11.md`)
+
+These are ratified conventions from earlier Epic-11 stories — 11.5 MUST honor them:
+
+- **The scene-free headless harness has NO SceneTree (G1/G2 posture, ratified by 11.3/11.4).** The runner runs
+  `script.new().run()` — a `.tscn`/`Control` surface is NOT directly unit-testable by the current runner (11.3's
+  finding). Steer ALL testable logic into fail-closed `RefCounted` view-model/projection seams (as 11.3 did with the
+  G1 `RunHudViewModel` + G2 `RouteMapViewModel`, and 11.4 with `LiveAffinityReadModel`); verify scene wiring BY
+  CONSTRUCTION (the scene-load compile guardrail `test_run_flow_scenes_load.gd` + the read-only-projection
+  discipline). **DO NOT write SceneTree tests.** For AC1/AC3's scene-level assertions, put the render DECISION/
+  projection in a RefCounted seam the harness can construct + assert (e.g. the outpost render branches on the pinned
+  `OutpostViewModel`/`recovery_state` keys — test THAT). Reviewers should not expect SceneTree tests; the AC3
+  "scene-level test" is satisfied by a RefCounted render-decision test + the scene-load compile guardrail covering
+  `outpost.tscn`.
+- **Pinned-key / source-verification rigor (dead `has_method` probes bit this epic TWICE).** Grep every probed
+  method/const/key name against source before trusting a guarded-accessor claim (the 11.3 M2 dead
+  `has_method("current_text_scale")` probe; the 11.1 `range` vs `weapon_reach` key mix-up). Cite the EXACT as-built
+  `OutpostViewModel.DICTIONARY_KEYS` / `RunSummary.DICTIONARY_KEYS` / the beats' `DICTIONARY_KEYS` / `for_recovery`
+  signature / `start_run_request` shape — all verified in this story's seam map against source. A key outside a
+  pinned set is a contract violation.
+- **When a presenter re-implements a sequencing the domain already encodes, test the presenter's shared sequencing
+  seam (11.3 H1: the on-screen advance-then-resolve silently diverged from the tested resolve-then-advance driver).**
+  11.5's run-end→profile bridge RE-IMPLEMENTS the run-end command SEQUENCING (load → record latch → persist → build
+  summary/outpost) at the presenter/flow layer. Test the SHARED bridge seam (a RefCounted `finalize`/bridge method),
+  not just the individual commands — so the on-screen order (record-then-build, off the REAL terminal state) is
+  proven to match the domain's intended order and never builds the outpost off a stale/un-persisted profile.
+
+### Deferred-work ledger items that OVERLAP 11.5 (from `_bmad-output/implementation-artifacts/deferred-work.md`)
+
+Only the entries whose subject overlaps 11.5's area — folded in so the dev agent addresses or knowingly works around
+them (the rest of the ledger is out of scope):
+
+- **[Resolve in 11.5] The outpost SCENE + reveal RENDER + G3** — re-recorded by 11.2/11.3/11.4 (dev-of-11.2 line ~75:
+  "Stories 11.5/11.6 The outpost SCENE + reveal RENDER (11.5)"; dev-of-11.3 line ~55: "Story 11.5 The outpost SCENE +
+  the reveal RENDERS + the G3 summary↔profile coupling — 11.3's run-end return NAVIGATES to the outpost destination
+  (a MINIMAL run-end landing) but the polished `OutpostViewModel`-bound dashboard, the first-death/first-victory
+  reveal beats, and the deferred named-space tiles are 11.5's; 11.3's landing does not pre-empt them"; dev-of-11.4
+  line ~14). 11.5's Tasks 1-5 discharge this.
+- **[Resolve in 11.5] The first-victory REVEAL RENDER on the outpost** (dev-of-9.4 line ~124; review-of-9.4 line
+  ~120's AC3 render `[Decision]`): "the DTO + flag + event exist; the outpost-scene render of the reveal (alongside
+  the first-death beat) is deferred … a later UI story wires the reveal onto `OutpostViewModel`." AC2 + Task 3
+  resolve it (the first-victory render decision).
+- **[Resolve in 11.5] The G3 Oath-Shard EARNED-count summary wiring** (review-of-8.6 line ~173; review-of-8.7 line
+  ~155; the 8.3 feed line ~427-429): "`RunSummary.profile_meta.oath_shards_earned` stays 0/not-yet-supported;
+  coupling the summary to the profile is a bigger design decision … the outpost reads the AWARDED total from
+  `profile.oath_shards`." AC4 + Task 5 MAKE + implement the coupling decision.
+- **[Resolve in 11.5] The first-death BEAT RENDER on the outpost scene** (dev-of-8.5 line ~235; review-of-8.5 line
+  ~194): "8.5 ships only the `FirstDeathNarrativeBeat` DATA + the `first_death_recorded` event; 8.6 owns the outpost
+  render + the skip/dismiss control (UI-scene-last)." 8.6 shipped the VM EMBED (`OutpostViewModel.first_death_beat`);
+  11.5 renders it on the scene (Task 3). The skip is ALREADY a structural no-op (the DTO is read-only; the flag is
+  set independently).
+- **[Resolve in 11.5 — the scene-level test] Epic-8 T4: the loaded-profile + recovery combination** (11.5 AC3 verbatim
+  + `test_outpost_view_model.gd` line ~589-616): the VM path (`for_recovery(code, loaded_profile)` → real totals
+  behind retry) is UNIT-tested, but NO scene renders it. Task 4 adds the scene-level (RefCounted render-decision)
+  test.
+- **[RE-RECORD still-open — NOT 11.5's] The meta-SPEND / unlock APPLICATION (11.6)** (dev-of-11.3 line ~56;
+  review-of-8.7 line ~154): the spend menu + `unlock_progress` → class-selectability flip (FR43) +
+  `AwardMetaProgressCommand`/`MergeRunDiscoveriesCommand` GRANT are 11.6's end-to-end scope. 11.5 DISPLAYS the meta
+  totals + `unlock_progress`; it does NOT spend or apply. Do NOT reopen or pre-empt this.
+- **[RE-RECORD still-open — NOT 11.5's] The live in-node board / pending-fight SAVE** (dev-of-11.3 line ~57): the
+  in-node fight state stays ephemeral (the 23-key gate stays 23); a mid-encounter save is a later in-node-save story.
+- **[RE-RECORD PARKED — the settings-scene owner is 11.3-or-11.5] G4 — the settings view model** (dev-of-11.3 line
+  ~58; appendix §16 G4): 11.3 built no settings scene, so G4 stays PARKED. If 11.5 does not build a settings scene,
+  RE-RECORD it PARKED (do NOT silently close it). The outpost/settings surfaces must NOT present a difficulty selector
+  (the ratified hard non-goal, appendix §12.3).
+
+### The 11.1 appendix screen contracts 11.5 implements (source of the paper design)
+
+`_bmad-output/planning-artifacts/ux-appendix-run-flow.md` (the settled paper design 11.5 builds against):
+
+- **§7 Outpost / meta menu** — binds `OutpostViewModel.to_dictionary()` (pinned `DICTIONARY_KEYS`). The four named
+  spaces all carry `status: "deferred"` in v0 (render each with an explicit "deferred" marker, never silently omit);
+  only `descent_stair` maps to a live v0 affordance (start-another-descent). §7.4: a scrollable stack on phone →
+  a multi-panel dashboard on desktop; deferred spaces carry a label/icon "coming soon" marker (not color-only);
+  descend ≥44×44.
+- **§8 Run summary** — binds `RunSummary.to_dictionary()`; §8.3 documents the G3 coupling options (AC4). §8.5:
+  outcome (victory vs death) via label+icon (not color-only); the manual-seed warning is a labeled banner, not a
+  color tint.
+- **§9 First-death reveal** / **§10 First-victory reveal** — bind `FirstDeathNarrativeBeat` / `FirstVictoryRevealBeat`
+  (identical pinned shape). §9.3/§10.3: the skip/dismiss is STRUCTURALLY a pure no-op (the flag is set by a SEPARATE
+  command); OFF THE CRITICAL PATH (§9.3/FR64 — never blocks the summary/outpost/another descent). §9.5/§10.5: a
+  skippable overlay/card; the Skip control ≥44×44 and always reachable; the line is text (inherently non-color); no
+  timing/reflex requirement.
+- **§11 Manual-seed no-progression warning** — binds `RunSummary.is_manual_seed`/`meta_progression_eligible` +
+  `start_run_request(...).is_manual_seed`; adds NO new field (FR28); a labeled banner (text+icon).
+- **§13 Save/resume recovery — the PROFILE recovery half** — §13.2 mode 1 (profile-LOAD failure → fresh-profile
+  fallback, `for_recovery(code)`) + mode 2 (profile-WRITE failure → real totals behind retry, `for_recovery(code,
+  loaded_profile)`). §13.5: each recovery state carries a text explanation + an icon (not color-only); action buttons
+  ≥44×44. (The RUN-side resume recovery is 11.3's `RunResumeRecoveryView`; the PROFILE side is 11.5's.)
+- **§14 Layout + accessibility** — every screen: four-layout (phone_portrait primary → phone_landscape side-rail →
+  tablet → desktop) honoring the semantic `TacticalLayoutProfile` region plan; color-independence (every critical
+  meaning carries a non-color channel — shape/icon/label/pattern/text); scalable text (`TacticalTextScale` clamp
+  [0.85, 2.0], driven by `SettingsSnapshot.text_scale`; changing scale never alters gameplay).
+
+### Project Structure Notes
+
+- Production Godot code under `godot/`; UI presenters under `godot/scripts/ui/presenters/`; view models under
+  `godot/scripts/ui/view_models/`; run domain under `godot/scripts/run/`; save under `godot/scripts/save/`; scenes
+  under `godot/scenes/ui/`. Tests mirror the domain under `godot/tests/` (`unit/ui/`, `unit/run/`, `integration/…`).
+- New files 11.5 likely adds: `godot/scenes/ui/outpost.tscn`, `godot/scripts/ui/presenters/outpost_presenter.gd`, a
+  run-end→profile bridge seam (extend `RunFlowController` OR a new `godot/scripts/ui/flow/run_end_profile_bridge.gd`),
+  and tests (`godot/tests/unit/ui/test_outpost_*` render-decision + a run-end→profile bridge test). Update the pinned
+  `test_run_flow_router.gd` (new outpost stage/route), `test_run_flow_scenes_load.gd` (new outpost scene), and — if
+  Option A for the first-victory embed — `test_outpost_view_model.gd` (the pinned-key set + recovery constructions).
+- Naming: `snake_case` files/folders, `PascalCase` classes, `snake_case` funcs/vars/signals, `UPPER_SNAKE_CASE`
+  consts. Match the 11.3 presenter posture verbatim.
+
+### References
+
+- [Source: _bmad-output/planning-artifacts/epics.md#Story 11.5] — the 4 ACs (lines ~2697-2723) + the Epic-11
+  FR-coverage/implementation notes.
+- [Source: _bmad-output/planning-artifacts/ux-appendix-run-flow.md] — §7 (outpost), §8 (run summary + G3 §8.3), §9/§10
+  (reveal beats), §11 (manual-seed warning), §13.2 (profile recovery modes), §14 (layout+accessibility), §16 G3.
+- [Source: godot/scripts/ui/view_models/outpost_view_model.gd] — pinned `DICTIONARY_KEYS`; `for_recovery`;
+  `start_run_request`; embeds `first_death_beat` (NOT first-victory).
+- [Source: godot/scripts/run/run_summary.gd] — pinned `DICTIONARY_KEYS`/`RUN_SCOPED_KEYS`; `build(run, events)`;
+  `profile_meta.oath_shards_earned == 0` / `not_yet_supported`.
+- [Source: godot/scripts/run/first_death_narrative_beat.gd] + [Source: godot/scripts/run/first_victory_reveal_beat.gd]
+  — pinned `DICTIONARY_KEYS`; the FR61/FR62 lines; skip is structural.
+- [Source: godot/scripts/core/commands/record_first_victory_command.gd] + record_first_death_command.gd — the
+  caller-driven latch commands (`_init(profile, sequence_id)`, `execute(terminal RunState)`, eligibility-independent
+  Option A).
+- [Source: godot/scripts/save/profile_repository.gd] — `read_profile` (`profile_not_found` → fresh) / `write_profile`
+  (atomic; `profile_save_*` codes); NO `SaveManager` delegator.
+- [Source: godot/scripts/run/run_orchestrator.gd:774,817] — `resolve_run_end` / `resolve_boss_victory` (NO profile/
+  summary/outpost references — the bridge is absent).
+- [Source: godot/scripts/ui/flow/run_flow_controller.gd] + run_flow_router.gd + scene_manager.gd + game_session.gd —
+  the 11.3 scene-flow scaffolding 11.5 extends (the `outpost` destination → `run_end` route to repoint).
+- [Source: godot/scripts/ui/presenters/run_end_presenter.gd] — the minimal 11.3 landing 11.5 replaces/repoints.
+- [Source: godot/scripts/ui/view_models/run_resume_recovery_view.gd] — the RUN-side resume recovery (the SPLIT: the
+  PROFILE recovery is 11.5's).
+- [Source: _bmad-output/auto-gds/retro-notes/epic-11.md] — the scene-free-harness / pinned-key / presenter-sequencing
+  constraints.
+- [Source: _bmad-output/implementation-artifacts/deferred-work.md] — the 11.5-overlapping deferrals (outpost scene +
+  reveal + G3 + Epic-8 T4/T5 + Epic-9 T4).
+- [Source: project-context.md] — the canonical AI rulebook (presentation/command/RNG/save/repository/autoload rules).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
+
+### Debug Log References
+
+- Full headless suite (Godot 4.6.3): **179 PASS / 0 `^FAIL`**, "Headless tests passed." (up from 177 at the 11.4
+  baseline; +2 net = the two new test files `test_run_end_profile_bridge.gd` + `test_outpost_render_view.gd`).
+- False-PASS grep: clean beyond the 6 documented negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type`
+  ×1). **11.5 added NO new documented negative** — the forced `profile_save_open_failed` write failure (opening a `.tmp`
+  under a missing directory) returns a structured `ActionResult` code SILENTLY (`FileAccess.open` returning null emits no
+  stderr line; verified empirically).
+- `git diff --check`: clean. The invariant/fingerprint source files (`domain_event.gd`, `run_snapshot.gd`,
+  `rng_stream_set.gd`, `profile_snapshot.gd`, `settings_snapshot.gd`, `tools/dump_*`) are UNTOUCHED (not in the diff).
+
+### Completion Notes List
+
+**The three carried decisions 11.5 owns — all MADE + implemented:**
+
+1. **AC2 first-victory render — [Decision] Option A (the minimal first-death-symmetric embed).** Added a
+   `first_victory_beat` sub-dict to `OutpostViewModel` (a new constructor arg at position 4, a new `DICTIONARY_KEYS`
+   entry, a `first_victory_beat()` accessor, wired into `to_dictionary()` + `for_recovery()`), symmetric with
+   `first_death_beat`. This keeps the outpost the single embedded reveal surface (both beats ride beside `run_summary`).
+   The 9.4 AC3 render defer ("a later UI story wires the reveal onto `OutpostViewModel`") is resolved. **Blast radius:**
+   the constructor's `class_repository`/`new_recovery_state` args shifted from positions 4/5 to 5/6 — the ONE positional
+   caller (`test_meta_summary_save_load.gd`) was updated (a `null` inserted for the new arg); `for_recovery` took a
+   TRAILING optional `first_victory_beat` so its existing call sites stay byte-identical. NO schema bump (a KEY addition
+   to a derived read, not a save-shape change).
+
+2. **AC4 G3 Oath-Shards coupling — [Decision] Option A (the honest as-is).** The AWARDED Oath-Shard total is the
+   PROFILE's (surfaced at the outpost level via `OutpostRenderView.awarded_oath_shards()` == `profile.oath_shards`); the
+   summary shows an honest "not yet tallied" note. `RunSummary.profile_meta.oath_shards_earned` STAYS `0` + named in
+   `not_yet_supported` — NOT wired non-zero (the 8.2/8.4 pinned contract + `test_run_summary.gd` are intact; no
+   summary→profile coupling). Reads the correct source for the awarded total without breaking the pinned summary shape.
+
+3. **The bridge `RunSummary.build` events source — [Decision] Option (a) (an EMPTY events list).** v0 has NO run-level
+   event store (grep-verified: `run_events`/`board_events` are LOCAL to the boss auto-play; the 11.3 live flow discards
+   intermediate `ActionResult.events`). **Consequence:** the route/economy run-scoped facts (nodes_cleared / boss_cleared
+   / elite_nodes_cleared / gold / curse_count / corruption) populate from the terminal `RunState`; the
+   passives_consumed / passives_destroyed / notable_loot / echoes_discovered / unlock_progress lists come out EMPTY — an
+   honest v0 limitation, NOT a bug (a persisted run-level event store is a later save-shape story). No presentation/combat
+   log read as source truth; no persisted event-log field added (the 23-key gate stays 23).
+
+**Other decisions:**
+- **The bridge seam — a RefCounted `RunEndProfileBridge` + a thin `RunFlowController.finalize_run_end()` delegator.** The
+  ORCHESTRATOR stays unchanged except ONE additive read-only accessor `next_sequence_id()` (a pure peek at the run-level
+  cursor — it does NOT advance the counter; the record commands stay caller-driven, so 11.5 IS the caller, mirroring the
+  8.3/8.4/8.5/9.4 posture). `run_to_completion` is NOT auto-wired (fingerprint-safe).
+- **The bridge calls `ProfileRepository` DIRECTLY, not via a `SaveManager` delegator** (project-context: Epics 8-9 added
+  no `SaveManager` profile delegator; the outpost/run-end bridge is the first live profile caller — keep the autoloads
+  thin, add no new autoload surface).
+- **Start-another-descent — a one-tap re-descend** (a default seed 4242 + the legacy no-class start, which is always
+  startable) → a FRESH `RunFlowController.start(...)` → clear the terminal handle, seat the new controller, navigate to
+  `route_map`. A new seed → a new route → a new run (the prior run is NOT reused, structural via `RunState.new_run`). A
+  hero re-pick is available via a later surface; v0's loop-closure affordance is the one-tap.
+- **The run-end return re-points to the REAL outpost.** `RunFlowRouter` gained the `outpost` stage; `_DESTINATION_STAGES
+  ["outpost"]` maps to it (was the 11.3 minimal `run_end` placeholder). The minimal `run_end`/`run_end_presenter` is
+  RETIRED as the outpost nav TARGET but SURVIVES as the gameplay shell's fail-loud NON-terminal dead-end landing — no two
+  competing outpost surfaces.
+- **Scene-level tests are RefCounted render-decision tests (per the Epic-11 scene-free-harness constraint — NO SceneTree
+  tests).** `OutpostRenderView` is the testable render-decision seam the presenter reads; the AC3 Epic-8 T4
+  "loaded-profile + recovery" scene-level test + the AC4 manual-seed warning test live there; the scene-load compile
+  guardrail covers `outpost.tscn`.
+
+**Breaking change (internal API — no runtime/save migration):** `OutpostViewModel._init(...)` gained a 4th positional arg
+`first_victory_beat` (before `class_repository`); `OutpostViewModel.to_dictionary()` gained the pinned key
+`first_victory_beat`. Any positional `.new(profile, run_summary, first_death_beat, class_repository, ...)` caller must
+insert `null` for the new arg (the one in-repo caller was updated). `RunFlowRouter.STAGES` / `_DESTINATION_STAGES` changed
+(the `outpost` destination now routes to the new `outpost` stage, not `run_end`). NO save schema / RNG stream / event /
+fingerprint change.
+
+### File List
+
+**New:**
+- `godot/scripts/ui/flow/run_end_profile_bridge.gd` — the run-end→profile bridge (load→record→persist→build).
+- `godot/scripts/ui/view_models/outpost_render_view.gd` — the RefCounted outpost render-decision seam.
+- `godot/scripts/ui/presenters/outpost_presenter.gd` — the outpost `Control` presenter.
+- `godot/scenes/ui/outpost.tscn` — the outpost scene.
+- `godot/tests/unit/ui/test_run_end_profile_bridge.gd` — the AC-wide bridge seam test (live death/victory, recovery,
+  eligibility-independence, idempotency, determinism).
+- `godot/tests/unit/ui/test_outpost_render_view.gd` — the AC1/AC3/AC4 render-decision test (Epic-8 T4 scene-level).
+
+**Modified:**
+- `godot/scripts/ui/view_models/outpost_view_model.gd` — added the `first_victory_beat` embed (Option A).
+- `godot/scripts/run/run_orchestrator.gd` — added the additive read-only `next_sequence_id()` accessor.
+- `godot/scripts/ui/flow/run_flow_controller.gd` — added the thin `finalize_run_end(bridge)` seam.
+- `godot/scripts/ui/flow/run_flow_router.gd` — added the `outpost` stage + re-pointed the `outpost` destination.
+- `godot/tests/unit/ui/test_outpost_view_model.gd` — pinned-key update + first-victory render tests.
+- `godot/tests/unit/ui/test_run_flow_router.gd` — the `outpost` stage/route pins.
+- `godot/tests/unit/ui/test_run_flow_scenes_load.gd` — cover `outpost.tscn` + `outpost_presenter.gd`.
+- `godot/tests/unit/run/test_run_flow_controller.gd` — the `finalize_run_end` + `next_sequence_id` seam tests + the
+  re-pointed run-end-stage assertion.
+- `godot/tests/integration/save/test_meta_summary_save_load.gd` — insert `null` for the new constructor arg.
+
+### Review Findings
+
+**Round 1 of 3** — primary adversarial code review (2026-07-06, auto-gds review delegate, Opus 4.8). Verdict:
+**Approve**. Scope: current-branch diff vs `main` (18 files, +2163/-29; production surface: bridge, controller,
+orchestrator accessor, router, presenter, render view, VM). Independently re-ran the full headless suite:
+**179 PASS / 0 `^FAIL`**, "Headless tests passed.", false-PASS grep clean (exactly the 6 documented stderr negatives:
+int64-overflow ×2, `invalid_node_type` ×1, malformed-JSON ×3 — 11.5 adds none). `git diff --check` clean.
+
+Severity tally: **Critical 0 / High 0 / Med 1 / Low 4**. Open `[Review][Decision]` (human call) items: **0**.
+
+Deep-scrutiny verification (all the review-brief hotspots — PASSED, recorded so a future round need not re-derive):
+- **RunEndProfileBridge idempotency + first-victory latch:** correct. `build_outpost` runs load → record-latch (off the
+  REAL terminal `RunState.phase`) → persist → build, threading `orchestrator.next_sequence_id()` (a UNIQUE id past the
+  run's emitted ids — verified via `run_orchestrator._advance_sequence_past`, which advances the cursor past the
+  `CompleteRunCommand` run-end event in `resolve_run_end`). A second finalize re-reads the now-latched profile and the
+  record command rejects idempotently with ZERO mutation (`test_run_end_profile_bridge._finalize_is_idempotent_...`).
+- **Retry re-entry semantics (re-read → re-record-idempotent → re-write):** correct. `_on_retry_save_pressed` re-drives
+  `_build_render_view()` → `finalize_run_end()` → a fresh `build_outpost`: it re-reads the on-disk profile (the failed
+  write left the prior valid profile intact — `ProfileRepository.write_profile` rolls back on a failed replace), re-runs
+  the record (idempotent on an already-latched profile, or a fresh record if the disk profile never got the flag), and
+  re-writes. Fail-loud (a repeated failure re-renders the banner, never a silent swallow).
+- **Production vs test bridge paths cannot collide:** verified. The ONLY production caller is
+  `outpost_presenter.gd:68` → `flow.finalize_run_end()` (no bridge arg) → `run_flow_controller.gd:207` →
+  `RunEndProfileBridge.new()` → the default `ProfileRepository.DEFAULT_PROFILE_PATH` (`user://profile.json`). EVERY test
+  caller injects a throwaway path (`user://test_run_end_profile_bridge_profile.json` /
+  `user://test_run_flow_controller_bridge_profile.json` / the missing-dir path). No shared file.
+- **OutpostViewModel positional-arg break:** the new `first_victory_beat` at `_init` position 4 shifts `class_repository`
+  to position 5. Exhaustive grep of every `OutpostViewModel.new(...)` / `.for_recovery(...)` caller across `scripts/` +
+  `tests/`: the ONLY in-repo caller that passed `class_repository` positionally — `test_meta_summary_save_load.gd:208-209`
+  — was correctly updated (a `null` inserted for the new arg). `for_recovery` took `first_victory_beat` as a TRAILING
+  optional (position 7), so its `(code)` / `(code, loaded_profile)` call sites stay byte-identical. NO missed caller.
+- **Router re-point (no stale run_end routing):** `_DESTINATION_STAGES["outpost"] = "outpost"` (was `"run_end"`); grep
+  confirms no residual `"outpost": "run_end"` mapping anywhere. `run_end` survives ONLY as the gameplay shell's
+  fail-loud NON-terminal dead-end (`gameplay_shell_presenter._route_to_dead_end` → `go_to_stage("run_end")`); the
+  terminal run routes `_route_to_run_end` → `route_after_run_end("outpost")` → the real outpost scene. No two competing
+  outpost surfaces. Router/scenes-load/controller pins all updated.
+- **G3 honesty constraint:** verified at source. `RunSummary.to_dictionary()` hardcodes `profile_meta.oath_shards_earned
+  == 0` and `NOT_YET_SUPPORTED_FIELDS == ["oath_shards_earned"]` (always in `not_yet_supported`). The render view's
+  `awarded_oath_shards()` reads `profile.oath_shards`; `summary_oath_shards_earned()` reads the always-0 summary field
+  behind the honest "not yet tallied" note. The summary DTO field is NOT wired non-zero — the 8.2/8.4 pinned contract
+  holds.
+- **Determinism/fingerprint preservation:** the bridge draws ZERO RNG, mutates ONLY the profile (the terminal run is
+  byte-identical before/after — `test_run_end_profile_bridge._bridge_mutates_only_the_profile_and_is_rng_free`).
+  `domain_event.gd` / `run_snapshot.gd` (23-key gate) / `profile_snapshot.gd` + `settings_snapshot.gd` (SCHEMA_VERSION 1)
+  / `rng_stream_set.gd` (7 streams) / every `tools/dump_*` fingerprint are NOT in the diff. The orchestrator's only
+  change is the additive read-only `next_sequence_id()`; `run_to_completion` is untouched (fingerprint-safe).
+- **Dead-probe sweep (bit this epic twice):** every `has_node`/method name in the new code verified against source —
+  `Diagnostics`/`GameSession`/`SceneManager` are real autoloads; `Diagnostics.info(category, code, payload)`,
+  `SceneManager.go_to_stage`, `GameSession.run_flow`/`set_run_flow`/`clear_run_flow`, `RunFlowController.start`/
+  `orchestrator`, `ProfileSnapshot.parse`'s `{"snapshot": ...}` metadata key, and the record commands' `metadata`
+  `line_id`/`is_skippable`/`succeeded` all match. NO dead `has_method` probe.
+
+Findings:
+- **[Review][Defer] (Med) The bridge's empty-events `RunSummary.build(run, [])` leaves `outcome_or_cause` BLANK, not
+  just the passives/loot/discovery lists.** `RunSummary._derive_outcome_or_cause(run, events)` extracts the
+  victory/death STRING (`"victory"` / the failure `cause`) by scanning `events` for the terminal `RUN_COMPLETED`/
+  `RUN_FAILED` event — with `[]` it returns `&""`. So the live-flow summary's `outcome_or_cause` field is empty; the
+  victory-vs-death distinction survives ONLY via `phase` (`PHASE_COMPLETED`/`PHASE_FAILED`) + the reveal beats. Not a
+  crash and not user-facing today (the presenter renders the beats + `phase`, never `outcome_or_cause`), and it is a
+  faithful consequence of the ratified Option (a) empty-events decision — but the dev notes documented only the empty
+  LISTS, not the empty `outcome_or_cause`. Deferred to the run-level event-store / summary-render story (the same story
+  that threads the run's ordered events); recorded so that story knows `outcome_or_cause` is blank in the live path
+  until events are threaded, and so a summary-render must key victory/death off `phase`, not `outcome_or_cause`.
+- **[Review][Defer] (Low) The run-summary render surfaces no victory/death outcome label.** Appendix §8.5 wants
+  "outcome (victory vs death) via label+icon (not color-only)" on the summary; `outpost_presenter._render_run_summary`
+  renders only the "not yet tallied" note (the outcome is conveyed by the SEPARATE reveal beat + implicit `phase`). AC1
+  is met (the outpost renders the embedded summary gated on `has_summary`), and the reveal beat carries the narrative
+  beat, but the summary panel itself has no explicit outcome label. Off the critical path; folded into the later
+  summary-render polish (same defer as above). Not blocking.
+- [x] **[Review][Patch] (Low) `has_profile == true` for a brand-new (`profile_not_found`) player is intended but
+  counter-intuitive; the fresh-path test asserts only `has_recovery == false`.** On `profile_not_found` the bridge
+  builds `OutpostViewModel.new(ProfileSnapshot.fresh(), ...)` → `has_profile == true` (a fresh() is a non-null supplied
+  profile; the "returning vs brand-new" distinction is `recovery_state.has_recovery`, per the VM doc). This is correct
+  by design, but `test_run_end_profile_bridge._profile_not_found_...` (line ~141) asserts only `has_recovery == false`
+  and its comment claims `has_profile == true` without asserting it. RESOLVED-as-acceptable this round (behavior is
+  correct + covered indirectly); a one-line `assert_true(has_profile)` would make the intent explicit. Non-blocking
+  nit — no code change required for Approve.
+  **RESOLVED (2026-07-06):** Added the explicit `assert_true(bool(data.get("has_profile")), ...)` (+ a clarifying
+  comment) to `test_run_end_profile_bridge._profile_not_found_starts_and_persists_a_fresh_profile()` so the
+  intended-but-counter-intuitive `has_profile == true` on the fresh (`profile_not_found`) path is pinned. Suite green.
+- **[Review][Decision] — NONE.** No open human-call items. All three carried `[Decision]`s the dev owned (AC2 Option A
+  first-victory embed; AC4 Option A G3 honest-as-is; the empty-events Option (a)) were MADE, implemented, and are sound;
+  the review introduces no new decision requiring human adjudication.
+- [x] **[Review][Patch] (Low, tracking — for the finalize step, not a code defect) `sprint-status.yaml` still lists
+  `11-5-...: ready-for-dev`** while the story is `Status: review` and implemented (11-1..11-4 are `done`). This is the
+  expected mid-pipeline state (auto-gds sets it at finalize), but flagged so the finalize step advances it to `done`
+  alongside the story `Status` + `last_updated`. No action for the review itself.
+  **ACKNOWLEDGED (2026-07-06) — deferred to finalize (as the finding itself specifies):** verified
+  `sprint-status.yaml:145` still reads `11-5-outpost-scene-reveal-renders-and-another-descent: ready-for-dev` (the
+  expected mid-pipeline state; story is still `Status: review`). Intentionally NOT flipped in this review-fix pass —
+  advancing it to `done` alongside the story `Status` + `last_updated` is the auto-gds finalize step's action, not a
+  code-review-finding fix. No code change; left for finalize.
+- [x] **[Review][Patch] (Low) Micro-waste: `_on_descend_pressed` constructs a throwaway `OutpostViewModel.new(null)` (which
+  builds a full `HeroSelectViewModel`) solely to call `start_run_request(4242, false, &"")`.** Since the class id is
+  empty (always startable), the request could be built without a VM. Harmless (one-tap, off the hot path); left as-is —
+  noted only for a future cleanup, not blocking.
+  **RESOLVED (2026-07-06):** `_on_descend_pressed` now builds the start request inline in the pinned
+  `START_REQUEST_KEYS` shape (`{root_seed: str(DEFAULT_DESCENT_SEED), is_manual_seed: false, class_id: "",
+  is_startable: true}`) — the empty class id is unconditionally startable per `OutpostViewModel.start_run_request`'s
+  `class_is_startable`, so no throwaway `OutpostViewModel`/`HeroSelectViewModel` construction is needed for the fixed
+  one-tap re-descend. Same values fed to `RunFlowController.start(...)`; behavior byte-identical. Suite green.
+
+**Round 2 of 3** — second, independent adversarial pass on a different model (2026-07-06, auto-gds Round-2 delegate,
+Opus 4.8 [1m]). Verdict: **Approve**. Scope: current-branch diff vs `main` (18 files incl. `sprint-status.yaml`;
+production surface: bridge, controller, orchestrator accessor, router, presenter, render view, VM). Independently re-ran
+the full headless suite: **179 PASS / 0 `^FAIL`**, "Headless tests passed."; false-PASS grep clean — EXACTLY the 6
+documented stderr negatives (int64-overflow ×2 [lines 58,98], `invalid_node_type` ×1 [line 137], malformed-JSON ×3
+[lines 154,163,178]); 11.5 adds none. `git diff --check` clean.
+
+Severity tally: **Critical 0 / High 0 / Med 0 / Low 0** (no new findings). Open `[Review][Decision]` (human call): **0**.
+
+**Round 1 fix verification (both verified in place at source):**
+- **P1 — VERIFIED.** `test_run_end_profile_bridge.gd:145` now carries the explicit
+  `assert_true(bool(data.get("has_profile")), "profile_not_found builds off ProfileSnapshot.fresh() -> has_profile ==
+  true ...")` on the `_profile_not_found_starts_and_persists_a_fresh_profile()` path, with the clarifying comment
+  (lines 142-144) explaining the intended-but-counter-intuitive `has_profile == true` (a `fresh()` is a non-null
+  supplied profile; the returning-vs-brand-new distinction is `recovery_state.has_recovery`). The fresh-path intent is
+  now pinned.
+- **P3 — VERIFIED (byte-identical request values confirmed).** `outpost_presenter._on_descend_pressed()` (lines
+  219-224) builds the request inline as `{root_seed: str(DEFAULT_DESCENT_SEED)=="4242", is_manual_seed: false,
+  class_id: String(&"")=="", is_startable: true}` — no throwaway `OutpostViewModel`/`HeroSelectViewModel`. I traced the
+  equivalence: the retired `OutpostViewModel.new(null).start_run_request(4242, false, &"")` would have produced
+  `{root_seed:"4242", is_manual_seed:false, class_id:"", is_startable:true}` (empty class id → `class_is_startable ==
+  true` unconditionally, `outpost_view_model.gd:365`). The inline dict is byte-identical; the same three values feed
+  `RunFlowController.start(4242, false, &"")`. Behavior byte-identical, one fewer allocation.
+- **P2 — correctly left for finalize (NOT flipped).** `sprint-status.yaml:145` still reads
+  `11-5-...: ready-for-dev` (story `Status: review`, 11-1..11-4 `done`, 11-6 `backlog`). This is the expected
+  mid-pipeline state; advancing it to `done` alongside the story `Status` + `last_updated` is the auto-gds finalize
+  step's action, not a code-review fix. Left untouched this round (as the R1 finding itself specifies).
+
+**Independent deep-scrutiny of the core 11.5 surface (all re-derived from source, all sound):**
+- **Bridge idempotency + first-victory latch + fail-loud persist/retry:** correct. `build_outpost` runs load →
+  record-latch (off the REAL terminal `RunState.phase`, `run_end_profile_bridge.gd:132/142`) → persist → build. The
+  threaded `sequence_id` is genuinely UNIQUE: `resolve_run_end` (`run_orchestrator.gd:780`) calls
+  `_advance_sequence_past(resolved)` after the terminal `CompleteRunCommand`, and `_advance_sequence_past` sets
+  `_next_sequence_id = max_emitted + 1` (`:1496-1501`), so `next_sequence_id()` (`:885-886`, a pure read that does not
+  advance) returns strictly greater than every id the run emitted — NOT a hardcoded 1 that could collide. A second
+  finalize re-reads the now-latched profile and the record command rejects idempotently (`first_death_already_recorded`
+  / `first_victory_already_recorded`, ZERO mutation). The `_on_retry_save_pressed` re-entry re-drives a fresh
+  `build_outpost` (a fresh `ProfileSnapshot` re-read from disk each call — stateless across retries; a failed write
+  left the prior valid profile intact via `ProfileRepository.write_profile`'s backup rollback, `:65-74`), fail-loud
+  (a repeated failure re-renders the banner).
+- **Production vs test bridge path separation:** the ONLY production caller is `outpost_presenter.gd:68` →
+  `flow.finalize_run_end()` (no bridge arg) → `run_flow_controller.gd:207` → `RunEndProfileBridge.new()` → the default
+  `ProfileRepository.DEFAULT_PROFILE_PATH == user://profile.json`. Every test caller injects a throwaway path
+  (`test_run_end_profile_bridge_profile.json` / `test_run_flow_controller_bridge_profile.json` / the missing-dir path).
+  No shared file.
+- **OutpostViewModel positional-arg break (missed-caller hunt):** exhaustive grep of every `OutpostViewModel.new(...)`
+  / `.for_recovery(...)` across `scripts/` + `tests/`. The `first_victory_beat` at `_init` position 4 shifts
+  `class_repository`→5 / `new_recovery_state`→6. The ONLY in-repo caller passing `class_repository` positionally —
+  `test_meta_summary_save_load.gd:208-209` — correctly carries 5 args with `null` at position 4. All
+  `test_outpost_render_view.gd` + `test_outpost_view_model.gd` first-victory constructions use position 4 correctly.
+  Both bridge `for_recovery` call sites bind all 7 positions correctly (write-failure `:156-164`: code, profile,
+  summary, death_beat@4, null@5, true@6, victory_beat@7; load-failure `:106-114`: code, null, summary, empty-death@4,
+  null@5, true@6, empty-victory@7). `for_recovery`'s `first_victory_beat` is a TRAILING optional (position 7) so its
+  existing `(code)` / `(code, loaded_profile)` call sites stay byte-identical. NO missed caller.
+- **Router re-point (no stale run_end routing):** `_DESTINATION_STAGES = {"outpost": "outpost"}` (was `"run_end"`);
+  grep confirms no residual `"outpost": "run_end"` mapping in code (only documentary comments). `run_end` survives ONLY
+  as the gameplay shell's fail-loud NON-terminal dead-end (`gameplay_shell_presenter.gd:171` →
+  `go_to_stage("run_end")`); the terminal run routes to the real outpost. `run_end.tscn` still exists + is covered by
+  the scenes-load guardrail. Router/scenes-load/controller pins all updated + green.
+- **G3 honesty (oath_shards_earned stays 0):** verified at source. `RunSummary` hardcodes
+  `profile_meta.oath_shards_earned = 0` (build `:327`, empty fact `:437`) and `NOT_YET_SUPPORTED_FIELDS ==
+  ["oath_shards_earned"]` (`:130-132`) is always folded into `not_yet_supported` (`:350/:443`). The render view's
+  `awarded_oath_shards()` reads `profile.oath_shards`; `summary_oath_shards_not_yet_tallied()` reads the always-present
+  `not_yet_supported` membership. The summary DTO field is NOT wired non-zero — the 8.2/8.4 pinned contract holds.
+- **Determinism/fingerprint preservation:** the bridge draws ZERO RNG + the record commands are ZERO-RNG deterministic
+  flag sets + `RunSummary`/`OutpostViewModel`/the beats are pure reads (the bridge mutates ONLY the profile — the
+  terminal run is byte-identical before/after, `test_run_end_profile_bridge:268/276`). `domain_event.gd` /
+  `run_snapshot.gd` (23-key gate) / `profile_snapshot.gd` + `settings_snapshot.gd` (`SCHEMA_VERSION == 1`;
+  `first_victory_recorded` already homed at `:80`, SET not added) / `rng_stream_set.gd` (7 streams) / every
+  `tools/dump_*` are NOT in the diff. The orchestrator's only change is the additive read-only `next_sequence_id()`;
+  `run_to_completion` is untouched (fingerprint-safe).
+- **Dead has_method/probe sweep (bit this epic twice):** NO `has_method` probe anywhere in the new production code. The
+  `has_node("/root/Diagnostics")` / `has_node("/root/GameSession")` / `has_node("/root/SceneManager")` guards in
+  `outpost_presenter.gd` all resolve to REAL registered autoloads (`project.godot:15/16/20`) — the same guard posture
+  as the 11.3 presenters, not a dead probe. `Diagnostics.info(...)`, `GameSession.run_flow/set_run_flow/clear_run_flow`,
+  `SceneManager.go_to_stage`, `RunFlowController.start`, `ProfileSnapshot.parse`'s `{"snapshot": ...}` metadata key,
+  and the record commands' `metadata.line_id/is_skippable` all match source.
+
+**Testability convention (calibrated as instructed):** no SceneTree tests demanded — the AC1/AC3 scene-level
+assertions are correctly satisfied by the RefCounted render-decision seam (`test_outpost_render_view.gd`) + the
+scene-load compile guardrail covering `outpost.tscn` (`test_run_flow_scenes_load.gd:41`), per the ratified Epic-11
+scene-free-harness posture.
+
+- **[Review][Patch/Decision/Defer] — NONE.** No new findings. The two accepted Round-1 `[Review][Defer]` items (blank
+  `outcome_or_cause` under empty events — a faithful, non-crashing consequence of the ratified Option (a) empty-events
+  decision, since the summary's victory/death distinction survives via `run.phase`, `run_summary.gd:342`; and the
+  missing summary outcome label) remain ledgered in `deferred-work.md` and are NOT reopened. Both Round-1 `[Review]
+  [Patch]` fixes (P1, P3) are verified in place; the P2 sprint-status flip is correctly deferred to finalize.
