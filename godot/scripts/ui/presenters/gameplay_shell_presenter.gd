@@ -1,4 +1,4 @@
-extends Node2D
+extends Control
 
 # Story 11.3 (AC1/AC2) — the GAMEPLAY-SHELL presenter. It hosts the tactical board + the in-run HUD and DRIVES
 # the live run flow via the RunFlowController (which SEQUENCES the RunOrchestrator's live methods — the composed
@@ -19,7 +19,11 @@ const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
-const TacticalBoardPresenter = preload("res://scripts/ui/presenters/tactical_board_presenter.gd")
+# L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
+# shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
+# anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
+# target — the compile guardrail still covers it). The instanced root exposes bind_live_state/render as before.
+const TacticalBoardScene = preload("res://scenes/game/tactical_board.tscn")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
 
 # The combat/elite node types that play a live board here.
@@ -34,9 +38,11 @@ func _ready() -> void:
 		Diagnostics.info(&"ui", &"gameplay_shell_ready", {})
 
 
+# L1: instance the board SCENE (its Control root already carries the presenter script + full-rect anchors) rather
+# than TacticalBoardPresenter.new(). L2: this shell root is now a Control (full-rect), so the board Control's
+# anchors resolve against a real Control ancestor on device (a bare Node2D parent gave no layout to size against).
 func _build_board_presenter() -> void:
-	_board_presenter = TacticalBoardPresenter.new()
-	_board_presenter.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_board_presenter = TacticalBoardScene.instantiate() as Control
 	add_child(_board_presenter)
 
 
