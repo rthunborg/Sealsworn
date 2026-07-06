@@ -1,3 +1,28 @@
+## Deferred from: code review of 11-5-outpost-scene-reveal-renders-and-another-descent (2026-07-06)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 1 / Low 4; 0 open `[Review][Decision]`). The two
+`[Review][Defer]` items — both faithful consequences of the ratified empty-events `RunSummary.build(run, [])` decision
+(Option (a)), NOT defects — folded forward to the run-level event-store / summary-render story:
+
+- **[Defer] (Med — the run-level event-store / summary-render story) The live-flow `RunSummary.outcome_or_cause` is
+  BLANK, not just the passives/loot/discovery lists.** `RunEndProfileBridge` builds `RunSummary.build(run, [])` with an
+  empty events list. `RunSummary._derive_outcome_or_cause(run, events)` extracts the victory/death STRING (`"victory"` /
+  the failure `cause`) by scanning `events` for the terminal `RUN_COMPLETED`/`RUN_FAILED` event — with `[]` it returns
+  `&""`. So the outpost's embedded summary carries `outcome_or_cause == ""`; the victory-vs-death distinction survives
+  ONLY via `phase` (`PHASE_COMPLETED`/`PHASE_FAILED`) + the reveal beats. Not a crash and not user-facing in 11.5 (the
+  presenter renders the reveal beats + `phase`, never `outcome_or_cause`). When the run-level event store lands (the
+  same story that threads the run's ordered events into the bridge so passives/loot/discovery populate), `outcome_or_cause`
+  populates too; until then a summary-render MUST key victory/death off `phase`, not `outcome_or_cause`. Originating:
+  code review of 11-5 (2026-07-06).
+- **[Defer] (Low — same story) The outpost run-summary panel surfaces no explicit victory/death outcome label.**
+  Appendix §8.5 wants "outcome (victory vs death) via label+icon (not color-only)" on the summary; `outpost_presenter.
+  _render_run_summary` renders only the honest "not yet tallied" note (the outcome is conveyed by the SEPARATE reveal
+  beat + implicit `phase`). AC1 is satisfied (the embedded summary renders gated on `has_summary`), and this is off the
+  critical path — folded into the later summary-render polish (which, per the item above, should key the label off
+  `phase` until events are threaded). Originating: code review of 11-5 (2026-07-06).
+
+---
+
 ## Tracked from: dev of 11-5-outpost-scene-reveal-renders-and-another-descent (2026-07-06)
 
 Story 11.5 (FR1/FR28/FR61/FR62/FR64/FR65; NFR8/NFR9/NFR13/NFR14) is the OUTPOST-SCENE + REVEAL-RENDER + run-end↔profile-BRIDGE story of Epic 11 — the counterpart to 11.3 at the other end of the loop. It RENDERS the existing Epic-8/9 `OutpostViewModel`/`RunSummary`/first-death+first-victory-beat DATA on a real scene, and — the crux — WIRES the run-end→profile BRIDGE the live flow (11.2/11.3) never had: at the live run-END it LOADS the profile (`ProfileRepository.read_profile` → `ProfileSnapshot.fresh()` on `profile_not_found`), RECORDS the first-death/victory LATCH off the REAL terminal state (`RecordFirstDeath/VictoryCommand`, threaded with a unique `sequence_id > 0` from `RunOrchestrator.next_sequence_id()`), PERSISTS (`write_profile`, with the AC3 write-failure recovery fallback), and BUILDS the `OutpostViewModel` + `RunSummary`, closing the FR1 loop with a working "start another descent." SHIPPED: (a) `RunEndProfileBridge` (`godot/scripts/ui/flow/run_end_profile_bridge.gd`) — the caller-driven load→record→persist→build seam; (b) `OutpostRenderView` (`godot/scripts/ui/view_models/outpost_render_view.gd`) — the fail-closed RefCounted render-decision seam (recovery-mode branch, manual-seed warning, reveal-beat presence, deferred-space markers, G3 coupling); (c) `outpost_presenter.gd` + `outpost.tscn` — the real outpost scene (the run-end return re-points here via `RunFlowRouter`'s new `outpost` stage); (d) the `first_victory_beat` embed on `OutpostViewModel` (AC2 Option A); (e) `RunFlowController.finalize_run_end()` + the additive read-only `RunOrchestrator.next_sequence_id()`. It is PRESENTATION + one bridge seam + one VM key — it moved NO fingerprint, added NO save key / RNG stream / event / schema bump. Full headless suite green (Godot 4.6.3, "Headless tests passed.", **179 PASS / 0 `^FAIL`**, false-PASS grep clean beyond the 6 documented negatives: int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1 — **11.5 added NO new documented negative**, the forced `profile_save_open_failed` returns a structured code silently); `git diff --check` clean. `domain_event.gd` / `run_snapshot.gd` / `profile_snapshot.gd` / `settings_snapshot.gd` / `rng_stream_set.gd` / every `tools/dump_*` UNTOUCHED (the 23-key `RunSnapshot` gate stays 23, `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1` — both latches were already homed, SET not added; `RngStreamSet.required_streams()` == 7; the `DomainEvent.Type` enum tail unchanged — the record commands REUSE the existing `first_death_recorded`/`first_victory_recorded` events; every level/route/finale seed-regression fingerprint byte-identical — the bridge is a run-END caller, the GENERATOR + the DEFAULT `run_to_completion` are untouched, the orchestrator's only change is an additive read-only accessor).

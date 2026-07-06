@@ -751,3 +751,105 @@ fingerprint change.
 - `godot/tests/unit/run/test_run_flow_controller.gd` — the `finalize_run_end` + `next_sequence_id` seam tests + the
   re-pointed run-end-stage assertion.
 - `godot/tests/integration/save/test_meta_summary_save_load.gd` — insert `null` for the new constructor arg.
+
+### Review Findings
+
+**Round 1 of 3** — primary adversarial code review (2026-07-06, auto-gds review delegate, Opus 4.8). Verdict:
+**Approve**. Scope: current-branch diff vs `main` (18 files, +2163/-29; production surface: bridge, controller,
+orchestrator accessor, router, presenter, render view, VM). Independently re-ran the full headless suite:
+**179 PASS / 0 `^FAIL`**, "Headless tests passed.", false-PASS grep clean (exactly the 6 documented stderr negatives:
+int64-overflow ×2, `invalid_node_type` ×1, malformed-JSON ×3 — 11.5 adds none). `git diff --check` clean.
+
+Severity tally: **Critical 0 / High 0 / Med 1 / Low 4**. Open `[Review][Decision]` (human call) items: **0**.
+
+Deep-scrutiny verification (all the review-brief hotspots — PASSED, recorded so a future round need not re-derive):
+- **RunEndProfileBridge idempotency + first-victory latch:** correct. `build_outpost` runs load → record-latch (off the
+  REAL terminal `RunState.phase`) → persist → build, threading `orchestrator.next_sequence_id()` (a UNIQUE id past the
+  run's emitted ids — verified via `run_orchestrator._advance_sequence_past`, which advances the cursor past the
+  `CompleteRunCommand` run-end event in `resolve_run_end`). A second finalize re-reads the now-latched profile and the
+  record command rejects idempotently with ZERO mutation (`test_run_end_profile_bridge._finalize_is_idempotent_...`).
+- **Retry re-entry semantics (re-read → re-record-idempotent → re-write):** correct. `_on_retry_save_pressed` re-drives
+  `_build_render_view()` → `finalize_run_end()` → a fresh `build_outpost`: it re-reads the on-disk profile (the failed
+  write left the prior valid profile intact — `ProfileRepository.write_profile` rolls back on a failed replace), re-runs
+  the record (idempotent on an already-latched profile, or a fresh record if the disk profile never got the flag), and
+  re-writes. Fail-loud (a repeated failure re-renders the banner, never a silent swallow).
+- **Production vs test bridge paths cannot collide:** verified. The ONLY production caller is
+  `outpost_presenter.gd:68` → `flow.finalize_run_end()` (no bridge arg) → `run_flow_controller.gd:207` →
+  `RunEndProfileBridge.new()` → the default `ProfileRepository.DEFAULT_PROFILE_PATH` (`user://profile.json`). EVERY test
+  caller injects a throwaway path (`user://test_run_end_profile_bridge_profile.json` /
+  `user://test_run_flow_controller_bridge_profile.json` / the missing-dir path). No shared file.
+- **OutpostViewModel positional-arg break:** the new `first_victory_beat` at `_init` position 4 shifts `class_repository`
+  to position 5. Exhaustive grep of every `OutpostViewModel.new(...)` / `.for_recovery(...)` caller across `scripts/` +
+  `tests/`: the ONLY in-repo caller that passed `class_repository` positionally — `test_meta_summary_save_load.gd:208-209`
+  — was correctly updated (a `null` inserted for the new arg). `for_recovery` took `first_victory_beat` as a TRAILING
+  optional (position 7), so its `(code)` / `(code, loaded_profile)` call sites stay byte-identical. NO missed caller.
+- **Router re-point (no stale run_end routing):** `_DESTINATION_STAGES["outpost"] = "outpost"` (was `"run_end"`); grep
+  confirms no residual `"outpost": "run_end"` mapping anywhere. `run_end` survives ONLY as the gameplay shell's
+  fail-loud NON-terminal dead-end (`gameplay_shell_presenter._route_to_dead_end` → `go_to_stage("run_end")`); the
+  terminal run routes `_route_to_run_end` → `route_after_run_end("outpost")` → the real outpost scene. No two competing
+  outpost surfaces. Router/scenes-load/controller pins all updated.
+- **G3 honesty constraint:** verified at source. `RunSummary.to_dictionary()` hardcodes `profile_meta.oath_shards_earned
+  == 0` and `NOT_YET_SUPPORTED_FIELDS == ["oath_shards_earned"]` (always in `not_yet_supported`). The render view's
+  `awarded_oath_shards()` reads `profile.oath_shards`; `summary_oath_shards_earned()` reads the always-0 summary field
+  behind the honest "not yet tallied" note. The summary DTO field is NOT wired non-zero — the 8.2/8.4 pinned contract
+  holds.
+- **Determinism/fingerprint preservation:** the bridge draws ZERO RNG, mutates ONLY the profile (the terminal run is
+  byte-identical before/after — `test_run_end_profile_bridge._bridge_mutates_only_the_profile_and_is_rng_free`).
+  `domain_event.gd` / `run_snapshot.gd` (23-key gate) / `profile_snapshot.gd` + `settings_snapshot.gd` (SCHEMA_VERSION 1)
+  / `rng_stream_set.gd` (7 streams) / every `tools/dump_*` fingerprint are NOT in the diff. The orchestrator's only
+  change is the additive read-only `next_sequence_id()`; `run_to_completion` is untouched (fingerprint-safe).
+- **Dead-probe sweep (bit this epic twice):** every `has_node`/method name in the new code verified against source —
+  `Diagnostics`/`GameSession`/`SceneManager` are real autoloads; `Diagnostics.info(category, code, payload)`,
+  `SceneManager.go_to_stage`, `GameSession.run_flow`/`set_run_flow`/`clear_run_flow`, `RunFlowController.start`/
+  `orchestrator`, `ProfileSnapshot.parse`'s `{"snapshot": ...}` metadata key, and the record commands' `metadata`
+  `line_id`/`is_skippable`/`succeeded` all match. NO dead `has_method` probe.
+
+Findings:
+- **[Review][Defer] (Med) The bridge's empty-events `RunSummary.build(run, [])` leaves `outcome_or_cause` BLANK, not
+  just the passives/loot/discovery lists.** `RunSummary._derive_outcome_or_cause(run, events)` extracts the
+  victory/death STRING (`"victory"` / the failure `cause`) by scanning `events` for the terminal `RUN_COMPLETED`/
+  `RUN_FAILED` event — with `[]` it returns `&""`. So the live-flow summary's `outcome_or_cause` field is empty; the
+  victory-vs-death distinction survives ONLY via `phase` (`PHASE_COMPLETED`/`PHASE_FAILED`) + the reveal beats. Not a
+  crash and not user-facing today (the presenter renders the beats + `phase`, never `outcome_or_cause`), and it is a
+  faithful consequence of the ratified Option (a) empty-events decision — but the dev notes documented only the empty
+  LISTS, not the empty `outcome_or_cause`. Deferred to the run-level event-store / summary-render story (the same story
+  that threads the run's ordered events); recorded so that story knows `outcome_or_cause` is blank in the live path
+  until events are threaded, and so a summary-render must key victory/death off `phase`, not `outcome_or_cause`.
+- **[Review][Defer] (Low) The run-summary render surfaces no victory/death outcome label.** Appendix §8.5 wants
+  "outcome (victory vs death) via label+icon (not color-only)" on the summary; `outpost_presenter._render_run_summary`
+  renders only the "not yet tallied" note (the outcome is conveyed by the SEPARATE reveal beat + implicit `phase`). AC1
+  is met (the outpost renders the embedded summary gated on `has_summary`), and the reveal beat carries the narrative
+  beat, but the summary panel itself has no explicit outcome label. Off the critical path; folded into the later
+  summary-render polish (same defer as above). Not blocking.
+- [x] **[Review][Patch] (Low) `has_profile == true` for a brand-new (`profile_not_found`) player is intended but
+  counter-intuitive; the fresh-path test asserts only `has_recovery == false`.** On `profile_not_found` the bridge
+  builds `OutpostViewModel.new(ProfileSnapshot.fresh(), ...)` → `has_profile == true` (a fresh() is a non-null supplied
+  profile; the "returning vs brand-new" distinction is `recovery_state.has_recovery`, per the VM doc). This is correct
+  by design, but `test_run_end_profile_bridge._profile_not_found_...` (line ~141) asserts only `has_recovery == false`
+  and its comment claims `has_profile == true` without asserting it. RESOLVED-as-acceptable this round (behavior is
+  correct + covered indirectly); a one-line `assert_true(has_profile)` would make the intent explicit. Non-blocking
+  nit — no code change required for Approve.
+  **RESOLVED (2026-07-06):** Added the explicit `assert_true(bool(data.get("has_profile")), ...)` (+ a clarifying
+  comment) to `test_run_end_profile_bridge._profile_not_found_starts_and_persists_a_fresh_profile()` so the
+  intended-but-counter-intuitive `has_profile == true` on the fresh (`profile_not_found`) path is pinned. Suite green.
+- **[Review][Decision] — NONE.** No open human-call items. All three carried `[Decision]`s the dev owned (AC2 Option A
+  first-victory embed; AC4 Option A G3 honest-as-is; the empty-events Option (a)) were MADE, implemented, and are sound;
+  the review introduces no new decision requiring human adjudication.
+- [x] **[Review][Patch] (Low, tracking — for the finalize step, not a code defect) `sprint-status.yaml` still lists
+  `11-5-...: ready-for-dev`** while the story is `Status: review` and implemented (11-1..11-4 are `done`). This is the
+  expected mid-pipeline state (auto-gds sets it at finalize), but flagged so the finalize step advances it to `done`
+  alongside the story `Status` + `last_updated`. No action for the review itself.
+  **ACKNOWLEDGED (2026-07-06) — deferred to finalize (as the finding itself specifies):** verified
+  `sprint-status.yaml:145` still reads `11-5-outpost-scene-reveal-renders-and-another-descent: ready-for-dev` (the
+  expected mid-pipeline state; story is still `Status: review`). Intentionally NOT flipped in this review-fix pass —
+  advancing it to `done` alongside the story `Status` + `last_updated` is the auto-gds finalize step's action, not a
+  code-review-finding fix. No code change; left for finalize.
+- [x] **[Review][Patch] (Low) Micro-waste: `_on_descend_pressed` constructs a throwaway `OutpostViewModel.new(null)` (which
+  builds a full `HeroSelectViewModel`) solely to call `start_run_request(4242, false, &"")`.** Since the class id is
+  empty (always startable), the request could be built without a VM. Harmless (one-tap, off the hot path); left as-is —
+  noted only for a future cleanup, not blocking.
+  **RESOLVED (2026-07-06):** `_on_descend_pressed` now builds the start request inline in the pinned
+  `START_REQUEST_KEYS` shape (`{root_seed: str(DEFAULT_DESCENT_SEED), is_manual_seed: false, class_id: "",
+  is_startable: true}`) — the empty class id is unconditionally startable per `OutpostViewModel.start_run_request`'s
+  `class_is_startable`, so no throwaway `OutpostViewModel`/`HeroSelectViewModel` construction is needed for the fixed
+  one-tap re-descend. Same values fed to `RunFlowController.start(...)`; behavior byte-identical. Suite green.

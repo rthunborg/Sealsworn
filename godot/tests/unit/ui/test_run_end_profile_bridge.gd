@@ -139,6 +139,10 @@ func _profile_not_found_starts_and_persists_a_fresh_profile() -> void:
 	# A fresh profile is a valid surface (has_profile == true — a fresh() is still a supplied profile), 0 shards, no
 	# recovery banner (profile_not_found is the fresh path, not a recovery).
 	assert_false(bool((data.get("recovery_state") as Dictionary).get("has_recovery")), "profile_not_found is the FRESH path, NOT a recovery banner.")
+	# has_profile == true even for a brand-new (profile_not_found) player: the bridge builds off ProfileSnapshot.fresh(),
+	# a non-null supplied profile — the "returning vs brand-new" distinction is recovery_state.has_recovery (asserted
+	# above), not has_profile. Assert it explicitly so the intended-but-counter-intuitive true value is pinned.
+	assert_true(bool(data.get("has_profile")), "profile_not_found builds off ProfileSnapshot.fresh() -> has_profile == true (a fresh() is a non-null supplied profile).")
 	assert_true(bool(data.get("first_death_recorded")), "The fresh profile records the first-death latch off the terminal state.")
 	assert_true(FileAccess.file_exists(TEST_PROFILE_PATH), "The fresh profile was persisted (the file now exists).")
 

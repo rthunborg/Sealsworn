@@ -209,11 +209,19 @@ func _render_descend_affordance() -> void:
 
 
 func _on_descend_pressed() -> void:
-	# The outpost produces a start REQUEST (the AC1 seam) via a FRESH OutpostViewModel; on is_startable it hands the
-	# request to a FRESH RunFlowController.start(...) — the AUTHORITATIVE fail-closed start. A one-tap re-descend uses the
-	# default seed + the legacy no-class start (always startable). The prior terminal run is NOT reused (a new controller +
-	# a new RunState.new_run via start).
-	var request: Dictionary = OutpostViewModel.new(null).start_run_request(DEFAULT_DESCENT_SEED, false, &"")
+	# The outpost produces a start REQUEST (the AC1 seam) then hands it to a FRESH RunFlowController.start(...) — the
+	# AUTHORITATIVE fail-closed start. A one-tap re-descend uses the default seed + the legacy no-class start. The empty
+	# class id is UNCONDITIONALLY startable (OutpostViewModel.start_run_request's class_is_startable == true for an empty
+	# class id), so the request is built inline in the pinned START_REQUEST_KEYS shape — no throwaway OutpostViewModel /
+	# HeroSelectViewModel construction is needed for a fixed empty-class request. The prior terminal run is NOT reused (a
+	# new controller + a new RunState.new_run via start). (A future seed-entry / hero-re-pick surface would build the
+	# request through the VM's start_run_request seam to re-gate a chosen class.)
+	var request: Dictionary = {
+		"root_seed": str(DEFAULT_DESCENT_SEED),
+		"is_manual_seed": false,
+		"class_id": String(&""),
+		"is_startable": true
+	}
 	if not bool(request.get("is_startable", false)):
 		return
 
