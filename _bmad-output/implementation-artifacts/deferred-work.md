@@ -24,6 +24,19 @@ independently re-run green (182 PASS / 0 `^FAIL`, 6 documented stderr negatives,
   standalone scene must thread the loaded profile or a genuinely unlocked class will read locked there.) Originating
   story/review: code review of 11-6, 2026-07-06.
 
+- **[Review][Defer] (the Necromancer/Shadeblade class-kit content story) Make `ClassStartSummaryViewModel.re_derive_kit`
+  (`godot/scripts/ui/view_models/class_start_summary_view_model.gd:176`) profile-aware — it currently gates on the STATIC
+  `def.is_selectable()`, so it re-derives a `null` kit for a profile-UNLOCKED formerly-locked class.** Round 2 review
+  finding (2026-07-06); a sibling of the standalone-hero-select Defer above. `re_derive_kit` is the RESUME-time kit
+  re-derivation, reached ONLY after a run already started with that class. In v0 it has ZERO observable effect (the two
+  unlockable classes necromancer/shadeblade carry no kit content, so no unlocked run can start — the already-recorded
+  class-kit content limitation) and is internally consistent (a class with no kit cannot be running to resume). But once
+  the Necromancer/Shadeblade class-kit content lands and an unlocked locked-baseline class can genuinely start + be
+  resumed, `re_derive_kit` must consult the same `MetaSpendRules.unlocked_class_ids_for` overlay the VM + the
+  authoritative gate read (or a resume re-derives a null kit for a legitimately-unlocked class). Bundle with the SAME
+  class-kit content story that owns the standalone-hero-select profile-awareness Defer — subsumed by that story's scope,
+  reopens no accepted deferral. Originating story/review: code review of 11-6, 2026-07-06.
+
 ---
 
 ## Tracked from: dev of 11-6-meta-spend-and-unlock-application (2026-07-06)

@@ -893,3 +893,93 @@ Findings (both non-blocking):
   gameplay loop and drawing ZERO RNG — no functional impact. Consider caching the baseline repository or the derived
   option list on the render view, and having `has_affordable_unlock()` short-circuit without the repo build. Defer as
   cleanup — not worth churn in this story.
+
+**Round 2 of 3**
+
+Secondary independent adversarial code review (2026-07-06, Opus 4.8 delegate, a DIFFERENT model pass than Round 1 for
+review diversity). Re-reviewed the current branch's diff against `main` (excluding `_bmad`, `_bmad-output/auto-gds`,
+cache/non-code files) with this story as the spec — the ENTIRE core surface re-scrutinized from scratch, not merely a
+Round-1 spot-check. Independently re-ran the full headless suite: **"Headless tests passed." / 182 PASS / 0 `^FAIL`**,
+false-PASS grep (`SCRIPT ERROR|Parse Error|^FAIL`) clean, EXACTLY the 6 documented stderr negatives enumerated from raw
+`^ERROR:` lines (int64-overflow ×2 [lines 58/99], `invalid_node_type` ×1 [line 138], malformed-JSON ×3 [lines
+156/165/180]) — the `test_outpost_spend_bridge` forced write-failure (missing-dir path) produced NO new stderr negative
+(the silent-structured-code claim re-confirmed at the raw-ERROR level); `git diff --check` clean.
+
+**Verdict: Approve.** Critical 0 / High 0 / Med 0 / Low 1. Open `[Review][Decision]`: 0. No code-change finding.
+
+Round 1 dispositions VERIFIED in place: (a) the standalone hero-select profile-awareness Decision is ticked in the story
+(line 875) and recorded as a `[Review][Defer]` in `deferred-work.md` (lines 15-25) bundled with the class-kit content
+story — confirmed present, not reopened; (b) the `OutpostRenderView` per-render `ClassRepository` rebuild Defer is
+ledgered as cleanup (`deferred-work.md` lines 9-13) — confirmed present, not reopened.
+
+Independent re-verification of the core 11-6 surface (all re-checked against source this round, not inherited from Round
+1):
+- **SpendOathShardsCommand (VERIFIED):** `sequence_id <= 0` rejected FIRST (`invalid_event_sequence_id`), then null
+  profile (`invalid_context`), then `unknown_unlock` (fail-closed on a non-`CLASS_UNLOCKS` id), then
+  `unlock_already_applied` (the applied-flag idempotency no-op — ZERO charge/ZERO event, which IS the retry-safety), then
+  `insufficient_oath_shards` (shortfall in `metadata`, ZERO mutation, checked BEFORE the subtract so a spend can never
+  drive negative). Event built ONLY after mutation; ZERO RNG. `execute` re-calls `validate` first (no
+  validate-bypass path). Every reject proven byte-identical via `to_dictionary()` equality in
+  `test_spend_oath_shards_command.gd`. Retry-math is net-correct on BOTH branches: write-success → persisted flag →
+  retry rejects `unlock_already_applied`; write-failure → flag NOT persisted → retry re-charges against the ORIGINAL
+  on-disk balance (a single honest charge, not a double-charge).
+- **MetaSpendRules as the SINGLE selectability source (VERIFIED — grepped every `is_selectable`/`unlocked_class_ids_for`/
+  `lock_state` in `godot/scripts`):** `unlocked_class_ids_for` has EXACTLY two live readers — `hero_select_view_model.gd:69`
+  (the overlay, derived once in `_init`) and `run_start_command.gd:262` (the authoritative gate) — both funnel through a
+  VERBATIM-mirrored `_class_is_selectable(def)` (`static is_selectable() OR overlay.has(class_id)`). No third derivation
+  exists. `class_start_summary_view_model.gd:176` reads static `is_selectable()` but is NOT a selectability GATE — it is
+  `re_derive_kit`, a fail-closed RESUME-time kit re-derivation for a class that ALREADY passed the authoritative gate;
+  it is downstream of the same class-kit content gap and is captured as a new Round-2 Defer bundled with that story.
+- **Static-content invariant (VERIFIED):** no write to `ClassDefinition.lock_state` anywhere; the applied-unlock is a
+  pure profile-read OVERLAY. `OutpostViewModel` threads its EXISTING `resolved_profile` (null → `ProfileSnapshot.fresh()`,
+  empty `unlock_progress`) into the composed VM — `DICTIONARY_KEYS`/`ENTRY_KEYS` unchanged; no positional-arg re-shift.
+- **`oath_shards_spent` event (VERIFIED end-to-end):** enum TAIL index 48 (`OATH_SHARDS_SPENT` after `BOSS_DEFEATED`),
+  `EVENT_ID_*` const, factory, `_validate_payload_for_event` arm, `_validate_oath_shards_spent_payload` (honest-record
+  `before - amount == after` AND independent non-negative `after` floor AND `amount > 0` AND allowlisted lower_snake
+  `reason`), both id maps, `OATH_SHARDS_SPENT_REASONS` allowlist, AND the `expected_ids` pin + the `expected_ids.size()
+  == Type.size() - 1` enum-count tripwire (`test_domain_event.gd:3024/3039`). The `negative_after` malformed test
+  (`{before:1, amount:3, after:-2}`) correctly proves the non-negative floor catches a case the arithmetic check alone
+  passes. 5 malformed cases + a JSON round-trip + a ZERO-RNG (no roll/draw_index) assertion. Deterministic system event
+  (no actor).
+- **`unlock_progress` storage / no schema bump (VERIFIED):** `<class>_unlocked` flags + the underscore-namespaced
+  `_oath_shards_spent` ledger live inside the existing `unlock_progress` home; `profile_snapshot.gd` UNTOUCHED
+  (`SCHEMA_VERSION == 1`, `DICTIONARY_KEYS` unchanged). Real `JSON.stringify → parse_string → ProfileSnapshot.parse`
+  round-trip proven (`test_profile_snapshot.gd`) + an end-to-end persist→fresh-repository-restart→reload in
+  `test_meta_summary_save_load.gd`; the ledger is int-coercion-aware (`oath_shards_spent_in` handles the JSON
+  int→float artifact — the 8.7 `class_mastery` lesson). A pre-11.6 profile lacking these keys reads clean via
+  `get(..., default)` (the empty-`unlock_progress` cases are tested).
+- **Optional-trailing-arg additions (VERIFIED — no missed callers / no arg-order error):** `HeroSelectViewModel`
+  (+profile pos 2), `RunStartCommand` (+profile pos 9 — `RunOrchestrator.start` passes `.new(seed, manual, seq,
+  class_id, null, null, null, null, profile)`, the four nulls landing on the class/weapon/support/passive repos, verified
+  against the `_init` signature), `RunOrchestrator.start` / `RunFlowController.start` (+trailing profile). Every existing
+  `.start(...)` / `HeroSelectViewModel.new(...)` caller omits the new arg → the null-profile static path (byte-identical).
+  `RunFlowController.start` uses an UNTYPED `profile = null` pass-through (no `ProfileSnapshot` preload in that file) —
+  a deliberate, correct choice (the arg is forwarded to the typed `RunOrchestrator.start`), not a defect.
+- **FR28 (VERIFIED structural):** the exclusion lives on the AWARD side (`AwardMetaProgressCommand` Gate 2 denies a
+  manual-seed run). The spend ONLY subtracts and cannot fabricate shards (`_spend_cannot_fabricate_shards_fr28` asserts a
+  strict decrease). No redundant manual-seed gate on the spend — correct.
+- **Determinism / fingerprints (VERIFIED):** ZERO RNG across the whole spend/apply surface; no
+  generator/`RunSnapshot`/`RngStreamSet`/`SettingsSnapshot` touch; `run_orchestrator.gd`'s sole change is the additive
+  optional `profile` arg (default unchanged → fingerprint-safe). The full suite (incl. every seed-regression + the
+  default `run_to_completion`) is green.
+- **Caller-ordering / idempotency (VERIFIED):** `test_meta_summary_save_load._spend_interleaved_with_run_end_markers`
+  runs award→spend→merge→first-victory vs first-victory→merge→spend→award and asserts IDENTICAL final profiles — the
+  strongest AC3 ordering proof. A spend reads/writes none of the four run-end markers (proven).
+- **Dead has_method/probe sweep (VERIFIED clean):** no `has_method`/`.call(` probes in any new/modified spend file. The
+  `has_node("/root/Diagnostics|GameSession|SceneManager")` checks in `outpost_presenter.gd` (incl. the new
+  `_on_spend_pressed` diagnostic) are legitimate optional-autoload presence guards, not dead probes. The presenter
+  submits a spend REQUEST to `OutpostSpendBridge.spend(unlock_id)` and rebuilds off the returned persisted outpost — it
+  never mutates the profile directly.
+
+Findings (one, non-blocking, new this round):
+
+- [Review][Defer] **`ClassStartSummaryViewModel.re_derive_kit` (`class_start_summary_view_model.gd:176`) gates on the
+  STATIC `def.is_selectable()`, so it re-derives `null` for a profile-UNLOCKED formerly-locked class.** This is a sibling
+  of the Round-1 standalone-hero-select Defer: it is the RESUME-time kit re-derivation, reached only AFTER a run already
+  started with that class. In v0 it has ZERO observable effect (the two unlockable classes necromancer/shadeblade carry
+  no kit content, so no unlocked run can start — the already-recorded class-kit content limitation), and it is internally
+  consistent (a class with no kit cannot be running to resume). But once the Necromancer/Shadeblade class-kit content
+  lands and an unlocked locked-baseline class can genuinely start + be resumed, `re_derive_kit` must become profile-aware
+  (or the resume re-derives a null kit for a legitimately-unlocked class). Defer bundled with the SAME class-kit content
+  story that owns the standalone-hero-select profile-awareness Defer — it is subsumed by that story's scope, reopens no
+  accepted deferral. Not worth churn in this story (no v0 code path reaches it).
