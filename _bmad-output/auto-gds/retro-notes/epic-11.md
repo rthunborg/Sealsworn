@@ -18,3 +18,5 @@
 ## Story 11-4-live-affinity-pressure-on-screen
 - [Phase 3 — create-story] 11.4 is where three long-standing fences converge and resolve together: the Epic-5/6/7 "live affinity call site" residual, the 7.4-review assign_affinity once-per-node idempotency guard, and the 11.3 L4 "never renders the live board on a combat node" deferral — the affinity live-wiring story inherited more cross-story debt than a typical scene story.
 - [Phase 3 — create-story] The Flooded `_placeholder` electric interaction remains an Epic-10 readiness item (replace/de-scope/block) that 11.4 deliberately does NOT realize — the epic retro should confirm it stays tracked, not silently closed by the "Flooded per its ratified MVP placeholder posture" AC wording.
+- [Phase 5 — dev-story] Boss arena carries NO affinity by decision (fixed finale board, not an affinity-assigned generated level) — deliberate scope call, not an omission.
+- [Phase 5 — dev-story] Scorched DoT makes live fights resolve slightly faster (enemies burn too: seed 4242 12→11 rounds) — expected; changes live-combat round counts on affinity levels only; neutral/DEFAULT path byte-identical.

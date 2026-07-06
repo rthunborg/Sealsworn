@@ -36,6 +36,10 @@ extends RefCounted
 # reaches a real terminal outcome well within the cap.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
+const AffinityEffectResolver = preload("res://scripts/rules/operations/affinity_effect_resolver.gd")
+const AffinityHazardDamageCommand = preload("res://scripts/core/commands/affinity_hazard_damage_command.gd")
+const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
 const AttackCommand = preload("res://scripts/core/commands/attack_command.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
@@ -76,6 +80,12 @@ var _weapon_repository: WeaponRepository = null
 # until it is dead before re-picking, so it never OSCILLATES between two equidistant enemies (which would stall the loop
 # without ever closing on either). Re-picked (to the nearest living enemy) only when the locked target dies / vanishes.
 var _locked_target_id: StringName = &""
+# Story 11.4 (AC1) — whether the live board carries STAMPED Scorched HAZARD cells (the affinity effect was applied), so
+# the per-turn Scorched DoT tick only runs on a Scorched level. A neutral / non-Scorched board has NO HAZARD cells, so
+# even were the tick attempted the AffinityHazardDamageCommand would reject `target_not_in_hazard` — this flag keeps the
+# neutral / non-Scorched live loop byte-identical to 11.2/11.3 (the tick is never even entered) rather than relying on
+# the command's reject.
+var _scorched_hazard_active: bool = false
 
 func _init(enemy_repository: EnemyRepository = null, weapon_repository: WeaponRepository = null) -> void:
 	_enemy_repository = enemy_repository if enemy_repository != null else EnemyRepository.create_baseline_repository()
@@ -136,12 +146,24 @@ func drive_hero_step_against(context: TacticalActionContext, weapon: WeaponDefin
 # default; a weak/low-HP hero drives a real board DEFEAT). Returns ok with metadata carrying the terminal outcome
 # (`outcome` == victory/defeat), the live board, the event log, and the round count — or a structured error (a rejected
 # board restore / an unresolved fight / a driver step failure) with ZERO partial progression.
+#
+# STORY 11.4 (AC1) — the LIVE AFFINITY CALL SITE: `affinity_id` (default the neutral `none`) + `affinity_repository`
+# (default null) OPTIONALLY carry the level's assigned affinity. When a Scorched level is played, the resolver STAMPS the
+# Scorched HAZARD cells onto the restored board (via AffinityEffectResolver.apply_board_effects — the SINGLE existing
+# effect surface, NOT a fork) BEFORE placing the hero, and TICKS the Scorched burning DoT (AffinityHazardDamageCommand)
+# for any entity that ENDS a turn on a HAZARD cell. The default neutral `none` / null-repo call (the EXISTING 11.2/11.3
+# callers) applies NO effect + stamps NO cell + ticks NO DoT — byte-identical to the plain live combat (the additive,
+# fingerprint-safe posture). Flooded/Cursed/Darkness stamp NO terrain here (their effects are data/kernel/visibility,
+# surfaced by the orchestrator's read wiring); apply_board_effects is a legal no-op for them. The DoT is ZERO-RNG; the
+# affinity apply draws ZERO RNG (the assignment draw already happened on the `map` stream in the orchestrator).
 func resolve(
 	board_snapshot: Dictionary,
 	entrance: Dictionary,
 	streams: RngStreamSet,
 	hero_hp: int = DEFAULT_HERO_HP,
-	hero_weapon_id: StringName = DEFAULT_HERO_WEAPON
+	hero_weapon_id: StringName = DEFAULT_HERO_WEAPON,
+	affinity_id: StringName = AffinityDefinition.AFFINITY_NONE,
+	affinity_repository: AffinityRepository = null
 ) -> ActionResult:
 	if streams == null:
 		return _error(&"invalid_streams")
@@ -150,6 +172,20 @@ func resolve(
 	if board_result.is_error():
 		return _error(&"invalid_board_snapshot", {"inner_error_code": String(board_result.error_code)})
 	var board: BoardState = board_result.metadata.get("board") as BoardState
+
+	# Story 11.4 (AC1) — apply the affinity's BOARD EFFECT onto the restored board BEFORE the hero is placed (Scorched
+	# stamps HAZARD cells; Flooded/Cursed/Darkness/neutral stamp nothing). CALLS the existing AffinityEffectResolver
+	# (validate-then-mutate — a rejected stamp aborts with ZERO partial mutation, surfaced as an error). A null repo / the
+	# neutral `none` id is a no-op (no effect), keeping the plain live path byte-identical.
+	_scorched_hazard_active = false
+	if affinity_repository != null and String(affinity_id) != String(AffinityDefinition.AFFINITY_NONE):
+		var apply_result: ActionResult = AffinityEffectResolver.new().apply_board_effects(board, affinity_id, affinity_repository)
+		if apply_result.is_error():
+			return _error(&"affinity_effect_failed", {
+				"affinity_id": String(affinity_id),
+				"inner_error_code": String(apply_result.error_code)
+			})
+		_scorched_hazard_active = not (apply_result.metadata.get("stamped_hazard_cells", []) as Array).is_empty()
 
 	# Resolve the hero weapon through the repository boundary (validated weapons only; fail-closed on a miss).
 	var weapon: WeaponDefinition = _weapon_repository.get_weapon(hero_weapon_id)
@@ -233,12 +269,73 @@ func _drive_hero_turn(
 	for event: DomainEvent in command_result.events:
 		event_log.append(event)
 
+	# Story 11.4 (AC1) — Scorched DoT: after the hero RESOLVES its move/attack, tick the burning DoT for the hero if it
+	# now ENDS the turn on a Scorched HAZARD cell (a live hero that walked into / lingered in fire takes the fixed
+	# burning tick; a DoT death flows through the outer _evaluate -> CombatOutcomeEvaluator -> STATE_DEFEAT, the 11.2
+	# death source — NOT a parallel death path). ZERO on a neutral / non-Scorched board (the flag gates it off).
+	var hero_dot: ActionResult = _tick_scorched_dot(board, HERO_ID, event_log)
+	if hero_dot.is_error():
+		return hero_dot
+	# A hero that BURNED TO DEATH from the DoT ends the turn immediately — do NOT run the enemy phase against a dead hero
+	# (the outer _evaluate reads the 0-HP board -> STATE_DEFEAT, the 11.2 death source). This mirrors a real turn ending
+	# on the hero's death and avoids driving the enemy AI at a corpse.
+	var hero_after_dot: TacticalEntityState = board.get_entity(HERO_ID)
+	if hero_after_dot == null or hero_after_dot.is_dead():
+		return ActionResult.ok(command_result.events)
+
 	var enemy_result: ActionResult = enemy_resolver.resolve_after_player_action(context, command_result)
 	if enemy_result.is_error():
 		return _error(&"enemy_turn_failed", {"inner_error_code": String(enemy_result.error_code)})
 	for event: DomainEvent in enemy_result.events:
 		event_log.append(event)
+
+	# Story 11.4 (AC1) — Scorched DoT: after the enemy phase (the enemies advance onto / off hazard cells), tick the
+	# burning DoT for every ENEMY that ENDS the phase on a HAZARD cell (the hero already ticked after ITS action above —
+	# each entity ticks once per round, at the end of its own action, so no entity double-ticks). Environmental +
+	# deterministic + seen-and-avoidable (the command rejects a non-hazard cell, so a non-Scorched board never ticks).
+	var enemy_dot: ActionResult = _tick_scorched_dot_enemies(board, event_log)
+	if enemy_dot.is_error():
+		return enemy_dot
+
 	return ActionResult.ok(command_result.events + enemy_result.events)
+
+
+# Story 11.4 (AC1) — tick the Scorched burning DoT for a SINGLE entity if it occupies a HAZARD cell. A no-op (returns
+# ok) when the Scorched hazard is not active, the entity is gone/dead, or it is not on a HAZARD cell (the command
+# rejects `target_not_in_hazard` — a non-Scorched board or a safe cell never ticks). Appends the DAMAGE_APPLIED event
+# to the log on a real tick. ZERO RNG (the AffinityHazardDamageCommand is a fixed-amount, no-roll command). Surfaces a
+# genuine command execution error (a corrupt board apply) structurally; a validate-rejection is the expected no-tick.
+func _tick_scorched_dot(board: BoardState, entity_id: StringName, event_log: Array[DomainEvent]) -> ActionResult:
+	if not _scorched_hazard_active:
+		return ActionResult.ok([])
+	var entity: TacticalEntityState = board.get_entity(entity_id)
+	if entity == null or entity.is_dead():
+		return ActionResult.ok([])
+	var occupied: BoardCell = board.get_cell(entity.position)
+	if occupied == null or occupied.terrain != BoardCell.Terrain.HAZARD:
+		return ActionResult.ok([])
+	var tick: ActionResult = AffinityHazardDamageCommand.new(entity_id).execute(board)
+	if tick.is_error():
+		# A validate-rejection (`target_not_in_hazard` after a race) is a benign no-tick; any other command error is a
+		# real board fault surfaced structurally (no fabricated tick, no partial state — the command is validate-then-mutate).
+		return ActionResult.ok([])
+	for event: DomainEvent in tick.events:
+		event_log.append(event)
+	return ActionResult.ok(tick.events)
+
+
+# Story 11.4 (AC1) — tick the Scorched DoT for every living ENEMY on a HAZARD cell (after the enemy phase). Iterates a
+# stable board-order copy so the tick order is deterministic. A no-op when the Scorched hazard is not active.
+func _tick_scorched_dot_enemies(board: BoardState, event_log: Array[DomainEvent]) -> ActionResult:
+	if not _scorched_hazard_active:
+		return ActionResult.ok([])
+	for entity: TacticalEntityState in board.entities():
+		if entity.entity_type != TacticalEntityState.EntityType.ENEMY or entity.is_dead():
+			continue
+		var tick: ActionResult = _tick_scorched_dot(board, entity.entity_id, event_log)
+		if tick.is_error():
+			return tick
+	return ActionResult.ok([])
 
 
 # Choose the hero's command for this turn: attack ANY in-range aligned living enemy the preview accepts (opportunistic —
@@ -342,12 +439,26 @@ func _resolve_enemy_phase_only(
 	enemy_resolver: EnemyTurnResolver,
 	event_log: Array[DomainEvent]
 ) -> ActionResult:
+	var board: BoardState = context.board
+	# Story 11.4 (AC1) — the boxed-in hero still burns if it is stuck ON a Scorched HAZARD cell (fairness parity with the
+	# normal turn; a no-op on a non-Scorched board). Ticked BEFORE the enemy phase (the hero's own turn end). A DoT death
+	# ends the turn immediately (the outer _evaluate catches STATE_DEFEAT — do not drive the enemy phase at a corpse).
+	var hero_dot: ActionResult = _tick_scorched_dot(board, HERO_ID, event_log)
+	if hero_dot.is_error():
+		return hero_dot
+	var hero_after_dot: TacticalEntityState = board.get_entity(HERO_ID)
+	if hero_after_dot == null or hero_after_dot.is_dead():
+		return ActionResult.ok([])
 	var synthetic_player_result: ActionResult = ActionResult.ok([], {"advances_turn": true})
 	var enemy_result: ActionResult = enemy_resolver.resolve_after_player_action(context, synthetic_player_result)
 	if enemy_result.is_error():
 		return _error(&"enemy_turn_failed", {"inner_error_code": String(enemy_result.error_code)})
 	for event: DomainEvent in enemy_result.events:
 		event_log.append(event)
+	# Story 11.4 (AC1) — the enemies that ended the phase on a hazard cell also burn (parity with the normal turn).
+	var enemy_dot: ActionResult = _tick_scorched_dot_enemies(board, event_log)
+	if enemy_dot.is_error():
+		return enemy_dot
 	return ActionResult.ok(enemy_result.events)
 
 

@@ -49,6 +49,7 @@ extends RefCounted
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
+const AffinityEffectResolver = preload("res://scripts/rules/operations/affinity_effect_resolver.gd")
 const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const BossDefinition = preload("res://scripts/content/definitions/boss_definition.gd")
@@ -56,6 +57,8 @@ const BossNodeEnterCommand = preload("res://scripts/core/commands/boss_node_ente
 const BossRepository = preload("res://scripts/content/repositories/boss_repository.gd")
 const BossTurnResolver = preload("res://scripts/tactical/turns/boss_turn_resolver.gd")
 const CompleteRunCommand = preload("res://scripts/core/commands/complete_run_command.gd")
+const DarknessFairnessQuery = preload("res://scripts/generation/level/darkness_fairness_query.gd")
+const DarknessVisibilityLayer = preload("res://scripts/tactical/fog/darkness_visibility_layer.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyRepository = preload("res://scripts/content/repositories/enemy_repository.gd")
 const EventDefinition = preload("res://scripts/content/definitions/event_definition.gd")
@@ -78,6 +81,7 @@ const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteAdvanceCommand = preload("res://scripts/core/commands/route_advance_command.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
+const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
@@ -963,14 +967,52 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 			"inner_reason": String(generation.reason)
 		})
 
-	# Drive the LIVE fight on the generated board (restore board + place the hero at the entrance + scripted-hero loop +
-	# enemy turns -> a terminal CombatOutcomeState). The run-level `streams` is the ONLY RNG source (the `combat` stream).
+	# Story 11.4 (AC1) — ASSIGN THE NODE'S AFFINITY ONCE (the assign-if-absent guard the 7.4 review deferred to "the later
+	# per-node-assign story" — that is 11.4). Only draw the `map`-stream assignment roll when the node carries NO affinity
+	# yet (a re-drive reads the already-recorded id back, never re-rolls — idempotency). A failed assignment surfaces
+	# structurally + STOPS (no partial progression). The draw routes EXCLUSIVELY through the run-level streams on `map`.
+	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+		var assign: ActionResult = assign_affinity(node)
+		if assign.is_error():
+			return ActionResult.error(&"affinity_assignment_failed", {
+				"command": "run_orchestrator",
+				"node_id": node.id,
+				"node_type": String(node.type),
+				"inner_error_code": String(assign.error_code)
+			})
+	var affinity_id: StringName = assigned_affinity_for(node.id)
+
+	# Story 11.4 (AC3) — DARKNESS FAIRNESS on the live board (the 7.6 single authority). Run the fairness check on the
+	# built board (Darkness only — a neutral / non-Darkness affinity is a legal not-applicable pass). A generated v0 board
+	# is all-FLOOR so a Darkness level PASSES by construction. A darkness_fairness_violation is a HARD run-progression
+	# error — surface it structurally + STOP (mirroring live_combat_failed, no partial progression). The check consumes NO
+	# RNG, runs NO command, advances NO turn (the pure-query contract). The verdict metadata is captured for the HUD read.
+	var fairness: ActionResult = _check_darkness_fairness_live(generation, affinity_id, node)
+	if fairness.is_error():
+		return fairness
+	# The fairness verdict the query returned (the pass report) — surfaced in the resolve metadata so the HUD reflects
+	# THIS verdict (AC3 single-authority contract — the HUD does not compute its own fairness).
+	var fairness_verdict: Dictionary = fairness.metadata.duplicate(true)
+
+	# Story 11.4 (AC1) — CURSED: seat the Cursed-affinity rule source on the run's live RulesResolver so the kernel
+	# resolves + explains the Cursed pressure via explain(LEVEL_ENTERED). A NEW seating call site (the only prior
+	# register_curse callers are the cursed-REWARD path). v0 is RESOLVE+EXPLAIN — it surfaces + explains the pressure, it
+	# does NOT mutate a live combat HP/damage number (the cursed_affinity_rule_source CurseDefinition carries no economy
+	# increment). A non-Cursed affinity seats nothing. Idempotent: a re-drive does not double-seat the same curse.
+	_seat_cursed_affinity_rule_source(affinity_id)
+
+	# Drive the LIVE fight on the generated board (restore board + APPLY the affinity board effect + place the hero at the
+	# entrance + scripted-hero loop + enemy turns -> a terminal CombatOutcomeState). The run-level `streams` is the ONLY
+	# RNG source (the `combat` stream); the affinity apply/DoT are ZERO-RNG. The neutral `none` affinity applies no effect
+	# (byte-identical to the plain live combat). Scorched stamps HAZARD cells + ticks the burning DoT inside the resolver.
 	var combat: ActionResult = LiveCombatResolver.new(_enemy_repository).resolve(
 		generation.payload.get("board", {}),
 		generation.payload.get("entrance", {}),
 		streams,
 		hero_hp,
-		hero_weapon_id
+		hero_weapon_id,
+		affinity_id,
+		_affinity_repository
 	)
 	if combat.is_error():
 		# A live fight that could not resolve (a stalled board within the driver's bound) is a hard run-progression error:
@@ -997,6 +1039,11 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 			"outcome": String(combat.metadata.get("outcome", "")),
 			"rounds": int(combat.metadata.get("rounds", 0)),
 			"level_seed": String(generation.payload.get("level_seed", "")),
+			# Story 11.4 — the live board + assigned affinity so the shell can RENDER the affinity board/HUD (Task 4/AC2)
+			# + the DarknessFairnessQuery verdict the HUD reflects (AC3 single-authority — the HUD does not re-derive it).
+			"board": combat.metadata.get("board"),
+			"affinity_id": String(affinity_id),
+			"darkness_fairness": fairness_verdict,
 			"run_failed": true,
 			"cause": run_failed_cause(),
 			"next_destination": run_end_destination(),
@@ -1017,8 +1064,67 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 		"rounds": int(combat.metadata.get("rounds", 0)),
 		"level_seed": String(generation.payload.get("level_seed", "")),
 		"level_recipe_id": String(generation.payload.get("recipe_id", "")),
+		# Story 11.4 — the live board + assigned affinity so the shell can RENDER the affinity board/HUD (Task 4/AC2)
+		# + the DarknessFairnessQuery verdict the HUD reflects (AC3 single-authority — the HUD does not re-derive it).
+		"board": combat.metadata.get("board"),
+		"affinity_id": String(affinity_id),
+		"darkness_fairness": fairness_verdict,
 		"run_completed": false
 	})
+
+
+# Story 11.4 (AC3) — run DarknessFairnessQuery.check_board on the live board (the 7.6 single authority). For a Darkness
+# level a fair board PASSES by construction (v0 generated boards are all-FLOOR). A darkness_fairness_violation surfaces
+# as a HARD run-progression error (fail-loud with fairness_reason + seed + phase — the whole failure metadata is carried
+# through) so the caller STOPS with no partial progression. A neutral / non-Darkness affinity is a legal not-applicable
+# pass. The check restores the board from the generated payload (Darkness stamps NO terrain, so this is the same board
+# the resolver plays, minus the hero). PURE: no RNG, no command, no turn. Returns the check verdict verbatim on success.
+func _check_darkness_fairness_live(generation: GenerationResult, affinity_id: StringName, node: RouteNode) -> ActionResult:
+	# Only Darkness levels have a reduced radius to re-assert; skip the board restore for every other affinity.
+	if affinity_id != DarknessVisibilityLayer.AFFINITY_DARKNESS:
+		return ActionResult.ok([], {"darkness_fairness_applicable": false, "affinity_id": String(affinity_id)})
+	var board_result: ActionResult = BoardState.try_from_snapshot(generation.payload.get("board", {}))
+	if board_result.is_error():
+		return ActionResult.error(&"darkness_fairness_board_invalid", {
+			"command": "run_orchestrator",
+			"node_id": node.id,
+			"inner_error_code": String(board_result.error_code)
+		})
+	var board: BoardState = board_result.metadata.get("board") as BoardState
+	var level_seed: String = String(generation.payload.get("level_seed", ""))
+	var entrance_dict: Dictionary = generation.payload.get("entrance", {})
+	var entrance: Vector2i = Vector2i(int(entrance_dict.get("x", -1)), int(entrance_dict.get("y", -1)))
+	var verdict: ActionResult = DarknessFairnessQuery.new().check_board(board, affinity_id, _affinity_repository, level_seed, entrance)
+	if verdict.is_error():
+		# darkness_fairness_violation — carry the query's failure metadata (fairness_reason + seed + phase + diagnostics)
+		# verbatim, mirroring live_combat_failed's structural stop (no partial progression — the node is neither cleared
+		# nor failed). The HUD reflects THIS verdict (the single-authority contract — it does not re-derive one).
+		var metadata: Dictionary = verdict.metadata.duplicate(true)
+		metadata["command"] = "run_orchestrator"
+		metadata["node_id"] = node.id
+		metadata["node_type"] = String(node.type)
+		return ActionResult.error(verdict.error_code, metadata)
+	return verdict
+
+
+# Story 11.4 (AC1) — seat the Cursed-affinity rule source on the run's live RulesResolver (register_curse) so the kernel
+# resolves + explains the Cursed pressure via explain(LEVEL_ENTERED). A non-Cursed affinity seats nothing. Creates a
+# fresh resolver when the run has none (a legacy / empty-class run — mirroring AcceptCursedRewardCommand). Idempotent: a
+# re-drive of the same Cursed node does not double-seat the curse (the registered-curse-id set gates it). The seated
+# resolver is a LIVE, deliberately-NOT-serialized service (run_state.gd:94) — re-derived on a route-position resume from
+# the persisted RunSnapshot.affinities mirror; 11.4 does NOT wire an in-node live save, so no in-node resume path exists.
+func _seat_cursed_affinity_rule_source(affinity_id: StringName) -> void:
+	if run == null:
+		return
+	var rule_source = AffinityEffectResolver.cursed_affinity_rule_source(affinity_id, _affinity_repository)
+	if rule_source == null:
+		return
+	if run.rules_resolver == null:
+		run.rules_resolver = RulesResolver.new()
+	# Idempotency: do not re-seat the same curse on a re-drive (a duplicate registered curse would double its explanation).
+	if run.rules_resolver.registered_curse_ids().has(rule_source.curse_id):
+		return
+	run.rules_resolver.register_curse(rule_source)
 
 
 # Drive the run start-to-end through the LIVE flow (Story 11.2 — the opt-in live counterpart of run_to_completion). Loops

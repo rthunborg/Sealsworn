@@ -16,6 +16,8 @@ extends "res://tests/unit/test_case.gd"
 #   - a rejected board snapshot / an unknown hero weapon surface structured errors (no fabricated outcome).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
+const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const CombatOutcomeState = preload("res://scripts/tactical/outcomes/combat_outcome_state.gd")
 const CreateBoardCommand = preload("res://scripts/core/commands/create_board_command.gd")
@@ -41,6 +43,12 @@ func run() -> Dictionary:
 	_zero_enemy_board_is_an_immediate_victory()
 	_rejects_a_corrupt_board_snapshot()
 	_rejects_an_unknown_hero_weapon()
+	# Story 11.4 (AC1) — the LIVE Scorched affinity call site on the live board.
+	_neutral_affinity_is_byte_identical_to_the_plain_live_combat()
+	_scorched_stamps_hazard_cells_and_ticks_the_burning_dot()
+	_scorched_live_effect_is_byte_deterministic_and_zero_rng()
+	_scorched_dot_kills_a_lingering_hero_through_the_board_death_source()
+	_non_scorched_affinity_stamps_no_terrain_and_ticks_no_dot()
 	return result()
 
 
@@ -146,6 +154,104 @@ func _rejects_an_unknown_hero_weapon() -> void:
 	assert_equal(result_value.error_code, &"unknown_hero_weapon", "A missing weapon uses the stable unknown_hero_weapon code.")
 
 
+# ---- Story 11.4 (AC1): the live Scorched affinity call site ---------------------------------------
+
+# A neutral `none` affinity + a real repo is BYTE-IDENTICAL to the plain 11.2/11.3 call (no affinity params): no HAZARD
+# stamped, the SAME terminal outcome, round count, and event log. This is the fingerprint-safety guard — a neutral level
+# does not perturb the live combat the 11.2/11.3 tests pin.
+func _neutral_affinity_is_byte_identical_to_the_plain_live_combat() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var plain: ActionResult = LiveCombatResolver.new().resolve(
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED)
+	)
+	var neutral: ActionResult = LiveCombatResolver.new().resolve(
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED),
+		60, &"sword", &"none", AffinityRepository.create_baseline_repository()
+	)
+	assert_true(plain.succeeded and neutral.succeeded, "Both the plain + neutral-affinity live fights should resolve.")
+	assert_equal(int(plain.metadata.get("rounds")), int(neutral.metadata.get("rounds")), "A neutral `none` affinity takes the SAME rounds as the plain live combat.")
+	assert_equal(_event_dicts(plain.events), _event_dicts(neutral.events), "A neutral `none` affinity is BYTE-IDENTICAL to the plain live combat (no affinity effect perturbs it).")
+	# No HAZARD terrain was stamped on the neutral board.
+	assert_equal(_hazard_cell_count(neutral.metadata.get("board")), 0, "A neutral live board carries ZERO stamped HAZARD cells.")
+
+
+# Scorched STAMPS HAZARD cells onto the live board (the AffinityEffectResolver effect surface) + the burning DoT fires
+# for an entity that ends a turn on a hazard cell — a DAMAGE_APPLIED(damage_type=burning, weapon_id=scorched_hazard)
+# event with the fixed amount, ZERO RNG. Proven on the verified victory seed (the fight still reaches a real board
+# victory — the DoT does not break the scripted driver).
+func _scorched_stamps_hazard_cells_and_ticks_the_burning_dot() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var result_value: ActionResult = LiveCombatResolver.new().resolve(
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED),
+		60, &"sword", &"scorched", AffinityRepository.create_baseline_repository()
+	)
+	assert_true(result_value.succeeded, "A Scorched live fight should resolve: %s" % result_value.metadata)
+	assert_true(bool(result_value.metadata.get("is_victory")), "The Scorched fight still reaches a real board victory (the DoT does not stall the driver).")
+	# The live board carries STAMPED Scorched HAZARD cells (the effect surface applied BEFORE the fight).
+	assert_true(_hazard_cell_count(result_value.metadata.get("board")) > 0, "Scorched STAMPS HAZARD cells onto the live board.")
+	# The burning DoT fired: at least one DAMAGE_APPLIED(burning, scorched_hazard, fixed amount) event is in the log.
+	var burning: Array = _burning_events(result_value.events)
+	assert_true(burning.size() > 0, "The Scorched burning DoT fires for an entity that ends a turn on a hazard cell.")
+	var first: Dictionary = burning[0]
+	assert_equal(String(first.get("weapon_id", "")), "scorched_hazard", "The burning DoT names the Scorched hazard source (scorched_hazard).")
+	assert_equal(int(first.get("final_damage", 0)), 2, "The burning DoT deals the FIXED authored amount (2 — no RNG).")
+	assert_true((first.get("rng_draws", []) as Array).is_empty(), "The burning DoT draws ZERO RNG (rng_draws is empty).")
+
+
+# The Scorched live effect is BYTE-DETERMINISTIC (same seed -> same effect cells + same events + same rounds) and draws
+# ZERO gameplay RNG (the injected stream is unchanged — the assignment draw is the orchestrator's, the effects are
+# ZERO-RNG). The FR57 determinism guard for the live affinity path.
+func _scorched_live_effect_is_byte_deterministic_and_zero_rng() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var repo: AffinityRepository = AffinityRepository.create_baseline_repository()
+	var first: ActionResult = LiveCombatResolver.new().resolve(
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED), 60, &"sword", &"scorched", repo
+	)
+	var second: ActionResult = LiveCombatResolver.new().resolve(
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED), 60, &"sword", &"scorched", repo
+	)
+	assert_equal(_event_dicts(first.events), _event_dicts(second.events), "A fixed seed produces a BYTE-IDENTICAL Scorched live-affinity event log (FR57).")
+	assert_equal(int(first.metadata.get("rounds")), int(second.metadata.get("rounds")), "A fixed seed produces the same Scorched round count.")
+	# Zero gameplay RNG: the injected run-level stream set is unchanged by the Scorched effect + DoT.
+	var streams: RngStreamSet = RngStreamSet.new(VICTORY_SEED)
+	var before: Dictionary = streams.to_snapshot()
+	LiveCombatResolver.new().resolve(generation.payload.get("board", {}), generation.payload.get("entrance", {}), streams, 60, &"sword", &"scorched", repo)
+	assert_equal(streams.to_snapshot(), before, "The Scorched effect + burning DoT draw ZERO RNG (the injected stream is unchanged).")
+
+
+# A hero that lingers in Scorched fire BURNS TO DEATH — the DoT death flows through the board (0 HP) to a real
+# STATE_DEFEAT (the 11.2 hero-death source), NOT a parallel death path. A hand-built board forces the low-HP hero to
+# stand on a hazard cell adjacent to the entrance to reach the enemy.
+func _scorched_dot_kills_a_lingering_hero_through_the_board_death_source() -> void:
+	# A 3x1-interior corridor: entrance(1,1) - hazard-eligible(2,1) - enemy(3,1). The even-parity cell (2,1) is stamped
+	# HAZARD by Scorched; a 1-HP hero stepping onto it to approach the enemy burns to death (2 dmg > 1 HP).
+	var snapshot: Dictionary = _scorched_corridor_snapshot()
+	var result_value: ActionResult = LiveCombatResolver.new().resolve(
+		snapshot, {"x": 1, "y": 1}, RngStreamSet.new(7), 1, &"sword", &"scorched", AffinityRepository.create_baseline_repository()
+	)
+	assert_true(result_value.succeeded, "The Scorched corridor fight should resolve (to a defeat): %s" % result_value.metadata)
+	assert_true(bool(result_value.metadata.get("is_defeat")), "A 1-HP hero that steps into Scorched fire is DEFEATED (the DoT kills it).")
+	var board = result_value.metadata.get("board")
+	assert_true(board.get_entity(&"hero").is_dead(), "The DoT death leaves the hero DEAD (0 HP) on the board — the 11.2 hero-death source.")
+	# The killing blow was a burning DoT event (not an enemy attack).
+	var burning: Array = _burning_events(result_value.events)
+	assert_true(burning.size() > 0, "A burning DoT event fired (the Scorched fire, not an enemy, is a death source).")
+
+
+# A non-Scorched affinity (Flooded/Cursed/Darkness) stamps NO terrain (their effects are data/kernel/visibility) and
+# ticks NO DoT — the live board terrain + event log match the neutral live combat.
+func _non_scorched_affinity_stamps_no_terrain_and_ticks_no_dot() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var repo: AffinityRepository = AffinityRepository.create_baseline_repository()
+	for affinity_id: StringName in [&"flooded_conductive", &"cursed", &"darkness"]:
+		var result_value: ActionResult = LiveCombatResolver.new().resolve(
+			generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED), 60, &"sword", affinity_id, repo
+		)
+		assert_true(result_value.succeeded, "A %s live fight should resolve." % affinity_id)
+		assert_equal(_hazard_cell_count(result_value.metadata.get("board")), 0, "%s stamps NO terrain (no HAZARD cells)." % affinity_id)
+		assert_equal(_burning_events(result_value.events).size(), 0, "%s ticks NO burning DoT (only Scorched stamps hazards)." % affinity_id)
+
+
 # ---- helpers -------------------------------------------------------------------------------------
 
 func _generate_small_combat(seed_value: int) -> GenerationResult:
@@ -184,3 +290,74 @@ func _event_dicts(events: Array) -> Array:
 		if event_value is DomainEvent:
 			out.append((event_value as DomainEvent).to_dictionary())
 	return out
+
+
+# Story 11.4 helpers -------------------------------------------------------------------------------
+
+# The count of Terrain.HAZARD cells on a live board (the Scorched effect stamps these; a neutral / non-Scorched board
+# has zero).
+func _hazard_cell_count(board) -> int:
+	var count: int = 0
+	if board == null:
+		return 0
+	for board_cell: BoardCell in board.cells():
+		if board_cell.terrain == BoardCell.Terrain.HAZARD:
+			count += 1
+	return count
+
+
+# The burning DoT DAMAGE_APPLIED event payloads in a live-combat log (the Scorched hazard ticks). Filters on
+# damage_type == burning (the AffinityHazardDamageCommand marker).
+func _burning_events(events: Array) -> Array:
+	var out: Array = []
+	for event_value: Variant in events:
+		if not event_value is DomainEvent:
+			continue
+		var event: DomainEvent = event_value
+		if String(event.payload.get("damage_type", "")) == "burning":
+			out.append(event.payload)
+	return out
+
+
+# A hand-built 5x3 board (WALL border, a 3-cell FLOOR corridor row: entrance(1,1) - floor(2,1) - enemy(3,1)). The even-
+# parity cell (2,1) ((2+1)=3 is odd — so NOT even; adjust: entrance(1,1) parity even, (2,1) parity odd, (3,1) parity
+# even). Scorched stamps EVEN-parity eligible FLOOR cells, so (3,1) (the enemy cell) is occupied (excluded); (1,1) is
+# ENTRANCE (excluded). Use a 7-wide corridor so an EVEN-parity FLOOR cell sits on the hero's path to the enemy.
+func _scorched_corridor_snapshot() -> Dictionary:
+	# Layout (width 7, height 3): row 1 is the corridor. entrance(1,1); floor (2,1),(3,1),(4,1),(5,1); enemy at (5,1).
+	# EVEN-parity FLOOR cells on the corridor: (3,1) ((3+1)=4 even) — the hero must step through it to reach the enemy.
+	var width: int = 7
+	var height: int = 3
+	var enemy: Dictionary = {
+		"entity_id": "enemy_a",
+		"entity_type": "enemy",
+		"faction": "labyrinth",
+		"position": {"x": 5, "y": 1},
+		"current_hp": 10,
+		"max_hp": 10,
+		"blocks_movement": true,
+		"definition_id": "iron_cultist"
+	}
+	var cells: Array[Dictionary] = []
+	for y: int in range(height):
+		for x: int in range(width):
+			var terrain: int = BoardCell.Terrain.FLOOR
+			if x == 0 or y == 0 or x == width - 1 or y == height - 1:
+				terrain = BoardCell.Terrain.WALL
+			elif x == 1 and y == 1:
+				terrain = BoardCell.Terrain.ENTRANCE
+			var occupant: String = "enemy_a" if (x == 5 and y == 1) else ""
+			cells.append({
+				"position": {"x": x, "y": y},
+				"terrain": terrain,
+				"occupant_id": occupant,
+				"explored": true,
+				"visible": true
+			})
+	return {
+		"width": width,
+		"height": height,
+		"next_sequence_id": 1,
+		"cells": cells,
+		"entities": [enemy]
+	}

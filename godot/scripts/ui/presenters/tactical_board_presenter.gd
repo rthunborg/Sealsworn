@@ -22,6 +22,8 @@ const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_lay
 const TacticalTextScale = preload("res://scripts/ui/view_models/tactical_text_scale.gd")
 const TacticalAccessibilityModel = preload("res://scripts/ui/view_models/tactical_accessibility_model.gd")
 const RunHudViewModel = preload("res://scripts/ui/view_models/run_hud_view_model.gd")
+const LiveAffinityReadModel = preload("res://scripts/ui/view_models/live_affinity_read_model.gd")
+const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const PassiveRewardModalViewModel = preload("res://scripts/ui/view_models/passive_reward_modal_view_model.gd")
 const PassiveRewardCommitFlow = preload("res://scripts/ui/view_models/passive_reward_commit_flow.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
@@ -51,6 +53,11 @@ var _board: BoardState = null
 var _turn_state = null
 var _run: RunState = null
 var _text_scale: float = TacticalTextScale.DEFAULT_TEXT_SCALE
+# Story 11.4 (AC2) — the live level's assigned affinity id + the DarknessFairnessQuery verdict, set by the hosting
+# shell. The presenter surfaces the affinity read (id/rule/affected cells/cues) via LiveAffinityReadModel — a SEPARATE
+# read surface the status/log region composes (exactly like the G1 HUD), NOT a key on the board VM's pinned set.
+var _affinity_id: StringName = AffinityDefinition.AFFINITY_NONE
+var _affinity_fairness: Dictionary = {}
 
 func _ready() -> void:
 	_build_regions()
@@ -86,13 +93,23 @@ func _layout_profile() -> TacticalLayoutProfile:
 	})
 
 
-# Set the live rendering inputs from the hosting shell (the live board/turn/run + text scale). Does NOT own the
-# board — it renders a read of it.
-func bind_live_state(board: BoardState, turn_state, run: RunState, text_scale: float = TacticalTextScale.DEFAULT_TEXT_SCALE) -> void:
+# Set the live rendering inputs from the hosting shell (the live board/turn/run + text scale + the live level's assigned
+# affinity id + the DarknessFairnessQuery verdict). Does NOT own the board — it renders a read of it. The affinity id +
+# fairness verdict default to the neutral / empty read (the fail-closed "no affinity" render) for a caller that omits them.
+func bind_live_state(
+	board: BoardState,
+	turn_state,
+	run: RunState,
+	text_scale: float = TacticalTextScale.DEFAULT_TEXT_SCALE,
+	affinity_id: StringName = AffinityDefinition.AFFINITY_NONE,
+	affinity_fairness: Dictionary = {}
+) -> void:
 	_board = board
 	_turn_state = turn_state
 	_run = run
 	_text_scale = text_scale
+	_affinity_id = affinity_id
+	_affinity_fairness = affinity_fairness
 
 
 # Render the board VM slots + the G1 HUD into the region panels. A null board renders the empty VM (from_domain
@@ -115,26 +132,51 @@ func render() -> void:
 	])
 	_set_region_text("preview", _preview_text(vm.get("preview", {})))
 	_set_region_text("confirm_cancel", _confirm_cancel_text(vm.get("commit_flow", {}), vm.get("action_availability", {})))
-	_set_region_text("inspect", _inspect_text(vm.get("inspect", {})))
-	# The status region = the VM turn slot COMPOSED with the G1 run-context projection (the appendix §1.3 G1).
-	_set_region_text("status", _status_text(vm.get("turn", {})))
+	# Story 11.4 (AC2) — the affinity read (a SEPARATE read surface, NOT a board-VM key). Composed into the inspect +
+	# status + log regions so the affinity + its rule read BEFORE + DURING play, and the affected cells surface on inspect.
+	var affinity: Dictionary = LiveAffinityReadModel.new().project(_affinity_id, _board, _affinity_fairness)
+	_set_region_text("inspect", _inspect_text(vm.get("inspect", {}), affinity))
+	# The status region = the VM turn slot COMPOSED with the G1 run-context projection (the appendix §1.3 G1) + the
+	# affinity badge (the affinity id/display-name/rule visible before + during play — FR55).
+	_set_region_text("status", _status_text(vm.get("turn", {}), affinity))
 	_set_region_text("log_or_outcome", _log_text(vm.get("event_log_summary", []), vm.get("outcome", {})))
 
 
 # The G1 status region: hero HP + node progress + gold + inventory from the RunHudViewModel, composed with the
-# tactical turn. The projection reads the live board (hero HP source of truth during a level) + the run.
-func _status_text(turn: Dictionary) -> String:
+# tactical turn + the affinity badge (Story 11.4 — the affinity id/display-name visible before + during play, FR55).
+# The projection reads the live board (hero HP source of truth during a level) + the run.
+func _status_text(turn: Dictionary, affinity: Dictionary) -> String:
 	var hud: Dictionary = RunHudViewModel.from_run(_run, _board).to_dictionary()
 	var hp_text: String = "HP %d/%d" % [int(hud.get("hero_current_hp", 0)), int(hud.get("hero_max_hp", 0))] if bool(hud.get("has_hero_hp", false)) else "HP --"
-	return "%s | Node %d/%d | Gold %d | Bag %d/%d | Turn %s" % [
+	return "%s | Node %d/%d | Gold %d | Bag %d/%d | Turn %s | %s" % [
 		hp_text,
 		int(hud.get("cleared_node_count", 0)),
 		int(hud.get("total_node_count", 0)),
 		int(hud.get("gold", 0)),
 		int(hud.get("inventory_count", 0)),
 		int(hud.get("inventory_capacity", 0)),
-		String(turn.get("phase", ""))
+		String(turn.get("phase", "")),
+		_affinity_badge_text(affinity)
 	]
+
+
+# Story 11.4 (AC2) — the affinity BADGE: the affinity display-name + its rule count, visible before + during play. A
+# neutral / no-affinity read shows "Affinity: none" (the fail-closed empty read, never a half-badge). A Darkness level
+# surfaces the reduced-radius delta the DarknessReadView projects.
+func _affinity_badge_text(affinity: Dictionary) -> String:
+	if not bool(affinity.get("has_affinity", false)):
+		return "Affinity: none"
+	var display_name: String = String(affinity.get("display_name", ""))
+	var rule_count: int = (affinity.get("tactical_rules", []) as Array).size()
+	var badge: String = "Affinity: %s (%d rules)" % [display_name, rule_count]
+	var darkness: Dictionary = affinity.get("darkness", {})
+	if bool(darkness.get("has_darkness", false)):
+		badge += " [sight %d->%d]" % [int(darkness.get("baseline_radius", 0)), int(darkness.get("reduced_radius", 0))]
+	# The fairness verdict the DarknessFairnessQuery returned (reflected, not re-derived — AC3 single authority).
+	var fairness: Dictionary = affinity.get("fairness", {})
+	if bool(fairness.get("darkness_fairness_applicable", false)):
+		badge += " [fair]"
+	return badge
 
 
 func _preview_text(preview: Dictionary) -> String:
@@ -153,10 +195,21 @@ func _confirm_cancel_text(commit_flow: Dictionary, availability: Dictionary) -> 
 	]
 
 
-func _inspect_text(inspect: Dictionary) -> String:
-	if inspect.is_empty():
-		return "Inspect: tap a cell"
-	return "Inspect: %s" % String(inspect.get("visibility_state", ""))
+# The inspect region: the tapped cell's visibility state + (Story 11.4, AC2/FR12/FR58) the affinity danger read — the
+# affinity-affected-cell counts + the non-color cue ids surfaced through the EXISTING affinity preview / Darkness cue
+# surfaces (the scene MAPS the cue_ids to visuals; it invents no new reason/cue). A neutral read appends nothing.
+func _inspect_text(inspect: Dictionary, affinity: Dictionary) -> String:
+	var base: String = "Inspect: tap a cell" if inspect.is_empty() else "Inspect: %s" % String(inspect.get("visibility_state", ""))
+	if not bool(affinity.get("has_affinity", false)):
+		return base
+	var preview: Dictionary = affinity.get("preview", {})
+	var hazard: int = (preview.get("hazard_cells", []) as Array).size()
+	var conductive: int = (preview.get("conductive_danger_cells", []) as Array).size()
+	var pathing: int = (preview.get("pathing_pressure_cells", []) as Array).size()
+	var cue_ids: Array = affinity.get("cue_ids", [])
+	return "%s | Danger: %d hazard / %d conductive / %d pathing | Cues: %s" % [
+		base, hazard, conductive, pathing, ", ".join(PackedStringArray(cue_ids))
+	]
 
 
 func _log_text(log_summary: Array, outcome: Dictionary) -> String:

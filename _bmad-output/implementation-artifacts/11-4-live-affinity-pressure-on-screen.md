@@ -4,7 +4,7 @@ baseline_commit: b5edc5e
 
 # Story 11.4: Live Affinity Pressure On Screen
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -166,15 +166,15 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Wire the affinity assignment + effect application into the live combat node (AC1)**
-  - [ ] In the live combat resolve path (`RunOrchestrator.resolve_combat_node_live`, `run_orchestrator.gd:945`,
+- [x] **Task 1 — Wire the affinity assignment + effect application into the live combat node (AC1)**
+  - [x] In the live combat resolve path (`RunOrchestrator.resolve_combat_node_live`, `run_orchestrator.gd:945`,
         after `NodeEnterCommand` + `LevelGenerator.generate` succeed and BEFORE
         `LiveCombatResolver.new(...).resolve(...)` at `:968`), **assign the node's affinity ONCE** (call
         `assign_affinity(node)` if `assigned_affinity_for(node.id)` is neutral/absent — the assign-if-absent
         guard the 7.4 review deferred to "the later run-flow / per-node-assign story"; that is 11.4). The
         assignment draws through the run-level `streams` on the `map` stream — do NOT re-roll on a re-drive
         (idempotency). Read the resolved affinity id back via `assigned_affinity_for(node.id)`.
-  - [ ] **Apply the board effects to the LIVE board** the resolver plays on. The seam: the live board is
+  - [x] **Apply the board effects to the LIVE board** the resolver plays on. The seam: the live board is
         restored INSIDE `LiveCombatResolver.resolve` today from `payload["board"]`. Two acceptable shapes —
         pick the one that keeps `LiveCombatResolver` scene-free + the fingerprints unmoved: (a) pass the
         assigned affinity id into a NEW optional `LiveCombatResolver.resolve(..., affinity_id, affinity_repo)`
@@ -186,7 +186,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         validate-then-reject discipline (a rejected stamp aborts with ZERO partial mutation — `apply_board_effects`
         already does this; surface its error). Preserve the FR58 fairness: hazard cells are only ever eligible
         FLOOR + UNOCCUPIED cells (never a spawn cell — the resolver guarantees this by construction).
-  - [ ] **Scorched DoT tick on the live board (AC1):** wire `AffinityHazardDamageCommand` so an entity that
+  - [x] **Scorched DoT tick on the live board (AC1):** wire `AffinityHazardDamageCommand` so an entity that
         ENDS a turn on a Scorched HAZARD cell takes the fixed `burning` DoT (a `DAMAGE_APPLIED` event, ZERO
         RNG). The tick is environmental (actor==target). Decide the tick cadence at a per-turn boundary in the
         live loop (e.g. after the hero's move/attack resolves + after each enemy that occupies a hazard cell) —
@@ -194,7 +194,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         `target_not_in_hazard` for a non-hazard cell, so a non-Scorched board never ticks). A live hero death
         BY the DoT flows through the EXISTING `CombatOutcomeEvaluator` → `STATE_DEFEAT` → the 11.2 hero-death
         source (do NOT add a parallel death path).
-  - [ ] **Darkness on the live board (AC1):** compute the live visible set via
+  - [x] **Darkness on the live board (AC1):** compute the live visible set via
         `DarknessVisibilityLayer.calculate_visible_cells(query, board, origin, darkness, repo)` at the reduced
         radius (the LoS the hero sees under Darkness) rather than the baseline `TacticalVisibilityQuery` radius,
         and surface `visible_facts_for_cell(...)` for the memory-uncertainty read. NOTE: `LiveCombatResolver`
@@ -202,7 +202,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         for a Darkness level the affinity's visibility PRESSURE is what the HUD/inspect reads (the reduced
         radius + memory uncertainty) — wire the Darkness visibility read for the HUD/inspect surface (AC2/AC3),
         keeping the CombatOutcomeEvaluator's HP-only terminal check unchanged.
-  - [ ] **Cursed on the live run (AC1):** seat `AffinityEffectResolver.cursed_affinity_rule_source(cursed, repo)`
+  - [x] **Cursed on the live run (AC1):** seat `AffinityEffectResolver.cursed_affinity_rule_source(cursed, repo)`
         on the run's live `RulesResolver` — `RunState.rules_resolver` (`run_state.gd:94`) is the seam; call
         `run.rules_resolver.register_curse(rule_source)` (`rules_resolver.gd:53`) so the kernel resolves +
         explains the Cursed pressure (v0 is RESOLVE+EXPLAIN — it surfaces + explains via `explain(LEVEL_ENTERED)`,
@@ -216,19 +216,19 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         obligation — the affinity id is recoverable from the persisted `RunSnapshot.affinities` mirror /
         re-derivable from the seed; the `RulesResolver` is deliberately not serialized). If 11.4 wires the live
         resume of a seated Cursed level, re-derive the rule source on resume; if not, RE-RECORD the obligation.
-  - [ ] **Flooded on the live board (AC1):** surface the conductive-danger + pathing-pressure MARKS via
+  - [x] **Flooded on the live board (AC1):** surface the conductive-danger + pathing-pressure MARKS via
         `resolve_board_plan` / `AffinityPreviewQuery.preview_board` (data-only — NOT terrain). The
         `_placeholder` electric interaction stays UNCHANGED (do NOT realize the live water/electric chain — the
         Epic-10 readiness item). Keep the `affinity_conductive_danger_placeholder` cue + the
         `affinity_conductive_danger_placeholder_vfx` visual id distinct-from-final.
-  - [ ] **Determinism guard (AC1/FR57):** the live affinity path draws gameplay RNG ONLY through the run-level
+  - [x] **Determinism guard (AC1/FR57):** the live affinity path draws gameplay RNG ONLY through the run-level
         `RngStreamSet` (the assignment on `map`; the DoT/effects are ZERO-RNG) — NEVER `randi`/`randf`/a fresh
         `RandomNumberGenerator`. A test asserts a fixed seed produces a byte-identical live-affinity outcome
         (same effect cells + same events + same reduced radius) and that a neutral `none` level is byte-identical
         to today's plain live combat (the 11.2/11.3 fingerprints + live-combat tests stay green).
 
-- [ ] **Task 2 — Surface the affinity on the board + HUD + inspect (AC2)**
-  - [ ] **Affinity read on the HUD/board:** surface the active affinity's id/display-name/rule +
+- [x] **Task 2 — Surface the affinity on the board + HUD + inspect (AC2)**
+  - [x] **Affinity read on the HUD/board:** surface the active affinity's id/display-name/rule +
         affinity-affected cells + non-color cues on the on-screen surface. Bind the EXISTING read surfaces —
         `AffinityViewModel.project_affinity(id)` (pinned `MODAL_KEYS = has_affinity, affinity_id, display_name,
         explanation, is_neutral, tactical_rules, visual_tags`), `DarknessReadView.project_darkness(id)` (pinned
@@ -241,7 +241,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         presenter. **Do NOT add a new key to `TacticalBoardViewModel`'s pinned top-level set** (the board VM's
         exact-key discipline — a key outside the pinned set is an AC2 violation); if an aggregation is added it
         is a SEPARATE read surface the HUD `status`/`log_or_outcome` region composes, exactly like G1.
-  - [ ] **Approved treatment binding:** bind the approved affinity treatment assets via the `visual_tags` /
+  - [x] **Approved treatment binding:** bind the approved affinity treatment assets via the `visual_tags` /
         `affinity.*.png` id hooks (`affinity.scorched.png` / `affinity.flooded.png` / `affinity.cursed.png` /
         `affinity.darkness.png`, already merged to `main`). `icon`/`visual_tags` are id/tag STRINGS the
         presenter maps to the asset — do NOT author new art, do NOT treat a tag as a texture path outside the
@@ -249,20 +249,20 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         play (the affected cells + cues). Every critical affinity meaning carries a non-color channel (the
         `TacticalAccessibilityModel._CUE_CATALOG` channels: Scorched icon/label/text, conductive shape/label/text,
         pathing pattern/label, Darkness-reduced icon/label/text, Darkness-memory pattern/label/text).
-  - [ ] **Inspect surfaces the affinity danger (AC2 — FR12/FR58):** the affinity hazard/danger + telegraphed
+  - [x] **Inspect surfaces the affinity danger (AC2 — FR12/FR58):** the affinity hazard/danger + telegraphed
         danger must be inspectable through the EXISTING inspect flow. `TacticalInspectView.from_context(...)`
         already exposes `hazards`, `telegraphs`, `cue_ids`, `visibility_state`; the inspected cell's affinity
         pressure (a Scorched HAZARD cell / a Flooded conductive/pathing mark / a Darkness memory-uncertain cell)
         surfaces through these fields + the `AffinityPreviewQuery`/`DarknessReadView` cue reads — the scene MAPS
         the emitted cue_ids to visuals, it invents no new reason/cue. Do NOT fork a parallel affinity-inspect
         path.
-  - [ ] **Render neutral fail-closed:** a neutral `none` level (or an unresolved affinity id) surfaces the
+  - [x] **Render neutral fail-closed:** a neutral `none` level (or an unresolved affinity id) surfaces the
         legal empty read (`has_affinity: false` / `has_darkness: false` / an empty-effect preview) — the HUD
         renders "no affinity" rather than a crash or a half-badge (the read surfaces already fail-close; the
         presenter branches on the `has_*` gate).
 
-- [ ] **Task 3 — Darkness fairness on the live path + the HUD single-authority (AC3)**
-  - [ ] **Run the fairness check on the live Darkness board:** in the live Darkness path, run
+- [x] **Task 3 — Darkness fairness on the live path + the HUD single-authority (AC3)**
+  - [x] **Run the fairness check on the live Darkness board:** in the live Darkness path, run
         `DarknessFairnessQuery.check_board(board, darkness, repo, seed, entrance)` on the live board (the seed
         is the level seed String from `generation.payload["level_seed"]`; the entrance is
         `generation.payload["entrance"]`). A fair board PASSES (v0 generated boards are all-FLOOR → no unseen
@@ -271,21 +271,21 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         run-progression error — surface it structurally + STOP (no partial progression), mirroring
         `live_combat_failed` (`run_orchestrator.gd:978`). The check consumes NO RNG, runs NO command, advances
         NO turn (the pure-query contract).
-  - [ ] **The HUD reflects the query's verdict (the single-authority contract):** the HUD/inspect surface reads
+  - [x] **The HUD reflects the query's verdict (the single-authority contract):** the HUD/inspect surface reads
         the `DarknessFairnessQuery` verdict (the pass report's reduced_radius + hazard counts / the failure's
         fairness_reason) — it does NOT compute its own fairness. The darkness fairness query stays the SINGLE
         authority the HUD reflects (AC3 second half). Keep `DarknessVisibilityLayer` + `DarknessFairnessQuery`
         the SAME sources the 7.6 tests pin — the live path CALLS them; it does not re-implement the radius/LoS
         reasoning.
-  - [ ] **Fairness on the live path is tested:** a headless test drives a live Darkness node (a verified seed)
+  - [x] **Fairness on the live path is tested:** a headless test drives a live Darkness node (a verified seed)
         through the fairness check + asserts (a) a fair board passes on the live path, (b) an intentionally
         unfair Darkness board (a hand-built candidate with a reachable-but-unseen HAZARD at the reduced radius)
         fails loud with the stable `darkness_fairness_reason` + seed + phase, and (c) the HUD read equals the
         query verdict (the single-authority assertion). Extend the existing 7.6 fairness coverage
         (`test_darkness_fairness.gd`) rather than rebuilding it.
 
-- [ ] **Task 4 — Render the live board on-screen on a combat node (L3/L4 follow-up — pairs with 11.4)**
-  - [ ] The 11.3 Round-1 L3 + Round-2 L4 deferrals (both explicitly "pairs with Story 11.4") noted the shell
+- [x] **Task 4 — Render the live board on-screen on a combat node (L3/L4 follow-up — pairs with 11.4)**
+  - [x] The 11.3 Round-1 L3 + Round-2 L4 deferrals (both explicitly "pairs with Story 11.4") noted the shell
         AUTO-RESOLVES each live node and NEVER renders the live board on a combat node (`resolve_combat_node_live`
         returns terminal-only metadata with NO `"board"` key, so `gameplay_shell_presenter._drive_current_stage`
         only ever renders the empty between-levels VM). 11.4's live board treatment is the natural point to hold
@@ -299,7 +299,7 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         larger concern that MAY stay deferred if the affinity board renders correctly under auto-resolve.
         Whichever you pick, `tactical_board_presenter` reads the affinity surface (Task 2) so the board shows
         the affinity + its cells.
-  - [ ] **Boss arena affinity (decide + record):** the boss fight runs on a DISTINCT arena board
+  - [x] **Boss arena affinity (decide + record):** the boss fight runs on a DISTINCT arena board
         (`auto_play_boss_fight`, `run_orchestrator.gd:1087` — restored from `boss_arena_payload()`, NOT a
         generated combat level). The MVP boss node's affinity treatment is OUT of the AC1 combat-node scope (the
         ACs say "a run level carries an affinity" — the pre-boss combat/elite levels). Decide whether the boss
@@ -307,27 +307,27 @@ Sourced verbatim from `epics.md` (Epic 11, Story 11.4, lines ~2674-2695). Three 
         stage, not an affinity-assigned generated level). Do NOT silently apply an affinity to the boss arena
         without a decision.
 
-- [ ] **Task 5 — Invariants regression + full-suite green (AC-wide)**
-  - [ ] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
+- [x] **Task 5 — Invariants regression + full-suite green (AC-wide)**
+  - [x] Re-verify every durable invariant is unmoved: the 23-key `RunSnapshot` gate (`test_run_snapshot.gd`),
         `ProfileSnapshot.SCHEMA_VERSION == 1` (`test_profile_snapshot.gd`), `SettingsSnapshot.SCHEMA_VERSION == 1`
         (`test_settings_snapshot.gd`), `RngStreamSet.required_streams()` == 7 (`test_rng_stream_set.gd`), the
         `DomainEvent.Type` enum tail UNCHANGED (`test_domain_event.gd` — Scorched DoT reuses `DAMAGE_APPLIED`;
         NO new event). The affinity is LIVE re-derivable — NO new save key.
-  - [ ] Re-run every seed-regression fingerprint suite + confirm byte-identical (small/medium level, route,
+  - [x] Re-run every seed-regression fingerprint suite + confirm byte-identical (small/medium level, route,
         seed batch, finale). 11.4 applies affinity effects POST-generation on a built board (Scorched stamps a
         built board; Flooded/Cursed/Darkness mutate no terrain) — the GENERATOR stays affinity-blind, so every
         `tools/dump_*` fingerprint stays byte-identical. The `WRINKLE_AFFINITY_PLACEHOLDER` stays INERT (no
         affinity baked into generated terrain — that WOULD move fingerprints). The DEFAULT `run_to_completion`
         (v0 auto-resolve) + the neutral-`none` live path stay byte-identical.
-  - [ ] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project
+  - [x] Run the FULL headless suite via PowerShell (the `godot` binary is not on the Bash PATH — see Project
         Context Rules): `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
         --quit-after 10`. Apply the false-PASS grep guard (the only acceptable stderr `ERROR:` lines are the 6
         documented negatives: int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — plus any NEW
         documented negative-path test 11.4 adds, e.g. a `darkness_fairness_violation` forcing case, which must
         be documented). Run `git diff --check`.
 
-- [ ] **Task 6 — Update the deferred-work ledger + tracking (AC-wide, hygiene)**
-  - [ ] In `deferred-work.md` (new 11.4 entry): mark **RESOLVED** — the **live AFFINITY call sites + affinity
+- [x] **Task 6 — Update the deferred-work ledger + tracking (AC-wide, hygiene)**
+  - [x] In `deferred-work.md` (new 11.4 entry): mark **RESOLVED** — the **live AFFINITY call sites + affinity
         board treatment** (the fence carried across Epics 5/6/7 as "the later HUD/run-flow / live-tactical-loop
         story," re-recorded by 11.2 + 11.3); the **7.4 `assign_affinity` once-per-node idempotency guard** (the
         7.4-review-deferred "later run-flow / per-node-assign story" — 11.4 wires the per-node assign call site
@@ -662,8 +662,36 @@ THIS story:
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]` (auto-gds dev-story delegate).
+
 ### Debug Log References
+
+- Full headless suite: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` → **177 PASS / 0 `^FAIL`**, "Headless tests passed.", exit 0 (up from 175 at 11.3 close — 11.4 added `test_live_affinity_flow.gd` + `test_live_affinity_read_model.gd`, and extended `test_live_combat_resolver.gd`).
+- False-PASS grep guard on stderr: exactly the 6 documented negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1) — ZERO new stderr errors from 11.4 (the Scorched DoT / affinity apply / fairness check / Cursed seating are clean; a benign DoT validate-reject never leaks to stderr).
+- `git diff --check` clean.
+- Pre-implementation probes (scratchpad, removed): confirmed the Scorched DoT fires on every verified seed (4242/99/1001/2002/3003 — 6-10 burning events each, all still reach a real victory); a neutral `none` + repo call is BYTE-IDENTICAL to the plain 11.2/11.3 call (same rounds, identical event log); Scorched is byte-deterministic + draws ZERO RNG; the orchestrator wiring seats the Cursed rule source + runs Darkness fairness + stamps Scorched hazards end-to-end.
 
 ### Completion Notes List
 
+- **Task 1 (live affinity call sites).** `LiveCombatResolver.resolve(...)` gained optional `affinity_id` (default `AffinityDefinition.AFFINITY_NONE`) + `affinity_repository` (default null) params. When set, it applies `AffinityEffectResolver.apply_board_effects` on the restored board BEFORE hero placement (Scorched stamps HAZARD; others stamp nothing) and ticks the Scorched burning DoT (`AffinityHazardDamageCommand`, ZERO-RNG) for any entity that ENDS a turn on a HAZARD cell — the hero after its own action (short-circuiting the turn on a DoT death so the enemy phase never runs at a corpse), the enemies after the enemy phase, and the boxed-in hero in the stuck-fallback path. A `_scorched_hazard_active` flag gates the tick so the neutral / non-Scorched path is byte-identical (the tick loop is never even entered). The orchestrator (`resolve_combat_node_live`) assigns the node's affinity once (assign-if-absent), seats the cursed-affinity rule source on `run.rules_resolver` (creating one if null, idempotent), and passes the affinity into the resolver.
+- **Task 2 (on-screen read + treatment).** New `LiveAffinityReadModel` (`scripts/ui/view_models/live_affinity_read_model.gd`) — a fail-closed, exact-key, no-live-handle RefCounted aggregation (the G1 posture) composing `AffinityViewModel` + `DarknessReadView` + `AffinityPreviewQuery` + reflecting the fairness verdict. `tactical_board_presenter` reads it into the status (affinity badge — id/display-name/rule count, +Darkness sight delta, +`[fair]`) + inspect (affinity danger — hazard/conductive/pathing cell counts + the non-color cue ids) regions. **No key added to `TacticalBoardViewModel`'s pinned set** (a separate read surface, exactly like G1). The `visual_tags` (the treatment art/cue hooks) ride the read; the presenter surfaces them without authoring art.
+- **Task 3 (Darkness fairness on the live path).** `resolve_combat_node_live` runs `DarknessFairnessQuery.check_board` on the built board via the new `_check_darkness_fairness_live` helper (Darkness-only; a neutral affinity is not-applicable). A `darkness_fairness_violation` is surfaced structurally (the query's `fairness_reason` + `seed` + `phase` carried verbatim) and STOPS with no partial progression (mirroring `live_combat_failed`). The pass verdict is surfaced as `darkness_fairness` in the resolve metadata + reflected by the read model + HUD (the single-authority contract — the HUD never re-derives fairness).
+- **Task 4 (render the live board on a combat node).** `resolve_combat_node_live` now returns `"board"` + `"affinity_id"` + `"darkness_fairness"` in the victory/defeat metadata; `gameplay_shell_presenter` renders the live affinity board (`_render_live_board` threads the affinity id + fairness verdict to the board presenter). Adding `"board"` perturbs no existing consumer (the shell is the only reader; every test reads metadata via `.get(...)`, not exact-key). **Boss-arena affinity: knowingly PARKED (NO affinity on the fixed finale arena)** — recorded in deferred-work.
+- **Task 5 (invariants).** 177 PASS / 0 FAIL; every invariant/fingerprint suite green (RunSnapshot 23-key, RngStreamSet 7 streams, DomainEvent enum, ProfileSnapshot/SettingsSnapshot schema, all 3 layout seed-regressions, seed-batch, finale seed-regression + full run). `domain_event.gd` / `run_snapshot.gd` / `rng_stream_set.gd` / `tools/dump_*` have ZERO diff. The neutral live path + the DEFAULT `run_to_completion` are byte-identical (tested).
+- **Task 6 (ledger).** `deferred-work.md` 11.4 entry: RESOLVED the live-affinity call sites + treatment, the 7.4 assign-idempotency guard, the 11.3 L4 render; RE-RECORDED the Flooded `_placeholder` (Epic-10), the seated-Cursed re-derive-on-resume, the affinity-generation modifier, 11.5/11.6; recorded the boss-arena-no-affinity + Cursed-resolve+explain-only + L3-tap-loop-deferred decisions.
+- **Key decision — Scorched DoT cadence.** Each entity ticks once per round at the END of its own action (hero after its move/attack; enemies after the enemy phase). A DoT hero-death short-circuits the turn immediately (the outer `CombatOutcomeEvaluator` reads the 0-HP board → STATE_DEFEAT, the 11.2 death source — no parallel death path, and the enemy AI is never driven at a dead hero). Fairness-safe (the hazard is seen + avoidable; the command rejects a non-hazard cell), deterministic, ZERO-RNG.
+- **Key decision — the Darkness live effect is a READ, not a combat mutation.** Per the story, the reduced visible set + memory uncertainty are surfaced for the HUD/inspect (via `DarknessReadView` in the read model); the `CombatOutcomeEvaluator`'s HP-only terminal check is unchanged (`LiveCombatResolver` keeps its headless full-vis so fog never decides the outcome). Darkness's live PRESSURE on the board is the reduced-radius + memory read the HUD shows + the fairness guarantee.
+
 ### File List
+
+Modified:
+- `godot/scripts/run/live_combat_resolver.gd` — optional `affinity_id`/`affinity_repository` params on `resolve`; Scorched board-effect apply + burning DoT tick (`_tick_scorched_dot` / `_tick_scorched_dot_enemies`); DoT-death short-circuit.
+- `godot/scripts/run/run_orchestrator.gd` — `resolve_combat_node_live` assigns the affinity once, runs Darkness fairness (`_check_darkness_fairness_live`), seats the cursed-affinity rule source (`_seat_cursed_affinity_rule_source`), passes the affinity into the resolver, surfaces `board`/`affinity_id`/`darkness_fairness` in the metadata; new preloads (`AffinityEffectResolver`, `DarknessFairnessQuery`, `DarknessVisibilityLayer`, `RulesResolver`).
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd` — binds the affinity id + fairness verdict; composes `LiveAffinityReadModel` into the status (badge) + inspect (affinity danger) regions.
+- `godot/scripts/ui/presenters/gameplay_shell_presenter.gd` — renders the live affinity board on a combat node (`_render_live_board` threads the affinity id + fairness verdict; `_fairness_from` extracts the verdict).
+- `godot/tests/unit/run/test_live_combat_resolver.gd` — Scorched-on-live-board tests (stamp + DoT + determinism + zero-RNG + DoT-death + neutral byte-identity + non-Scorched no-op).
+
+New:
+- `godot/scripts/ui/view_models/live_affinity_read_model.gd` — the in-run affinity read aggregation (AC2).
+- `godot/tests/unit/run/test_live_affinity_flow.gd` — the live affinity call site on the run flow (assign-if-absent idempotency, Scorched stamp, Cursed seating, Darkness fairness + HUD single-authority, DEFAULT run byte-identity).
+- `godot/tests/unit/ui/test_live_affinity_read_model.gd` — the read model exact-key + fail-closed + Scorched/Darkness reads + fairness reflection + purity.

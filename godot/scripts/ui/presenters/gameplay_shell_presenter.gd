@@ -95,7 +95,11 @@ func _drive_current_stage() -> void:
 			return
 		var live_board = resolved.metadata.get("board")
 		if live_board is BoardState:
-			_render_live_board(live_board as BoardState, run)
+			# Story 11.4 (Task 4/AC2) — render the live AFFINITY board on screen (the affinity treatment/cues/hazard
+			# cells are visible on the board/HUD). The assigned affinity id rides the live-node metadata; the shell
+			# threads it (+ the DarknessFairnessQuery verdict from the resolve path, if any) to the board presenter.
+			var affinity_id: StringName = StringName(String(resolved.metadata.get("affinity_id", "")))
+			_render_live_board(live_board as BoardState, run, affinity_id, _fairness_from(resolved))
 		# A live DEFEAT ended the run (hero death) -> run-end; a live VICTORY advances forward -> route map.
 		if run.is_terminal():
 			_route_to_run_end(flow)
@@ -123,10 +127,20 @@ func _drive_current_stage() -> void:
 	_advance_to_route_map()
 
 
-func _render_live_board(board: BoardState, run: RunState) -> void:
+func _render_live_board(board: BoardState, run: RunState, affinity_id: StringName = &"none", fairness: Dictionary = {}) -> void:
 	var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, &"hero")
-	_board_presenter.bind_live_state(board, turn_state, run, _text_scale())
+	_board_presenter.bind_live_state(board, turn_state, run, _text_scale(), affinity_id, fairness)
 	_board_presenter.render()
+
+
+# Story 11.4 (AC3) — extract the DarknessFairnessQuery verdict from the live-node resolve metadata (the single authority
+# the HUD reflects). Present on a Darkness node's SUCCESS path (the pass report); an empty dict for a non-Darkness node
+# (the fairness check is not-applicable). A fairness VIOLATION never reaches here — it STOPS the resolve path upstream.
+func _fairness_from(resolved) -> Dictionary:
+	var verdict = resolved.metadata.get("darkness_fairness")
+	if verdict is Dictionary:
+		return verdict
+	return {}
 
 
 func _render_between_levels(run: RunState) -> void:
