@@ -16,6 +16,7 @@ extends "res://tests/unit/test_case.gd"
 #   - a rejected board snapshot / an unknown hero weapon surface structured errors (no fabricated outcome).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityEffectResolver = preload("res://scripts/rules/operations/affinity_effect_resolver.gd")
 const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
@@ -49,6 +50,8 @@ func run() -> Dictionary:
 	_scorched_live_effect_is_byte_deterministic_and_zero_rng()
 	_scorched_dot_kills_a_lingering_hero_through_the_board_death_source()
 	_non_scorched_affinity_stamps_no_terrain_and_ticks_no_dot()
+	# Story 11.4 (Round-2 L4) — the L1 refactor's own protected path: a PRE-STAMPED Scorched board still ticks.
+	_pre_stamped_scorched_board_still_ticks_the_dot()
 	return result()
 
 
@@ -250,6 +253,59 @@ func _non_scorched_affinity_stamps_no_terrain_and_ticks_no_dot() -> void:
 		assert_true(result_value.succeeded, "A %s live fight should resolve." % affinity_id)
 		assert_equal(_hazard_cell_count(result_value.metadata.get("board")), 0, "%s stamps NO terrain (no HAZARD cells)." % affinity_id)
 		assert_equal(_burning_events(result_value.events).size(), 0, "%s ticks NO burning DoT (only Scorched stamps hazards)." % affinity_id)
+
+
+# Story 11.4 (Round-2 L4) — pin the L1 refactor's PROTECTED PATH: a PRE-STAMPED Scorched board still ticks the DoT.
+# The Round-1 L1 fix rederived `_scorched_hazard_active` from the affinity effect PLAN (resolve_board_plan's
+# scorched_hazard_cells — which INCLUDES cells already Terrain.HAZARD) rather than from apply_board_effects' stamped-DIFF,
+# so the burning DoT still fires when `resolve` is handed a board whose Scorched cells are ALREADY HAZARD (the empty-diff
+# condition, where the OLD diff-based flag would have gone false and silently disabled the DoT). Every other Scorched
+# test starts from a fresh all-FLOOR restore, so the first stamp always yields a non-empty diff — the old and new
+# implementations are indistinguishable there. This test resolves TWICE against the SAME already-stamped Scorched board
+# state and asserts the second resolve STILL ticks, proving the plan-derived flag is stamp-invariant.
+func _pre_stamped_scorched_board_still_ticks_the_dot() -> void:
+	var repo: AffinityRepository = AffinityRepository.create_baseline_repository()
+
+	# First resolve on the fresh all-FLOOR corridor (a 1-HP hero that steps into Scorched fire burns) — the ordinary
+	# path, which stamps the even-parity HAZARD cell(s) and ticks. Establishes the baseline that Scorched fires here.
+	var first: ActionResult = LiveCombatResolver.new().resolve(
+		_scorched_corridor_snapshot(), {"x": 1, "y": 1}, RngStreamSet.new(7), 1, &"sword", &"scorched", repo
+	)
+	assert_true(first.succeeded, "Setup: the first Scorched corridor resolve should succeed: %s" % first.metadata)
+	assert_true(_burning_events(first.events).size() > 0, "Setup: the first (fresh-board) Scorched resolve ticks the burning DoT.")
+
+	# Build the SAME board, already Scorched-STAMPED: restore the corridor board, apply the Scorched effect to stamp its
+	# HAZARD cells, then snapshot it back out. This snapshot's Scorched cells are ALREADY Terrain.HAZARD.
+	var restore: ActionResult = BoardState.try_from_snapshot(_scorched_corridor_snapshot())
+	assert_true(restore.succeeded, "Setup: the corridor board should restore.")
+	var stamped_board: BoardState = restore.metadata.get("board") as BoardState
+	var stamp: ActionResult = AffinityEffectResolver.new().apply_board_effects(stamped_board, &"scorched", repo)
+	assert_true(stamp.succeeded, "Setup: the Scorched effect should stamp the corridor board.")
+	assert_true((stamp.metadata.get("stamped_hazard_cells", []) as Array).size() > 0, "Setup: the first stamp marks at least one HAZARD cell.")
+	assert_true(_hazard_cell_count(stamped_board) > 0, "Setup: the pre-stamped board carries Scorched HAZARD cells.")
+	var pre_stamped_snapshot: Dictionary = stamped_board.to_snapshot()
+
+	# The EXACT empty-diff condition the L1 refactor protects: re-applying Scorched to a board restored from the
+	# already-stamped snapshot stamps NOTHING new (every Scorched cell is already HAZARD, so apply's stamped diff is
+	# EMPTY) — the case where the OLD diff-based flag would have gone false and silently disabled the DoT.
+	var re_restore: ActionResult = BoardState.try_from_snapshot(pre_stamped_snapshot)
+	assert_true(re_restore.succeeded, "Setup: the pre-stamped board should re-restore.")
+	var re_apply: ActionResult = AffinityEffectResolver.new().apply_board_effects(re_restore.metadata.get("board") as BoardState, &"scorched", repo)
+	assert_true(re_apply.succeeded, "Setup: re-applying Scorched to the pre-stamped board succeeds.")
+	assert_equal((re_apply.metadata.get("stamped_hazard_cells", []) as Array).size(), 0, "The pre-stamped board yields an EMPTY apply diff (every Scorched cell is already HAZARD) — the empty-diff condition L1 targets.")
+
+	# The PROTECTED PATH: resolve on the PRE-STAMPED Scorched snapshot. Despite the empty apply-diff, the plan-derived
+	# `_scorched_hazard_active` is TRUE (resolve_board_plan reports the already-HAZARD cells as plan-eligible), so the
+	# burning DoT STILL ticks — proving the flag is stamp-invariant (a pre-stamped/memoized Scorched board is not
+	# silently de-fanged).
+	var second: ActionResult = LiveCombatResolver.new().resolve(
+		pre_stamped_snapshot, {"x": 1, "y": 1}, RngStreamSet.new(7), 1, &"sword", &"scorched", repo
+	)
+	assert_true(second.succeeded, "The pre-stamped Scorched resolve should succeed: %s" % second.metadata)
+	var burning: Array = _burning_events(second.events)
+	assert_true(burning.size() > 0, "A PRE-STAMPED Scorched board STILL ticks the burning DoT (the plan-derived flag is stamp-invariant — L1's protected path).")
+	assert_equal(String((burning[0] as Dictionary).get("weapon_id", "")), "scorched_hazard", "The pre-stamped DoT names the Scorched hazard source (scorched_hazard).")
+	assert_equal(int((burning[0] as Dictionary).get("final_damage", 0)), 2, "The pre-stamped DoT deals the FIXED authored amount (2 — no RNG).")
 
 
 # ---- helpers -------------------------------------------------------------------------------------
