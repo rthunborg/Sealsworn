@@ -3,10 +3,10 @@ epic_num: 10
 story_num: 1
 branch: story/10-1-device-tiers-and-performance-budgets
 status: in-progress
-updated_at: "2026-07-07T10:25:00Z"
+updated_at: "2026-07-07T11:05:00Z"
 started_at: "2026-07-07T09:48:00Z"
 completed_at: null
-active_seconds: 1920
+active_seconds: 1980
 is_first_in_epic: true
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -24,13 +24,13 @@ base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
 code_review_iterations: 1
-code_review_loop_done: false
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: [f95c9a4, 6e5a7be, a90af85]
+commits: [f95c9a4, 6e5a7be, a90af85, f62f4f5]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -40,8 +40,7 @@ pr_merged: false
 merge_method: null
 merge_commit: null
 branch_deleted: false
-open_questions:
-  - "[Review][Decision] (Low): accept shared-surface preview proxy for BUDGET_SELECTION_RESPONSE_MS in live driver (reviewer-recommended, AC3 met) vs emit distinctly-labelled selection measurement in dump_performance_budgets.gd"
+open_questions: []
 deferred_work: []
 blockers: []
 overrides: {}
