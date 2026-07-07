@@ -4,7 +4,7 @@ baseline_commit: 3ce6e9b159e02600487b49d0d0f69918396b079b
 
 # Story 10.8: Darkness Fairness Moving-LoS Predicate and Readiness Sample Expansion
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
