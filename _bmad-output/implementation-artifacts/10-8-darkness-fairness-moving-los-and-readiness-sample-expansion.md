@@ -4,7 +4,7 @@ baseline_commit: 3ce6e9b159e02600487b49d0d0f69918396b079b
 
 # Story 10.8: Darkness Fairness Moving-LoS Predicate and Readiness Sample Expansion
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -238,48 +238,42 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Confirm the canonical predicate + its callers + the v0 board facts (Part A / AC1)**
-  - [ ] Read `godot/scripts/generation/level/darkness_fairness_query.gd` predicate (b), lines 148–187 (the
+- [x] **Task 1 — Confirm the canonical predicate + its callers + the v0 board facts (Part A / AC1)**
+  - [x] Read `godot/scripts/generation/level/darkness_fairness_query.gd` predicate (b), lines 148–187 (the
         `seen_from_entrance` static check to strengthen), predicate (a) 132–146 (entrance checks to PRESERVE), the
         `_flood_terrain` 4-neighbour reachability 217–239, and the `REASON_*` + `_violation` + `check_board`
-        signature. Confirm the four reason strings and the `darkness_fairness_violation` top-level code stay stable.
-  - [ ] Confirm the v0 board facts that make moving-LoS provably fair: `BoardCell.blocks_line_of_sight()` is true
+        signature. Confirmed the four reason strings and the `darkness_fairness_violation` top-level code stay stable.
+  - [x] Confirmed the v0 board facts that make moving-LoS provably fair: `BoardCell.blocks_line_of_sight()` is true
         ONLY for `Terrain.WALL` (`godot/scripts/tactical/board/board_cell.gd:33-34`), HAZARD is walkable +
-        sight-transparent (3.4); `TacticalLineQuery.has_line_of_sight` inspects only INTERIOR line cells
-        (`tactical_line_query.gd:63`), so adjacent cells always have LoS; `DarknessVisibilityLayer` reduced radius =
-        2, floor = 1 (`darkness_visibility_layer.gd:76-77`, 105–114). These are the premises the strengthened
-        predicate relies on — cite them in the code comment so a future reviewer sees WHY the simplification is
-        sound.
-  - [ ] Read the two callers you must keep working: `RunOrchestrator._check_darkness_fairness_live`
+        sight-transparent (3.4); `TacticalLineQuery.blocking_cells` inspects only INTERIOR line cells
+        (`tactical_line_query.gd:63` — `range(1, max(1, line.size() - 1))`, empty for adjacent cells), so adjacent
+        cells always have LoS; `DarknessVisibilityLayer` reduced radius = 2, floor = 1
+        (`darkness_visibility_layer.gd:76-77`, 105–114). Cited in the code comment.
+  - [x] Read the two callers to keep working: `RunOrchestrator._check_darkness_fairness_live`
         (`run_orchestrator.gd:1100-1125`, the HARD live gate — a `darkness_fairness_violation` returns error → the
         run STOPS with no partial progression, mirroring `live_combat_failed`) and the batch harness's
-        `_classify_darkness_fairness_over_batch` (`test_generator_fairness_batch.gd:262-308`). Confirm both REFLECT
+        `_classify_darkness_fairness_over_batch` (`test_generator_fairness_batch.gd:262-308`). Both REFLECT
         the query verdict (neither re-derives the predicate) — after Part A they both simply observe the new PASS.
 
-- [ ] **Task 2 — Strengthen predicate (b) to moving reduced-radius LoS / seen-before-contact (Part A / AC1)**
-  - [ ] In `check_board`'s predicate-(b) loop (lines 154–176), replace the `seen_from_entrance` test (a hazard is
-        fair iff within-reduced-radius-of-ENTRANCE AND `has_line_of_sight(board, entrance, hazard)`) with a
-        seen-before-contact test: a REACHABLE hazard is fair iff there exists at least one reachable 4-neighbour
-        step-from cell from which the hazard is LoS-visible at the reduced radius. Given the v0 facts this is
-        satisfied by construction for every reachable hazard, so the implementation may (a) directly encode the
-        proof (any reachable hazard has a reachable 4-neighbour whose distance-1 LoS is unoccludable ⇒ PASS), OR (b)
-        walk the reachable region and confirm each hazard is seen from some reachable step-from cell at the reduced
-        radius. Prefer form (b) if it keeps the guard genuinely re-trippable for a FUTURE sight-blocking hazard /
-        forced-movement config (i.e. don't hard-code PASS — actually check LoS from the step-from cell), while
-        remaining a pure terrain/LoS read. Keep it a FIRST-violation return (the existing shape) so a genuinely
-        unseen-before-contact hazard (should the v0 facts ever change) still FAILS `darkness_unseen_hazard` LOUD
-        with the offending `hazard_cell` + compact diagnostics.
-  - [ ] PRESERVE unchanged: predicate (a) `entrance_on_hazard` / `entity_on_entrance`; the `invalid_darkness_candidate`
-        guards (null/empty board, entrance out of bounds); the `not_a_darkness_level` neutral/non-Darkness PASS; the
-        reduced-radius floor; the four `REASON_*` strings; the `darkness_fairness_violation` error code; compact
-        PASS/FAIL diagnostics (counts/coords, NEVER a grid dump); purity (no RNG / no command / no mutation).
-        Update the class header comment block (lines 20–51) so the predicate-(b) description reads
-        "seen-before-contact under stepwise movement" instead of "seen from the entrance", and cite the v0-facts
-        proof. Keep the `reachable_seen_hazard_count` / `hazard_count` pass-report fields meaningful under the new
-        semantics.
+- [x] **Task 2 — Strengthen predicate (b) to moving reduced-radius LoS / seen-before-contact (Part A / AC1)**
+  - [x] In `check_board`'s predicate-(b) loop, replaced the `seen_from_entrance` static test with a seen-before-contact
+        test via the new `_seen_before_contact(board, hazard, terrain_reachable, radius_squared)` helper: a REACHABLE
+        hazard is fair iff there exists at least one reachable 4-neighbour step-from cell from which the hazard is
+        LoS-visible at the reduced radius. Used form (b) — the helper WALKS the reachable 4-neighbours and ACTUALLY
+        tests `has_line_of_sight` from each (not a hard-coded PASS), so the guard stays genuinely re-trippable for a
+        FUTURE sight-blocking hazard / forced-teleport landing. Kept the FIRST-violation return shape with the
+        offending `hazard_cell` + compact diagnostics. Scratch-verified: the old far-corridor FAIL board now PASSES
+        (reachable_seen=1), the adjacent-hazard board still PASSES, entrance-on-hazard still FAILS, sealed hazard
+        still PASSES (reachable_seen=0).
+  - [x] PRESERVED unchanged: predicate (a) `entrance_on_hazard` / `entity_on_entrance`; the `invalid_darkness_candidate`
+        guards; the `not_a_darkness_level` neutral/non-Darkness PASS; the reduced-radius floor; the four `REASON_*`
+        strings; the `darkness_fairness_violation` error code; compact PASS/FAIL diagnostics; purity (no RNG / no
+        command / no mutation). Updated the class header comment block so predicate (b) reads "seen-before-contact
+        under stepwise movement" with the full v0-facts proof cited. `reachable_seen_hazard_count` / `hazard_count`
+        pass-report fields stay meaningful (reachable_seen = reachable hazards proven seen-before-contact).
 
-- [ ] **Task 3 — Deliberately update the two test files + add the moving-LoS proof (Part A / AC2)**
-  - [ ] `godot/tests/unit/generation/test_darkness_fairness.gd`: the existing
+- [x] **Task 3 — Deliberately update the two test files + add the moving-LoS proof (Part A / AC2)**
+  - [x] `godot/tests/unit/generation/test_darkness_fairness.gd`: the existing
         `_unseen_hazard_at_reduced_radius_fails_loud` places a reachable hazard "far down the open corridor"
         (distance 7 > radius 2) and asserts FAIL — under moving-LoS that is now a legitimate PASS. Convert it into
         the NEW moving-LoS proof: assert that an entrance-unseen-but-reachable hazard on an open path PASSES (the
@@ -293,7 +287,7 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         the stable `darkness_fairness_violation` code + `phase_for_reason` mapping. Add an explicit
         "genuinely-unfair still FAILS" case (predicate (a): entrance-on-hazard is the v0 unavoidable-no-see-first
         config).
-  - [ ] `godot/tests/integration/test_generator_fairness_batch.gd`: DELIBERATELY update the generated-board Darkness
+  - [x] `godot/tests/integration/test_generator_fairness_batch.gd`: DELIBERATELY update the generated-board Darkness
         classification expectations now that Medium 4004/5005 PASS. Specifically:
         - `_batch_darkness_fairness_verdict_recorded_for_every_generated_board`: `verdict_count` still == 10; the
           `medium_darkness_fail_seeds` assertion (currently `== [4004, 5005]`) becomes an assertion that the
@@ -319,7 +313,7 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
           far-corridor hazard now passes.
         - Update the module header comment (lines 429–435, "HONEST FINDING … Medium 4004/5005 FAIL") to record that
           10.8 strengthened the predicate and those seeds now PASS.
-  - [ ] **CRITICAL — a THIRD stale FAIL test NOT named in the epics.md ACs:**
+  - [x] **CRITICAL — a THIRD stale FAIL test NOT named in the epics.md ACs:**
         `godot/tests/unit/run/test_live_affinity_flow.gd::_darkness_fairness_violation_on_the_live_path_stops_with_no_partial_progression`
         (Story 11.4, lines 153–189) builds `_unfair_darkness_board_snapshot()` (a reachable HAZARD at (8,6),
         distance 7 from the entrance, "unseen from the entrance at the reduced radius", lines 233–262) and asserts
@@ -333,15 +327,15 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         comments (which currently say "reachable HAZARD cell UNSEEN at the reduced radius" and "v0 boards are
         all-FLOOR so the STOP path is structurally unreachable through the real generator") to reflect the new
         predicate + that Medium DOES bake hazards live.
-  - [ ] Grep the whole repo for ANY other test/tool that pins the old static-from-entrance Darkness FAIL behavior
+  - [x] Grep the whole repo for ANY other test/tool that pins the old static-from-entrance Darkness FAIL behavior
         on a far/open-path hazard and update it deliberately (the three known sites are the two epics.md-named test
         files + `test_live_affinity_flow.gd`; also update the header comment in
         `godot/tools/dump_generator_fairness_report.gd` lines 3–8, which narrates "the recorded Darkness FR58
         finding on Medium seeds 4004 + 5005" — that finding is resolved after Part A). A silent stale FAIL
         expectation would break the suite.
 
-- [ ] **Task 4 — Correct the false-premise comment on the live gate (Part A / AC3)**
-  - [ ] In `godot/scripts/run/run_orchestrator.gd` `_check_darkness_fairness_live` (the comment block ~lines
+- [x] **Task 4 — Correct the false-premise comment on the live gate (Part A / AC3)**
+  - [x] In `godot/scripts/run/run_orchestrator.gd` `_check_darkness_fairness_live` (the comment block ~lines
         1094–1099), correct "v0 generated boards are all-FLOOR": state that all-FLOOR holds ONLY for the Small
         recipe; the Medium recipe bakes wrinkle-phase `Terrain.HAZARD` cells (`elite_combat -> medium_combat_basic /
         SIZE_MEDIUM` per `NodeEnterCommand.NODE_TYPE_RECIPE`), so live Medium Darkness runs DO produce hazard
@@ -351,8 +345,8 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         change the gate's structure/behavior (still error → stop). Also correct the mirror comment on
         `resolve_combat_node_live` (~lines 1003–1007) which repeats the "all-FLOOR by construction" premise.
 
-- [ ] **Task 5 — Record the FR58 resolution in the fairness ledger (Part A / AC3, AC8)**
-  - [ ] Edit `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` §4: record that the user chose
+- [x] **Task 5 — Record the FR58 resolution in the fairness ledger (Part A / AC3, AC8)**
+  - [x] Edit `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` §4: record that the user chose
         option 2 ("strengthen the fairness predicate") on 2026-07-07, that Story 10.8 formalized predicate (b) from
         static-from-entrance to moving reduced-radius LoS (seen-before-contact), that Medium 4004/5005 are now
         legitimate PASS, and that the strengthening removes the latent false-positive HARD-stop on live
@@ -360,8 +354,8 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         was real; it is now resolved). Add a Change Log row (§8). Do NOT alter §4's statement that this is NOT a
         generator change and re-pins NO terrain fingerprint.
 
-- [ ] **Task 6 — Expand the shared Small/Medium generation catalog to 50/50, coordinated + dump-tool-only (Part B / AC5, AC6)**
-  - [ ] AFTER Part A is landed + green, pick 45 additional Small + 45 additional Medium seeds (extend the existing
+- [x] **Task 6 — Expand the shared Small/Medium generation catalog to 50/50, coordinated + dump-tool-only (Part B / AC5, AC6)**
+  - [x] AFTER Part A is landed + green, pick 45 additional Small + 45 additional Medium seeds (extend the existing
         `[1001,2002,3003,4004,5005]`; use varied, documented seeds — mirror the route expansion's spread style). Add
         the SAME 50-seed list to EVERY shared-catalog site so they never desync:
         `tools/dump_performance_budgets.gd::LEVEL_LOAD_SEEDS` (10.1 perf);
@@ -375,7 +369,7 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         == BATCH_SEEDS.size()`, line 701) are computed from the constants and auto-adjust to the new size — but the
         stale narrative comments "5 Small + 5 Medium = 10" (lines 27, 255, 439, 442) should be refreshed to the new
         catalog size.
-  - [ ] Regenerate the NEW Small + Medium layout fingerprint pins via the sanctioned dumps:
+  - [x] Regenerate the NEW Small + Medium layout fingerprint pins via the sanctioned dumps:
         `tools/dump_small_layout_fingerprints.gd` → the 45 new entries in
         `test_small_level_layout_seed_regression.gd::APPROVED_FINGERPRINTS`; `tools/dump_medium_layout_fingerprints.gd`
         → the 45 new entries in `test_medium_level_layout_seed_regression.gd::APPROVED_FINGERPRINTS`; the batch
@@ -384,7 +378,7 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         re-pin of existing values; the divergence cross-check in the batch fixture enforces agreement). Annotate each
         new catalog entry with its AC4 tactical-decision note per the existing preserved-catalog discipline. Add a
         Change Log row to each fixture header documenting the 5→50 expansion + the dump provenance + date.
-  - [ ] Confirm the 50 Small + 50 Medium generation seeds all PASS `LevelValidator` on the unperturbed attempt 0
+  - [x] Confirm the 50 Small + 50 Medium generation seeds all PASS `LevelValidator` on the unperturbed attempt 0
         (`attempts == 1`) so the zero-tolerance thresholds still hold by construction. If ANY new seed exhausts the
         bounded retry OR trips a zero-tolerance validator code, STOP and report it as a genuine readiness finding
         (that is a new unwinnable/unfair seed — a `needs-human` balance/threshold decision per the sprint-change
@@ -393,28 +387,28 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         Darkness-failure set stays empty; if a genuinely unseen-before-contact config somehow appears (it should
         not under v0 facts), that too is a `needs-human` finding.
 
-- [ ] **Task 7 — Expand tactical (→25), reward (→20), boss (→10), affinity (→10-per-affinity) (Part B / AC5)**
-  - [ ] Tactical → 25: grow the consolidated suite's tactical seed sample
+- [x] **Task 7 — Expand tactical (→25), reward (→20), boss (→10), affinity (→10-per-affinity) (Part B / AC5)**
+  - [x] Tactical → 25: grow the consolidated suite's tactical seed sample
         (`test_seed_regression_suite.gd::_tactical_fixtures_report_fingerprint_and_pass_fail`, currently the inline
         8-seed `[1, 7, 42, 99, 2026, 314, 777, 8675309]`) to ≥ 25 deterministic command/board fixtures (per-seed
         determinism, not a pinned fingerprint format — so this is additive seeds, no new pin format). Keep the
         two-run reproducibility + "board actually advanced" assertions.
-  - [ ] Reward → 20: grow `test_seed_regression_suite.gd::REWARD_SEED_SAMPLE` (currently 8) to 20 per-seed cases
+  - [x] Reward → 20: grow `test_seed_regression_suite.gd::REWARD_SEED_SAMPLE` (currently 8) to 20 per-seed cases
         (per-seed determinism via `RunOrchestrator.generate_reward_offer` / `generate_passive_reward_offer`).
-  - [ ] Boss → 10: add ≥ 5 more annotated seeds to
+  - [x] Boss → 10: add ≥ 5 more annotated seeds to
         `godot/tests/integration/finale/test_finale_seed_regression.gd::APPROVED_BOSS_SEED_CATALOG` (currently 5:
         4242/1/7777/9e18/314159) to reach 10, each annotated per the AC4 preserved-catalog discipline. Finale has
         NO `dump_*` tool (fixed arena + ZERO-RNG AI), so the composite for each new seed comes from a live run,
         recorded inline. The 10.2 suite iterates this imported catalog — no second copy.
-  - [ ] Affinity → 10-per-affinity: grow `test_seed_regression_suite.gd::AFFINITY_SEED_SAMPLE` (currently 8 mixed)
+  - [x] Affinity → 10-per-affinity: grow `test_seed_regression_suite.gd::AFFINITY_SEED_SAMPLE` (currently 8 mixed)
         so that at least 10 seeds land on EACH implemented affinity (`scorched`, `flooded_conductive`, `cursed`,
         `darkness`) via `RunOrchestrator.assign_affinity` on the `map` stream — a targeted-seed search per affinity.
         DOCUMENT the per-affinity counts (which seeds map to which affinity) in the suite + the ledger. Flooded-Conductive
         and Darkness MUST both surface with ≥ 10 (the AC calls them out explicitly). Do NOT wire any affinity EFFECT
         into generation — this is a per-seed ASSIGNMENT-determinism sample only.
-  - [ ] Route: UNCHANGED — `test_route_generation_seed_regression.gd::APPROVED_FINGERPRINTS` is already 20/20 (8
-        original + 12 added by 10.2). Do not touch it.
-  - [ ] **DELIBERATELY update the suite's honest-sample assertion block**
+  - [x] Route: UNCHANGED — `test_route_generation_seed_regression.gd::APPROVED_FINGERPRINTS` is already 20/20 (8
+        original + 12 added by 10.2). Confirmed untouched (git diff --stat empty for that file).
+  - [x] **DELIBERATELY update the suite's honest-sample assertion block**
         (`test_seed_regression_suite.gd::_mvp_readiness_targets_are_stated_and_current_sample_is_honest`, lines
         654–666): the current `assert_true(small_count >= 5, "... temporary %d of 50 ...")` (+ the medium/boss/
         reward/affinity twins) are phrased as "still-temporary sub-target" tripwires. After the expansion, flip them
@@ -426,26 +420,26 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.8). Two parts (A: FR58 predi
         affinity, so "10-per-affinity" is actually proven, not proxied. Keep the assertions reading LIVE from the
         catalogs (never hand-typed) — that tripwire against a silently-shrunk sample stays.
 
-- [ ] **Task 8 — Update both readiness ledgers' gap tables (Part B / AC8)**
-  - [ ] `seed-regression-suite-readiness.md` §3: mark tactical (25), Small (50), Medium (50), reward (20),
+- [x] **Task 8 — Update both readiness ledgers' gap tables (Part B / AC8)**
+  - [x] `seed-regression-suite-readiness.md` §3: mark tactical (25), Small (50), Medium (50), reward (20),
         per-affinity (10-each), boss (10) as MET, each with the discharge date (2026-07-07) + the dump-tool/live
         provenance; route stays MET. Update §5 / §7 / §8 (Change Log) accordingly.
-  - [ ] `generator-fairness-batch-readiness.md` §5: mark Small (50) + Medium (50) as MET via the coordinated
+  - [x] `generator-fairness-batch-readiness.md` §5: mark Small (50) + Medium (50) as MET via the coordinated
         expansion, and note the affinity-coverage rows discharged; keep §4 (the FR58 resolution from Task 5). Update
         §8 Change Log.
-  - [ ] Both ledgers: EXPLICITLY keep the remaining non-mechanical gaps (the G1–G7 physical-device sample passes)
+  - [x] Both ledgers: EXPLICITLY keep the remaining non-mechanical gaps (the G1–G7 physical-device sample passes)
         recorded as 10.6-owned — those are NOT discharged by this story.
 
-- [ ] **Task 9 — Full-suite green under a stated wall-clock bound + false-PASS guard + invariant re-verification (AC7, AC9)**
-  - [ ] Run the full headless suite via the console binary (the `godot` binary is NOT on the Bash/`where` PATH):
+- [x] **Task 9 — Full-suite green under a stated wall-clock bound + false-PASS guard + invariant re-verification (AC7, AC9)**
+  - [x] Run the full headless suite via the console binary (the `godot` binary is NOT on the Bash/`where` PATH):
         `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe --headless --path
         C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10` (or via PowerShell
         `godot` shim). TIME it (wall-clock). Apply the false-PASS grep guard on the RAW output: `^FAIL` count must
         be 0; the SIX documented stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1)
         still PASS and are NOT a regression. Record the observed elapsed + the proposed sane bound (with headroom
         for 50+50 generation seeds) in the Completion Notes as the explicit AC7 guard.
-  - [ ] Run `git diff --check` (whitespace/EOL) and confirm it is clean.
-  - [ ] Re-verify the determinism/save invariants HELD (they are asserted by the suite, but state them in the
+  - [x] Run `git diff --check` (whitespace/EOL) and confirm it is clean.
+  - [x] Re-verify the determinism/save invariants HELD (they are asserted by the suite, but state them in the
         Completion Notes): 7 named RNG streams; zero new RNG draw sites; the 23-key `RunSnapshot` gate;
         `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1`; every non-Part-A fingerprint SOURCE + the
         byte-identical original pins (route 20; Small/Medium original 5+5; boss original 5). Confirm the default
@@ -654,8 +648,75 @@ final"; §4.1 AC group; Change-Nav 6.4]
 
 ### Agent Model Used
 
+Opus 4.8 (1M context) — model id `claude-opus-4-8[1m]` (auto-gds dev-story delegate).
+
 ### Debug Log References
+
+- Baseline full suite (pre-change): 185 PASS, 0 `^FAIL`, ~45s, "Headless tests passed." (6 documented stderr negatives present, runner exit 0).
+- Part A full suite (predicate + 3 test files + 2 comments): 185 PASS, 0 FAIL, ~36s.
+- Part B generation-expansion full suite (50/50 catalog + fixtures): 185 PASS, 0 FAIL, ~59s.
+- Part B tactical/reward/boss/affinity full suite: 185 PASS, 0 FAIL, ~67s.
+- FINAL full suite: 185 PASS, 0 `^FAIL`, ~49s wall-clock, "Headless tests passed."
+- Scratch verification (predicate flip, removed): far-corridor hazard now PASS (reachable_seen=1); adjacent hazard PASS; entrance-on-hazard FAIL; sealed hazard PASS (reachable_seen=0).
+- Scratch probe (50 seeds, removed): all 50 seeds x both recipes validate on attempt 0 (attempts==1, validated) AND pass the strengthened Darkness fairness check — PROBLEMS = 0, no seed duplicates.
+- Scratch affinity search (removed): a greedy `map`-stream search yielded exactly 10 seeds per implemented affinity (scorched/flooded_conductive/cursed/darkness) → the curated 40-seed `AFFINITY_SEED_SAMPLE`.
+- False-PASS grep guard on FINAL raw output: `^FAIL` = 0; the diagnostic/stderr lines are BYTE-IDENTICAL to baseline (8 lines each, no diff) — no new stderr negatives introduced.
+- `git diff --check`: exit 0 (clean; the LF→CRLF advisories are the repo's normal line-ending notes, not whitespace errors).
 
 ### Completion Notes List
 
+**Part A — FR58 moving-LoS predicate (landed FIRST, verdicts final before Part B):**
+- Strengthened `DarknessFairnessQuery` predicate (b) from static-from-ENTRANCE to MOVING reduced-radius LoS ("seen-before-contact") via a new pure `_seen_before_contact(board, hazard, terrain_reachable, radius_squared)` helper: a reachable hazard is fair iff it is LoS-visible at the reduced radius from at least one reachable 4-neighbour step-from cell. Form (b) — the helper WALKS the reachable 4-neighbours and ACTUALLY tests `has_line_of_sight` (not a hard-coded PASS), so the guard stays genuinely re-trippable for a FUTURE sight-blocking hazard / forced-teleport landing. The class header now carries the full v0-facts proof (HAZARD walkable+sight-transparent; reachable hazard always has a reachable 4-neighbour at squared distance 1 within the floor-1 reduced radius; adjacent-cell LoS unoccludable).
+- PRESERVED: predicate (a) `entrance_on_hazard`/`entity_on_entrance`; `invalid_darkness_candidate`; `not_a_darkness_level`; the four `REASON_*` strings; the `darkness_fairness_violation` code; compact diagnostics; purity (no RNG/command/mutation). Re-pinned NOTHING (the query is not fingerprinted).
+- Medium 4004/5005 flip from `darkness_unseen_hazard` FAIL to legitimate PASS. Deliberately updated the THREE stale FAIL sites: `test_darkness_fairness.gd` (converted the far-corridor FAIL to a moving-LoS PASS proof + added an explicit predicate-(a) "genuinely-unfair still FAILS" case + re-pointed `_failure_carries_seed_phase_and_reason` to an entrance-on-hazard config); `test_generator_fairness_batch.gd` (the `[4004,5005]` finding set → EMPTY, `darkness_failure_count == 0` + `final_readiness_fr58_darkness_met == true`, re-pointed the flag+preserve test to a hand-built predicate-(a) board, re-shaped the reflect FAIL half); and `test_live_affinity_flow.gd` (re-shaped `_unfair_darkness_board_snapshot()` to HAZARD-on-entrance so the live-gate STOP path stays exercised). Also updated the `dump_generator_fairness_report.gd` narrative.
+- Corrected the false "all-FLOOR" premise comment on BOTH `_check_darkness_fairness_live` and `resolve_combat_node_live` in `run_orchestrator.gd` — COMMENT ONLY (the gate STRUCTURE is unchanged: error → stop). The comments now state all-FLOOR holds only for Small, Medium bakes HAZARD wrinkles (elite_combat→medium_combat_basic), this is a HARD live progression gate, and the moving-LoS predicate removes the latent false-positive hard-stop on live Darkness+Medium runs.
+- Recorded the resolution in `generator-fairness-batch-readiness.md` §4 (option 2 "strengthen the predicate" chosen 2026-07-07), §3 verdict table (Medium FR58 now 0 failures), and §8 Change Log. History preserved.
+
+**Part B — coordinated additive sample expansion (AFTER Part A, dump-tool-only, byte-identical originals):**
+- Shared Small/Medium catalog EXPANDED 5→50 in ALL sites TOGETHER (never desynced): `dump_performance_budgets.gd::LEVEL_LOAD_SEEDS`, `dump_seed_batch_report.gd`, `dump_generator_fairness_report.gd`, `test_seed_batch_regression.gd::APPROVED_SEED_CATALOG` (imported by the 10.2 suite), `test_generator_fairness_batch.gd::BATCH_SEEDS`. New Small+Medium layout pins regenerated via `tools/dump_small_layout_fingerprints.gd` / `dump_medium_layout_fingerprints.gd` (seed lists expanded to 50) and captured directly from their output — never hand-typed. The ORIGINAL 5 pins in each fixture are byte-identical (verified: 1001-4004 have zero removed lines; only a trailing comma was added to 5005; the fingerprint value is unchanged).
+- All 50 seeds x both recipes validate on attempt 0 (attempts==1) AND pass the strengthened Darkness fairness check — NO `needs-human` finding. 18 of the 50 Medium seeds carry HAZARD wrinkles, so the moving-LoS predicate is exercised over many real hazard configs (all PASS).
+- Consolidated suite expanded: tactical 8→25 (`TACTICAL_SEED_SAMPLE`), reward 8→20 (`REWARD_SEED_SAMPLE`), affinity mixed-8 → 40-seed curated `AFFINITY_SEED_SAMPLE` with documented `AFFINITY_SEED_BY_AFFINITY` (10 seeds each on scorched/flooded_conductive/cursed/darkness) + a new `_affinity_sample_lands_ten_on_each_implemented_affinity` that PROVES the 10-per-affinity target live (Flooded-Conductive + Darkness asserted explicitly). Boss 5→10 in `test_finale_seed_regression.gd::APPROVED_BOSS_SEED_CATALOG` (inline, annotated — no dump tool). Route UNTOUCHED (20/20; git diff --stat empty).
+- The honest-sample assertion block flipped from "temporary ≥ 5" tripwires to the DISCHARGED targets read LIVE from the catalogs (`small_count == 50`, `medium_count == 50`, `boss_count == 10`, `reward_count == 20`, `tactical_count >= 25`, `affinity_count >= 40` + per-affinity ≥ 10). Both ledgers' §3/§5 gap tables mark every headless-mechanical target MET (2026-07-07) with dump-tool/live provenance; G1-G7 physical-device gaps stay 10.6-owned.
+
+**AC7 wall-clock guard:** FINAL suite observed ~49s (Part-B runs ranged 36-67s across iterations). **Proposed bound: 180s (3 minutes)** on the dev machine — generous headroom over the ~49-67s observed even with the 50+50 generation seeds, the 100-seed fairness batch, and the 40-seed affinity search, while still catching any future balloon.
+
+**AC9 invariants (asserted by the green suite; re-verified):** the 7 named RNG streams (map/level/combat/loot/rewards/events/cosmetic), ZERO new RNG draw sites (the query is pure; Part B only drives seeds through systems that already draw their existing streams), the 23-key `RunSnapshot` gate, `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1`, and every non-Part-A fingerprint SOURCE + its pinned values (route 20/20 untouched; Small/Medium original 5+5 byte-identical; boss original 5 unchanged) HOLD. The default deterministic paths are byte-identical (Part A = a pure query + comments; Part B = additive seeds + additive pins).
+
+**No breaking change.** No public interface, config key, schema, CLI flag, or migration changed. `DarknessFairnessQuery.check_board`'s signature, return shape, reason codes, and top-level error code are all unchanged; the predicate STRENGTHENING only widens the PASS set for reachable non-entrance hazards (a strictly-fairer verdict) — the two callers (the live gate + the batch harness) reflect the verdict and needed no code change (only their now-observed PASS + comment/test updates).
+
 ### File List
+
+Production (Part A):
+- `godot/scripts/generation/level/darkness_fairness_query.gd` (predicate (b) strengthened to moving reduced-radius LoS + `_seen_before_contact` helper + header proof)
+- `godot/scripts/run/run_orchestrator.gd` (COMMENT-ONLY fix on `_check_darkness_fairness_live` + the `resolve_combat_node_live` mirror comment)
+
+Tests (Part A deliberate updates):
+- `godot/tests/unit/generation/test_darkness_fairness.gd`
+- `godot/tests/integration/test_generator_fairness_batch.gd`
+- `godot/tests/unit/run/test_live_affinity_flow.gd`
+
+Tests / fixtures (Part B expansion):
+- `godot/tests/unit/generation/test_small_level_layout_seed_regression.gd` (5→50 pins)
+- `godot/tests/unit/generation/test_medium_level_layout_seed_regression.gd` (5→50 pins)
+- `godot/tests/unit/generation/test_seed_batch_regression.gd` (`APPROVED_SEED_CATALOG` 5→50 per recipe)
+- `godot/tests/integration/test_seed_regression_suite.gd` (tactical 25, reward 20, affinity 40 + per-affinity proof, honest-sample flip)
+- `godot/tests/integration/finale/test_finale_seed_regression.gd` (boss 5→10)
+
+Tools (Part B — sanctioned dump drivers, tools/-gated, never shipped):
+- `godot/tools/dump_small_layout_fingerprints.gd` (seed list 5→50)
+- `godot/tools/dump_medium_layout_fingerprints.gd` (seed list 5→50)
+- `godot/tools/dump_seed_batch_report.gd` (seed list 5→50)
+- `godot/tools/dump_performance_budgets.gd` (`LEVEL_LOAD_SEEDS` 5→50)
+- `godot/tools/dump_generator_fairness_report.gd` (seed list 5→50 + narrative update)
+
+Planning / ledgers:
+- `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` (§3/§4/§5/§7/§8 — FR58 resolution + 50/50 MET)
+- `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` (§3/§7/§8 — all headless-mechanical targets MET)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (10-8 status → review; last_updated)
+- `_bmad-output/implementation-artifacts/10-8-darkness-fairness-moving-los-and-readiness-sample-expansion.md` (this story file)
+
+### Change Log
+
+| Date | Change |
+|---|---|
+| 2026-07-07 | Story 10.8 implemented (auto-gds dev-story). Part A: strengthened `DarknessFairnessQuery` predicate (b) to moving reduced-radius LoS (seen-before-contact) — Medium 4004/5005 flip to PASS, three stale FAIL sites deliberately updated, a new moving-LoS proof + a retained predicate-(a) FAIL case added, the false "all-FLOOR" premise comments corrected (comment-only), the FR58 resolution recorded in the fairness ledger; NO generator change, NO Part-A fingerprint re-pin, NO affinity-into-generation. Part B: coordinated additive sample expansion (generation Small/Medium 5→50 via the sanctioned dump tools with original pins byte-identical; tactical 8→25; reward 8→20; boss 5→10; affinity mixed-8 → 40 curated with 10-per-implemented-affinity proven live; route untouched at 20/20), both readiness ledgers' gap tables discharged (G1-G7 stay 10.6-owned), the honest-sample assertion flipped to the MET targets. Full suite 185 PASS / 0 FAIL / ~49s; false-PASS guard clean; determinism/save invariants hold. Status → review. |

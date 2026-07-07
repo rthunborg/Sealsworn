@@ -91,9 +91,34 @@ fingerprint (the fairness half only READS validator verdicts).
 |---|---|---|---|
 | Soft-lock / gate / unreachable-exit / unreachable-reward / illegal-placement / base unsafe-first-reveal | 0 failures (all pass `LevelValidator` on unperturbed attempt 0, `attempts == 1`) | 0 failures (same) | **YES** — met by construction |
 | Bounded-retry exhaustion | 0% | 0% | **YES** |
-| **FR58 `darkness_unseen_hazard` (Darkness affinity)** | **0 failures** (Small boards are all-FLOOR) | **2 failures — seeds 4004 + 5005** | **NO (Medium)** — see §4 |
+| **FR58 `darkness_unseen_hazard` (Darkness affinity)** | **0 failures** (Small boards are all-FLOOR) | **0 failures** (Story 10.8 — moving-LoS predicate; 4004/5005 now PASS, seen-before-contact) | **YES** (both recipes, post-10.8) — see §4 RESOLUTION |
 
-## 4. ⭐ Honest Darkness FR58 Finding (the real 10.6-gate readiness signal)
+## 4. ⭐ Honest Darkness FR58 Finding (the real 10.6-gate readiness signal) — RESOLVED by Story 10.8 (2026-07-07)
+
+> **RESOLUTION (Story 10.8, 2026-07-07 — user chose option 2 "strengthen the fairness predicate").** The finding
+> below was REAL and is now RESOLVED. Story 10.8 formalized `DarknessFairnessQuery` predicate (b) from
+> **static-from-ENTRANCE** to **moving reduced-radius LoS ("seen-before-contact")**: a reachable hazard is fair iff
+> the hero necessarily SEES it from at least one reachable 4-neighbour "step-from" cell at the reduced radius BEFORE
+> they can step onto it. Under the v0 board facts (HAZARD is walkable + sight-transparent — only WALL blocks LoS;
+> any reachable hazard has a reachable 4-neighbour step-from cell at squared distance 1, within the reduced radius
+> floor 1; LoS between 4-adjacent cells is unoccludable) this is true for **every** reachable hazard, so **Medium
+> seeds 4004 (hazard at (9,4)) and 5005 (hazards at (10,2)+(12,2)) are now legitimate PASS**, and the generated-board
+> Darkness fairness failure set is EMPTY (Small AND Medium meet the FR58 zero-tolerance bar). The batch tests
+> (`test_generator_fairness_batch.gd`) and the unit tests (`test_darkness_fairness.gd`) were DELIBERATELY updated to
+> match (the flip is documented in-test), and a new moving-LoS proof was added (an entrance-unseen-but-seen-before-contact
+> hazard PASSES; a genuinely-unfair predicate-(a) entrance-on-hazard config still FAILS LOUD).
+>
+> The strengthening ALSO removes a **latent false-positive HARD-stop on live Darkness+Medium runs**:
+> `RunOrchestrator._check_darkness_fairness_live` runs the SAME query on the live board as a hard run-progression gate,
+> and because `NodeEnterCommand.NODE_TYPE_RECIPE` maps `elite_combat -> medium_combat_basic` (SIZE_MEDIUM), live elite
+> nodes generate Medium boards with baked HAZARD wrinkles. Under the static-from-entrance predicate such a
+> Darkness+Medium live run could have tripped a false `darkness_fairness_violation` (a run STOP with no partial
+> progression); the moving-LoS predicate removes that latent hard-stop. The false-premise comment on that gate ("v0
+> generated boards are all-FLOOR" — true only for Small) was corrected in the same story.
+>
+> **This is NOT a generator change** and re-pins NO terrain fingerprint (the query is a pure READ over validator/LoS
+> verdicts; it is not fingerprinted). The generator stays affinity-blind; the affinity is assigned POST-generation (the
+> 7.4 contract). The original finding, its data, and the three owning options are preserved below for history.
 
 **The Dev-Notes premise "v0 generated boards are all-FLOOR" holds for the Small recipe but is FALSE for Medium.**
 The Medium generator's tactical-wrinkle phase (`hazard` wrinkle kind, realized as `Terrain.HAZARD` — the 3.4
@@ -133,7 +158,8 @@ some seeds. The batch surfaced this live:
    affinity-into-generation story owns that; 10.3 must not perturb fingerprints).
 2. **Strengthen the fairness predicate** to model moving reduced-radius LoS (walk the reachable region, confirm each
    hazard is seen from SOME reachable cell before it can be stepped on) — a 7.6-predicate enhancement, if live
-   moving-LoS is deemed the fair contract.
+   moving-LoS is deemed the fair contract. **← CHOSEN by the user 2026-07-07 and implemented by Story 10.8 (see the
+   RESOLUTION banner at the top of this section). Re-pins NO terrain fingerprint (the query is not fingerprinted).**
 3. **Accept as a documented readiness LIMITATION** — the affinity is assigned POST-generation and Darkness is 1 of 5
    affinities, so any given Medium level is Darkness only a fraction of runs; 10.6 may judge the honestly-surfaced,
    telegraphed-on-approach hazard an acceptable v0 limitation (with the finding recorded here).
@@ -151,21 +177,24 @@ harness ACTUALLY drives (read live from `BATCH_SEEDS` × `BATCH_RECIPES` — nev
 
 | Dimension | Target | Current sample | Status | Owning action |
 |---|---|---|---|---|
-| Small level seeds | 50 | 5 (seeds 1001/2002/3003/4004/5005) | **temporary (5 of 50)** | a COORDINATED generation-sample expansion across the three Epic-10 harnesses (10.1 level-load, 10.2 regression, 10.3 fairness) via `tools/dump_seed_batch_report.gd`, OR an approved 10.6 de-scope |
-| Medium level seeds | 50 | 5 (seeds 1001/2002/3003/4004/5005) | **temporary (5 of 50)** | same as Small — expand together (do NOT expand the shared catalog in isolation) OR 10.6 de-scope |
-| Affinity fairness coverage | each implemented affinity checked | all 4 implemented (`scorched`, `flooded_conductive`, `cursed`, `darkness`) + neutral `none` checked over a batch level; Darkness (the only reduced-radius affinity) checked over EVERY batch level | **MET (coverage)** — every implemented affinity's fairness verdict is asserted | none for coverage; the Darkness-half FR58 FINDING (§4) is the 10.6 item |
+| Small level seeds | 50 | **50** (original 1001/2002/3003/4004/5005 + 45 appended) | **MET** (Story 10.8, 2026-07-07 — COORDINATED 5 → 50 across the three Epic-10 harnesses; original 5 pins byte-identical) | none |
+| Medium level seeds | 50 | **50** (original 1001/2002/3003/4004/5005 + 45 appended) | **MET** (Story 10.8, 2026-07-07 — COORDINATED 5 → 50; original 5 pins byte-identical) | none |
+| Affinity fairness coverage | each implemented affinity checked | all 4 implemented (`scorched`, `flooded_conductive`, `cursed`, `darkness`) + neutral `none` checked over a batch level; Darkness (the only reduced-radius affinity) checked over EVERY batch level | **MET (coverage)** — every implemented affinity's fairness verdict is asserted | none — the Darkness-half FR58 FINDING (§4) is RESOLVED by Story 10.8 (moving-LoS predicate; 0 failures) |
 
-**Why the sub-target sample is an availability gap, not a blocker (the 10.1/10.2 honest-scope posture):** AC1/AC4
-are dischargeable WITHOUT reaching 50/50 in one pass — the batch runs the FULL current approved catalog (all 5+5
-pass the GENERATION zero-tolerance classes by construction), STATES the 50/50 target, and records the sub-target
-sample as an explicit temporary gap gated at 10.6. Every verdict came from an ACTUAL live run through the real
-validators over the real generate payload — none is hand-typed to hit a count.
+**The 50/50 target is MET (Story 10.8, 2026-07-07).** The batch now runs 50 Small + 50 Medium seeds; all PASS the
+GENERATION zero-tolerance classes by construction (attempts == 1) AND — post-10.8 Part A — the strengthened
+Darkness fairness check (every reachable Medium hazard is seen-before-contact, so the Darkness-failure set is
+EMPTY). Every verdict came from an ACTUAL live run through the real validators over the real generate payload —
+none is hand-typed to hit a count.
 
-**Do NOT expand the shared generation seed catalog in isolation.** The 10.1 level-load harness + the 10.2
-regression suite BOTH pin `[1001,2002,3003,4004,5005]` for both recipes; the 10.2 ledger §3 records that a
-generation-sample expansion toward 50/50 must be a COORDINATED pass across all three Epic-10 harnesses. 10.3
-RESPECTS that: it draws the SAME 5+5 for the terrain-affecting batch (re-pinning NO terrain fingerprint — the
-fairness harness only reads validator verdicts), and records the coordinated-expansion intent here.
+**The shared generation seed catalog was expanded COORDINATED, never in isolation.** Story 10.8 grew
+`[1001,2002,3003,4004,5005]` → the 50-seed catalog in ALL THREE Epic-10 sites TOGETHER: the 10.1 level-load
+harness (`tools/dump_performance_budgets.gd::LEVEL_LOAD_SEEDS`), the 10.2 consolidated suite (via the imported
+`test_seed_batch_regression.gd::APPROVED_SEED_CATALOG`), and the 10.3 fairness batch
+(`test_generator_fairness_batch.gd::BATCH_SEEDS`). New layout pins were regenerated ONLY via the sanctioned
+`tools/dump_*` drivers AFTER the Part-A predicate change (verdicts final), with the original 5+5 pins
+byte-identical (additive expansion, not a re-pin). The fairness harness itself still re-pins NO terrain
+fingerprint (it only READS validator verdicts).
 
 ## 6. Determinism / Generation Invariants Respected
 
@@ -182,12 +211,12 @@ this story's one new passing batch test).
 ## 7. Epic-10 Gate Handoff and Cross-References
 
 - **10.6 (MVP Readiness Gate and Playable-Build Preservation).** Consumes the batch harness + its threshold verdict
-  + this sample-gap ledger + **the Darkness FR58 finding (§4)**. 10.6 decides: (a) per still-temporary sub-target
-  sample, "acceptable documented readiness LIMITATION" vs "must discharge via a coordinated generation-sample
-  expansion before MVP-readiness passes"; and (b) how to resolve the Darkness `darkness_unseen_hazard` finding on
-  Medium 4004/5005 (tune the generator / strengthen the predicate / accept as a documented limitation — §4). A
-  sub-target sample AND a non-zero FR58 finding both mean final MVP readiness cannot pass on those axes without an
-  approved 10.6 decision — that is the gate's call, not 10.3's.
+  + this sample-gap ledger + the Darkness FR58 finding (§4). **Both Decision items 10.3 handed forward were
+  DISCHARGED by Story 10.8 (2026-07-07):** (a) the Darkness `darkness_unseen_hazard` finding on Medium 4004/5005 is
+  RESOLVED via the strengthened moving-LoS predicate (§4 RESOLUTION — 0 generated-board Darkness failures, both
+  recipes meet the FR58 bar); and (b) the Small/Medium 50/50 sample target is MET via the coordinated expansion
+  (§5). 10.6 now VERIFIES these rather than deciding them. 10.6's residual is the **G1–G7 physical-device gaps** and
+  the overall readiness roll-up. See `sprint-change-proposal-2026-07-07-fr58.md`.
 - **10.2 (Headless Seed Regression Suite).** Shares the `[1001,2002,3003,4004,5005]` Small/Medium seed catalog; the
   10.2 ledger `seed-regression-suite-readiness.md` §3/§7 records the coordinated-expansion intent. 10.3 keeps its
   generation seed catalog COMPATIBLE (draws the same 5+5) so the two harnesses agree on seeds.
@@ -210,3 +239,4 @@ this story's one new passing batch test).
 | Date | Version | Change | Author |
 |---|---|---|---|
 | 2026-07-07 | 1.0 | Initial authoring — batch harness over the shared Small+Medium seed catalog COMPOSING the two existing validators (`LevelValidator` 3.6, `DarknessFairnessQuery` 7.6) under one `seed + phase + reason` (+ `affinity`) contract (reuse-not-fork, no second flood/LoS); the AC4 zero-tolerance + ≤ 1% retry-exhaustion thresholds stated + applied (base generation classes MET by construction); the forced-failure + authentic-finding flag-and-preserve paths; the `50/50` sample target + 5-of-50 gap (shared-catalog coordination, no isolated expansion); **the honest Darkness FR58 `darkness_unseen_hazard` finding on Medium seeds 4004+5005 (the real 10.6-gate readiness signal — the generated Medium `hazard` wrinkles are unseen at the Darkness-reduced radius; the Dev-Notes "all-FLOOR" premise holds for Small only)**; the tools/-gated report driver. Protects FR36 + FR58 under NFR13; feeds 10.6. | Story 10.3 (dev agent) |
+| 2026-07-07 | 1.1 | **Story 10.8 — FR58 RESOLUTION (Part A) + coordinated sample expansion (Part B).** §4 records the user's choice of option 2 ("strengthen the fairness predicate"): `DarknessFairnessQuery` predicate (b) formalized from static-from-entrance to **moving reduced-radius LoS (seen-before-contact)**, flipping Medium 4004/5005 to legitimate PASS (§3 verdict table updated — Medium FR58 now 0 failures, MEETS the bar), removing the latent false-positive hard-stop on live Darkness+Medium runs (the `_check_darkness_fairness_live` premise comment corrected). NO generator change, NO Part-A fingerprint re-pin, NO affinity-into-generation. §5 marks Small (50) + Medium (50) MET via the COORDINATED additive expansion across the three Epic-10 harnesses using the sanctioned `tools/dump_*` drivers (original 5+5 pins byte-identical); the affinity-coverage rows stay MET. The G1–G7 physical-device gaps stay 10.6-owned. | Story 10.8 (dev agent) |

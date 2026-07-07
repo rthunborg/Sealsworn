@@ -59,33 +59,35 @@ asserted across a seed sample. Cosmetic independence reuses the Story 1.4 per-st
 
 ## 3. MVP-Readiness Seed-Sample Targets (AC2) and the Current-vs-Target Gap Ledger
 
-The seven FINAL target sample sizes are stated verbatim from AC2. **A smaller pre-MVP sample is TEMPORARY and
-cannot pass final MVP readiness without an approved de-scope — that decision belongs to the 10.6 gate, not to
-10.2.** The "current" column is the sample the consolidated suite ACTUALLY drives (read live from the
-imported catalogs + the suite's own samples — never a fabricated count).
+The seven FINAL target sample sizes are stated verbatim from AC2. **Story 10.8 (2026-07-07) DISCHARGED every
+headless-mechanical sample target** via a coordinated additive expansion (see the Status column). The "current"
+column is the sample the consolidated suite ACTUALLY drives (read live from the imported catalogs + the suite's
+own samples — never a fabricated count; the honest-sample assertion asserts each MET target live).
 
 | System | AC2 target | Current sample | Status | Owning action |
 |---|---|---|---|---|
-| Tactical command/board | ≥ 25 fixtures | 8 fixtures (consolidated suite) + the broad Epic-1 command/board test corpus | **temporary (8 of 25)** | sample-expansion pass OR 10.6 de-scope (note: the wider command/board determinism is ALSO proven across the Epic-1 command tests + `test_board_state.gd` / `test_board_fixtures.gd` + the 2.8 proof — the consolidated seed catalog is the sub-target piece) |
-| Small level seeds | 50 | 5 (seeds 1001/2002/3003/4004/5005) | **temporary (5 of 50)** | sample-expansion pass via `tools/dump_seed_batch_report.gd`, kept COMPATIBLE with the 10.1 level-load sample + the 10.3 fairness batch (see §5) OR 10.6 de-scope |
-| Medium level seeds | 50 | 5 (seeds 1001/2002/3003/4004/5005) | **temporary (5 of 50)** | same as Small — expand together, share the seed set across the three Epic-10 harnesses OR 10.6 de-scope |
+| Tactical command/board | ≥ 25 fixtures | **25** fixtures (`TACTICAL_SEED_SAMPLE` in the consolidated suite) + the broad Epic-1 command/board test corpus | **MET** (Story 10.8, 2026-07-07 — grown 8 → 25 per-seed command/board fixtures; per-seed determinism, no pinned-fingerprint format so no re-pin) | none |
+| Small level seeds | 50 | **50** (original 1001/2002/3003/4004/5005 + 45 appended) | **MET** (Story 10.8, 2026-07-07 — COORDINATED 5 → 50 across the three Epic-10 harnesses via `tools/dump_small_layout_fingerprints.gd`/`dump_seed_batch_report.gd`; original 5 pins byte-identical) | none |
+| Medium level seeds | 50 | **50** (original 1001/2002/3003/4004/5005 + 45 appended) | **MET** (Story 10.8, 2026-07-07 — COORDINATED 5 → 50 via `tools/dump_medium_layout_fingerprints.gd`/`dump_seed_batch_report.gd`; original 5 pins byte-identical) | none |
 | Route seeds | 20 | **20** (the original 8 + 12 added by 10.2) | **MET** | none — reached target via the 10.2 mechanical expansion in `test_route_generation_seed_regression.gd` |
-| Reward/passive seeds | 20 | 8 (1/7/42/99/2026/314/777/8675309) | **temporary (8 of 20)** | sample-expansion pass (add more per-seed cases to the suite's `REWARD_SEED_SAMPLE`) OR 10.6 de-scope |
-| Per implemented affinity | 10 each | 8 seeds over the full baseline (surfacing Scorched / Cursed / neutral in the sample; the four implemented affinities are Scorched / Flooded-Conductive / Cursed / Darkness) | **temporary (8 mixed of 10-per-affinity)** | sample-expansion pass (drive ≥ 10 seeds that land on EACH implemented affinity — a targeted-seed search per affinity) OR 10.6 de-scope |
-| Boss/finale seeds | 10 | 5 (4242/1/7777/9e18/314159) | **temporary (5 of 10)** | sample-expansion pass (add more seeds to `test_finale_seed_regression.gd::APPROVED_BOSS_SEED_CATALOG`, annotated per the AC4 preserved-catalog discipline) OR 10.6 de-scope |
+| Reward/passive seeds | 20 | **20** (8 historical + 12 appended) | **MET** (Story 10.8, 2026-07-07 — grown 8 → 20 per-seed cases in `REWARD_SEED_SAMPLE`) | none |
+| Per implemented affinity | 10 each | **10 each** on Scorched / Flooded-Conductive / Cursed / Darkness (a curated 40-seed `AFFINITY_SEED_SAMPLE`; per-affinity membership documented in `AFFINITY_SEED_BY_AFFINITY` + proven live) | **MET** (Story 10.8, 2026-07-07 — targeted-seed search; `_affinity_sample_lands_ten_on_each_implemented_affinity` proves each implemented affinity gets ≥ 10 live-verified seeds, incl. Flooded-Conductive + Darkness) | none |
+| Boss/finale seeds | 10 | **10** (original 4242/1/7777/9e18/314159 + 2026/777/88888/271828/999999937) | **MET** (Story 10.8, 2026-07-07 — grown 5 → 10 in `test_finale_seed_regression.gd::APPROVED_BOSS_SEED_CATALOG`, annotated per the preserved-catalog discipline; no dump tool — fixed arena + ZERO-RNG AI, composites from live runs) | none |
 
-**Why the sub-target samples are availability gaps, not blockers (the honest-scope posture, mirroring 10.1's
-physical-device numbers):** AC2 was written to be dischargeable WITHOUT reaching every target in one pass — it
-names the final target AND explicitly says a smaller pre-MVP sample is marked temporary and gated at 10.6.
-10.2's job is to make each gap explicit + dischargeable + to move the samples meaningfully toward target where
-mechanical (route reached target; the rest are recorded). Every pinned value the suite asserts came from an
-ACTUAL live run through the system's canonical source — none is hand-typed to hit a count.
+**All headless-mechanical sample targets are now MET (Story 10.8, 2026-07-07).** The remaining readiness gaps
+are the **G1–G7 physical-device sample passes** (sustained on-device FPS, real-touch latency, iOS packaging,
+etc.) — those are NOT sample-size gaps and stay **10.6-owned** (they require physical hardware a headless run
+cannot exercise). Every count in the table is read LIVE from the catalog by the suite's honest-sample assertion,
+so a silently-shrunk sample fails LOUD. Every pinned value came from an ACTUAL live run / sanctioned dump —
+none is hand-typed to hit a count.
 
-**Generation Small/Medium deliberately held at 5 (not expanded to 50 in 10.2):** the 10.1 level-load harness
-and the 10.3 fairness batch BOTH draw over the same `[1001,2002,3003,4004,5005]` catalog, and the 10.1 doc §7
-records the cross-harness compatibility intent. Expanding generation to 50 in isolation would desync the three
-Epic-10 harnesses; the correct expansion is a coordinated pass across all three (or a 10.6 de-scope), so 10.2
-records the gap rather than forking the seed set. This is the coordinated call, not an oversight.
+**Generation Small/Medium were held at 5 through 10.2, then expanded to 50 by 10.8 (the coordinated call):** the
+10.1 level-load harness + the 10.3 fairness batch BOTH draw the shared catalog; expanding generation in isolation
+would desync the three Epic-10 harnesses. Story 10.8 performed the correct COORDINATED 5 → 50 expansion across all
+three (`tools/dump_performance_budgets.gd::LEVEL_LOAD_SEEDS`, `test_seed_batch_regression.gd::APPROVED_SEED_CATALOG`
+imported by this suite, `test_generator_fairness_batch.gd::BATCH_SEEDS`), regenerated ONLY via the sanctioned
+`tools/dump_*` drivers AFTER 10.8's moving-LoS predicate change so the fairness verdicts are final, with the
+original 5+5 pins byte-identical.
 
 ## 4. Pause/Resume Determinism + Cosmetic Independence (AC3)
 
@@ -127,9 +129,10 @@ byte-identical).
 ## 7. Epic-10 Gate Handoff and Cross-References
 
 - **10.6 (MVP Readiness Gate and Playable-Build Preservation).** Consumes the consolidated suite + this
-  sample-size gap ledger (§3). 10.6 decides, per still-temporary sub-target sample, "acceptable documented
-  readiness LIMITATION" vs "must discharge via a sample-expansion pass before MVP-readiness passes." The route
-  target is already MET; the remaining six rows are the gate's decision surface.
+  sample-size gap ledger (§3). **As of Story 10.8 (2026-07-07) every headless-mechanical sample target is MET**
+  (tactical 25, Small 50, Medium 50, route 20, reward 20, per-affinity 10-each, boss 10), so 10.6 no longer
+  decides these — it VERIFIES them. 10.6's residual sample surface is the **G1–G7 physical-device passes** (not
+  sample-size gaps — they need hardware). See `sprint-change-proposal-2026-07-07-fr58.md`.
 - **10.3 (Generator Soft-Lock and Fairness Batch Checks).** Runs the fairness half over a batch of Small/Medium
   seeds. 10.2 keeps its generation seed catalog COMPATIBLE (the shared `[1001,2002,3003,4004,5005]` set) so the
   two harnesses agree on seeds; a coordinated generation-sample expansion (toward the 50/50 target) should
@@ -145,3 +148,4 @@ byte-identical).
 | Date | Version | Change | Author |
 |---|---|---|---|
 | 2026-07-07 | 1.0 | Initial authoring — consolidated seed-regression suite across the six named systems under one `fingerprint + pass/fail + seed/system/phase/reason` contract (reusing each system's single canonical source + the per-system pinned catalogs, no second format); pause/resume-in-simulation proof + cosmetic independence consolidated; the seven MVP-readiness sample targets stated + the current-vs-target gap ledger recorded (route reached target via the 8→20 expansion; the rest recorded as temporary gaps for the 10.6 gate); the DELIBERATE-UPDATE / no-silent-drift discipline; the tools/-gated report driver. Protects NFR13; feeds 10.6. | Story 10.2 (dev agent) |
+| 2026-07-07 | 1.1 | **Story 10.8 — §3 gap table DISCHARGED for every headless-mechanical target** via a coordinated additive expansion (AFTER 10.8's Part-A moving-LoS predicate change so verdicts are final): tactical 8→25 (`TACTICAL_SEED_SAMPLE`), Small 5→50 + Medium 5→50 (COORDINATED across the three Epic-10 harnesses via the sanctioned `tools/dump_*` drivers, original 5+5 pins byte-identical), reward 8→20 (`REWARD_SEED_SAMPLE`), per-affinity mixed-8 → 10-each on all four implemented affinities (curated `AFFINITY_SEED_SAMPLE` + `AFFINITY_SEED_BY_AFFINITY`, proven live by `_affinity_sample_lands_ten_on_each_implemented_affinity`), boss 5→10 (`APPROVED_BOSS_SEED_CATALOG`); route already 20/20 (untouched). The honest-sample assertion flipped from "temporary ≥ 5" tripwires to the DISCHARGED targets read live. The remaining G1–G7 physical-device gaps stay 10.6-owned. | Story 10.8 (dev agent) |

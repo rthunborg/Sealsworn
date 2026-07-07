@@ -1001,10 +1001,14 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 	var affinity_id: StringName = assigned_affinity_for(node.id)
 
 	# Story 11.4 (AC3) — DARKNESS FAIRNESS on the live board (the 7.6 single authority). Run the fairness check on the
-	# built board (Darkness only — a neutral / non-Darkness affinity is a legal not-applicable pass). A generated v0 board
-	# is all-FLOOR so a Darkness level PASSES by construction. A darkness_fairness_violation is a HARD run-progression
-	# error — surface it structurally + STOP (mirroring live_combat_failed, no partial progression). The check consumes NO
-	# RNG, runs NO command, advances NO turn (the pure-query contract). The verdict metadata is captured for the HUD read.
+	# built board (Darkness only — a neutral / non-Darkness affinity is a legal not-applicable pass). NOTE (Story 10.8):
+	# "all-FLOOR" holds ONLY for the Small recipe; the Medium recipe (elite_combat -> medium_combat_basic / SIZE_MEDIUM)
+	# bakes wrinkle-phase Terrain.HAZARD cells, so live Medium Darkness runs DO produce hazard boards — but under the
+	# strengthened moving-LoS predicate every reachable hazard is seen-before-contact -> PASS, so a fair live board still
+	# passes by construction (10.8 removed the latent false-positive the static-from-entrance predicate would have tripped
+	# here). A darkness_fairness_violation is a HARD run-progression error — surface it structurally + STOP (mirroring
+	# live_combat_failed, no partial progression). The check consumes NO RNG, runs NO command, advances NO turn (the
+	# pure-query contract). The verdict metadata is captured for the HUD read.
 	var fairness: ActionResult = _check_darkness_fairness_live(generation, affinity_id, node)
 	if fairness.is_error():
 		return fairness
@@ -1091,12 +1095,17 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 	})
 
 
-# Story 11.4 (AC3) — run DarknessFairnessQuery.check_board on the live board (the 7.6 single authority). For a Darkness
-# level a fair board PASSES by construction (v0 generated boards are all-FLOOR). A darkness_fairness_violation surfaces
-# as a HARD run-progression error (fail-loud with fairness_reason + seed + phase — the whole failure metadata is carried
-# through) so the caller STOPS with no partial progression. A neutral / non-Darkness affinity is a legal not-applicable
-# pass. The check restores the board from the generated payload (Darkness stamps NO terrain, so this is the same board
-# the resolver plays, minus the hero). PURE: no RNG, no command, no turn. Returns the check verdict verbatim on success.
+# Story 11.4 (AC3) — run DarknessFairnessQuery.check_board on the live board (the 7.6 single authority). This is a HARD
+# LIVE PROGRESSION GATE: a darkness_fairness_violation stops the run with NO partial progression (the node is neither
+# cleared nor failed, mirroring live_combat_failed), fail-loud with fairness_reason + seed + phase (the whole failure
+# metadata is carried through). A neutral / non-Darkness affinity is a legal not-applicable pass. NOTE (Story 10.8):
+# "all-FLOOR" holds ONLY for the Small recipe — the Medium recipe (elite_combat -> medium_combat_basic / SIZE_MEDIUM per
+# NodeEnterCommand.NODE_TYPE_RECIPE) bakes wrinkle-phase Terrain.HAZARD cells, so live Medium Darkness runs DO produce
+# hazard boards. Under the static-from-entrance predicate those reachable-but-entrance-unseen hazards would have tripped
+# a latent FALSE-POSITIVE hard-stop here; Story 10.8's strengthened moving-LoS (seen-before-contact) predicate makes
+# every reachable hazard fair, REMOVING that latent false-positive from this live gate. The check restores the board
+# from the generated payload (Darkness stamps NO terrain, so this is the same board the resolver plays, minus the hero).
+# PURE: no RNG, no command, no turn. Returns the check verdict verbatim on success.
 func _check_darkness_fairness_live(generation: GenerationResult, affinity_id: StringName, node: RouteNode) -> ActionResult:
 	# Only Darkness levels have a reduced radius to re-assert; skip the board restore for every other affinity.
 	if affinity_id != DarknessVisibilityLayer.AFFINITY_DARKNESS:

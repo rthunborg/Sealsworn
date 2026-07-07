@@ -38,8 +38,16 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 
 # The seed sample the level-load measurement draws over. Kept compatible with the approved Small + Medium
 # seed catalog the seed-batch report / regression suite (Story 10.2) use, so the two harnesses agree on
-# which seeds a level-load number is reported for.
-const LEVEL_LOAD_SEEDS: Array[int] = [1001, 2002, 3003, 4004, 5005]
+# which seeds a level-load number is reported for. Story 10.8: EXPANDED 5 -> 50 (coordinated with the 10.2
+# consolidated suite + the 10.3 fairness batch — the three Epic-10 harnesses draw the SAME 50-seed catalog).
+const LEVEL_LOAD_SEEDS: Array[int] = [
+	1001, 2002, 3003, 4004, 5005,
+	1, 2, 3, 5, 7, 13, 42, 99, 123, 256,
+	314, 512, 777, 1024, 1234, 2026, 2718, 3141, 4242, 5555,
+	6006, 7007, 8008, 8675309, 9999, 12345, 31415, 55555, 65536, 77777,
+	88888, 100003, 123456, 161803, 271828, 314159, 500009, 654321, 1000003, 1048576,
+	2000003, 7777777, 16777216, 999999937, 123456789
+]
 
 # Combat-step labels that stand in for the NFR5 preview/selection response (the domain compute a real
 # preview/selection intent drives). line_of_sight_update ~ preview recompute; command_execution ~ commit.

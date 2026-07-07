@@ -23,12 +23,13 @@ extends "res://tests/unit/test_case.gd"
 # half only READS validator verdicts), changes NO generator/validator/RNG/save invariant, and adds NO new
 # gameplay or fairness rule. The full headless suite stays green + byte-for-byte behaviorally unchanged.
 #
-# SAMPLE-SIZE HONESTY (the 10.1/10.2 posture): the batch drives the FULL current approved shared catalog
-# (5 Small + 5 Medium = `[1001,2002,3003,4004,5005]`; all PASS by construction on the unperturbed attempt 0).
-# The `50 Small / 50 Medium` MVP-readiness target + the current-vs-target (5-of-50) gap are recorded in the
-# durable ledger `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` (the 10.6-owned
-# honest-scope item). This harness does NOT expand the shared generation seed catalog in isolation (that would
-# desync the three Epic-10 harnesses); its additive fairness sampling re-pins NO terrain fingerprint.
+# SAMPLE-SIZE HONESTY (the 10.1/10.2 posture): the batch drives the FULL approved shared catalog. Story 10.8
+# EXPANDED it 5 -> 50 (50 Small + 50 Medium), COORDINATED with the 10.1 level-load harness + the 10.2
+# consolidated suite (all three Epic-10 harnesses draw the SAME 50-seed catalog — never desynced), so the
+# `50 Small / 50 Medium` MVP-readiness target is now MET (see the durable ledger
+# `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` §5). All 50 seeds PASS by
+# construction on the unperturbed attempt 0; the fairness half re-pins NO terrain fingerprint (it only READS
+# validator verdicts).
 #
 # SCOPE GUARDS (do NOT build here): no generator/layout/`LevelValidator`/`DarknessFairnessQuery`/RNG/
 # `GenerationResult`-phase/fingerprint change; no affinity-driven GENERATION modifier (the affinity is assigned
@@ -55,12 +56,19 @@ const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_en
 
 # ---- the batch sample (AC1/AC4) ------------------------------------------------------------------
 #
-# The SHARED Epic-10 generation seed catalog: the SAME `[1001,2002,3003,4004,5005]` the 10.1 level-load
-# harness + the 10.2 regression suite (+ the 3.7 batch) draw over, for BOTH baseline recipes. Kept
-# COMPATIBLE with those harnesses (do NOT expand in isolation — a coordinated 50/50 expansion is the 10.6
-# item recorded in the readiness ledger). These approved seeds PASS `LevelValidator` on the unperturbed
-# attempt 0, so the zero-tolerance thresholds are MET by construction (failure rate 0%, attempts == 1).
-const BATCH_SEEDS: Array[int] = [1001, 2002, 3003, 4004, 5005]
+# The SHARED Epic-10 generation seed catalog: the SAME 50 seeds the 10.1 level-load harness + the 10.2
+# regression suite (+ the 3.7 batch) draw over, for BOTH baseline recipes. Story 10.8 EXPANDED it 5 -> 50
+# (the original 5 preserved byte-identical + 45 appended), COORDINATED across all three Epic-10 harnesses
+# (never desynced in isolation). These approved seeds PASS `LevelValidator` on the unperturbed attempt 0, so
+# the zero-tolerance thresholds are MET by construction (failure rate 0%, attempts == 1).
+const BATCH_SEEDS: Array[int] = [
+	1001, 2002, 3003, 4004, 5005,
+	1, 2, 3, 5, 7, 13, 42, 99, 123, 256,
+	314, 512, 777, 1024, 1234, 2026, 2718, 3141, 4242, 5555,
+	6006, 7007, 8008, 8675309, 9999, 12345, 31415, 55555, 65536, 77777,
+	88888, 100003, 123456, 161803, 271828, 314159, 500009, 654321, 1000003, 1048576,
+	2000003, 7777777, 16777216, 999999937, 123456789
+]
 
 # The two baseline recipes driven through the batch (the v0 Small + Medium recipes). A "recipe batch" for the
 # AC3/AC4 failure-rate + retry-exhaustion threshold is one of these driven over BATCH_SEEDS.
@@ -252,7 +260,7 @@ func _first_node(orchestrator: RunOrchestrator) -> RouteNode:
 # The SINGLE live classifier for the Darkness fairness half over the batch — the one place the batch drives
 # every (recipe, seed) through the REAL generator + DarknessFairnessQuery.check_board(..., &"darkness", ...)
 # and CLASSIFIES the verdict. Returns a dict:
-#   verdict_count       : how many levels got a verdict (must equal 5 Small + 5 Medium).
+#   verdict_count       : how many levels got a verdict (must equal BATCH_SEEDS x BATCH_RECIPES = 50 Small + 50 Medium).
 #   passes              : Array of {recipe_id, seed} that PASS the Darkness fairness check.
 #   darkness_failures   : Array of preserved findings {recipe_id, seed(str), seed_int, affinity_id,
 #                         fairness_reason, phase, hazard_cell?} for levels that FAIL under Darkness.
@@ -426,20 +434,23 @@ func _forced_failure_shape_carries_seed_phase_reason_and_exhausts_bounded_retry(
 
 # AC2: for each batch level, run DarknessFairnessQuery.check_board over the level's board with the DARKNESS
 # affinity and RECORD the FR58 verdict (the check ran for every batch level — "a batch level whose affinity
-# fairness is unchecked = AC2 not met"). ⭐ HONEST FINDING (contradicts the story Dev Notes' "generated boards
-# are all-FLOOR" claim, which holds for Small but NOT Medium): the Medium tactical-wrinkle phase bakes HAZARD
-# terrain into some seeds (4004, 5005), and those hazards are reachable-but-UNSEEN at the Darkness-reduced
-# radius (2) — so assigning Darkness to those Medium levels FAILS `darkness_unseen_hazard`. The batch does NOT
-# fabricate a passing verdict; it REPORTS the finding honestly (classified below, flagged for tuning +
-# preserved for the 10.6 gate). Small levels are all-FLOOR and PASS. Every failure carries the affinity tag +
-# seed + phase + fairness reason (compact, no grid dump).
+# fairness is unchecked = AC2 not met"). ⭐ STORY 10.8 DELIBERATE FLIP: 10.3 recorded an HONEST FINDING here —
+# the Medium tactical-wrinkle phase bakes HAZARD terrain into seeds 4004/5005, and under the v0
+# static-from-ENTRANCE predicate those reachable hazards were UNSEEN at the Darkness-reduced radius (2) and so
+# FAILED `darkness_unseen_hazard`. Story 10.8 STRENGTHENED predicate (b) to MOVING reduced-radius LoS
+# (seen-before-contact): a reachable hazard is fair iff the hero necessarily SEES it from a reachable adjacent
+# step-from cell before contact — which is true for EVERY reachable v0 hazard (hazards walkable +
+# sight-transparent + reduced radius >= 1 + unoccludable adjacent LoS). So the generated-board Darkness
+# classification now yields ZERO failures (Small AND Medium PASS); the batch's honest verdict becomes "generated
+# Darkness boards meet the FR58 zero-tolerance bar." The forced/hand-built FAIL-path coverage (predicate (a) +
+# AlwaysFailValidator) stays exercised below so the flag+preserve machinery is still proven.
 func _batch_darkness_fairness_verdict_recorded_for_every_generated_board() -> void:
 	var classification: Dictionary = _classify_darkness_fairness_over_batch()
 
-	# The check produced a verdict for EVERY batch level (AC2 "unchecked = not met"): 5 Small + 5 Medium = 10.
+	# The check produced a verdict for EVERY batch level (AC2 "unchecked = not met"): 50 Small + 50 Medium.
 	assert_equal(
 		int(classification.get("verdict_count")), BATCH_SEEDS.size() * BATCH_RECIPES.size(),
-		"AC2: the Darkness fairness check must produce a verdict for every batch level (5 Small + 5 Medium = 10)."
+		"AC2: the Darkness fairness check must produce a verdict for every batch level (BATCH_SEEDS x BATCH_RECIPES)."
 	)
 
 	# Small levels are all-FLOOR -> every Small Darkness verdict PASSES (fair by construction).
@@ -449,8 +460,10 @@ func _batch_darkness_fairness_verdict_recorded_for_every_generated_board() -> vo
 		"AC2: every Small Darkness level must pass the fairness check (Small is all-FLOOR). Failures: %s" % str(small_failures)
 	)
 
-	# EVERY recorded Darkness failure is the FR58 unseen-hazard class, tagged with affinity + seed + phase + reason
-	# (never a grid dump) — the AC2/AC3 fail-loud reporting contract, exercised by the REAL Medium hazard seeds.
+	# Story 10.8: under the strengthened moving-LoS predicate the generated-board Darkness failure set is now EMPTY
+	# (every reachable Medium hazard, incl. 4004/5005, is seen-before-contact -> PASS). The per-finding shape assertions
+	# below stay but now iterate an empty set — if a FUTURE generator change ever bakes a genuinely
+	# unseen-before-contact hazard (a sight-blocking hazard, which v0 has none of), this loop re-asserts the shape.
 	for finding: Dictionary in classification.get("darkness_failures", []):
 		assert_equal(String(finding.get("affinity_id")), "darkness", "AC2: a Darkness fairness failure is TAGGED by affinity (darkness).")
 		assert_equal(String(finding.get("fairness_reason")), String(DarknessFairnessQuery.REASON_UNSEEN_HAZARD), "AC2: a generated Darkness fairness failure is the darkness_unseen_hazard FR58 class.")
@@ -458,16 +471,17 @@ func _batch_darkness_fairness_verdict_recorded_for_every_generated_board() -> vo
 		assert_equal(String(finding.get("phase")), "validation", "AC2: a Darkness fairness failure reports the validation phase.")
 		assert_false(String(finding.get("recipe_id")).is_empty(), "AC2: a Darkness fairness failure carries the recipe (for reproduction/tuning).")
 
-	# The finding is the KNOWN Medium hazard-seed set (this is the readiness signal 10.3 hands to 10.6 — a real
-	# fairness gap under the Darkness affinity, NOT a harness bug). If the generator changes and these seeds stop
-	# producing an unseen hazard, this assertion fails LOUD so the ledger is re-verified (no silent drift).
+	# ⭐ STORY 10.8: the generated-board Darkness failure set is now EMPTY (Medium 4004/5005 flipped to PASS under
+	# moving-LoS). If a future generator change bakes a genuinely unseen-before-contact hazard, this fails LOUD so the
+	# readiness ledger is re-verified (no silent drift) — the same fail-loud tripwire, now guarding the ZERO-failure
+	# invariant instead of the [4004,5005] set.
 	var medium_darkness_fail_seeds: Array[int] = []
 	for finding: Dictionary in classification.get("darkness_failures", []):
 		medium_darkness_fail_seeds.append(int(finding.get("seed_int")))
 	medium_darkness_fail_seeds.sort()
 	assert_equal(
-		medium_darkness_fail_seeds, [4004, 5005] as Array[int],
-		"AC2: the Darkness fairness batch surfaces exactly the Medium hazard seeds 4004 + 5005 (the recorded 10.6-gate readiness finding). A change here means the generator's Medium hazard placement moved — re-verify the readiness ledger, do NOT silence."
+		medium_darkness_fail_seeds, [] as Array[int],
+		"AC2 (Story 10.8): the generated-board Darkness fairness failures are now EMPTY — every reachable Medium hazard (incl. 4004/5005) is seen-before-contact under the strengthened moving-LoS predicate. A NON-empty set here means the generator baked a genuinely unseen-before-contact hazard; re-verify the readiness ledger, do NOT silence."
 	)
 
 
@@ -552,31 +566,31 @@ func _assigned_affinity_fairness_reflects_the_query_verdict() -> void:
 		assert_equal(String(check.metadata.get("affinity_id", "")), String(assigned_id), "AC2: the fairness verdict is tagged with the assigned affinity id.")
 
 
-# AC2 (the FR58 heart): a hand-built Darkness candidate carrying a REACHABLE hazard UNSEEN at the reduced
-# radius FAILS `darkness_unseen_hazard` with the affinity tag + seed + phase; a hazard SEEN at the reduced
-# radius PASSES ("critical danger is inspectable/telegraphed"). REFLECTS the query's verdict — the harness does
-# NOT re-implement the reachable-hazard-unseen-at-reduced-radius flood/LoS (the 11.4 reflect-not-recompute
-# discipline). Mirrors the 7.6 test's hand-built-candidate pattern (the ONLY place this harness hand-builds a
-# board — a batch level's board always comes from the real generate payload).
+# AC2 (the FR58 heart): the harness REFLECTS the query's verdict for both a FAIL and a PASS config. ⭐ STORY 10.8
+# RE-SHAPE: the 10.3 FAIL half placed a reachable hazard "far down the corridor" (entrance-unseen) — that config is
+# now a legitimate PASS under moving-LoS (the hero sees it from the adjacent step-from cell before contact). The FAIL
+# half is re-shaped to a predicate-(a) config that STILL fails (HAZARD on the entrance cell — the retained v0
+# unavoidable/no-see-first config). The harness does NOT re-implement the fairness predicate (the 11.4
+# reflect-not-recompute discipline). Mirrors the 7.6 hand-built-candidate pattern (the ONLY place this harness
+# hand-builds a board — a batch level's board always comes from the real generate payload).
 func _unseen_hazard_fails_and_seen_hazard_passes_reflecting_the_query() -> void:
 	var affinities: AffinityRepository = _affinity_repository()
 	var query: DarknessFairnessQuery = DarknessFairnessQuery.new()
 
-	# FAIL: a reachable hazard far down the corridor (distance 7 > reduced radius 2 -> unseen at the reduced radius).
+	# FAIL: HAZARD on the entrance cell (predicate (a) entrance_on_hazard — forced turn-1 damage, no see-first step).
 	var fail_grid: Array = _open_grid(14, 12)
 	var corridor_row: int = 12 / 2
-	(fail_grid[corridor_row] as Array)[8] = BoardCell.Terrain.HAZARD
+	(fail_grid[corridor_row] as Array)[1] = BoardCell.Terrain.HAZARD
 	var fail_board: BoardState = _board_from_grid(14, 12, fail_grid)
-	var fail_check: ActionResult = query.check_board(fail_board, &"darkness", affinities, "10300001")
-	assert_true(fail_check.is_error(), "AC2: a reachable hazard unseen at the reduced radius FAILS the fairness check (unavoidable damage from unseen space).")
-	assert_equal(String(fail_check.metadata.get("fairness_reason")), String(DarknessFairnessQuery.REASON_UNSEEN_HAZARD), "AC2: the failure reports the darkness_unseen_hazard fairness reason.")
+	var fail_check: ActionResult = query.check_board(fail_board, &"darkness", affinities, "10300001", Vector2i(1, corridor_row))
+	assert_true(fail_check.is_error(), "AC2 (10.8): a genuinely-unfair Darkness board (entrance-on-hazard) FAILS the fairness check.")
+	assert_equal(String(fail_check.metadata.get("fairness_reason")), String(DarknessFairnessQuery.REASON_ENTRANCE_ON_HAZARD), "AC2: the failure reports the entrance_on_hazard fairness reason (the retained predicate-(a) FAIL).")
 	assert_equal(String(fail_check.metadata.get("seed")), "10300001", "AC2: the failure carries the seed.")
 	assert_equal(String(fail_check.metadata.get("phase")), "validation", "AC2: the failure reports the validation phase.")
 	assert_equal(String(fail_check.metadata.get("affinity_id", &"darkness")), "darkness", "AC2: the failure is TAGGED by affinity (darkness).")
-	assert_true(fail_check.metadata.has("hazard_cell"), "AC2: the failure carries the offending hazard cell (compact diagnostics, no grid dump).")
 
-	# PASS: a hazard adjacent to the entrance (distance 1 <= reduced radius 2, open LoS -> seen). Seen => avoidable
-	# => the "critical danger is inspectable/telegraphed" half is satisfied by the query REFLECTING it.
+	# PASS: a hazard adjacent to the entrance (distance 1 <= reduced radius 2, open LoS -> seen-before-contact). Seen =>
+	# avoidable => the "critical danger is inspectable/telegraphed" half is satisfied by the query REFLECTING it.
 	var pass_grid: Array = _open_grid(11, 11)
 	var pass_corridor: int = 11 / 2
 	(pass_grid[pass_corridor] as Array)[2] = BoardCell.Terrain.HAZARD
@@ -642,21 +656,21 @@ func _zero_tolerance_and_retry_exhaustion_thresholds_hold_for_the_approved_catal
 			"AC4: recipe=%s bounded-retry-exhaustion rate %.4f must stay <= %.4f (%d exhaustions / %d seeds)." % [recipe_id, exhaustion_rate, MAX_RETRY_EXHAUSTION_RATE, retry_exhaustions, batch_size]
 		)
 
-	# AC4 (the FR58 Darkness-half readiness verdict — honest, not fabricated): classify the Darkness fairness
-	# half live. The Small recipe meets the zero-tolerance FR58 bar (0 failures); the Medium recipe does NOT under
-	# the Darkness affinity (the recorded 10.6-gate finding). The batch STATES this: because a non-zero
-	# darkness_unseen_hazard count exists in the current catalog, FINAL MVP readiness CANNOT pass on the Darkness
-	# half without a tuning fix OR an approved de-scope (10.6 owns that decision — see the readiness ledger).
+	# AC4 (the FR58 Darkness-half readiness verdict — honest, not fabricated): classify the Darkness fairness half
+	# live. ⭐ STORY 10.8 DELIBERATE FLIP: 10.3 recorded the Medium recipe NOT meeting the FR58 bar (seeds 4004/5005
+	# unseen at the static-from-entrance radius). Story 10.8 strengthened predicate (b) to MOVING reduced-radius LoS —
+	# every reachable hazard is seen-before-contact, so BOTH recipes now meet the FR58 zero-tolerance bar (0 failures).
+	# The generated-catalog Darkness half MEETS final readiness on this axis.
 	var classification: Dictionary = _classify_darkness_fairness_over_batch()
 	assert_true(classification.get("small_failures", []).is_empty(), "AC4: the Small recipe meets the FR58 darkness_unseen_hazard zero-tolerance bar (0 failures).")
 	var darkness_failure_count: int = (classification.get("darkness_failures", []) as Array).size()
-	# The finding is REAL + non-zero (the readiness signal). Asserting it is > 0 keeps the harness honest: if a
-	# future generator change makes Medium all-FLOOR, this fails LOUD so the ledger's "temporary gap" is re-verified.
-	assert_true(darkness_failure_count > 0, "AC4: the batch must surface the REAL Medium darkness_unseen_hazard finding (the 10.6-gate readiness gap) — a zero here means the generator's Medium hazard placement changed; re-verify the ledger, do NOT silence.")
-	# The FR58 zero-tolerance bar for FINAL readiness is NOT met by the current catalog (Darkness half) — this is
-	# the honest verdict the story hands to 10.6, NOT a silent pass of a sub-bar catalog.
+	# Story 10.8: the count is now 0 (the moving-LoS predicate makes every reachable Medium hazard fair). Asserting it
+	# is == 0 keeps the harness honest: if a future generator change bakes a genuinely unseen-before-contact hazard,
+	# this fails LOUD so the ledger is re-verified.
+	assert_equal(darkness_failure_count, 0, "AC4 (Story 10.8): the batch must surface ZERO generated-board Darkness fairness failures — every reachable Medium hazard (incl. 4004/5005) is seen-before-contact under the strengthened predicate. A non-zero here means the generator baked a genuinely unseen-before-contact hazard; re-verify the ledger, do NOT silence.")
+	# The FR58 zero-tolerance bar for FINAL readiness IS now met by the current catalog (Darkness half) under moving-LoS.
 	var final_readiness_fr58_darkness_met: bool = (darkness_failure_count == 0)
-	assert_false(final_readiness_fr58_darkness_met, "AC4: the Darkness FR58 half does NOT meet the final zero-tolerance readiness bar for the current catalog (Medium hazard seeds) — recorded for the 10.6 gate, not passed silently.")
+	assert_true(final_readiness_fr58_darkness_met, "AC4 (Story 10.8): the Darkness FR58 half MEETS the final zero-tolerance readiness bar for the current catalog — the strengthened moving-LoS predicate makes every reachable Medium hazard seen-before-contact.")
 
 
 # AC3/AC4: PROVE the threshold -> flag -> preserve REPORTING path fires (the forced-failure shape). When an
@@ -707,36 +721,57 @@ func _threshold_breach_flags_recipe_rule_retry_limit_and_preserves_failing_seed(
 		assert_equal(int(record.get("attempts")), LevelGenerator.MAX_GENERATION_ATTEMPTS, "AC3: a preserved retry-exhaustion record carries the exhausted attempt count.")
 
 
-# AC3/AC4 (the AUTHENTIC finding, not just the forced seam): the REAL Darkness FR58 finding (Medium 4004 +
-# 5005) drives the fairness-half failure count above the zero-tolerance threshold, so the harness FLAGS the
-# relevant recipe / validation rule for tuning AND PRESERVES the failing seed(s) as DATA (kept + annotated with
-# the failing affinity/reason/phase/recipe/hazard-cell so each is reproducible). This is the batch surfacing an
-# ACTUAL readiness gap — the exact AC3 "recipes/validation-rules/retry-limits flagged for tuning + failing seeds
-# preserved" path, exercised by real generated boards (not only the injected always-fail seam).
+# AC3/AC4 (the flag+preserve MACHINERY, exercised by a HAND-BUILT unfair board): ⭐ STORY 10.8 RE-POINT — 10.3
+# exercised this path via the REAL Medium 4004/5005 `darkness_unseen_hazard` findings, but the strengthened
+# moving-LoS predicate makes every generated Darkness board PASS (that finding set is now empty). The AC3
+# flag+preserve machinery must STILL be proven, so this re-points to a HAND-BUILT genuinely-unfair Darkness board
+# (predicate (a): HAZARD on the entrance cell — the retained v0 unavoidable/no-see-first config). It drives the
+# query's verbatim FAIL, FLAGS the relevant recipe class + the FR58 validation rule for tuning, and PRESERVES the
+# failing finding as annotated DATA. The machinery is unchanged; only the finding SOURCE moved from a (now-passing)
+# generated seed to a hand-built unfair board — so the flag+preserve path is never silently dropped.
 func _real_darkness_finding_flags_recipe_rule_and_preserves_failing_seeds() -> void:
-	var classification: Dictionary = _classify_darkness_fairness_over_batch()
-	var findings: Array = classification.get("darkness_failures", [])
-	assert_false(findings.is_empty(), "AC3: the batch must surface at least one real Darkness fairness finding to exercise the flag+preserve path.")
+	var affinities: AffinityRepository = _affinity_repository()
+	var query: DarknessFairnessQuery = DarknessFairnessQuery.new()
 
-	# FLAG the relevant recipe + validation rule for tuning (the darkness_unseen_hazard class implicates the Medium
-	# recipe's hazard-wrinkle placement + the DarknessFairnessQuery reduced-radius rule under the Darkness affinity).
+	# A hand-built genuinely-unfair Darkness board: HAZARD on the entrance cell (predicate (a) entrance_on_hazard — the
+	# retained v0 FAIL config now that reachable non-entrance hazards are fair under moving-LoS).
+	var grid: Array = _open_grid(14, 12)
+	var corridor_row: int = 12 / 2
+	(grid[corridor_row] as Array)[1] = BoardCell.Terrain.HAZARD  # HAZARD on the entrance cell (1, corridor).
+	var board: BoardState = _board_from_grid(14, 12, grid)
+	var check: ActionResult = query.check_board(board, &"darkness", affinities, "10800001", Vector2i(1, corridor_row))
+	assert_true(check.is_error(), "AC3 (10.8): a hand-built predicate-(a) unfair Darkness board FAILS (the retained genuinely-unfair config).")
+
+	# Build the preserved finding from the query's verbatim failure (tagged with a representative recipe class so the
+	# flag+preserve machinery is exercised exactly as it was for the real generated finding).
+	var findings: Array = [{
+		"recipe_id": "medium_combat_basic",
+		"seed": String(check.metadata.get("seed", "")),
+		"affinity_id": String(check.metadata.get("affinity_id", "darkness")),
+		"fairness_reason": String(check.metadata.get("fairness_reason", "")),
+		"phase": String(check.metadata.get("phase", "")),
+		"entrance": check.metadata.get("entrance", {})
+	}]
+
+	# FLAG the relevant recipe class + the FR58 validation rule for tuning (the same machinery, unchanged).
 	var tuning_flags: Array[Dictionary] = _fairness_tuning_flags_for(findings)
 	assert_false(tuning_flags.is_empty(), "AC3: the Darkness fairness breach must FLAG at least one recipe/rule for tuning.")
 	var flagged_targets: Array[String] = []
 	for flag: Dictionary in tuning_flags:
 		flagged_targets.append(String(flag.get("target")))
-	assert_true(flagged_targets.has("medium_combat_basic"), "AC3: the Medium recipe (whose hazard wrinkles are unseen under Darkness) must be flagged for tuning.")
-	assert_true(flagged_targets.has("DarknessFairnessQuery"), "AC3: the FR58 fairness rule (DarknessFairnessQuery reduced-radius) must be named as the failing validation rule.")
+	assert_true(flagged_targets.has("medium_combat_basic"), "AC3: the recipe class is flagged for tuning.")
+	assert_true(flagged_targets.has("DarknessFairnessQuery"), "AC3: the FR58 fairness rule (DarknessFairnessQuery) must be named as the failing validation rule.")
 
-	# PRESERVE every failing seed as DATA — kept + annotated (affinity + reason + phase + recipe + hazard cell) so
-	# each is reproducible (the 3.7 preserved-catalog discipline; never silently discarded).
+	# PRESERVE the failing finding as DATA — kept + annotated (affinity + reason + phase + recipe + compact
+	# diagnostics) so it is reproducible (the 3.7 preserved-catalog discipline; never silently discarded).
 	for finding: Dictionary in findings:
 		assert_false(String(finding.get("seed")).is_empty(), "AC3: a preserved Darkness finding carries the seed.")
 		assert_equal(String(finding.get("affinity_id")), "darkness", "AC3: a preserved Darkness finding is tagged by affinity.")
-		assert_equal(String(finding.get("fairness_reason")), String(DarknessFairnessQuery.REASON_UNSEEN_HAZARD), "AC3: a preserved Darkness finding carries the fairness reason.")
+		assert_false(String(finding.get("fairness_reason")).is_empty(), "AC3: a preserved Darkness finding carries the fairness reason.")
+		assert_equal(String(finding.get("fairness_reason")), String(DarknessFairnessQuery.REASON_ENTRANCE_ON_HAZARD), "AC3: the hand-built finding is the predicate-(a) entrance_on_hazard config.")
 		assert_false(String(finding.get("phase")).is_empty(), "AC3: a preserved Darkness finding carries the phase.")
 		assert_false(String(finding.get("recipe_id")).is_empty(), "AC3: a preserved Darkness finding carries the recipe.")
-		assert_false((finding.get("hazard_cell", {}) as Dictionary).is_empty(), "AC3: a preserved Darkness finding carries the offending hazard cell (compact, reproducible).")
+		assert_false((finding.get("entrance", {}) as Dictionary).is_empty(), "AC3: a preserved Darkness finding carries the offending cell (compact, reproducible).")
 
 
 # Build the AC3 tuning flags for a Darkness FR58 fairness breach (name the failing recipe(s) + the FR58

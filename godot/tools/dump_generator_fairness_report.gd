@@ -1,10 +1,13 @@
 extends SceneTree
 
-# One-shot dev tool (Story 10.3): dump the consolidated GENERATOR SOFT-LOCK + FAIRNESS batch report for the
-# shared Small + Medium seed catalog — per recipe + seed, the LevelValidator (soft-lock/placement/reward/
-# first-reveal) verdict PLUS the DarknessFairnessQuery (FR58) verdict under the Darkness affinity. Used to
-# eyeball / reproduce the batch pinned in tests/integration/test_generator_fairness_batch.gd and, in
-# particular, to reproduce the recorded Darkness FR58 finding on Medium seeds 4004 + 5005 (see the readiness
+# One-shot dev tool (Story 10.3; seed list expanded + fairness verdict updated by Story 10.8): dump the
+# consolidated GENERATOR SOFT-LOCK + FAIRNESS batch report for the shared Small + Medium seed catalog — per
+# recipe + seed, the LevelValidator (soft-lock/placement/reward/first-reveal) verdict PLUS the
+# DarknessFairnessQuery (FR58) verdict under the Darkness affinity. Used to eyeball / reproduce the batch pinned
+# in tests/integration/test_generator_fairness_batch.gd. NOTE (Story 10.8): the 10.3-recorded Darkness FR58
+# finding on Medium seeds 4004 + 5005 (`darkness_unseen_hazard`) is RESOLVED — predicate (b) was strengthened to
+# moving reduced-radius LoS (seen-before-contact), so those reachable hazards are now fair (seen from an adjacent
+# step-from cell before contact) and every generated Darkness board reports `darkness_ok` (see the readiness
 # ledger _bmad-output/planning-artifacts/generator-fairness-batch-readiness.md §4).
 #
 # NOT a test (lives under tools/, NOT auto-discovered by the headless runner; excluded from every export
@@ -26,7 +29,15 @@ const LevelRecipeRepository = preload("res://scripts/content/repositories/level_
 const LevelValidator = preload("res://scripts/generation/level/level_validator.gd")
 
 func _init() -> void:
-	var seeds: Array[int] = [1001, 2002, 3003, 4004, 5005]
+	# Story 10.8: the shared Small/Medium catalog expanded 5 -> 50 (the original 5 kept byte-identical + 45 appended).
+	var seeds: Array[int] = [
+		1001, 2002, 3003, 4004, 5005,
+		1, 2, 3, 5, 7, 13, 42, 99, 123, 256,
+		314, 512, 777, 1024, 1234, 2026, 2718, 3141, 4242, 5555,
+		6006, 7007, 8008, 8675309, 9999, 12345, 31415, 55555, 65536, 77777,
+		88888, 100003, 123456, 161803, 271828, 314159, 500009, 654321, 1000003, 1048576,
+		2000003, 7777777, 16777216, 999999937, 123456789
+	]
 	var recipes := LevelRecipeRepository.create_baseline_repository()
 	var enemies := EnemyRepository.create_baseline_repository()
 	var affinities := AffinityRepository.create_baseline_repository()

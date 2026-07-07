@@ -18,7 +18,15 @@ const EnemyRepository = preload("res://scripts/content/repositories/enemy_reposi
 const SmallLevelLayoutGenerator = preload("res://scripts/generation/level/small_level_layout_generator.gd")
 
 func _init() -> void:
-	var seeds: Array[int] = [1001, 2002, 3003, 4004, 5005]
+	# Story 10.8: the shared Small/Medium catalog expanded 5 -> 50 (the original 5 kept byte-identical + 45 appended).
+	var seeds: Array[int] = [
+		1001, 2002, 3003, 4004, 5005,
+		1, 2, 3, 5, 7, 13, 42, 99, 123, 256,
+		314, 512, 777, 1024, 1234, 2026, 2718, 3141, 4242, 5555,
+		6006, 7007, 8008, 8675309, 9999, 12345, 31415, 55555, 65536, 77777,
+		88888, 100003, 123456, 161803, 271828, 314159, 500009, 654321, 1000003, 1048576,
+		2000003, 7777777, 16777216, 999999937, 123456789
+	]
 	var recipes := LevelRecipeRepository.create_baseline_repository()
 	var enemies := EnemyRepository.create_baseline_repository()
 
