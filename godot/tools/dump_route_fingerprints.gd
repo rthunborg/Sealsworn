@@ -14,8 +14,13 @@ const RouteGenerator = preload("res://scripts/generation/route/route_generator.g
 func _init() -> void:
 	# Approved route seeds. Chosen to span the [8, 12] non-boss band and to produce >= 2 distinct routes
 	# (divergence). Bland/edge seeds are KEPT, not deleted, if a generator change makes one degenerate —
-	# annotate instead.
-	var seeds: Array[int] = [0, 1, 2, 1001, 2002, 7, 42, 123456789]
+	# annotate instead. Story 10.2 expanded the sample 8 -> 20 (toward the AC2 MVP-readiness target of 20
+	# route seeds): the original eight (0, 1, 2, 1001, 2002, 7, 42, 123456789) are preserved verbatim and
+	# twelve additional varied seeds are appended.
+	var seeds: Array[int] = [
+		0, 1, 2, 1001, 2002, 7, 42, 123456789,
+		3, 5, 13, 99, 314, 777, 2026, 8675309, 55555, 271828, 161803, 4242
+	]
 	for seed_value: int in seeds:
 		var generation_result := RouteGenerator.generate(seed_value)
 		if generation_result.is_error():

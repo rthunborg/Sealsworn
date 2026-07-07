@@ -4,7 +4,7 @@ baseline_commit: 3508181a37c2d7833ea73e522e73b90852ea590f
 
 # Story 10.2: Headless Seed Regression Suite
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -125,8 +125,8 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.2). Four AC groups (Given/Wh
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Inventory the existing per-system regression coverage + its single fingerprint sources (AC1, AC4)**
-  - [ ] Read the six existing per-system regression surfaces and confirm each system's SINGLE canonical
+- [x] **Task 1 — Inventory the existing per-system regression coverage + its single fingerprint sources (AC1, AC4)**
+  - [x] Read the six existing per-system regression surfaces and confirm each system's SINGLE canonical
         fingerprint source before writing any consolidation (a second format is a review miss):
         - **Generation (Small/Medium):** `godot/tests/unit/generation/test_seed_batch_regression.gd`
           (the 3.7 FULL-`LevelGenerator.generate` batch over the approved Small+Medium catalog +
@@ -154,11 +154,11 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.2). Four AC groups (Given/Wh
           sequence whose applied-event log + board snapshot fingerprint reproduces per seed (compose the
           `BoardFixtureFactory` boards + committed `DomainEvent`s, the 2.8 pattern — do NOT invent a new
           tactical scenario format).
-  - [ ] Record, per system, the CURRENT sample size on disk (generation Small 5 / Medium 5; route 8; boss
+  - [x] Record, per system, the CURRENT sample size on disk (generation Small 5 / Medium 5; route 8; boss
         5; reward + affinity per-seed spot checks) — this is the baseline for the AC2 gap ledger.
 
-- [ ] **Task 2 — Build the consolidated regression suite + uniform four-field report (AC1)**
-  - [ ] Author a consolidated headless suite (a new `test_*.gd` under `godot/tests/integration/` — an
+- [x] **Task 2 — Build the consolidated regression suite + uniform four-field report (AC1)**
+  - [x] Author a consolidated headless suite (a new `test_*.gd` under `godot/tests/integration/` — an
         integration-level cross-system regression is the right home; the finale suite already lives under
         `tests/integration/finale/`) that drives EACH of the six systems' approved fixtures and asserts
         (a) a deterministic fingerprint per fixture (calling the system's canonical source) and (b) a
@@ -166,13 +166,13 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.2). Four AC groups (Given/Wh
         (the 3.7 / 9.5 failure-report shape, generalized to name the SYSTEM). Include a FORCED-failure
         shape test (the `_failure_report_shape_carries_...` precedent) so the harness can never silently
         pass a regression.
-  - [ ] Where a system's regression already fully lives in its own test file (route, finale), the
+  - [x] Where a system's regression already fully lives in its own test file (route, finale), the
         consolidated suite may COMPOSE/invoke that coverage or assert the same canonical fingerprints
         rather than duplicate the pins — the goal is one reporting contract across all six, NOT a copy of
         every pinned value into a second file that can drift. If the consolidated suite re-pins any value,
         it MUST cross-check against the live per-system source in the same test (the "no second pinning
         path" discipline) so the consolidated pin can never silently disagree with the per-system fixture.
-  - [ ] OPTIONAL headless report driver (only if it genuinely earns its place, the 10.1 discipline): a
+  - [x] OPTIONAL headless report driver (only if it genuinely earns its place, the 10.1 discipline): a
         `tools/dump_seed_regression_report.gd` `extends SceneTree` (the `dump_*` precedent —
         `dump_seed_batch_report.gd` is the closest sibling) that prints the consolidated
         `[PASS|FAIL] system / seed: fingerprint` report across all six systems for eyeballing / re-pinning.
@@ -180,29 +180,29 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.2). Four AC groups (Given/Wh
         progression, writes no `user://` artifact (print-only). Do not add if the consolidated test already
         gives full coverage and no re-pin driver is needed.
 
-- [ ] **Task 3 — Sample-size target + temporary-sample gap ledger (AC2)**
-  - [ ] STATE the seven MVP-readiness target sample sizes verbatim (≥25 tactical, 50 Small, 50 Medium,
+- [x] **Task 3 — Sample-size target + temporary-sample gap ledger (AC2)**
+  - [x] STATE the seven MVP-readiness target sample sizes verbatim (≥25 tactical, 50 Small, 50 Medium,
         20 route, 20 reward/passive, 10 per implemented affinity, 10 boss/finale). Record them in the
         suite header AND (the durable readiness artifact) as a short section — either extend the 10.1
         readiness doc (`_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md` already
         records the 10.2 handoff at its §7 gate-handoff) or author a sibling
         `_bmad-output/planning-artifacts/`-level regression-suite readiness note. The 10.6 gate consumes
         whichever you pick — make the linkage self-documenting (the 11.1 / 10.1 precedent).
-  - [ ] EXPAND the seed samples toward target where the expansion is a mechanical seed-list-plus-pin
+  - [x] EXPAND the seed samples toward target where the expansion is a mechanical seed-list-plus-pin
         extension of an existing harness and is genuinely low-risk (e.g. adding more approved Small/Medium
         seeds via `dump_seed_batch_report.gd`, more route seeds via `dump_route_fingerprints.gd`, more
         boss seeds to the finale catalog, more reward/affinity per-seed cases). Each newly pinned value
         must be regenerated from the live `tools/dump_*` output (NOT hand-typed) and carry the
         DELIBERATE-UPDATE header. For preserved bland/unfair seeds, keep + annotate them (the 3.7 AC4
         preserved-catalog discipline) rather than discard.
-  - [ ] For every system whose ACTUAL sample is below its target, record an explicit
+  - [x] For every system whose ACTUAL sample is below its target, record an explicit
         `temporary sample (N of TARGET) → owning action` note (a later sample-expansion pass, or an
         approved de-scope at the 10.6 gate). State plainly that a sub-target sample CANNOT pass final MVP
         readiness without an approved de-scope — that decision belongs to 10.6, not 10.2. Do NOT fabricate
         a sample you did not run; do NOT silently present a sub-target sample as meeting the bar.
 
-- [ ] **Task 4 — Pause/resume determinism + cosmetic independence (AC3)**
-  - [ ] Cover the pause-and-resume-in-simulation proof: the 2.8 `test_resume_flow.gd`
+- [x] **Task 4 — Pause/resume determinism + cosmetic independence (AC3)**
+  - [x] Cover the pause-and-resume-in-simulation proof: the 2.8 `test_resume_flow.gd`
         (`godot/tests/integration/save/test_resume_flow.gd`) ALREADY proves interrupted==uninterrupted
         (board snapshot + ordered event log + gameplay RNG stream states + next-draw reproduction, with a
         FIRST-divergence locator for both event index and stream name) over a REAL `SaveRepository` JSON
@@ -211,39 +211,39 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.2). Four AC groups (Given/Wh
         sample) — do NOT re-invent the interrupted==uninterrupted harness; it exists and is the canonical
         one. If you assert it across additional seeds, reuse `RngStreamSet.to_snapshot()`/`try_restore` +
         the `_first_divergent_*` locators, not a new comparator.
-  - [ ] Assert the cosmetic-stream-independence half of AC3 explicitly: interleaving `cosmetic`-stream
+  - [x] Assert the cosmetic-stream-independence half of AC3 explicitly: interleaving `cosmetic`-stream
         draws before/around a gameplay draw does NOT change the gameplay-stream outcome (the Story 1.4
         AC2 guarantee — `test_rng_stream_set.gd` already proves per-stream isolation; the readiness suite
         should state/assert this for the pause/resume path so "cosmetic usage does not change gameplay
         outcomes" is covered, not assumed).
 
-- [ ] **Task 5 — Intentional-change discipline + no-silent-drift guarantee (AC4)**
-  - [ ] Every pinned fingerprint the consolidated suite asserts carries the DELIBERATE-UPDATE contract in
+- [x] **Task 5 — Intentional-change discipline + no-silent-drift guarantee (AC4)**
+  - [x] Every pinned fingerprint the consolidated suite asserts carries the DELIBERATE-UPDATE contract in
         its header (change ONLY with an intentional system change re-pinned in the SAME PR via the matching
         `tools/dump_*`; NEVER hand-edited to silence a drift — verbatim to the 3.7 / 4.2 test headers). The
         regression assert message names the failing fixture + the exact regenerator tool to re-pin. Confirm
         an accidental (un-re-pinned) change makes the suite FAIL loudly (visible drift) — the whole point
         of the suite.
-  - [ ] Do NOT re-pin any EXISTING fingerprint unless you INTENTIONALLY changed a generator/system (you
+  - [x] Do NOT re-pin any EXISTING fingerprint unless you INTENTIONALLY changed a generator/system (you
         should not — this is a regression/readiness story that touches no generator); if a pin appears to
         drift, that is a BUG to investigate, not a value to update. The suite must reproduce every existing
         per-system fingerprint byte-identically.
 
-- [ ] **Task 6 — Cross-check, invariant re-verification, and gate handoff (AC1–AC4)**
-  - [ ] Run the full headless suite via PowerShell (the `godot` binary is NOT on the Bash/`where` PATH —
+- [x] **Task 6 — Cross-check, invariant re-verification, and gate handoff (AC1–AC4)**
+  - [x] Run the full headless suite via PowerShell (the `godot` binary is NOT on the Bash/`where` PATH —
         it resolves via `C:\Users\Rasmus\bin\godot.cmd` / the console binary):
         `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
         --quit-after 10`. Apply the false-PASS grep guard: grep the RAW runner output; the SIX documented
         stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1) still PASS and
         MUST NOT be mis-cited as a regression. The suite outcome must stay green (the 10.1-close baseline
         of **183 PASS / 0 `^FAIL`** plus this story's own new passing regression test(s)).
-  - [ ] Verify NO determinism/save invariant moved: `run_snapshot.gd` (23-key gate stays 23),
+  - [x] Verify NO determinism/save invariant moved: `run_snapshot.gd` (23-key gate stays 23),
         `rng_stream_set.gd` (`required_streams()` == 7), `profile_snapshot.gd` / `settings_snapshot.gd`
         (`SCHEMA_VERSION == 1`), every existing `tools/dump_*` UNTOUCHED, every level/route/finale
         fingerprint byte-identical, the DEFAULT deterministic paths byte-identical. Confirm `git diff
         --check` is clean and no production `godot/` gameplay/save/RNG/content file was touched (only new
         test(s) + an optional `tools/` report driver + the readiness note/section).
-  - [ ] Record the gate handoff: the consolidated suite + its sample-size gap ledger is a direct input to
+  - [x] Record the gate handoff: the consolidated suite + its sample-size gap ledger is a direct input to
         **10.6 (MVP Readiness Gate)** — 10.6 decides whether a still-temporary sub-target sample is an
         acceptable documented readiness LIMITATION or a hard blocker. Cross-reference 10.3 (Generator
         Soft-Lock and Fairness Batch Checks — the sibling generator-batch story that runs the fairness
@@ -541,26 +541,89 @@ story:
 
 ### Context Reference
 
-<!-- Story context file(s) will be recorded here by dev-story -->
+- Story file: `_bmad-output/implementation-artifacts/10-2-headless-seed-regression-suite.md` (this file — the
+  comprehensive context the create-story step produced).
+- Durable readiness artifact authored by this story: `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md`.
 
 ### Agent Model Used
 
-<!-- Recorded by dev-story -->
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]` (auto-gds dev-story delegate).
 
 ### Debug Log References
 
-<!-- Recorded by dev-story -->
+- Baseline full-suite run before any change: **183 PASS / 0 `^FAIL`**, "Headless tests passed." (the 10.1-close baseline).
+- One RED iteration: the first consolidated-suite draft had a GDScript parse error — `String(seed_value)` where
+  `seed_value` is an `int` (`No constructor of "String" matches the signature "String(int)"`). Fixed to
+  `str(seed_value)`. No other parse issues.
+- Final full-suite run: **184 PASS / 0 `^FAIL`**, "Headless tests passed." (183 baseline + the 1 new
+  `test_seed_regression_suite.gd`). False-PASS grep guard applied: exactly the SIX documented stderr negatives
+  present (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1) — no new stderr errors from this story.
+- Report driver run (`tools/dump_seed_regression_report.gd`): clean `[PASS] system / seed: fingerprint` across
+  all six systems; generation/route fingerprints in the report match the pinned catalogs byte-for-byte.
+- `git diff --check`: clean (only a harmless LF→CRLF line-ending warning on the story `.md`).
 
 ### Completion Notes List
 
-<!-- Recorded by dev-story -->
+- **AC1 (consolidated fingerprint + pass/fail across all six systems).** New
+  `godot/tests/integration/test_seed_regression_suite.gd` drives EACH of the six systems (tactical, generation,
+  route, reward/passive, affinity, boss) and asserts (a) a deterministic fingerprint from the system's SINGLE
+  canonical source and (b) per-fixture pass/fail, with EVERY failure assert carrying
+  `seed=%d system=%s phase=%s reason=%s` (compact, no grid dump). A forced-failure shape test
+  (`_failure_report_shape_carries_seed_system_phase_reason`) proves the harness can never silently pass a regression.
+- **NO second fingerprint format (the crux).** The suite REUSES the per-system fixtures' EXACT pinned constants
+  by importing them (`test_seed_batch_regression.gd::APPROVED_SEED_CATALOG`,
+  `test_route_generation_seed_regression.gd::APPROVED_FINGERPRINTS`,
+  `test_finale_seed_regression.gd::APPROVED_BOSS_SEED_CATALOG`) — there is literally no second copy that can
+  drift. It also invokes each per-system regression test in `_consolidated_pins_agree_with_live_canonical_sources`
+  so the consolidated coverage is cross-checked against the live canonical sources.
+- **AC2 (sample targets + honest gap ledger).** The seven MVP-readiness targets are stated verbatim in the suite
+  header constant `MVP_READINESS_TARGETS` + asserted in `_mvp_readiness_targets_are_stated_and_current_sample_is_honest`,
+  and recorded in the durable ledger `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` (§3).
+  **Route was EXPANDED 8 → 20 (target MET)** — a mechanical seed-list-plus-pin extension in the canonical route
+  fixture, every new value regenerated from `tools/dump_route_fingerprints.gd` (never hand-typed); the original 8
+  pins are byte-identical (an ADD, not a re-pin). All other systems are recorded as explicit
+  `temporary (N of TARGET) → owning action` gaps for the 10.6 gate. Generation Small/Medium are DELIBERATELY held
+  at the shared `[1001,2002,3003,4004,5005]` catalog (compatible with the 10.1 level-load harness + the 10.3
+  fairness batch — expanding in isolation would desync the three Epic-10 harnesses; the ledger records this as the
+  coordinated call).
+- **AC3 (pause/resume + cosmetic independence).** `_pause_resume_reproduces_uninterrupted_run_across_seed_sample`
+  proves interrupted==uninterrupted over the REAL `SaveRepository` JSON write/read + `RunResumeService.resume`
+  across `[424242,1,7777,2026,314159]` (board snapshot + ordered event log + gameplay RNG stream states +
+  next-draw reproduction, with first-divergence locators for both event index and stream name — not a bare
+  boolean). It reuses the 2.8 harness shape (no new comparator) and the canonical 2.8 `test_resume_flow.gd` is
+  ALSO covered via the cross-check. `_cosmetic_stream_draws_do_not_change_gameplay_outcomes` proves interleaving
+  `cosmetic` draws changes no gameplay-stream value or snapshot across `[24680,1,7777,2026]`.
+- **AC4 (deliberate-update / no silent drift).** Each regression assert names the failing fixture + the exact
+  regenerator to re-pin; because the suite reuses the per-system pins, a re-pin lands in ONE place and the suite
+  follows. `_deliberate_update_contract_is_recorded` asserts the regenerator tools exist. An accidental
+  (un-re-pinned) generator change makes the suite FAIL loudly (the fingerprint asserts are the tripwire).
+- **Report driver.** `godot/tools/dump_seed_regression_report.gd` (`extends SceneTree`, tools/-gated, excluded
+  from every export preset, print-only, no `user://` artifact, no progression) prints the consolidated
+  `[PASS|FAIL] system / seed: fingerprint` report for eyeballing / re-pinning. It earns its place as the human
+  companion to the suite (the closest sibling `dump_seed_batch_report.gd` covers only generation).
+- **Invariants intact.** Touched NO production `godot/` gameplay/save/RNG/content source: the changes are the new
+  test suite + the route-fixture sample expansion + the new/updated `tools/` drivers + the planning docs. The 7
+  RNG streams, 23-key `RunSnapshot` gate, `SCHEMA_VERSION == 1`, and every generator/route/finale fingerprint
+  SOURCE are byte-identical; the suite PROVES they hold.
+- **Reconciliation note (Task 3 vs Task 6 phrasing).** Task 6's "every existing `tools/dump_*` UNTOUCHED" is in
+  tension with Task 3's explicit sanction to expand "more route seeds via `dump_route_fingerprints.gd`." Task 3
+  (the more specific instruction for the route expansion) governs: `dump_route_fingerprints.gd` was intentionally
+  extended (8 → 20 seed list) to regenerate the authoritative route pins. This is the sanctioned mechanical
+  expansion, not a drift; the other three `dump_*` tools are untouched.
 
 ### File List
 
-<!-- Recorded by dev-story -->
+- `godot/tests/integration/test_seed_regression_suite.gd` (NEW) — the consolidated six-system seed-regression suite.
+- `godot/tools/dump_seed_regression_report.gd` (NEW) — the tools/-gated consolidated report driver.
+- `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` (NEW) — the MVP-readiness sample ledger + 10.6 handoff.
+- `godot/tests/unit/generation/test_route_generation_seed_regression.gd` (MODIFIED) — route sample expanded 8 → 20 (canonical route pin location; the 12 new values regenerated from the dump tool; original 8 unchanged).
+- `godot/tools/dump_route_fingerprints.gd` (MODIFIED) — seed list expanded 8 → 20 to regenerate the authoritative route fingerprints.
+- `_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md` (MODIFIED) — §7 reciprocal cross-reference noting 10.2 shipped + holds generation at the shared catalog.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (MODIFIED) — `10-2` → in-progress → review; `last_updated` refreshed.
 
 ## Change Log
 
 | Date | Change |
 |---|---|
 | 2026-07-07 | Story 10.2 context created (create-story). Consolidated-headless-seed-regression-suite scope framed as the seed-determinism analog of 10.1: CONSOLIDATE + report the six existing per-system deterministic surfaces (tactical/generation/route/reward/affinity/boss) under one `fingerprint + pass/fail + seed/system/phase/reason` contract, cover the 2.8 pause/resume interrupted==uninterrupted proof + cosmetic independence, state the AC2 MVP-readiness sample targets and record the current-vs-target sample gap as a 10.6-owned honest-scope ledger, enforce the ratified DELIBERATE-UPDATE no-silent-drift + no-second-fingerprint-format + int→float-footgun conventions, and leave every determinism/save invariant (7 RNG streams, 23-key RunSnapshot, SCHEMA_VERSION==1, all fingerprints) byte-identical. Status → ready-for-dev. |
+| 2026-07-07 | Story 10.2 implemented (dev-story). NEW consolidated suite `godot/tests/integration/test_seed_regression_suite.gd` drives all six systems under one `fingerprint + pass/fail + seed/system/phase/reason` contract (reusing each system's SINGLE canonical source + the per-system pinned catalogs by IMPORT — no second format), a forced-failure shape test, the pause/resume-in-simulation proof across a seed sample (real SaveRepository + RunResumeService, first-divergence locators), and cosmetic-stream independence. AC2: route sample EXPANDED 8 → 20 (target MET, regenerated via `dump_route_fingerprints.gd`, original 8 unchanged); all other systems recorded as explicit temporary-sample gaps in the NEW readiness ledger `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` (10.6-owned). NEW tools/-gated report driver `godot/tools/dump_seed_regression_report.gd`. No production gameplay/save/RNG/content source touched; every determinism/save invariant byte-identical. Full suite 183 → 184 PASS / 0 `^FAIL`. Status → review. |
