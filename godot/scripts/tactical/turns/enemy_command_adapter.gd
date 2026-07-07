@@ -26,6 +26,17 @@ func _init(new_player_id: StringName = &"", new_player_defender_support: Support
 	_player_defender_support = new_player_defender_support
 
 
+# Story 12.2 (AC3 — the hero-defense seam, Review Round 2 hardening): keep the adapter's defending-player identity in
+# lockstep with EnemyTurnResolver's own (possibly late-bound) `_player_id`. The resolver builds this adapter ONCE in its
+# _init, but late-binds its player id from the active actor when constructed with the empty default. Without this sync,
+# the adapter would keep the ORIGINAL empty id and _defender_support_for(...) would silently return null for the hero —
+# dropping the shield defense (no block roll, no armor) with no error. The resolver calls this right after it resolves
+# the late-bound id (which is already validated non-empty by that point), so the stale-id state is impossible before the
+# enemy phase ever consults the adapter. A no-op when the id is unchanged (every concrete-id caller stays byte-identical).
+func set_player_id(new_player_id: StringName) -> void:
+	_player_id = new_player_id
+
+
 func apply_decision(
 	context: TacticalActionContext,
 	decision: AiDecision,

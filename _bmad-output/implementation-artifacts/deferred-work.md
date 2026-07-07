@@ -74,6 +74,15 @@ gate intact, no finale/seed-regression fixture moved. Two `[Review][Defer]` find
   (esp. the larger Medium/elite boards from the Med finding above), the proof-suite runtime could climb. Optional:
   replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model).
 
+- [ ] **[Review][Defer]** (Low, from code review of 12-2 **Round 2**, 2026-07-07) — `project-context.md` line 478 (the
+  dated "Last Updated: 2026-07-06" Epic-11 rollup paragraph) still says "the live driver uses
+  `LiveCombatResolver.DEFAULT_HERO_HP` (60)" and "183 test files / 182 PASS", both superseded by Story 12.2 (the
+  interactive live loadout is now class-derived via `CombatLoadout`; the suite is 189 PASS). The two AC1-pinned boundary
+  lines the story had to revise (line 262 class_kit_rules + line 453 run-flow-scene-hud-rules) ARE both correctly updated
+  and accurate — line 478 is a historical epic-retrospective snapshot line outside the AC1-pinned scope, so this is a
+  cosmetic doc-staleness nit, not an AC1 miss. Fold the "DEFAULT_HERO_HP (60)" clause + the PASS count into the next
+  `project-context.md` "Last Updated" refresh (e.g. at the Epic-12 close) so the rollup does not contradict 262/453.
+
 ## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0 open `[Review][Patch]`; 1 open

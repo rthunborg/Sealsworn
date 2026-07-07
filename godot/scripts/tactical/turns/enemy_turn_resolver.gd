@@ -65,6 +65,13 @@ func resolve_after_player_action(
 		})
 	if _player_id == &"":
 		_player_id = resolved_player_id
+	# Story 12.2 (AC3 — the hero-defense seam, Review Round 2 hardening): the adapter was built ONCE in _init with the
+	# original (possibly empty) player id and is never rebuilt. Sync the now-resolved, validated (non-empty per the
+	# invalid_active_actor guard above) player id into it BEFORE the enemy phase runs, so a caller that relies on the
+	# late-bind (e.g. EnemyTurnResolver.new(repo, &"", shield_support)) cannot leave the adapter holding &"" and SILENTLY
+	# drop the hero's shield defense. This is the resolver's single source of truth for the player id; the adapter always
+	# reflects it. A no-op (byte-identical) when the id was already concrete — every current production/test caller.
+	_adapter.set_player_id(_player_id)
 
 	var simulation_context: TacticalActionContext = _copy_context_for_simulation(context)
 	if simulation_context == null:

@@ -10,6 +10,8 @@ const EnemyRepository = preload("res://scripts/content/repositories/enemy_reposi
 const EnemyTurnResolver = preload("res://scripts/tactical/turns/enemy_turn_resolver.gd")
 const PendingTelegraphState = preload("res://scripts/tactical/turns/pending_telegraph_state.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
+const SupportRepository = preload("res://scripts/content/repositories/support_repository.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
@@ -30,6 +32,8 @@ func run() -> Dictionary:
 	_enemy_events_replay_pending_telegraph_state()
 	_blocked_enemy_waits_without_board_rng_or_pending_mutation()
 	_same_seed_resolution_reproduces_events_pending_state_and_explanations()
+	# Story 12.2 (Review Round 2 hardening — the hero-defense seam late-bind seam).
+	_late_bound_player_id_still_engages_the_hero_shield_defense()
 	return result()
 
 
@@ -351,6 +355,60 @@ func _same_seed_resolution_reproduces_events_pending_state_and_explanations() ->
 	assert_equal(_event_dictionaries(first_result.events), _event_dictionaries(second_result.events), "Same seed and state should reproduce enemy events.")
 	assert_equal(first_pending, second_pending, "Same seed and state should reproduce pending telegraph state.")
 	assert_equal(first_result.metadata.get("decisions"), second_result.metadata.get("decisions"), "Same seed and state should reproduce decision explanations.")
+
+
+# Story 12.2 (Review Round 2 hardening — the hero-defense seam late-bind seam): a resolver constructed with the EMPTY
+# player-id default (relying on the documented late-bind to derive the player id from the active actor at resolve time)
+# MUST still engage the seated hero shield defense. The adapter is built ONCE in the resolver's _init with that empty id;
+# without the late-bind propagation into the adapter, _defender_support_for(...) would silently return null for the hero
+# and DROP the shield (no block roll, no armor). This proves the shield reaches the adapter on the late-bind path — the
+# enemy's melee hit against the shielded hero fires the seeded `shield_block` `combat` roll and reduces the incoming
+# damage below the raw melee_damage (3) — and that the late-bind path is byte-identical to passing the concrete id.
+func _late_bound_player_id_still_engages_the_hero_shield_defense() -> void:
+	var shield: SupportDefinition = SupportRepository.create_baseline_repository().get_support(&"shield")
+	assert_equal(String(shield.support_id), String(SupportDefinition.SUPPORT_SHIELD), "Setup: the baseline shield support resolves.")
+
+	# The LATE-BIND path: construct with the empty player id (&"") — the resolver derives &"hero" from the active actor
+	# and (post-fix) propagates it into the pre-built adapter, so the hero's shield defends against the incoming hit.
+	var late_board: BoardState = BoardFixtureFactory.enemy_turn_adjacent_melee()
+	var late_context: TacticalActionContext = _context(late_board, RngStreamSet.new(4242), [])
+	var late_resolver: EnemyTurnResolver = EnemyTurnResolver.new(EnemyRepository.create_baseline_repository(), &"", shield)
+	var late_result: ActionResult = late_resolver.resolve_after_player_action(late_context, _advancing_player_result())
+
+	assert_true(late_result.succeeded, "The late-bound-id enemy phase should resolve.")
+	var late_hp: int = late_board.get_entity(&"hero").current_hp
+	# A raw iron_cultist melee hit is 3 damage (the unshielded baseline leaves the hero at 15). The shield's armor (1)
+	# plus the seeded block-halving MUST reduce it: the shielded hero takes 1 (block) or 2 (armor only) — never the raw 3.
+	assert_true(late_hp > 15, "The late-bound shield MUST reduce the incoming hit below the raw melee damage (a dropped shield would leave the hero at 15).")
+	assert_true(_resolver_shield_block_roll_count(late_result.events) > 0, "The late-bound-id path fires the seeded shield_block `combat` roll (the shield reaches the adapter — not silently dropped).")
+
+	# The CONCRETE-id path on the identical seed/fixture: the late-bind must be byte-identical to passing &"hero" up front
+	# (the resolved id is validated non-empty before the enemy phase, so the two paths are equivalent — no drift).
+	var concrete_board: BoardState = BoardFixtureFactory.enemy_turn_adjacent_melee()
+	var concrete_context: TacticalActionContext = _context(concrete_board, RngStreamSet.new(4242), [])
+	var concrete_resolver: EnemyTurnResolver = EnemyTurnResolver.new(EnemyRepository.create_baseline_repository(), &"hero", shield)
+	var concrete_result: ActionResult = concrete_resolver.resolve_after_player_action(concrete_context, _advancing_player_result())
+
+	assert_true(concrete_result.succeeded, "The concrete-id enemy phase should resolve.")
+	assert_equal(_event_dictionaries(late_result.events), _event_dictionaries(concrete_result.events), "The late-bound-id path is byte-identical to the concrete-id path (same seeded shield defense).")
+	assert_equal(concrete_board.get_entity(&"hero").current_hp, late_hp, "Both paths leave the shielded hero at the same HP.")
+
+	# The neutral (no-shield) baseline on the same fixture: the hero takes the raw 3 (HP 15) — this is what a silently
+	# dropped shield would look like, so the > 15 assertion above genuinely proves the shield engaged.
+	var neutral_board: BoardState = BoardFixtureFactory.enemy_turn_adjacent_melee()
+	var neutral_context: TacticalActionContext = _context(neutral_board, RngStreamSet.new(4242), [])
+	assert_true(EnemyTurnResolver.new(EnemyRepository.create_baseline_repository(), &"", null).resolve_after_player_action(neutral_context, _advancing_player_result()).succeeded, "Setup: the neutral no-shield enemy phase resolves.")
+	assert_equal(neutral_board.get_entity(&"hero").current_hp, 15, "The neutral no-shield hero takes the raw melee damage (HP 15) — the dropped-shield reference point.")
+
+
+# The number of seeded shield_block `combat`-stream rolls recorded across a resolver result's DAMAGE_APPLIED events.
+func _resolver_shield_block_roll_count(events: Array[DomainEvent]) -> int:
+	var count: int = 0
+	for event: DomainEvent in events:
+		for draw_value: Variant in event.payload.get("rng_draws", []):
+			if String((draw_value as Dictionary).get("effect_id", "")) == "shield_block":
+				count += 1
+	return count
 
 
 func _resolver() -> EnemyTurnResolver:
