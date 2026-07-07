@@ -4,7 +4,7 @@ baseline_commit: 9f1231f6a71bd70a8ad8d9cdc60a8582ad7a64ad
 
 # Story 12.1: Interactive Combat Tap-Loop and Live Board Render
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
