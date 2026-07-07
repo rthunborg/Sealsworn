@@ -4,7 +4,7 @@ baseline_commit: c9c0fe000eb16926a909ed33cb87273154c0ba92
 
 # Story 10.3: Generator Soft-Lock and Fairness Batch Checks
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
