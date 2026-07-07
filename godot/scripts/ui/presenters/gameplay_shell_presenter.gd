@@ -20,6 +20,7 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
+const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 # L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
 # shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
 # anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
@@ -66,7 +67,11 @@ func _drive_current_stage() -> void:
 
 	# The boss terminus -> drive the live boss fight to a run-END (the composed seam).
 	if orchestrator.boss_encounter_pending():
-		var boss = orchestrator.auto_play_boss_fight(flow.hero_hp())
+		# Story 12.2 (scope): the boss AUTO-PLAY stays on the TUNED DEFAULT loadout (DEFAULT_HERO_HP 60), NOT the class kit
+		# — the class-kit -> combat-loadout wiring targets the PRE-BOSS combat/elite nodes (this story's core); the boss
+		# arena is the finale seam (a boss-arena class re-tune is an explicit non-goal). Threading the class 18 HP into the
+		# focus-fire boss auto-play would reproduce a mid-fight death; the on-screen boss loadout is unchanged.
+		var boss = orchestrator.auto_play_boss_fight(LiveCombatResolver.DEFAULT_HERO_HP)
 		# M1 fix: a boss-fight ERROR (the bounded round loop failed to progress — a real possibility the story
 		# flags: "the scripted hero is deterministic but NOT universally-winning") leaves the run NON-terminal, so
 		# run_end_outcome() yields has_ended == false / next_destination == "" and route_after_run_end("") no-ops
@@ -96,7 +101,12 @@ func _drive_current_stage() -> void:
 		# seat-cursed) and hands back the live board + turn state + a step-driven InteractiveCombatSession. The shell
 		# RENDERS the live board (closing the L4 gap — a combat node now holds a LIVE board mid-fight) then AWAITS the
 		# player's taps (routed into the session via the board presenter); it does NOT resolve the fight here.
-		var setup = orchestrator.begin_interactive_combat_node(current, flow.hero_hp())
+		# Story 12.2 (AC1/AC3) — thread the CLASS-KIT loadout (kit HP + weapon + support) into the interactive seam: the
+		# hero fights the live pre-boss node armed from run.starting_kit (hero_hp()/hero_weapon_id() are kit-derived;
+		# hero_support() is the class off-hand — shield/tome engages the seeded combat-stream draw, ranger none is the
+		# byte-identical no-support path). The loadout DECISION lives in the flow (CombatLoadout via RunFlowController);
+		# this shell stays a thin observer passing the derived loadout into the unchanged orchestrator seam.
+		var setup = orchestrator.begin_interactive_combat_node(current, flow.hero_hp(), flow.hero_weapon_id(), flow.hero_support())
 		if setup.is_error():
 			# M1-symmetric fix (Story 12.1 review): a live-combat SETUP error (level_generation_failed /
 			# darkness_fairness_violation / affinity_assignment_failed / interactive_combat_begin_failed) leaves the run
@@ -133,8 +143,10 @@ func _drive_current_stage() -> void:
 		return
 
 	# A boss node not yet set up -> resolve it live (sets up the boss encounter), then re-drive (drives the fight).
+	# Story 12.2 (scope): the boss/non-combat paths stay on the TUNED DEFAULT loadout (the class-kit wiring is the
+	# interactive pre-boss combat/elite branch above; the boss arena is the finale seam, out of scope for a class re-tune).
 	if node_type == "boss":
-		var setup = orchestrator.resolve_current_node_live(flow.hero_hp())
+		var setup = orchestrator.resolve_current_node_live(LiveCombatResolver.DEFAULT_HERO_HP)
 		if setup.is_error():
 			if has_node("/root/Diagnostics"):
 				Diagnostics.info(&"ui", &"gameplay_shell_boss_setup_failed", {"error_code": String(setup.error_code)})
@@ -143,7 +155,7 @@ func _drive_current_stage() -> void:
 		return
 
 	# A non-combat node resolves in place, then returns to the map.
-	var placeholder = orchestrator.resolve_current_node_live(flow.hero_hp())
+	var placeholder = orchestrator.resolve_current_node_live(LiveCombatResolver.DEFAULT_HERO_HP)
 	if placeholder.is_error():
 		if has_node("/root/Diagnostics"):
 			Diagnostics.info(&"ui", &"gameplay_shell_placeholder_failed", {"error_code": String(placeholder.error_code)})

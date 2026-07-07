@@ -35,9 +35,11 @@ extends RefCounted
 # non-terminal run is the fail-closed empty fact (has_ended == false).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const CombatLoadout = preload("res://scripts/run/combat_loadout.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const RunEndOutcome = preload("res://scripts/run/run_end_outcome.gd")
 const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
 const RunFlowRouter = preload("res://scripts/ui/flow/run_flow_router.gd")
@@ -116,16 +118,41 @@ func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = 
 	}
 
 
-# The driver-supplied hero HP for the LIVE-COMBAT DRIVER (the 11.2 seam's hero_hp parameter). This is the
-# LiveCombatResolver.DEFAULT_HERO_HP loadout HP — deliberately DISTINCT from the class StartingKit.baseline_hp the
-# G1 HUD DISPLAYS between levels. The two are different concerns: the class baseline_hp (e.g. warrior 18) is a
-# BALANCE number for a not-yet-existent HP-scaling system, NOT a live-combat driver HP — threading it into the
-# scripted focus-fire driver makes the hero die (the class-kit -> combat-loadout wiring is a LATER story, 11.2's
-# documented boundary). The live-combat driver therefore uses the resolver's tuned loadout HP (the same value
-# 11.2's live methods default to), which reaches a real terminal board outcome on the verified seed. 11.3 builds
-# NO class-kit -> loadout system; this is the driver-supplied loadout the seam already exposes.
+# Story 12.2 (AC1) — the live-combat hero LOADOUT, now DERIVED FROM THE CLASS KIT. This CLOSES the 11.2 "class-kit ->
+# combat-loadout is a later story" boundary: the live combat HP / weapon / support come from run.starting_kit (the
+# selected class's StartingKit — all three MVP classes carry baseline_hp 18), resolved through the pure CombatLoadout
+# source. Before 12.2 this returned the flat LiveCombatResolver.DEFAULT_HERO_HP (60) — class-blind; the scripted
+# focus-fire driver dies at 18 HP, which is WHY 11.2/11.3 armed it with 60. 12.2's strengthened LoS-aware reference
+# driver (ReferenceCombatDriver) makes 18 HP winnable on the approved seeds, so the loadout is now class-derived. A run
+# with NO kit (a seed-only / empty-class / legacy run) FALLS OPEN to the driver default (DEFAULT_HERO_HP 60 / sword),
+# so the run still resolves. Kept pure / fail-closed — no RNG, no command, no run truth (the loadout DECISION is a
+# domain/flow read; the shell OBSERVES it). The HUD still displays the class baseline_hp between levels + the live
+# board entity's current_hp during a fight (two distinct DISPLAY reads — unchanged; there is still NO run-level HP field
+# and the in-node fight stays EPHEMERAL — the 23-key RunSnapshot gate stays 23).
 func hero_hp() -> int:
-	return LiveCombatResolver.DEFAULT_HERO_HP
+	return _combat_loadout().hp
+
+
+# Story 12.2 (AC1) — the kit-derived live-combat WEAPON id (the 12-1 seam's hero_weapon_id parameter, previously always
+# the default sword). Derived from run.starting_kit (warrior sword / pyromancer staff / ranger bow); a null-kit run
+# falls open to the driver default weapon (sword). Pure / fail-closed — a read of the recorded kit.
+func hero_weapon_id() -> StringName:
+	return _combat_loadout().weapon_id
+
+
+# Story 12.2 (AC3) — the kit-derived live-combat SUPPORT (the class off-hand: warrior shield / pyromancer tome / ranger
+# none). Threaded into the interactive session / reference driver's attack submissions where the AC3 distinctness needs
+# it (a shield engages the seeded shield_block roll; a tome adds the +1 staff bonus — the INTENTIONAL, seeded AC4 change
+# on the CLASS path; the neutral SUPPORT_NONE resolves to null — the byte-identical no-support path). Returns null for a
+# kit-less run or the neutral SUPPORT_NONE. Pure / fail-closed.
+func hero_support() -> SupportDefinition:
+	return _combat_loadout().support
+
+
+# The derived live-combat loadout for the seated run (the pure CombatLoadout source over run.starting_kit; a null-kit /
+# unstarted run falls open to the driver default). The controller reads it; it owns no gameplay decision.
+func _combat_loadout() -> CombatLoadout:
+	return CombatLoadout.for_run(_orchestrator.run)
 
 
 # AC1 (the composition crux): drive the FULL run hands-off to a run-END through the LIVE flow, composing the
@@ -137,7 +164,13 @@ func hero_hp() -> int:
 # verbatim + STOPS (no partial progression). This is the headless smoke / hands-off auto-play seam; on screen the
 # human drives the hero via taps (the presenter), and the presenter sequences the SAME per-node/boss methods.
 func play_hands_off_to_run_end() -> Dictionary:
-	return play_hands_off_to_run_end_with_hp(hero_hp())
+	# Story 12.2 (AC4): the hands-off AUTO-RESOLVE smoke path stays on the TUNED DEFAULT loadout
+	# (LiveCombatResolver.DEFAULT_HERO_HP 60 / sword), DECOUPLED from the now-kit-derived hero_hp(). This path drives the
+	# byte-identical focus-fire LiveCombatResolver (NOT the strengthened reference driver — that is 12.2's SEPARATE proof
+	# harness), so it must keep the verified-winning tuned HP; threading the class 18 HP into the focus-fire driver would
+	# reproduce the 11.3 mid-walk death. The on-screen INTERACTIVE path (begin_interactive_combat_node) uses the class
+	# loadout via hero_hp()/hero_weapon_id()/hero_support(); the human (>= the reference driver) drives it there.
+	return play_hands_off_to_run_end_with_hp(LiveCombatResolver.DEFAULT_HERO_HP)
 
 
 # The HP-parameterized hands-off flow (the smoke / auto-play seam supplies a VERIFIED-winning loadout HP; the

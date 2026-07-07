@@ -1,3 +1,52 @@
+## dev of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+Story 12.2 wired the class-kit → live-combat LOADOUT (the pure `CombatLoadout` source over `run.starting_kit`,
+threaded into `RunFlowController.hero_hp()`/`hero_weapon_id()`/`hero_support()` → the 12-1 `begin_interactive_combat_node`/
+`InteractiveCombatSession` seam) and delivered the strengthened LoS-aware reference driver (`ReferenceCombatDriver`), a
+headless winnability PROOF harness that clears the approved live-combat seed batch [4242, 8080, 6006, 2048, 512] with
+every playable class at the 18-HP class loadout. The `project-context.md` 11.2-boundary rule (lines 262 + 453) was
+revised in the same change (AC1). These are the dev-side forward residuals (no code review has run yet — that is the
+next pipeline phase).
+
+- **RESOLVED (owner: this story): Epic-11 retro T2 — a universally-winning hands-on hero path.** 12-2 is the story the
+  2026-07-07 sprint change + the Epic-11 retro assigned T2 to (retro line 185, MED-HIGH). It delivers BOTH prongs the
+  T2 item offered: (a) the class-kit → combat-LOADOUT wiring (the live hero is armed from `run.starting_kit` — HP /
+  weapon / support — instead of the flat 60/sword default; a null-kit run falls open to the driver default), and (b)
+  the STRENGTHENED LoS-aware reference driver (`ReferenceCombatDriver`) that dodges ash-seer detonations + kites
+  (ranged) / commits to the nearest melee body (melee), making the 18-HP class loadout WINNABLE on the approved seed
+  batch where the naive focus-fire `LiveCombatResolver` provably dies. An unwinnable seed still fails loud
+  (`live_combat_did_not_resolve` — seed + reason) for triage before 10.4. The retro T2 residual is CLOSED. (The T1
+  interactive tap-loop it paired with was resolved by 12-1.)
+
+- **RE-RECORD, do NOT close (T3 — the Necromancer/Shadeblade class-kit CONTENT).** 12-2 wired the loadout for the THREE
+  SELECTABLE classes (warrior / pyromancer / ranger) ONLY. The baseline `necromancer`/`shadeblade` `ClassDefinition`s
+  still carry NO kit, so starting an unlocked locked-baseline class would still fail `RunStartCommand`'s kit resolution.
+  A later CONTENT story authors their real kit AND threads the profile into the standalone `hero_select_presenter.gd` +
+  makes `ClassStartSummaryViewModel.re_derive_kit` profile-aware (`project-context.md` line 456; deferred-work "dev of
+  11-6"). 12-2's `CombatLoadout` source fails OPEN (falls back to the driver default) for a kit-less class so it never
+  crashes on a hypothetical kit-less start — but 12-2 does NOT author their kit.
+
+- **RE-RECORD, do NOT close (T4 — the run-level event STORE / `RunSummary.outcome_or_cause`).** 12-2's proof driver +
+  interactive finish key victory/death off the terminal `CombatOutcomeState` / the orchestrator's run_failed/victory
+  metadata (the 12-1 pattern), NOT `outcome_or_cause` (which stays BLANK until the run-level event store lands — a
+  later save-shape story, originating 11.5). 12-2 builds no event store; a run-end summary render still keys off
+  `phase` (`project-context.md` line 456).
+
+- **RE-RECORD, do NOT close (still open, NOT 12-2's).** The LIVE `content_discovered` discovery source; the LIVE
+  in-node board / pending-fight SAVE (the in-node fight stays EPHEMERAL; the 23-key gate stays 23); the G4 settings
+  view model; the Flooded electric-interaction `_placeholder` (Epic-10 readiness, 10-7); the affinity-driven
+  GENERATION modifier; and a passive-combat-effect operation engine (`scripts/rules/conditions/` stays EMPTY,
+  `scripts/rules/operations/` stays exactly one file — 12-2's AC3 distinctness is carried by equipment + support +
+  preview, NOT a new passive-effect engine; the kit's passive ids are RECORDED on the loadout, not newly effect-wired).
+
+- **NOTE (intentional, seeded AC4 change — NOT a defect).** Threading a class **support** into the live loadout draws
+  the `combat` stream where the flat sword default drew zero: a warrior `shield` (defender slot) engages the seeded
+  `shield_block` roll in `AttackCommand`; a pyromancer `tome` (attacker slot) adds +1 bonus damage (deterministic, no
+  draw). This is the INTENTIONAL class-path re-pin — the NEUTRAL default-driver / auto-resolve / generator / route /
+  finale paths stay byte-identical (they never carry a class support). No live-combat seed-regression fixture moved
+  (no existing fixture drives a class support); the `LiveCombatResolver.resolve(...)` default + `run_to_completion`
+  are UNTOUCHED.
+
 ## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0 open `[Review][Patch]`; 1 open

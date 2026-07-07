@@ -35,6 +35,8 @@ const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_s
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
+const SupportRepository = preload("res://scripts/content/repositories/support_repository.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalPathQuery = preload("res://scripts/tactical/movement/tactical_path_query.gd")
 const WeaponRepository = preload("res://scripts/content/repositories/weapon_repository.gd")
@@ -57,6 +59,10 @@ func run() -> Dictionary:
 	_begin_rejects_a_corrupt_board_snapshot()
 	_begin_rejects_an_unknown_hero_weapon()
 	_zero_enemy_board_begins_already_victorious()
+	# Story 12.2 — the class-kit loadout support threads through the tap loop.
+	_loadout_shield_support_engages_the_shield_block_combat_roll_through_the_tap_loop()
+	_null_loadout_support_keeps_the_tap_attack_byte_identical()
+	_begin_rejects_a_malformed_loadout_support()
 	return result()
 
 
@@ -215,6 +221,55 @@ func _zero_enemy_board_begins_already_victorious() -> void:
 	assert_true(session.is_terminal() and session.is_victory(), "A zero-enemy board begins already victorious (decided before any tap).")
 
 
+# ---- Story 12.2 (AC3/AC4): the class-kit loadout support threads through the tap loop -------------
+
+# The seated class-kit SHIELD support engages the seeded shield_block `combat` roll on a TAP-committed attack (the
+# on-screen path carries the class off-hand). The session STORES the loadout support (begin's hero_support param) and
+# uses it as the default attacker+defender support on tap_attack — so a warrior's shield block chance is live on screen,
+# exactly as the reference driver proves. The block roll is the INTENTIONAL, seeded AC4 class-path draw.
+func _loadout_shield_support_engages_the_shield_block_combat_roll_through_the_tap_loop() -> void:
+	# A hero ADJACENT to a durable (10-HP) enemy, armed with the class SHIELD loadout. A committed sword attack rolls the
+	# shield_block on the `combat` stream (the enemy survives the first hit so the block roll is engaged).
+	var snapshot: Dictionary = _durable_adjacent_duel_snapshot()
+	var shield: SupportDefinition = SupportRepository.create_baseline_repository().get_support(&"shield")
+	var session: InteractiveCombatSession = InteractiveCombatSession.new()
+	var begin: ActionResult = session.begin(snapshot, {"x": 1, "y": 1}, RngStreamSet.new(4242), 18, &"sword", &"none", null, shield)
+	assert_true(begin.succeeded, "The shield-loadout duel session should begin: %s" % begin.metadata)
+	assert_equal(String(session.loadout_support().support_id), String(SupportDefinition.SUPPORT_SHIELD), "The session STORES the class-kit shield loadout support.")
+
+	var target: Vector2i = Vector2i(2, 1)
+	# Two taps: arm, then commit the sword attack (the caller passes NO support -> the session inherits the seated shield).
+	session.tap_attack(target)
+	session.tap_attack(target)
+	# The committed attack engaged a shield_block roll on the `combat` stream (the intentional class-path draw).
+	assert_true(_shield_block_roll_count(session.event_log()) > 0, "A tap-committed attack with the class shield loadout engages the shield_block `combat` roll (the on-screen class-path draw).")
+
+
+# The DEFAULT (no loadout support) tap attack stays byte-identical to a session begun with an explicit null support —
+# the neutral no-support path never carries a `combat` draw (the byte-identical AC4 default). Proven by the injected
+# stream staying unchanged across a full default sword tap-victory.
+func _null_loadout_support_keeps_the_tap_attack_byte_identical() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var streams: RngStreamSet = RngStreamSet.new(VICTORY_SEED)
+	var before: Dictionary = streams.to_snapshot()
+	var session: InteractiveCombatSession = InteractiveCombatSession.new()
+	# begin with an explicit null loadout support (the default) — the no-support path.
+	assert_true(session.begin(generation.payload.get("board", {}), generation.payload.get("entrance", {}), streams, 60, &"sword", &"none", null, null).succeeded, "Setup: the null-support session begins.")
+	_drive_scripted_taps_to_terminal(session)
+	assert_true(session.is_victory(), "Setup: the default sword hero should win.")
+	assert_equal(streams.to_snapshot(), before, "A null loadout support keeps the tap loop byte-identical (ZERO combat RNG — the neutral no-support path).")
+
+
+func _begin_rejects_a_malformed_loadout_support() -> void:
+	# A malformed loadout support is rejected up front (fail-closed) — it never silently degrades to no-op mid-fight.
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var malformed: SupportDefinition = SupportDefinition.new(&"", 0, 0.0, 0, [], "")  # invalid support_id
+	var session: InteractiveCombatSession = InteractiveCombatSession.new()
+	var begin: ActionResult = session.begin(generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(1), 18, &"sword", &"none", null, malformed)
+	assert_true(begin.is_error(), "A malformed loadout support must be rejected up front (fail-closed).")
+	assert_equal(begin.error_code, &"invalid_loadout_support", "A malformed support uses the stable invalid_loadout_support code.")
+
+
 # ---- helpers -------------------------------------------------------------------------------------
 
 # Drive the session to a terminal outcome with a scripted tap sequence: attack the first attackable enemy (arm then
@@ -353,3 +408,56 @@ func _empty_board_snapshot() -> Dictionary:
 	var create_result: ActionResult = load("res://scripts/core/commands/create_board_command.gd").new(3, 3).execute(board)
 	assert_true(create_result.succeeded, "Setup: the empty board should build.")
 	return board.to_snapshot()
+
+
+# A tiny 4x3 board: WALL border, entrance(1,1), a DURABLE 10-HP enemy adjacent at (2,1). A single sword hit does not kill
+# it, so the shield_block roll (defender_support) is engaged on the committed attack (the enemy survives to be blocked).
+func _durable_adjacent_duel_snapshot() -> Dictionary:
+	var width: int = 4
+	var height: int = 3
+	var enemy: Dictionary = {
+		"entity_id": "enemy_a",
+		"entity_type": "enemy",
+		"faction": "labyrinth",
+		"position": {"x": 2, "y": 1},
+		"current_hp": 10,
+		"max_hp": 10,
+		"blocks_movement": true,
+		"definition_id": "iron_cultist"
+	}
+	var cells: Array[Dictionary] = []
+	for y: int in range(height):
+		for x: int in range(width):
+			var terrain: int = BoardCell.Terrain.FLOOR
+			if x == 0 or y == 0 or x == width - 1 or y == height - 1:
+				terrain = BoardCell.Terrain.WALL
+			elif x == 1 and y == 1:
+				terrain = BoardCell.Terrain.ENTRANCE
+			var occupant: String = "enemy_a" if (x == 2 and y == 1) else ""
+			cells.append({
+				"position": {"x": x, "y": y},
+				"terrain": terrain,
+				"occupant_id": occupant,
+				"explored": true,
+				"visible": true
+			})
+	return {
+		"width": width,
+		"height": height,
+		"next_sequence_id": 1,
+		"cells": cells,
+		"entities": [enemy]
+	}
+
+
+# The number of shield_block `combat`-stream rolls recorded in a session's event log (the warrior off-hand signal).
+func _shield_block_roll_count(events: Array) -> int:
+	var count: int = 0
+	for event_value: Variant in events:
+		if not event_value is DomainEvent:
+			continue
+		var event: DomainEvent = event_value
+		for draw_value: Variant in event.payload.get("rng_draws", []):
+			if String((draw_value as Dictionary).get("effect_id", "")) == "shield_block":
+				count += 1
+	return count
