@@ -19,18 +19,23 @@ const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
 # L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
 # shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
 # anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
 # target — the compile guardrail still covers it). The instanced root exposes bind_live_state/render as before.
 const TacticalBoardScene = preload("res://scenes/game/tactical_board.tscn")
-const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
 const TacticalTextScale = preload("res://scripts/ui/view_models/tactical_text_scale.gd")
 
 # The combat/elite node types that play a live board here.
 const LIVE_COMBAT_NODE_TYPES: Array[String] = ["combat", "elite_combat"]
 
 var _board_presenter: Control = null
+# Story 12.1 — the live interactive fight in progress (set when a combat/elite node begins; the shell drives it from
+# the player's taps via the board presenter, then FINISHES it on a terminal outcome). Held across taps so the committed
+# callback can finish the node + route. Ephemeral (no in-node save — the 23-key RunSnapshot gate stays 23).
+var _active_session: InteractiveCombatSession = null
+var _active_node: RouteNode = null
 
 func _ready() -> void:
 	_build_board_presenter()
@@ -86,25 +91,45 @@ func _drive_current_stage() -> void:
 	var node_type: String = String(current.type) if current != null else ""
 
 	if LIVE_COMBAT_NODE_TYPES.has(node_type):
-		# Drive the live combat node (the board outcome decides it). Capture the live board for the render.
-		var resolved = orchestrator.resolve_combat_node_live(current, flow.hero_hp())
-		if resolved.is_error():
+		# Story 12.1 — SET UP the live combat node for INTERACTIVE (tap-driven) play instead of calling the atomic
+		# auto-resolver. begin_interactive_combat_node runs the PRE-fight steps (enter/generate/assign-affinity/fairness/
+		# seat-cursed) and hands back the live board + turn state + a step-driven InteractiveCombatSession. The shell
+		# RENDERS the live board (closing the L4 gap — a combat node now holds a LIVE board mid-fight) then AWAITS the
+		# player's taps (routed into the session via the board presenter); it does NOT resolve the fight here.
+		var setup = orchestrator.begin_interactive_combat_node(current, flow.hero_hp())
+		if setup.is_error():
+			# M1-symmetric fix (Story 12.1 review): a live-combat SETUP error (level_generation_failed /
+			# darkness_fairness_violation / affinity_assignment_failed / interactive_combat_begin_failed) leaves the run
+			# NON-TERMINAL with no fight to drive, so a bare _render_between_levels + return would STRAND the player on the
+			# shell with no navigation (the same soft-lock class the boss branch's M1 fix guards). FAIL LOUD (log the error,
+			# same as the boss branch) then surface the recoverable dead-end via _route_to_dead_end so the player boots back
+			# to the run-end/recovery landing rather than soft-locking. The setup error stays loud/structural upstream; this
+			# recovery only prevents the run stranding.
 			if has_node("/root/Diagnostics"):
-				Diagnostics.info(&"ui", &"gameplay_shell_live_node_failed", {"error_code": String(resolved.error_code)})
+				Diagnostics.info(&"ui", &"gameplay_shell_live_node_setup_failed", {"error_code": String(setup.error_code)})
 			_render_between_levels(run)
+			_route_to_dead_end(flow)
 			return
-		var live_board = resolved.metadata.get("board")
-		if live_board is BoardState:
-			# Story 11.4 (Task 4/AC2) — render the live AFFINITY board on screen (the affinity treatment/cues/hazard
-			# cells are visible on the board/HUD). The assigned affinity id rides the live-node metadata; the shell
-			# threads it (+ the DarknessFairnessQuery verdict from the resolve path, if any) to the board presenter.
-			var affinity_id: StringName = StringName(String(resolved.metadata.get("affinity_id", "")))
-			_render_live_board(live_board as BoardState, run, affinity_id, _fairness_from(resolved))
-		# A live DEFEAT ended the run (hero death) -> run-end; a live VICTORY advances forward -> route map.
-		if run.is_terminal():
-			_route_to_run_end(flow)
-		else:
-			_advance_to_route_map()
+		var session: InteractiveCombatSession = setup.metadata.get("session")
+		if session == null:
+			# A null session with a non-error setup is a structural contract break (begin returns a session on success);
+			# treat it as the same non-terminal strand class and route to the recoverable dead-end (never a silent return).
+			if has_node("/root/Diagnostics"):
+				Diagnostics.info(&"ui", &"gameplay_shell_live_node_setup_failed", {"error_code": "missing_session"})
+			_render_between_levels(run)
+			_route_to_dead_end(flow)
+			return
+		var affinity_id: StringName = StringName(String(setup.metadata.get("affinity_id", "")))
+		_active_session = session
+		_active_node = current
+		# Bind the session to the board presenter (its tap methods route into the session) + render the LIVE board with
+		# the LIVE turn state + the live affinity id/fairness verdict. The committed callback routes back here after each
+		# committed action (re-render + route). The board presenter retains the affinity across re-renders (bind_live_state).
+		_board_presenter.bind_interactive_session(session, run, _on_interactive_action_committed, affinity_id, _fairness_from(setup))
+		_board_presenter.render()
+		# A degenerate already-terminal setup (a zero-enemy board resolves at begin) is finished immediately (no taps).
+		if session.is_terminal():
+			_on_interactive_action_committed()
 		return
 
 	# A boss node not yet set up -> resolve it live (sets up the boss encounter), then re-drive (drives the fight).
@@ -127,10 +152,37 @@ func _drive_current_stage() -> void:
 	_advance_to_route_map()
 
 
-func _render_live_board(board: BoardState, run: RunState, affinity_id: StringName = &"none", fairness: Dictionary = {}) -> void:
-	var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, &"hero")
-	_board_presenter.bind_live_state(board, turn_state, run, _text_scale(), affinity_id, fairness)
+# Story 12.1 — the committed-action callback the board presenter invokes after each COMMITTED tap (a move / a confirmed
+# attack). It re-renders the live HUD (the session mutated the board/turn in place) and, on a terminal outcome, FINISHES
+# the node (the SAME post-fight resolution the auto-resolver applies: VICTORY -> clear+exit+advance; DEFEAT -> the live
+# hero-death run-end) and routes: VICTORY -> the route map; DEFEAT / run-end -> the run-end stage. A non-terminal action
+# just re-renders and awaits the next tap. Fail-loud on a finish error (route to the recoverable dead-end).
+func _on_interactive_action_committed() -> void:
+	var flow: RunFlowController = _flow()
+	if flow == null or _active_session == null or _active_node == null:
+		return
+	# Re-render the live board/HUD (the turn slot + HP + action_availability reflect the real post-action turn state).
 	_board_presenter.render()
+	if not _active_session.is_terminal():
+		return
+
+	var orchestrator: RunOrchestrator = flow.orchestrator()
+	var finish = orchestrator.finish_interactive_combat_node(_active_node, _active_session)
+	var run: RunState = flow.run()
+	# Clear the live-fight handle (the fight is resolved — ephemeral, not saved).
+	_active_session = null
+	_active_node = null
+	if finish.is_error():
+		if has_node("/root/Diagnostics"):
+			Diagnostics.info(&"ui", &"gameplay_shell_interactive_finish_failed", {"error_code": String(finish.error_code)})
+		_render_between_levels(run)
+		_route_to_dead_end(flow)
+		return
+	# A live DEFEAT ended the run (hero death) -> run-end; a live VICTORY advances forward -> route map.
+	if run.is_terminal():
+		_route_to_run_end(flow)
+	else:
+		_advance_to_route_map()
 
 
 # Story 11.4 (AC3) — extract the DarknessFairnessQuery verdict from the live-node resolve metadata (the single authority

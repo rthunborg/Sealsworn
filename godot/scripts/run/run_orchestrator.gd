@@ -69,6 +69,7 @@ const GoldRewardDefinition = preload("res://scripts/content/definitions/gold_rew
 const GoldRewardRepository = preload("res://scripts/content/repositories/gold_reward_repository.gd")
 const LevelGenerator = preload("res://scripts/generation/level/level_generator.gd")
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
+const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 const NodeEnterCommand = preload("res://scripts/core/commands/node_enter_command.gd")
 const NodeExitCommand = preload("res://scripts/core/commands/node_exit_command.gd")
@@ -1091,6 +1092,171 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 		"board": combat.metadata.get("board"),
 		"affinity_id": String(affinity_id),
 		"darkness_fairness": fairness_verdict,
+		"run_completed": false
+	})
+
+
+# ---- Story 12.1: the INTERACTIVE combat node seam (additive; resolve_combat_node_live is UNCHANGED) --------------
+
+# Story 12.1 (AC1/AC3/AC4) — SET UP a combat/elite node for INTERACTIVE (tap-driven) play, WITHOUT resolving the fight.
+# It runs the SAME PRE-fight steps resolve_combat_node_live runs — enter the node (NodeEnterCommand) + generate the level
+# (LevelGenerator.generate) + assign the node's affinity ONCE (the assign-if-absent guard) + the Darkness-fairness live
+# gate + seat the Cursed rule source — then hands the generated board + the assigned affinity + the fairness verdict to a
+# NEW step-driven InteractiveCombatSession (which restores the board, applies the affinity board effect BEFORE hero
+# placement, and places the hero at the entrance, reusing the SAME building blocks the auto-resolve driver uses). It does
+# NOT drive the fight: the caller (the on-screen shell) drives the session one action per tap, then calls
+# finish_interactive_combat_node on a terminal outcome to apply the SAME post-fight resolution.
+#
+# This is the ON-SCREEN counterpart of resolve_combat_node_live's PRE-fight half — it does NOT fork a parallel
+# node-resolution; the atomic resolve_combat_node_live stays UNCHANGED + reachable (the auto-resolve/proof path). Returns
+# ok with { session, board, turn_state, affinity_id, darkness_fairness, node_id, node_type } for the render, or a
+# structured error (a rejected enter/generate/affinity/fairness/board-restore) with ZERO partial progression (the node is
+# neither entered forward nor cleared — a failed setup surfaces structurally). `hero_hp` / `hero_weapon_id` are the
+# driver-supplied loadout (the class-kit -> combat-loadout wiring is Story 12.2).
+func begin_interactive_combat_node(
+	node: RouteNode,
+	hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP,
+	hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON
+) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if node == null:
+		return ActionResult.error(&"invalid_combat_node", {"command": "run_orchestrator"})
+
+	# PRE-fight step 1 — enter the node (mirrors resolve_combat_node_live).
+	var enter: ActionResult = NodeEnterCommand.new(_next_sequence_id).execute(run)
+	if enter.is_error():
+		return enter
+	_advance_sequence_past(enter)
+
+	# PRE-fight step 2 — generate the level (the route<->level handoff).
+	var request = enter.metadata.get("level_request")
+	var generation: GenerationResult = LevelGenerator.generate(request, _recipe_repository, _enemy_repository)
+	if generation.is_error():
+		return ActionResult.error(&"level_generation_failed", {
+			"command": "run_orchestrator",
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"inner_failed_phase": String(generation.failed_phase),
+			"inner_error_code": String(generation.error_code),
+			"inner_reason": String(generation.reason)
+		})
+
+	# PRE-fight step 3 — assign the node's affinity ONCE (the assign-if-absent guard; a re-drive reads the recorded id
+	# back, never re-rolls the `map` stream — the SAME once-per-node discipline resolve_combat_node_live uses).
+	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+		var assign: ActionResult = assign_affinity(node)
+		if assign.is_error():
+			return ActionResult.error(&"affinity_assignment_failed", {
+				"command": "run_orchestrator",
+				"node_id": node.id,
+				"node_type": String(node.type),
+				"inner_error_code": String(assign.error_code)
+			})
+	var affinity_id: StringName = assigned_affinity_for(node.id)
+
+	# PRE-fight step 4 — Darkness fairness on the live board (a violation STOPS with no partial progression).
+	var fairness: ActionResult = _check_darkness_fairness_live(generation, affinity_id, node)
+	if fairness.is_error():
+		return fairness
+	var fairness_verdict: Dictionary = fairness.metadata.duplicate(true)
+
+	# PRE-fight step 5 — seat the Cursed rule source (idempotent; a non-Cursed affinity seats nothing).
+	_seat_cursed_affinity_rule_source(affinity_id)
+
+	# Hand the generated board + affinity + fairness to the step-driven session (it restores the board, applies the
+	# affinity board effect BEFORE hero placement, places the hero at the entrance — the SAME building blocks). The
+	# run-level `streams` is the ONLY RNG source (the `combat` stream via AttackCommand; the default sword hero draws none).
+	var session: InteractiveCombatSession = InteractiveCombatSession.new(_enemy_repository)
+	var begin: ActionResult = session.begin(
+		generation.payload.get("board", {}),
+		generation.payload.get("entrance", {}),
+		streams,
+		hero_hp,
+		hero_weapon_id,
+		affinity_id,
+		_affinity_repository
+	)
+	if begin.is_error():
+		# A rejected board restore / affinity apply / hero placement is a hard setup error: surface it structurally + STOP
+		# (no partial progression — the node is neither cleared nor failed).
+		return ActionResult.error(&"interactive_combat_begin_failed", {
+			"command": "run_orchestrator",
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"inner_error_code": String(begin.error_code),
+			"level_seed": String(generation.payload.get("level_seed", ""))
+		})
+
+	return ActionResult.ok([], {
+		"node_id": node.id,
+		"node_type": String(node.type),
+		"resolution": "interactive_combat_setup",
+		"session": session,
+		"board": session.board(),
+		"turn_state": session.turn_state(),
+		"affinity_id": String(affinity_id),
+		"darkness_fairness": fairness_verdict,
+		"level_seed": String(generation.payload.get("level_seed", "")),
+		"level_recipe_id": String(generation.payload.get("recipe_id", "")),
+		"is_terminal": session.is_terminal(),
+		"run_completed": false
+	})
+
+
+# Story 12.1 (AC1/AC3/AC4) — apply the POST-fight resolution once the interactive session has reached a TERMINAL outcome,
+# using the EXACT SAME resolution resolve_combat_node_live applies:
+#   - LIVE VICTORY -> clear + exit the node (NodeExitCommand) so the run advances forward. The node is decided by the
+#     BOARD OUTCOME (STATE_VICTORY), exactly like the auto-resolve path.
+#   - LIVE DEFEAT -> the live hero-death SOURCE: auto-fire resolve_run_end(&"hero_death") -> PHASE_FAILED + run_failed
+#     cause hero_death + next_destination == outpost. A dead hero ENDS the run (the node is NOT exited/cleared). The
+#     auto-fire runs BEHIND the CompleteRunCommand run_already_terminal guard (a re-detection never double-fires).
+# It does NOT fork a parallel death path (it reuses resolve_run_end) nor a parallel node-clear (it reuses NodeExitCommand)
+# — the SAME two post-fight branches resolve_combat_node_live owns. Returns metadata MIRRORING resolve_combat_node_live's
+# victory/defeat metadata (resolution live_combat_victory / live_combat_defeat). Rejects a non-terminal session
+# `interactive_combat_not_terminal` (the caller must only finish a decided fight).
+func finish_interactive_combat_node(node: RouteNode, session: InteractiveCombatSession) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if node == null:
+		return ActionResult.error(&"invalid_combat_node", {"command": "run_orchestrator"})
+	if session == null or not session.is_terminal():
+		return ActionResult.error(&"interactive_combat_not_terminal", {
+			"command": "run_orchestrator",
+			"node_id": node.id
+		})
+
+	if not session.is_victory():
+		# LIVE DEFEAT -> the live hero-death SOURCE (the SAME resolve_run_end(&"hero_death") the auto-resolve path fires).
+		var death: ActionResult = resolve_run_end(DomainEvent.RUN_FAILED_CAUSES[0])  # &"hero_death"
+		if death.is_error():
+			return death
+		return ActionResult.ok(death.events, {
+			"node_id": node.id,
+			"node_type": String(node.type),
+			"resolution": "live_combat_defeat",
+			"outcome": String(session.outcome_state().state_id),
+			"board": session.board(),
+			"affinity_id": String(assigned_affinity_for(node.id)),
+			"run_failed": true,
+			"cause": run_failed_cause(),
+			"next_destination": run_end_destination(),
+			"run_completed": false
+		})
+
+	# LIVE VICTORY -> clear + exit the node (the SAME NodeExitCommand the auto-resolve path runs), so the run advances.
+	var exit: ActionResult = NodeExitCommand.new(_next_sequence_id).execute(run)
+	if exit.is_error():
+		return exit
+	_advance_sequence_past(exit)
+
+	return ActionResult.ok([], {
+		"node_id": node.id,
+		"node_type": String(node.type),
+		"resolution": "live_combat_victory",
+		"outcome": String(session.outcome_state().state_id),
+		"board": session.board(),
+		"affinity_id": String(assigned_affinity_for(node.id)),
 		"run_completed": false
 	})
 

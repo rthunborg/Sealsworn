@@ -1,3 +1,18 @@
+## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0 open `[Review][Patch]`; 1 open
+`[Review][Decision]` — the combat-setup-error strand-on-shell consistency call, verified pre-existing from 11.3/11.4
+and recommended for deferral). One `[Review][Defer]` carried forward:
+
+- [ ] **[Review][Defer]** (Low, from code review of 12-1, 2026-07-07) — gesture→cell pixel hit-testing (mapping a raw
+  screen tap to a board `Vector2i`) is deliberately NOT implemented in 12.1: no board-geometry hit-test exists today,
+  and the presenter/session tap seam operates at the already-resolved cell-intent level
+  (`interactive_submit_move(target_cell)` / `interactive_tap_attack(target_cell)` / `interactive_inspect(target_cell)`),
+  matching the existing `tactical_board_presenter` tap contract. Recorded scope (Dev Notes §14 move-commit note / §16.1
+  non-gap), NOT a defect — a later on-device input story owns the pixel→cell hit-test (and a symmetric two-step
+  move-confirm VM if a designer wants move parity with the attack commit flow; the appendix records that as a
+  presentation-flow choice, not a required VM).
+
 ## Deferred from: code review of 10-8-darkness-fairness-moving-los-and-readiness-sample-expansion (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 0 open `[Review][Patch]`; 3
