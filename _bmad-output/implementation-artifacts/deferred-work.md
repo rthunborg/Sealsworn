@@ -1,3 +1,23 @@
+## Deferred from: code review of 10-3-generator-soft-lock-and-fairness-batch-checks (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 5; 0 open `[Review][Patch]`; 2
+`[Review][Decision]` items — both gate-owned human calls already reflected as the story's chosen posture, neither
+requiring a change). **No `[Review][Defer]` findings were raised.** This generator-safety / readiness batch-check
+story added only a read-only batch harness (`godot/tests/integration/test_generator_fairness_batch.gd`) COMPOSING the
+two existing validators (`LevelValidator` 3.6, `DarknessFairnessQuery` 7.6 — no second flood/LoS), a `tools/`-gated
+print-only report driver (`godot/tools/dump_generator_fairness_report.gd`), the durable readiness ledger
+`_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md`, and a reciprocal one-paragraph edit to the
+10.2 ledger. No production `godot/` generator/validator/gameplay/save/RNG/content source was touched; NO seed-regression
+fingerprint was re-pinned. The full headless suite was independently re-run green (**185 PASS / 0 `^FAIL`**, exactly the
+6 documented stderr negatives, no new one); every determinism/generation invariant (7 RNG streams, `LevelValidator`
+8-code `check_order` + `phase_for_code`, `DarknessFairnessQuery` 4 reasons + reduced-radius `== 2`,
+`GenerationResult` 11 `PHASE_*`, `MAX_GENERATION_ATTEMPTS == 8`) was verified intact. The genuine FR58
+`darkness_unseen_hazard` finding on Medium seeds 4004+5005 is an honestly-classified 10.6-gate readiness signal
+recorded in that story's readiness ledger §4 (NOT a defect and NOT a cross-story defer — it is 10.6-gate-owned by
+design). The five Low findings are informational scoping/hardening/cosmetic notes recorded in the story file's
+`### Review Findings` section, not deferred pre-existing issues. Nothing to carry forward on this ledger from this
+review.
+
 ## Deferred from: code review of 10-2-headless-seed-regression-suite (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 0 open `[Review][Patch]`; 3
