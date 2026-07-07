@@ -404,6 +404,10 @@ This supplemental map preserves the existing 70-item implementation FR inventory
 
 Per `sprint-change-proposal-2026-07-04.md` (trigger: `epic-9-retro-2026-07-04.md` §10): Epic 11 (Live Run Flow, HUD, and Outpost) added and sequenced between Epic 9 and Epic 10's Stories 10.4-10.7. It consolidates the deferred live layer recorded across Epics 7-9: live run combat + hero-death source (FR32 loss half) -> Story 11.2; run-flow scenes/HUD -> Story 11.3; live affinity call sites + HUD/VFX -> Story 11.4; outpost scene + reveal renders (FR61/FR62) + summary coupling -> Story 11.5; meta spend/application (FR59) -> Story 11.6; the pre-scene-work UX appendix (also 10.7 AC5's input) -> Story 11.1. Epic numbering of existing epics is unchanged by design (live cross-references preserved).
 
+### 2026-07-07 Sprint Change Traceability (Epic 12 insertion)
+
+Per `sprint-change-proposal-2026-07-07.md` (trigger: `epic-11-retro-2026-07-06.md` §10 — STRUCTURAL sequencing drift: the interactive tap-loop (T1) + winnable hero path (T2) are implicit prerequisites of Stories 10.4/10.6 but were allocated to no story): Epic 12 (Interactive Tactical Combat, Stories 12.1-12.2) added, executing between Epic 10's Stories 10.3 and 10.4. Interactive tap-loop + live board render -> Story 12.1; class-kit → combat-loadout wiring + winnable hands-on fights -> Story 12.2. Prerequisite annotations added to Stories 10.4/10.6; audit note for 10.5 in the Epic 10 sequencing note. Epic numbering of existing epics is unchanged by design.
+
 ## Epic List
 
 ### Epic 1: Core Tactical Combat Slice
@@ -493,6 +497,14 @@ Players can play the full descent hands-on — launch, choose a class, fight gen
 **FRs covered:** live/on-screen delivery of FR1, FR31, FR32 (live loss trigger), FR54-FR58 (felt affinity/risk pressure), FR59 (meta spend/application), FR60, FR61, FR62 (summary and reveal renders), FR64, FR65, and the FR68 flow expansion (run map, outpost/meta menu, run summary). Domain logic for these shipped in Epics 1-9; this epic wires live call sites, scenes, and HUD. Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
 
 **Implementation notes:** Added 2026-07-04 via sprint change proposal (see `sprint-change-proposal-2026-07-04.md`) to consolidate the deliberately deferred live layer from Epics 7-9. **Sequencing: executes between Epic 9 and Epic 10's Stories 10.4-10.7** (10.1-10.3 are independent). UI observes view models through the command bridge and owns no tactical truth; scenes live under `godot/scenes/ui/` and `godot/scenes/game/`. The live wiring must preserve interrupted==uninterrupted determinism, the 23-key `RunSnapshot` gate, `ProfileSnapshot.SCHEMA_VERSION == 1`, the 7 named RNG streams, and every pinned fingerprint. Consumes (does not rebuild): the Epic-2 tactical presentation contracts, 7.4/7.5 affinity effects, 8.5/9.4 narrative beat DTOs, 8.6 `OutpostViewModel`, 9.3 `BossTurnResolver` live loop, 9.5 `resolve_boss_victory()`.
+
+### Epic 12: Interactive Tactical Combat
+
+Players drive moment-to-moment combat by hand on the live tactical board — tap to move, preview and confirm attacks, inspect tiles — with a class loadout that makes generated fights winnable and classes tactically distinct.
+
+**FRs covered:** live/on-screen tap delivery of FR3, FR4, FR8, FR9, FR10, FR11, FR12 (movement/attack previews, two-step commit, inspect — domain and view-model layers shipped in Epics 1-2; this epic wires the live input seam), plus the class-kit → combat-loadout wiring that revises the Story 11.2 deferred boundary. Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
+
+**Implementation notes:** Added 2026-07-07 via sprint change proposal (see `sprint-change-proposal-2026-07-07.md`) to allocate the Epic-11 retro's T1/T2 residual (the interactive tap-loop + a winnable hero path — the last piece of hands-on play). **Sequencing: executes between Epic 10's Stories 10.3 and 10.4.** The tap-loop follows the run-flow UX appendix §14 contract (first tap PREVIEWS, second tap COMMITS, ≥44px targets); all decision logic lives in RefCounted seams (scene-free harness); the default hands-off auto-resolve driver stays available and byte-identical for seed-batch proofs; resolve-then-advance is preserved; no new autoload; every pinned fingerprint holds unless intentionally re-pinned in the same change.
 
 ## Epic 1: Core Tactical Combat Slice
 
@@ -2352,6 +2364,8 @@ Players receive a stable MVP experience validated against performance, readabili
 
 > **Sequencing note (2026-07-04, sprint change):** Stories 10.4, 10.5, 10.6, and 10.7 require **Epic 11 (Live Run Flow, HUD, and Outpost)** to land first — their playtest sessions, screen audits, loop gate, and UX gate assume a hands-off-playable loop that Epic 11 wires. Stories 10.1-10.3 are independent of Epic 11.
 
+> **Sequencing note (2026-07-07, sprint change):** Stories 10.4 and 10.6 additionally require **Epic 12 (Interactive Tactical Combat)** — their observed hands-on sessions and "die or win" loop gate assume a human can drive and win moment-to-moment combat, which Epic 11 deliberately shipped as an auto-resolve stand-in. Story 10.5 is not blocked but should audit the tap/preview/commit surfaces Epic 12 adds. Stories 10.1-10.3 remain independent.
+
 ### Story 10.1: Device Tiers and Performance Budgets
 
 As a player,
@@ -2445,6 +2459,8 @@ So that procedural variety remains trustworthy.
 
 **Prerequisite (2026-07-04):** Epic 11 — observed sessions require the live playable loop (fight, die or win, reveal, outpost, another descent).
 
+**Prerequisite (2026-07-07):** Epic 12 — observed sessions require a human driving moment-to-moment combat with a winnable class loadout; the auto-resolve stand-in cannot exercise the comprehension checklist.
+
 As a player,
 I want the first MVP playtest to reveal whether the core loop is understandable,
 So that tuning focuses on real friction rather than guesswork.
@@ -2514,6 +2530,8 @@ So that readability problems are caught before broader testing.
 ### Story 10.6: MVP Readiness Gate and Playable Build Preservation
 
 **Prerequisite (2026-07-04):** Epic 11 — the loop gate's steps (fight, die or win, view summary, start another descent) must be live, not driven/test-resolved.
+
+**Prerequisite (2026-07-07):** Epic 12 — the loop gate's "fight … die or win" steps must be playable by hand, not auto-resolved.
 
 As a player,
 I want each milestone and the final MVP candidate to remain playable,
@@ -2744,3 +2762,65 @@ So that descents feed a shallow but real progression loop.
 **When** save/load and migration tests run
 **Then** profile round-trips cover the new spend state additively (no schema bump unless justified against the 8.7 migration matrix)
 **And** idempotency and caller-ordering safety match the run-end command family's standards.
+
+## Epic 12: Interactive Tactical Combat
+
+Players drive moment-to-moment combat by hand on the live tactical board — tap to move, preview and confirm attacks, inspect tiles — with a class loadout that makes generated fights winnable and classes tactically distinct.
+
+> **Sequencing:** inserted 2026-07-07 via sprint change proposal; executes between Epic 10's Stories 10.3 and 10.4. See the Epic List entry for FR coverage and implementation notes.
+
+### Story 12.1: Interactive Combat Tap-Loop and Live Board Render
+
+As a player,
+I want to move, attack, and inspect on the live tactical board with my own taps,
+So that I make the tactical decisions instead of watching an auto-resolved fight.
+
+**Acceptance Criteria:**
+
+**Given** a run is parked on a combat or elite_combat node in the gameplay shell
+**When** the node begins
+**Then** the live board renders on-screen with hero, enemies, terrain, fog, and affinity treatments (closing the L4 no-"board"-key gap in live metadata)
+**And** the rendered board is a projection of the domain board — no scene node owns tactical truth.
+
+**Given** the live board is rendered and it is the player's turn
+**When** the player taps a reachable tile, taps a valid attack target, or inspects
+**Then** movement previews (FR8), attack previews (FR9/FR10), and inspect (FR12) surface through the existing view-model and command-bridge contracts
+**And** a first tap PREVIEWS and a second confirming tap COMMITS (FR11), with ≥44px targets, per the run-flow UX appendix §14
+**And** committed actions submit the existing commands through the command bridge — no parallel combat path.
+
+**Given** a committed player action resolves
+**When** enemy and boss turns respond
+**Then** the existing turn resolvers drive responses unchanged in ownership
+**And** the resolve-then-advance sequencing seam is preserved (the node resolves before any route advance — the 11.3 H1 lesson).
+
+**Given** the headless suite and seed regressions run
+**When** the tap-loop lands
+**Then** all tap-loop decision logic lives in RefCounted seams testable without a SceneTree (scene wiring verified by construction + the scene-load compile guardrail)
+**And** the default hands-off auto-resolve driver remains available and byte-identical (every pinned fingerprint unchanged; no new autoload; no new RNG draw site).
+
+### Story 12.2: Class Loadout and Winnable Hands-On Fights
+
+As a player,
+I want my chosen class's kit to arm me for a fight I can actually win,
+So that hands-on combat is fair and classes feel tactically distinct.
+
+**Acceptance Criteria:**
+
+**Given** a run starts with a selectable class
+**When** a live combat node begins under the tap-loop
+**Then** the hero's live loadout (HP, weapon, support, passives) derives from the class starting kit rather than the flat scripted default
+**And** the Story 11.2 "class-kit → combat-loadout is a later story" boundary is formally revised by this story, with `project-context.md` updated in the same change.
+
+**Given** the approved live-combat seed batch
+**When** a strengthened reference driver (retro T2, e.g. LoS-aware targeting) plays each playable class
+**Then** every approved seed is winnable by at least one legal line of play per class
+**And** unwinnable seeds fail loud with seed + class + reason and are triaged before Story 10.4.
+
+**Given** the three playable classes on the same seed
+**When** live loadouts are compared
+**Then** each class changes at least one combat decision through equipment, passive, or preview behavior (the direct input to 10.4's class-comparison AC).
+
+**Given** determinism and save gates
+**When** the loadout wiring lands
+**Then** no new RNG stream or unnamed draw site is added, the 23-key RunSnapshot gate stays 23, and the in-node fight state remains ephemeral
+**And** any intentionally changed live-combat fixture/fingerprint is re-pinned in the same change, with the hands-off default path otherwise byte-identical.

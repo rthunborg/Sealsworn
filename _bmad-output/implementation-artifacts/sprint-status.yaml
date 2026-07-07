@@ -43,12 +43,12 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-06T20:22:00+00:00
+last_updated: 2026-07-07T09:31:04+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-scope: epics-1-11-tracked (epic-11 inserted 2026-07-04, executes before epic-10)
+scope: epics-1-12-tracked (epic-11 inserted 2026-07-04, executes before epic-10; epic-12 inserted 2026-07-07, executes between 10-3 and 10-4)
 source_epics_file: C:/Sealsworn/_bmad-output/planning-artifacts/epics.md
 readiness_status: READY_WITH_GATES
 
@@ -149,8 +149,17 @@ development_status:
   10-1-device-tiers-and-performance-budgets: backlog
   10-2-headless-seed-regression-suite: backlog
   10-3-generator-soft-lock-and-fairness-batch-checks: backlog
+  # SPRINT CHANGE 2026-07-07 (sprint-change-proposal-2026-07-07.md):
+  # epic-12 executes BETWEEN epic-10's 10-3 and 10-4 (file order = execution order) —
+  # the interactive tap-loop + winnable class loadout are prerequisites for 10-4's
+  # hands-on sessions and 10-6's "die or win" loop gate. Epic numbering intentionally
+  # NOT reshuffled.
+  epic-12: backlog
+  12-1-interactive-combat-tap-loop-and-live-board-render: backlog
+  12-2-class-loadout-and-winnable-hands-on-fights: backlog
   10-4-gameplay-comprehension-and-playtest-checklist: backlog
   10-5-accessibility-and-readability-audit: backlog
   10-6-mvp-readiness-gate-and-playable-build-preservation: backlog
   10-7-asset-audio-placeholder-and-ux-readiness-gate: backlog
   epic-10-retrospective: optional
+  epic-12-retrospective: optional
