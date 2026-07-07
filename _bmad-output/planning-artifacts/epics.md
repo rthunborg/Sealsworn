@@ -408,6 +408,10 @@ Per `sprint-change-proposal-2026-07-04.md` (trigger: `epic-9-retro-2026-07-04.md
 
 Per `sprint-change-proposal-2026-07-07.md` (trigger: `epic-11-retro-2026-07-06.md` §10 — STRUCTURAL sequencing drift: the interactive tap-loop (T1) + winnable hero path (T2) are implicit prerequisites of Stories 10.4/10.6 but were allocated to no story): Epic 12 (Interactive Tactical Combat, Stories 12.1-12.2) added, executing between Epic 10's Stories 10.3 and 10.4. Interactive tap-loop + live board render -> Story 12.1; class-kit → combat-loadout wiring + winnable hands-on fights -> Story 12.2. Prerequisite annotations added to Stories 10.4/10.6; audit note for 10.5 in the Epic 10 sequencing note. Epic numbering of existing epics is unchanged by design.
 
+### 2026-07-07 Sprint Change Traceability (Story 10.8 insertion — FR58/sample)
+
+Per `sprint-change-proposal-2026-07-07-fr58.md` (trigger: Story 10.3's two 10.6-gate-owned Decision items — the FR58 `darkness_unseen_hazard` finding on Medium seeds 4004/5005 and the 5-of-50 sub-target seed-sample gaps): Story 10.8 (Darkness Fairness Moving-LoS Predicate and Readiness Sample Expansion) added, executing between Story 10.3 and the Epic 12 block (Story 12.1). Part A strengthens `DarknessFairnessQuery` predicate (b) from static-from-entrance to moving reduced-radius LoS (seen-before-contact), flips Medium 4004/5005 to legitimate PASS with deliberate test updates + a new moving-LoS proof, corrects the false "all-FLOOR" premise comment in `RunOrchestrator._check_darkness_fairness_live` (a hard live progression gate), and records the "strengthen predicate" choice in `generator-fairness-batch-readiness.md` §4 — NO generator change, NO Part-A fingerprint re-pin, NO affinity-into-generation. Part B discharges the headless-mechanical sample targets (generation Small/Medium 5→50, tactical 8→25, reward 8→20, boss 5→10, affinity mixed-8 → 10-per-affinity; route already 20/20) via a COORDINATED additive expansion across the three Epic-10 harnesses using the sanctioned `tools/dump_*` drivers (original pins byte-identical). Story 10.6's gate scope shrinks to verifying these plus the physical-device (G1–G7) gaps. Story 12.1 is unchanged apart from execution order. Epic numbering of existing epics is unchanged by design.
+
 ## Epic List
 
 ### Epic 1: Core Tactical Combat Slice
@@ -2366,6 +2370,8 @@ Players receive a stable MVP experience validated against performance, readabili
 
 > **Sequencing note (2026-07-07, sprint change):** Stories 10.4 and 10.6 additionally require **Epic 12 (Interactive Tactical Combat)** — their observed hands-on sessions and "die or win" loop gate assume a human can drive and win moment-to-moment combat, which Epic 11 deliberately shipped as an auto-resolve stand-in. Story 10.5 is not blocked but should audit the tap/preview/commit surfaces Epic 12 adds. Stories 10.1-10.3 remain independent.
 
+> **Sequencing note (2026-07-07, sprint change — FR58/sample story):** Story 10.8 (Darkness Fairness Moving-LoS Predicate and Readiness Sample Expansion) is inserted and executes **immediately after Story 10.3 and before the Epic 12 block** — it pulls forward the two 10.6-gate-owned Decision items Story 10.3 surfaced (the FR58 `darkness_unseen_hazard` finding, resolved by strengthening the predicate; and the sub-target seed samples, discharged by full expansion) ahead of the Epic-12 hands-on milestone. Story 10.8 is numbered last in the Epic 10 list for continuity but runs at that earlier position (`sprint-status.yaml` file order encodes it). This shrinks Story 10.6's gate scope to verifying 10.8's deliverables plus the physical-device gaps (G1–G7).
+
 ### Story 10.1: Device Tiers and Performance Budgets
 
 As a player,
@@ -2533,6 +2539,8 @@ So that readability problems are caught before broader testing.
 
 **Prerequisite (2026-07-07):** Epic 12 — the loop gate's "fight … die or win" steps must be playable by hand, not auto-resolved.
 
+**Gate-scope note (2026-07-07, FR58/sample story):** Story 10.8 pulls the FR58 `darkness_unseen_hazard` resolution (strengthened moving-LoS predicate) and the headless-mechanical seed-sample expansion out of this gate's decision surface — 10.6 now VERIFIES those deliverables rather than deciding them. 10.6 retains the physical-device (G1–G7) sample gaps and the overall MVP-readiness roll-up.
+
 As a player,
 I want each milestone and the final MVP candidate to remain playable,
 So that the project does not accumulate disconnected systems.
@@ -2601,6 +2609,63 @@ So that placeholders do not hide missing gameplay communication or readiness ris
 **When** UX prerequisites are checked
 **Then** a lightweight UX appendix or equivalent implementation notes exist for tactical HUD, preview/confirm, inspect, passive modal, run map, outpost/meta, run summary, settings, and save/resume recovery
 **And** the absence of a standalone UX document remains non-blocking only for domain-first Epic 1 work and view-model/command-bridge contracts.
+
+### Story 10.8: Darkness Fairness Moving-LoS Predicate and Readiness Sample Expansion
+
+> **Execution order (2026-07-07, sprint change):** although numbered 10.8 for list continuity, this story executes **immediately after Story 10.3 and before the Epic 12 block (Story 12.1)** — it resolves the two 10.6-gate-owned Decision items Story 10.3 surfaced, ahead of the Epic-12 hands-on milestone. `sprint-status.yaml` encodes this by placing the `10-8-…` entry between `10-3-…` and the `epic-12` block (file order = execution order). See `sprint-change-proposal-2026-07-07-fr58.md`.
+
+As a player,
+I want Darkness levels to be judged fair by whether I necessarily SEE a hazard before I can reach it (not only whether I see it from the entrance), and I want the MVP readiness seed samples to actually cover the target sizes,
+So that Darkness+Medium runs are not falsely blocked and the readiness verdict rests on a real sample.
+
+**Origin:** Story 10.3's genuine FR58 finding — two Decision items its scope assigned to the 10.6 gate: the `darkness_unseen_hazard` classification on Medium seeds 4004/5005, and the 5-of-50 (+ other sub-target) seed-sample gaps. The user elected (2026-07-07) to pull both forward: FR58 via "strengthen the predicate" (`generator-fairness-batch-readiness.md` §4 option 2), and the samples via "full expansion now". 10.6's gate scope then shrinks to verifying these plus the physical-device gaps (G1–G7).
+
+**Acceptance Criteria:**
+
+**Part A — FR58 resolution (strengthen the predicate):**
+
+**Given** the `DarknessFairnessQuery` predicate (b) `REASON_UNSEEN_HAZARD` currently checks static line-of-sight from the ENTRANCE at the Darkness-reduced radius
+**When** the predicate is strengthened
+**Then** a REACHABLE hazard is fair iff the hero necessarily SEES it before contact under stepwise 4-neighbour movement at the Darkness-reduced radius (the v0 facts: hazards are walkable + sight-transparent, so a hazard is visible at distance 1 from any step-from cell and occlusion between adjacent cells is impossible — the strengthened check formalizes seen-before-contact instead of seen-from-entrance)
+**And** predicate (a) entrance checks, the stable reason codes (`entrance_on_hazard`/`entity_on_entrance`/`darkness_unseen_hazard`/`invalid_darkness_candidate`), purity (no RNG/commands/mutation), compact diagnostics, and fail-loud discipline for genuinely-unfair configurations (e.g. future sight-blocking hazards or forced movement) are preserved.
+
+**Given** the ratified no-silent-drift contract governs the 10.3 batch expectations
+**When** the strengthened predicate lands
+**Then** Medium seeds 4004 (hazard at (9,4)) and 5005 (hazards at (10,2)+(12,2)) flip from classified `darkness_unseen_hazard` findings to legitimate PASS, and the batch's finding-presence assertions (`godot/tests/integration/test_generator_fairness_batch.gd`) plus the fairness-verdict tests (`godot/tests/unit/generation/test_darkness_fairness.gd`) are DELIBERATELY updated to match
+**And** a NEW test proves the moving-LoS semantics — a hand-built candidate where a hazard is entrance-unseen but necessarily seen-before-contact ⇒ PASS, plus a genuinely-unfair configuration that still FAILS `darkness_unseen_hazard`.
+
+**Given** `RunOrchestrator._check_darkness_fairness_live` runs the same query on the live board as a HARD run-progression gate, and `NodeEnterCommand` maps `elite_combat -> medium_combat_basic` so live runs DO generate Medium boards with baked HAZARD wrinkles
+**When** the false-premise comment (~lines 1094–1099, "v0 generated boards are all-FLOOR") is corrected
+**Then** the comment states that "all-FLOOR" holds only for the Small recipe (Medium bakes wrinkle-phase HAZARD cells) and that this check is a hard live progression gate
+**And** the resolution is recorded in `generator-fairness-batch-readiness.md` §4 (option "strengthen predicate" chosen by the user 2026-07-07), with the note that the predicate strengthening removes the latent false-positive hard-stop on live Darkness+Medium runs.
+
+**Given** the Epic-10 generation constraints
+**When** Part A lands
+**Then** NO generator / generation-pipeline change, NO seed-regression fingerprint re-pin from Part A (the query is not fingerprinted), and NO affinity-into-generation wiring are introduced.
+
+**Part B — readiness sample expansion (full expansion now):**
+
+**Given** the headless-mechanical sample targets recorded in `seed-regression-suite-readiness.md` §3 and `generator-fairness-batch-readiness.md`
+**When** the samples are expanded
+**Then** generation Small reaches 50, Medium reaches 50, tactical reaches 25, reward reaches 20, boss reaches 10, and affinity reaches 10-per-affinity (every implemented affinity incl. Flooded-Conductive and Darkness surfaces in the assignment sample, with documented per-affinity counts); route already met 20/20 and is untouched.
+
+**Given** the ratified epic convention that the shared Small/Medium seed catalog stays in sync across the three Epic-10 harnesses
+**When** the generation samples are expanded
+**Then** the expansion is COORDINATED across 10.1 (perf sample where it consumes the shared catalog), 10.2 (consolidated suite catalogs), and 10.3 (fairness batch) — never desynced or re-pinned in isolation
+**And** new pins are regenerated ONLY via the existing sanctioned `tools/dump_*` drivers, AFTER the Part A predicate change so verdicts are final, with the original pinned entries byte-identical (additive expansion, not a re-pin).
+
+**Given** full-suite runtime and the false-PASS discipline
+**When** the expanded suite runs
+**Then** the full headless suite stays under a stated sane wall-clock bound on the dev machine (an explicit AC guard) and the false-PASS grep guard discipline is preserved.
+
+**Given** the two readiness ledgers record the sample gaps
+**When** the targets are discharged
+**Then** both ledgers' §3 / gap tables are updated to reflect the discharged targets
+**And** the remaining non-mechanical gaps (G1–G7 physical-device passes) stay recorded as 10.6-owned.
+
+**Given** determinism and save gates
+**When** the whole story lands
+**Then** the 7 named RNG streams, zero new RNG draw sites, the 23-key `RunSnapshot` gate, `ProfileSnapshot`/`SettingsSnapshot` `SCHEMA_VERSION == 1`, and every non-Part-A fingerprint SOURCE hold, and the default deterministic paths stay byte-identical.
 
 ## Epic 11: Live Run Flow, HUD, and Outpost
 

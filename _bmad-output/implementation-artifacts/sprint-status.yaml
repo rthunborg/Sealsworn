@@ -43,12 +43,12 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-07T12:14:35+00:00
+last_updated: 2026-07-07T13:20:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-scope: epics-1-12-tracked (epic-11 inserted 2026-07-04, executes before epic-10; epic-12 inserted 2026-07-07, executes between 10-3 and 10-4)
+scope: epics-1-12-tracked (epic-11 inserted 2026-07-04, executes before epic-10; epic-12 inserted 2026-07-07, executes between 10-3 and 10-4; story 10-8 inserted 2026-07-07 [sprint-change-proposal-2026-07-07-fr58.md], executes between 10-3 and the epic-12 block)
 source_epics_file: C:/Sealsworn/_bmad-output/planning-artifacts/epics.md
 readiness_status: READY_WITH_GATES
 
@@ -149,6 +149,15 @@ development_status:
   10-1-device-tiers-and-performance-budgets: done
   10-2-headless-seed-regression-suite: done
   10-3-generator-soft-lock-and-fairness-batch-checks: done
+  # SPRINT CHANGE 2026-07-07 (sprint-change-proposal-2026-07-07-fr58.md):
+  # story 10-8 executes BETWEEN 10-3 and the epic-12 block (file order = execution order) —
+  # it pulls forward Story 10.3's two 10.6-gate-owned Decision items (the FR58
+  # darkness_unseen_hazard finding, resolved by strengthening DarknessFairnessQuery to
+  # moving reduced-radius LoS; and the sub-target seed samples, discharged by full expansion)
+  # ahead of the Epic-12 hands-on milestone. 10.8 is numbered last in the Epic 10 list for
+  # continuity but runs at this earlier position. This shrinks 10.6's gate scope to verifying
+  # 10.8's deliverables plus the physical-device (G1-G7) gaps. Epic numbering NOT reshuffled.
+  10-8-darkness-fairness-moving-los-and-readiness-sample-expansion: backlog
   # SPRINT CHANGE 2026-07-07 (sprint-change-proposal-2026-07-07.md):
   # epic-12 executes BETWEEN epic-10's 10-3 and 10-4 (file order = execution order) —
   # the interactive tap-loop + winnable class loadout are prerequisites for 10-4's
