@@ -27,6 +27,17 @@ extends "res://tests/unit/test_case.gd"
 # updated silently to make a drifting test pass. For the overlapping approved seeds the values here are
 # the SAME ones pinned in test_small_level_layout_seed_regression.gd /
 # test_medium_level_layout_seed_regression.gd (the divergence assertion below enforces that agreement).
+#
+# Change Log:
+#   2026-07-07 (Story 10.8): the shared Small/Medium catalog EXPANDED 5 -> 50 seeds (both recipes) toward
+#     the AC2/AC4 MVP-readiness generation target (50). The original five seeds (1001/2002/3003/4004/5005)
+#     are UNCHANGED (byte-identical fingerprints, NOT a re-pin); 45 additional varied seeds were APPENDED
+#     per recipe, each regenerated from tools/dump_seed_batch_report.gd / the dump_*_layout_fingerprints.gd
+#     output (never hand-typed) AFTER Story 10.8's moving-LoS predicate change so the fairness verdicts are
+#     final. This catalog stays in sync with the 10.1 level-load harness, the 10.2 consolidated suite (which
+#     IMPORTS this constant), and the 10.3 fairness batch (all draw the SAME 50-seed catalog — coordinated,
+#     never desynced). All 50 seeds (both recipes) validate on the unperturbed attempt 0 (attempts == 1);
+#     the fingerprints AGREE with the layout seed-regression fixtures (the cross-check below enforces it).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const GenerationRequest = preload("res://scripts/generation/level/generation_request.gd")
@@ -78,6 +89,231 @@ const APPROVED_SEED_CATALOG: Array[Dictionary] = [
 		"fingerprint": "8x8|e1,4|x6,4|11111111/10100011/10001001/10010011/13000041/10000001/10000001/11111111",
 		"notes": "Movement: dense upper-half walls (rows 1-3) form a tight cover maze above the corridor. LoS: many short sight breaks; the lower half stays open for a clean advance. Risk: the richest Small seed for line-of-sight play; pick the open lane or the walled upper flank. KEPT."
 	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 1,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000011/13000041/11000001/10101001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 2,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10010001/10000101/13000041/11000001/10000111/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 3,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000001/13000041/10001001/10011011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 5,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000011/10010001/10010001/13000041/10000001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 7,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10000001/10001101/13000041/10000001/11001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 13,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10000001/10100001/13000041/10000001/10100001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 42,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10100001/10000001/10000001/13000041/11000001/11001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 99,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10100001/10000001/13000041/10000011/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 123,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10010001/10010001/13000041/11001001/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 256,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10101011/10000011/13000041/11000011/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 314,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10001001/10000101/13000041/10100001/10100001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 512,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000001/10001101/10110001/13000041/10000101/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 777,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000011/10001101/10000001/13000041/10000001/10000101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 1024,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10000011/10001001/13000041/10000001/11000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 1234,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10000001/10000101/13000041/11011001/10010001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 2026,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10101001/13000041/10000011/10100001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 2718,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10110101/10010001/11000001/13000041/10000101/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 3141,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000111/10001001/13000041/10100001/10000101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 4242,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000011/13000041/10000001/11000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 5555,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000011/10000011/10001001/13000041/10000001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 6006,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10011001/10000001/10000001/13000041/11000001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 7007,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10010101/10000001/13000041/11000001/10101101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 8008,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10010001/13000041/10000011/10001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 8675309,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000001/10000001/10000101/13000041/11000001/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 9999,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000011/10010001/11010001/13000041/10000001/10010101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 12345,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10010011/10000001/13000041/11101001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 31415,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/11000001/11001001/13000041/10000001/10000101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 55555,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000101/13000041/11000001/10100101/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 65536,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10000001/10000001/13000041/11000111/10010011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 77777,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10001001/10001001/13000041/10001001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 88888,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000101/10110001/10100001/13000041/10010011/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 100003,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10100001/11100001/13000041/10000001/10001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 123456,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000001/13000041/10100011/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 161803,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/10100001/10000011/13000041/10000001/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 271828,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/11000011/10000001/13000041/10110011/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 314159,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10010111/10000001/13000041/10000001/10001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 500009,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000001/13000041/10000011/11001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 654321,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000001/11000001/10000001/13000041/11000001/10010001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 1000003,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000001/10000001/10000011/13000041/10000001/11100001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 1048576,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/11000101/11000001/10000001/13000041/10011001/10001001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 2000003,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10001001/11000001/10000001/13000041/10000111/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 7777777,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/10000001/10000001/13000041/11000011/10000011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 16777216,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10100001/10000001/10000001/13000041/11001001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 999999937,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10000001/11010001/10000101/13000041/11000001/10000001/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "small_combat_basic", "size_class": "small", "seed": 123456789,
+		"fingerprint": "8x8|e1,4|x6,4|11111111/10100001/11001001/10010001/13000041/10000001/10100011/11111111",
+		"notes": "Story 10.8 expansion seed. Small recipe (choke_point + blocker_cluster, WALL-only interior - never a HAZARD). Movement/LoS/risk: deterministic interior-WALL cover shaping the 8x8 corridor arena; validated on attempt 0 (attempts==1) + fair under Darkness (all-FLOOR, no hazard). KEPT (regenerated via tools/dump_small_layout_fingerprints.gd 2026-07-07)."
+	},
 	# --- medium_combat_basic (14x12) ---
 	{
 		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1001,
@@ -103,7 +339,232 @@ const APPROVED_SEED_CATALOG: Array[Dictionary] = [
 		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 5005,
 		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000002021/10000000000001/10000000000001/10000010000001/13000000000041/10000000000001/10000000000001/10000000000001/10100001000001/11111111111111",
 		"notes": "Movement: a HAZARD pair on row 2 (cols 10 and 12, terrain value 2) plus scattered cover; the upper-right becomes a danger zone to route around. LoS: mid-field cover (row 5 col 6) plus the lower-left wall (row 10 cols 2 and 7). Risk: the hazard pair is the standout positioning decision. KEPT (strong hazard/risk seed)."
-	}
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000001011/10000000100001/10000000000001/11000000000001/10000010020001/13000000000041/10000000000001/10000000000001/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 2,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/11000100000001/10010000000001/10000000000001/10000000000001/10200000000001/13000000000041/10000000000001/10000000000011/10010000000001/10000100100001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 3,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10001000000001/10100000000001/10000000001001/10000000000001/10000000000001/13000000000041/10000000000001/10000100000001/10000000000001/10000002000011/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 5,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000100000011/10000001000001/10000000000011/10000010000001/10000000000001/13000000000041/11000000001001/10000000000001/10010000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 7,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000001001/10000000000001/10000010010001/10000000000001/10000000000001/13000000000041/10000100000011/10000000100001/10000000000001/10000200000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 13,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10200000100001/10000000000001/10000000000001/10000000010011/13000000000041/10000000000001/10000000000001/10000000000101/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 42,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10110000000001/10000000000001/10010000000001/10000000000001/13000000000041/11000000000001/10100000000001/10000000000001/10000000000101/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 99,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10100000000001/10000000000001/10000000000001/10000000001001/13000000000041/10000000000001/10010000100001/10001000000011/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 123,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/11100000000001/10000000000001/10010000000001/10000000000001/10000000000001/13000000000041/10000000001011/10000000001001/10000000001001/10000100000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 256,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000010000001/10000000000001/10000000000001/10100100000011/11000000000001/13000000000041/10000100001001/10000000001001/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 314,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000100000001/10001000000001/10000000000001/10000000100001/10000000001001/13000000000041/10000000010001/10000000000001/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 512,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/11000000002001/10000000000001/10000100000001/10000000000001/13000000000041/10100000000001/10000000000001/10001001000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 777,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000101/10000000000001/11000000000001/10000000100001/10000100000101/13000000000041/10000000000001/10000000000011/10011000000101/10000000000011/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1024,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/11000000000001/10000000000001/10000000000001/10110000100001/10000000000001/13000000000041/10000000000001/10001001000001/10010000000001/10010002002001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1234,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000010201/10100000000101/10000000000001/10010000000001/10000000000001/13000000000041/10000000000001/10001000010001/10010000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 2026,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/11000000100001/10000000000001/10000000000001/10000010000001/10000000100001/13000000000041/10100000000001/10000000001001/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 2718,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000100000001/10000000000001/10010000000101/10000000000001/10000000000001/13000000000041/10000000100001/10000000100011/10000000000011/12000000020101/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 3141,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10200000000001/10000000000001/10100000001001/10010000000001/10000100000001/13000000000041/10000000000101/10000000000001/10001000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 4242,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000010000011/10000000000001/10001001000001/13000000000041/10000000000001/10000000001001/10000000000001/10000000011001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 5555,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000010100001/10010000000001/10000000000011/10000001000011/10000000000001/13000000000041/10000000000001/10100000000001/10000000010001/10000000001001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 6006,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000001100001/10000100010001/10000000000001/13000000000041/11000000000001/10000000000001/10001000000001/11000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 7007,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000000000101/10000000000101/10000000000011/13000000000041/10000000000001/11000000000001/10000000002001/10000000000101/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 8008,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/11000000000001/10000000000001/10100000000001/10000000000001/10001000000001/13000000000041/10010000010001/10000000001001/10000000000001/10000100000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 8675309,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10001001000001/10000100000001/10001010000101/10000000000011/13000000000041/10010000000001/12000000000001/10000000000001/11000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 9999,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000000000101/10000000000001/11000000010001/13000000000041/10100000000001/10010000000001/10000000000001/10000000000101/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 12345,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000001001/10000000000001/10000001000001/10000000100001/13000000000041/10000000100001/10000000000011/11010000000001/10000001000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 31415,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10001000000001/10000000000001/10000100000001/10000000001001/10000110000001/13000000000041/10010000010001/10000000000001/10000000000001/10000100000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 55555,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000011/11000000001011/10000000000001/10010000000001/10000000000001/13000000000041/10000001000011/10000000000001/10000000000011/11000000010001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 65536,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10001000000001/10000000000001/10000000000001/10100010001001/10000001000001/13000000000041/10000000000001/10000000000101/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 77777,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000110001/10010000001001/10000000000001/10000000011011/13000000000041/10000000000001/10000100000001/10000000000001/10000001000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 88888,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10100000000001/10001000000101/10000000000001/10000000100001/11000000000011/13000000000041/10110000000001/10000000000001/10000000000001/10100000001001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 100003,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000010100001/10000010000001/10000000000001/10000000000101/10001000000001/13000000000041/10010000000001/10000000010011/10100000000001/10000100000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 123456,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/11000000000001/10010010000001/10100000000001/10000000000101/13000000000041/10000000000001/10000000010001/10000000010001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 161803,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10001001001001/10000000000001/10000000000101/13000000000041/10000000000011/10000000000001/10000000000101/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 271828,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000000000001/10000000000001/11000000000001/13000000000041/10000000010001/10010000000001/10000000000011/10000001000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 314159,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000001001/10000001000001/10000000000001/10000010000001/10010000000001/13000000000041/10000010000001/10000000010001/10000001000001/10100000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 500009,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000001/10000000000001/10000010000101/10000010000101/13000000000041/10000001000001/10000000000001/10000000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 654321,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10001000000001/10001000000001/10000000000001/10000001000001/10000000000001/13000000000041/10000000000001/11000000001001/10110000102001/10000000000101/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1000003,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000111/11000000000001/10100000000001/10010010000001/13000000000041/10000100100001/10000000000001/10000000100001/10100000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 1048576,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000020001/10000000000001/10000000000001/11001000100001/10100100000001/13000000000041/10010000000001/10000000000001/10000000000011/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 2000003,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10000000000011/10000010000001/10000000000001/10000010010001/13000000000041/10000000001001/10000000000001/10001000000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 7777777,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10010000000001/10010000000001/10000000000001/10000000000001/10000000000001/13000000000041/10000000000011/10010000101001/10000001000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 16777216,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10010000000001/10001000000101/10000000000001/10000000000001/13000000000041/10000000000001/10000000000001/10000000000011/10000010000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). All-FLOOR terrain (no hazard wrinkle this seed). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 999999937,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10000000000001/10110100001001/10000000001011/10002000000001/10000000000001/13000000000041/10000000000101/10000000000001/10000010000101/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
+	{
+		"recipe_id": "medium_combat_basic", "size_class": "medium", "seed": 123456789,
+		"fingerprint": "14x12|e1,6|x12,6|11111111111111/10010010000001/10100000000001/10000010000001/10000000000001/10010000000001/13000000000041/10000000000001/10000000000001/10000002000001/10000000000001/11111111111111",
+		"notes": "Story 10.8 expansion seed. Medium recipe (choke_point + flank_route + blocker_cluster + hazard). Carries a wrinkle-phase HAZARD cell; fair under Darkness via moving-LoS (seen-before-contact). Validated on attempt 0 (attempts==1) + fair under the strengthened Darkness fairness predicate. KEPT (regenerated via tools/dump_medium_layout_fingerprints.gd 2026-07-07)."
+	},
 ]
 
 func run() -> Dictionary:
@@ -226,12 +687,13 @@ func _catalog_covers_both_baseline_recipes_and_preserves_all_seeds() -> void:
 		elif recipe_id == "medium_combat_basic":
 			medium_seeds[int(entry.get("seed"))] = true
 
-	# The shared catalog: the SAME five seeds the 3.2/3.3 fixtures pin, for BOTH recipes.
+	# The shared catalog: the original five seeds the 3.2/3.3 fixtures pin are PRESERVED, for BOTH recipes.
 	for seed_value: int in [1001, 2002, 3003, 4004, 5005]:
 		assert_true(small_seeds.has(seed_value), "Small catalog must preserve approved seed %d." % seed_value)
 		assert_true(medium_seeds.has(seed_value), "Medium catalog must preserve approved seed %d." % seed_value)
-	assert_equal(small_seeds.size(), 5, "Small catalog should hold exactly the five approved seeds.")
-	assert_equal(medium_seeds.size(), 5, "Medium catalog should hold exactly the five approved seeds.")
+	# Story 10.8: the shared catalog EXPANDED 5 -> 50 seeds per recipe (the original 5 preserved + 45 appended).
+	assert_equal(small_seeds.size(), 50, "Small catalog should hold exactly the fifty approved seeds (Story 10.8 expansion).")
+	assert_equal(medium_seeds.size(), 50, "Medium catalog should hold exactly the fifty approved seeds (Story 10.8 expansion).")
 
 
 # AC3 failure-report shape: when a seed DOES fail generation (forced here with an unknown recipe so the

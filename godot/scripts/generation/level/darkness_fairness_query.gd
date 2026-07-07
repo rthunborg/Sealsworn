@@ -23,19 +23,40 @@ extends RefCounted
 # "unavoidable damage from unseen space" FR58 forbids. So this check re-asserts the no-unavoidable-unseen-damage
 # guarantee AT THE DARKNESS-REDUCED radius.
 #
-# THE v0 UNAVOIDABLE-DAMAGE SOURCE = a HAZARD cell. v0 generated boards are all-FLOOR (the Scorched hazard is stamped
-# POST-generation onto a built board; a generated Darkness board has NO hazards), so a freshly-generated Darkness board
-# PASSES this check by construction (no hazard => nothing unseen can hurt you). The FAIL branch is driven by a
-# hand-built Darkness candidate carrying a HAZARD cell, OR a HAZARD that a future story stamps. THE FAIRNESS PREDICATE:
+# THE v0 UNAVOIDABLE-DAMAGE SOURCE = a HAZARD cell. The Small recipe is all-FLOOR (the Scorched hazard is stamped
+# POST-generation onto a built board; a generated Small Darkness board has NO hazards). The MEDIUM recipe, however,
+# BAKES wrinkle-phase `Terrain.HAZARD` cells into some seeds (the 3.4 hazard wrinkle — part of the pinned Medium
+# terrain fingerprint, e.g. seeds 4004/5005), so a generated Medium Darkness board CAN carry reachable hazards. Under
+# the moving-LoS predicate below those reachable hazards are FAIR (necessarily seen-before-contact). The FAIL branch is
+# driven by a genuinely-unfair config: the entrance itself forced-damaged/occupied (predicate (a)), or a future
+# sight-BLOCKING hazard / forced-teleport movement that could drop the hero onto a hazard with no see-first step. THE
+# FAIRNESS PREDICATE:
 #   (a) SAFE FIRST REVEAL at the reduced radius: the entrance cell is NOT HAZARD and no entity occupies the entrance
 #       (the LevelValidator semantic — the player is not spawned ON forced damage / ON an enemy).
-#   (b) NO UNSEEN HAZARD at the reduced radius: every HAZARD cell that is REACHABLE (the hero could be forced/walk onto
-#       it) must be LINE-OF-SIGHT VISIBLE from the entrance at the DARKNESS-REDUCED radius. A reachable hazard that is
-#       UNSEEN from the entrance at the reduced radius is "damage from unseen space" — the player would advance blind
-#       into it -> FAIL `darkness_unseen_hazard`. (A hazard that is SEALED — terrain-unreachable from the entrance —
-#       cannot be stepped on, so it is not an unseen-damage source; it does not fail this check. A hazard that IS visible
-#       at the reduced radius is fair — seen and avoidable, the LevelValidator "seen => fair" principle held at the
-#       reduced radius.)
+#   (b) NO UNSEEN-BEFORE-CONTACT HAZARD at the reduced radius (Story 10.8 — strengthened from static-from-entrance to
+#       MOVING reduced-radius LoS / "seen-before-contact"): every HAZARD cell that is REACHABLE (the hero could
+#       walk onto it under stepwise 4-neighbour movement) must be LINE-OF-SIGHT VISIBLE at the DARKNESS-REDUCED radius
+#       from at least one reachable 4-neighbour "step-from" cell — i.e. the hero necessarily SEES the hazard from the
+#       cell they would stand on the turn BEFORE they could step onto it. A reachable hazard the hero could reach WITHOUT
+#       ever seeing it first is "damage from unseen space" -> FAIL `darkness_unseen_hazard`. This replaces the v0
+#       static-from-ENTRANCE question ("is the hazard seen from spawn?") with the fair moving-LoS question ("is the
+#       hazard seen from some reachable step-from cell before contact?").
+#
+#       ⭐ WHY THIS IS SOUND UNDER THE v0 BOARD FACTS (cite these — a future reviewer must see WHY the check passes every
+#       reachable v0 hazard while staying genuinely re-trippable): (1) HAZARD is WALKABLE + SIGHT-TRANSPARENT —
+#       `BoardCell.blocks_line_of_sight()` is true ONLY for `Terrain.WALL` (board_cell.gd:33-34), so a hazard never
+#       occludes a line and is itself steppable. (2) Any REACHABLE hazard has at least one reachable 4-neighbour
+#       step-from cell — reachability IS a 4-neighbour terrain flood (`_flood_terrain`), so the flood arrived at the
+#       hazard via one such neighbour. (3) From a step-from cell the hazard is at squared distance 1, WITHIN the reduced
+#       radius (floor 1). (4) LoS between two 4-ADJACENT cells can NEVER be occluded — `TacticalLineQuery.blocking_cells`
+#       inspects only the INTERIOR line cells (`range(1, max(1, line.size() - 1))`, tactical_line_query.gd:63), and an
+#       adjacent line `[origin, target]` has NO interior cell, so `has_line_of_sight` is true unconditionally. Therefore
+#       every reachable v0 hazard is seen-before-contact => PASS. The check is NOT hard-coded PASS: it actually walks the
+#       reachable region and tests LoS from each reachable step-from cell, so a FUTURE sight-blocking hazard (a hazard
+#       that DID occlude), or a hazard with NO reachable 4-neighbour step-from cell (a forced-teleport-only landing),
+#       would find NO seen-before-contact step and FAIL LOUD `darkness_unseen_hazard`.
+#       (A hazard that is SEALED — terrain-unreachable from the entrance — cannot be stepped on, so it is not an
+#       unseen-damage source; it does not fail this check.)
 #
 # FAIL LOUD (AC3): the failure ActionResult carries a stable lower-snake `fairness_reason` code, the `seed` (a String —
 # the int64 decimal-string discipline; the level seed is already a String), and a `phase` (reuse
@@ -145,8 +166,12 @@ func check_board(
 				"reduced_radius": reduced_radius
 			})
 
-	# (b) NO UNSEEN HAZARD at the reduced radius — every REACHABLE hazard cell must be LoS-visible from the entrance at
-	# the Darkness-reduced radius. A reachable-but-unseen hazard is "damage from unseen space" (FR58) -> FAIL.
+	# (b) NO UNSEEN-BEFORE-CONTACT HAZARD at the reduced radius (Story 10.8 — MOVING reduced-radius LoS). Every REACHABLE
+	# hazard must be LoS-visible at the reduced radius from at least one reachable 4-neighbour "step-from" cell — the cell
+	# the hero would stand on the turn BEFORE they could step onto the hazard. A reachable hazard the hero could reach
+	# with NO such seen-before-contact step is "damage from unseen space" (FR58) -> FAIL. (See the class header proof:
+	# under the v0 facts every reachable hazard has such a step, so this passes them all; it still FAILS LOUD for a future
+	# sight-blocking hazard or a forced-teleport-only landing.)
 	var terrain_reachable: Dictionary = _flood_terrain(board, resolved_entrance)
 	var radius_squared: int = reduced_radius * reduced_radius
 	var hazard_count: int = 0
@@ -159,14 +184,12 @@ func check_board(
 		# source. Only REACHABLE hazards matter for "unavoidable damage from unseen space".
 		if not terrain_reachable.has(board_cell.position):
 			continue
-		var within_reduced_radius: bool = resolved_entrance.distance_squared_to(board_cell.position) <= radius_squared
-		var seen_from_entrance: bool = (
-			within_reduced_radius
-			and TacticalLineQuery.has_line_of_sight(board, resolved_entrance, board_cell.position)
-		)
-		if not seen_from_entrance:
-			# A reachable hazard NOT visible from the entrance at the reduced radius — the player would advance blind
-			# into it. This is the exact FR58 violation Darkness's reduced radius can introduce. FAIL LOUD.
+		# SEEN-BEFORE-CONTACT: is there a reachable 4-neighbour step-from cell from which the hazard is LoS-visible at the
+		# reduced radius? If so, the hero necessarily sees the hazard the turn before they could step onto it -> fair.
+		if not _seen_before_contact(board, board_cell.position, terrain_reachable, radius_squared):
+			# A reachable hazard the hero could reach WITHOUT a see-first step — advance-blind damage from unseen space.
+			# This is the exact FR58 violation the guardrail must still catch (a future sight-blocking hazard / forced
+			# movement). FAIL LOUD with the offending hazard cell + compact diagnostics.
 			return _violation(REASON_UNSEEN_HAZARD, seed, {
 				"hazard_cell": {"x": board_cell.position.x, "y": board_cell.position.y},
 				"entrance": {"x": resolved_entrance.x, "y": resolved_entrance.y},
@@ -175,7 +198,8 @@ func check_board(
 			})
 		seen_hazard_count += 1
 
-	# PASS — compact report (counts/coords only, never a grid dump; the LevelValidator discipline).
+	# PASS — compact report (counts/coords only, never a grid dump; the LevelValidator discipline). Under the strengthened
+	# semantics `reachable_seen_hazard_count` is the count of reachable hazards proven seen-before-contact.
 	return ActionResult.ok([], {
 		"affinity_id": String(affinity_id),
 		"darkness_fairness_applicable": true,
@@ -237,3 +261,29 @@ func _flood_terrain(board: BoardState, origin: Vector2i) -> Dictionary:
 			visited[neighbour] = true
 			frontier.append(neighbour)
 	return visited
+
+
+# Story 10.8 — the MOVING reduced-radius LoS "seen-before-contact" predicate for ONE reachable hazard. Returns true iff
+# there exists at least one reachable 4-neighbour "step-from" cell of `hazard` from which the hazard is LINE-OF-SIGHT
+# VISIBLE at the reduced radius (squared distance <= `radius_squared` AND `has_line_of_sight`). The step-from cell is the
+# cell the hero would stand on the turn before they could step onto the hazard, so a hazard seen from ANY such cell is
+# necessarily seen before contact -> fair. Walks the reachable step-from cells and ACTUALLY tests LoS (not a hard-coded
+# PASS), so a future sight-blocking hazard (LoS occluded) or a hazard with NO reachable 4-neighbour step-from cell
+# (forced-teleport-only landing) returns false and the caller FAILS LOUD. Pure terrain/LoS read (no RNG, no mutation).
+#
+# Under the v0 facts this is always true for a reachable hazard: reachability arrived via a reachable 4-neighbour, that
+# neighbour is at squared distance 1 (<= the reduced radius, floor 1), and LoS between 4-adjacent cells is unoccludable
+# (the adjacent supercover line has no interior cell) — see the class header proof.
+func _seen_before_contact(board: BoardState, hazard: Vector2i, terrain_reachable: Dictionary, radius_squared: int) -> bool:
+	for offset: Vector2i in NEIGHBOUR_OFFSETS:
+		var step_from: Vector2i = hazard + offset
+		# The step-from cell must be a cell the hero can actually stand on the turn before contact: reachable terrain.
+		if not terrain_reachable.has(step_from):
+			continue
+		# From that step-from cell, is the hazard within the reduced radius AND LoS-visible (unoccluded)? If so, the hero
+		# necessarily sees the hazard before they could step onto it -> seen-before-contact.
+		if step_from.distance_squared_to(hazard) > radius_squared:
+			continue
+		if TacticalLineQuery.has_line_of_sight(board, step_from, hazard):
+			return true
+	return false

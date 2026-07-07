@@ -99,10 +99,49 @@ const MVP_READINESS_TARGETS: Dictionary = {
 	"boss": 10            # 10 boss/finale seeds
 }
 
-# Per-seed reward/affinity samples this suite drives (the reward + affinity per-seed cases). Kept modestly
-# expanded toward target from the historical spot checks; the still-sub-target gap is recorded for 10.6.
-const REWARD_SEED_SAMPLE: Array[int] = [1, 7, 42, 99, 2026, 314, 777, 8675309]
-const AFFINITY_SEED_SAMPLE: Array[int] = [1, 7, 42, 99, 2026, 314, 777, 8675309]
+# Per-seed reward/affinity samples this suite drives (the reward + affinity per-seed cases). Story 10.8
+# EXPANDED both to their MVP-readiness targets (reward 20; affinity 10-per-implemented-affinity).
+#
+# REWARD_SEED_SAMPLE: 20 per-seed reward/passive determinism cases (8 historical spot-check seeds + 12
+# appended by Story 10.8) — the AC5 reward target (20). Each drives RunOrchestrator.generate_reward_offer /
+# generate_passive_reward_offer on the named `rewards` stream, asserted byte-identical across two started runs.
+const REWARD_SEED_SAMPLE: Array[int] = [
+	1, 7, 42, 99, 2026, 314, 777, 8675309,
+	2, 13, 128, 500, 1234, 4242, 55555, 271828, 314159, 654321, 1000003, 123456789
+]
+
+# TACTICAL_SEED_SAMPLE (Story 10.8 — the AC5 tactical target: >= 25 command/board fixtures): 25 deterministic
+# per-seed tactical command/board fixtures (8 historical seeds + 17 appended). Each seed threads a fixed
+# committed-DomainEvent sequence over a BoardFixtureFactory board; the board snapshot + event-log composite
+# reproduces per seed (two-run determinism), NOT a pinned fingerprint format — so this is additive seeds, no
+# re-pin. Read LIVE by the honest-sample assertion so a silently-shrunk sample fails LOUD.
+const TACTICAL_SEED_SAMPLE: Array[int] = [
+	1, 7, 42, 99, 2026, 314, 777, 8675309,
+	2, 3, 5, 13, 128, 256, 512, 4242, 5555, 65536, 88888, 271828, 314159, 654321, 1000003, 16777216, 123456789
+]
+
+# AFFINITY_SEED_SAMPLE (Story 10.8 — the AC5 "10 seeds per implemented affinity" target): a CURATED 40-seed
+# sample where EXACTLY 10 seeds land on EACH of the four implemented affinities via RunOrchestrator.assign_affinity
+# on the `map` stream (a targeted-seed search — the assignment is a pure function of (root_seed, first-node id)).
+# The per-affinity membership is documented in AFFINITY_SEED_BY_AFFINITY below (and proven live by
+# _affinity_sample_lands_ten_on_each_implemented_affinity). Flooded-Conductive and Darkness both surface with 10
+# (the AC calls them out explicitly). This is an ASSIGNMENT-determinism sample only — no affinity EFFECT is wired
+# into generation.
+const AFFINITY_SEED_SAMPLE: Array[int] = [
+	1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23,
+	24, 25, 26, 28, 29, 30, 31, 32, 35, 36, 38, 40, 41, 46, 47, 48, 56, 67, 73, 81
+]
+
+# The documented per-affinity membership of AFFINITY_SEED_SAMPLE (Story 10.8) — which seeds map to which
+# implemented affinity under the `map`-stream assignment. 10 seeds each (>= the AC5 target). Proven live by
+# _affinity_sample_lands_ten_on_each_implemented_affinity so a generator/RNG change that shifts an assignment
+# fails LOUD rather than silently dropping an affinity below target.
+const AFFINITY_SEED_BY_AFFINITY: Dictionary = {
+	"scorched": [1, 5, 7, 9, 13, 15, 26, 28, 29, 31],
+	"flooded_conductive": [2, 6, 10, 12, 14, 18, 25, 32, 38, 48],
+	"cursed": [3, 8, 11, 17, 24, 30, 36, 46, 47, 56],
+	"darkness": [16, 19, 22, 23, 35, 40, 41, 67, 73, 81]
+}
 
 func run() -> Dictionary:
 	# AC1 — every system reports fingerprint + pass/fail under the uniform four-field contract.
@@ -111,6 +150,8 @@ func run() -> Dictionary:
 	_boss_fixtures_report_fingerprint_and_pass_fail()
 	_reward_fixtures_report_fingerprint_and_pass_fail()
 	_affinity_fixtures_report_fingerprint_and_pass_fail()
+	# AC5 (Story 10.8) — the affinity sample lands >= 10 seeds on EACH implemented affinity (10-per-affinity proven).
+	_affinity_sample_lands_ten_on_each_implemented_affinity()
 	_tactical_fixtures_report_fingerprint_and_pass_fail()
 	# AC1 — the consolidated pins AGREE with the live per-system canonical sources (no second pinning path).
 	_consolidated_pins_agree_with_live_canonical_sources()
@@ -366,6 +407,42 @@ func _affinity_fixtures_report_fingerprint_and_pass_fail() -> void:
 		)
 
 
+# AC5 (Story 10.8) — prove the AFFINITY_SEED_SAMPLE actually lands >= 10 seeds on EACH implemented affinity (the
+# "10-per-affinity" target is PROVEN live, not proxied by the flat sample size). Drives each documented per-affinity
+# seed through the real RunOrchestrator.assign_affinity `map`-stream roll and asserts the recorded documentation
+# (AFFINITY_SEED_BY_AFFINITY) matches the LIVE assignment — so a generator/RNG change that shifts an assignment fails
+# LOUD (the seed no longer lands on its documented affinity) rather than silently dropping an affinity below target.
+# Flooded-Conductive and Darkness are asserted explicitly (the AC calls them out).
+func _affinity_sample_lands_ten_on_each_implemented_affinity() -> void:
+	var implemented: Array[String] = ["scorched", "flooded_conductive", "cursed", "darkness"]
+	for affinity_id: String in implemented:
+		var documented_seeds: Array = AFFINITY_SEED_BY_AFFINITY.get(affinity_id, [])
+		assert_true(
+			documented_seeds.size() >= MVP_READINESS_TARGETS.get("affinity_per", 10),
+			"AC5: affinity=%s must have >= %d documented seeds (has %d)." % [affinity_id, int(MVP_READINESS_TARGETS.get("affinity_per", 10)), documented_seeds.size()]
+		)
+		# Every documented seed must ACTUALLY land on that affinity via the live `map`-stream assignment.
+		for seed_value_variant: Variant in documented_seeds:
+			var seed_value: int = int(seed_value_variant)
+			var orchestrator: RunOrchestrator = _started(seed_value)
+			var node: RouteNode = _first_node(orchestrator)
+			var assign: ActionResult = orchestrator.assign_affinity(node)
+			assert_true(assign.succeeded, "seed=%d system=%s phase=assign reason=affinity_assign_failed" % [seed_value, SYSTEM_AFFINITY])
+			assert_equal(
+				String(assign.metadata.get("affinity_id")), affinity_id,
+				"seed=%d system=%s phase=assign reason=documented_affinity_mismatch(expected=%s got=%s) — Story 10.8 per-affinity sample drifted; re-run the affinity-seed search, do NOT hand-edit" % [
+					seed_value, SYSTEM_AFFINITY, affinity_id, String(assign.metadata.get("affinity_id"))
+				]
+			)
+	# Every documented seed is also in the flat AFFINITY_SEED_SAMPLE (the two stay in sync — no orphaned documentation).
+	var flat: Dictionary = {}
+	for seed_value: int in AFFINITY_SEED_SAMPLE:
+		flat[seed_value] = true
+	for affinity_id: String in implemented:
+		for seed_value_variant: Variant in AFFINITY_SEED_BY_AFFINITY.get(affinity_id, []):
+			assert_true(flat.has(int(seed_value_variant)), "AC5: documented affinity seed %d must be in AFFINITY_SEED_SAMPLE." % int(seed_value_variant))
+
+
 # ==================================================================================================
 # AC1 — TACTICAL (command/board). The tactical "fixture" is a deterministic committed-DomainEvent sequence
 # over a BoardFixtureFactory board whose applied-event log + board snapshot reproduces per seed (the 2.8
@@ -376,8 +453,10 @@ func _affinity_fixtures_report_fingerprint_and_pass_fail() -> void:
 func _tactical_fixtures_report_fingerprint_and_pass_fail() -> void:
 	# The tactical seed sample: one deterministic command/board fixture per seed. The "seed" varies the RNG
 	# context threaded through the sequence; the committed board mutations (moves) are deterministic, so the
-	# board snapshot + event-log composite reproduces per seed and is identical across two runs.
-	for seed_value: int in [1, 7, 42, 99, 2026, 314, 777, 8675309]:
+	# board snapshot + event-log composite reproduces per seed and is identical across two runs. Story 10.8
+	# EXPANDED this 8 -> 25 (the AC5 tactical target: >= 25 command/board fixtures) — additive seeds, per-seed
+	# determinism (no pinned fingerprint format), so no re-pin. Kept in sync with TACTICAL_SEED_SAMPLE below.
+	for seed_value: int in TACTICAL_SEED_SAMPLE:
 		var first: Dictionary = _tactical_fixture_composite(seed_value)
 		var second: Dictionary = _tactical_fixture_composite(seed_value)
 		# FINGERPRINT (board snapshot + ordered event log) reproducible across two runs of the same fixture.
@@ -650,20 +729,30 @@ func _mvp_readiness_targets_are_stated_and_current_sample_is_honest() -> void:
 	var boss_count: int = FinaleSeedRegressionTest.APPROVED_BOSS_SEED_CATALOG.size()
 	var reward_count: int = REWARD_SEED_SAMPLE.size()
 	var affinity_count: int = AFFINITY_SEED_SAMPLE.size()
+	var tactical_count: int = TACTICAL_SEED_SAMPLE.size()
 
-	# The route sample reached its target (20) via the Story 10.2 expansion. The rest are still-temporary
-	# sub-target samples (recorded as gaps for the 10.6 gate — a sub-target sample CANNOT pass final MVP
-	# readiness without an approved de-scope, which 10.6 owns). Assert the counts are AT LEAST what was
-	# actually driven (a tripwire against a silently-shrunk sample), never claim they met an unmet target.
-	assert_equal(route_count, 20, "Route sample reached the AC2 target (20) via the Story 10.2 expansion.")
-	assert_true(small_count >= 5, "Small generation sample (temporary %d of 50) must be at least the preserved 5." % small_count)
-	assert_true(medium_count >= 5, "Medium generation sample (temporary %d of 50) must be at least the preserved 5." % medium_count)
-	assert_true(boss_count >= 5, "Boss/finale sample (temporary %d of 10) must be at least the preserved 5." % boss_count)
-	assert_true(reward_count >= 5, "Reward sample (temporary %d of 20) must be a meaningful sample." % reward_count)
-	assert_true(affinity_count >= 5, "Affinity sample (temporary %d of 10 per affinity) must be a meaningful sample." % affinity_count)
-	# NOTE (the honest-scope statement, self-documenting for the 10.6 gate): every sub-target sample above is
-	# TEMPORARY and cannot pass final MVP readiness without an approved de-scope. See
-	# _bmad-output/planning-artifacts/seed-regression-suite-readiness.md for the full gap ledger + owners.
+	# Story 10.8 — the headless-mechanical sample targets are now MET (as of 2026-07-07; see the readiness ledger
+	# seed-regression-suite-readiness.md §3). The counts are read LIVE from the catalogs (never hand-typed), so a
+	# silently-shrunk sample fails LOUD. Route reached 20 via the 10.2 expansion; generation reached 50/50, tactical
+	# 25, reward 20, boss 10, and affinity 10-per-implemented-affinity via the 10.8 coordinated expansion. The
+	# remaining non-mechanical gaps (the G1-G7 physical-device passes) stay 10.6-owned (they are NOT sample-size gaps).
+	assert_equal(route_count, 20, "Route sample MET the AC2 target (20) via the Story 10.2 expansion.")
+	assert_equal(small_count, 50, "Small generation sample MET the AC2 target (50) via the Story 10.8 coordinated expansion.")
+	assert_equal(medium_count, 50, "Medium generation sample MET the AC2 target (50) via the Story 10.8 coordinated expansion.")
+	assert_equal(boss_count, 10, "Boss/finale sample MET the AC2 target (10) via the Story 10.8 expansion.")
+	assert_equal(reward_count, 20, "Reward sample MET the AC2 target (20) via the Story 10.8 expansion.")
+	assert_true(tactical_count >= 25, "Tactical sample MET the AC2 target (>= 25) via the Story 10.8 expansion (%d fixtures)." % tactical_count)
+	# Affinity: the flat sample size is a proxy; the REAL "10-per-affinity" proof is
+	# _affinity_sample_lands_ten_on_each_implemented_affinity (each implemented affinity gets >= 10 live-verified seeds).
+	assert_true(affinity_count >= 40, "Affinity sample grown to %d seeds (>= 10 on EACH of the 4 implemented affinities — proven live by _affinity_sample_lands_ten_on_each_implemented_affinity)." % affinity_count)
+	for affinity_id: String in ["scorched", "flooded_conductive", "cursed", "darkness"]:
+		assert_true(
+			(AFFINITY_SEED_BY_AFFINITY.get(affinity_id, []) as Array).size() >= int(MVP_READINESS_TARGETS.get("affinity_per", 10)),
+			"AC5: affinity=%s MET the 10-per-affinity target (documented + live-proven)." % affinity_id
+		)
+	# NOTE (the honest-scope statement, self-documenting for the 10.6 gate): the headless-mechanical sample targets
+	# above are MET as of 2026-07-07 (Story 10.8). The remaining gaps are the G1-G7 physical-device passes (10.6-owned,
+	# NOT sample-size gaps). See _bmad-output/planning-artifacts/seed-regression-suite-readiness.md §3 for the ledger.
 
 
 func _catalog_count_for_recipe(recipe_id: String) -> int:

@@ -16,9 +16,11 @@ extends "res://tests/unit/test_case.gd"
 #   - AC3 Darkness fairness VIOLATION on the live path (Round-1 M1): an intentionally-unfair Darkness board injected
 #           through the orchestrator's live-path fairness seam (_check_darkness_fairness_live) STOPS with the query's
 #           verbatim fairness_reason + seed + phase (+ the node id/type) and NO partial run progression (the pure query
-#           clears no node, advances no turn). NOTE: the real LevelGenerator emits all-FLOOR v0 boards, so this STOP path
-#           is unreachable through the real generator — the injection covers the orchestrator wiring the fair-pass case
-#           cannot exercise.
+#           clears no node, advances no turn). NOTE (Story 10.8): the live Medium recipe DOES bake reachable HAZARD
+#           wrinkles, but under the strengthened moving-LoS predicate those are seen-before-contact -> PASS, so a real
+#           live Darkness board does not trip the STOP path; the injected board is a predicate-(a) genuinely-unfair
+#           config (HAZARD on the entrance cell) — the retained v0 FAIL — which covers the orchestrator wiring the
+#           fair-pass case cannot exercise.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
@@ -153,19 +155,20 @@ func _darkness_node_runs_the_fairness_check_and_reflects_the_verdict() -> void:
 func _darkness_fairness_violation_on_the_live_path_stops_with_no_partial_progression() -> void:
 	# Round-1 M1: the fair-pass live case is covered above, but the VIOLATION propagation through the orchestrator seam
 	# (_check_darkness_fairness_live restoring the board, carrying the query's failure metadata + node id/type, and
-	# resolve_combat_node_live returning it as a hard STOP) is exercised by no test — because the REAL LevelGenerator
-	# emits all-FLOOR v0 boards, so a real live Darkness node cannot produce an unfair board (the STOP path is
-	# structurally unreachable through the real generator). Inject a hand-built UNFAIR Darkness board (a reachable HAZARD
-	# cell UNSEEN at the reduced radius) through the live-path fairness seam and assert: (1) it STOPS (is_error) with the
-	# query's verbatim fairness_reason + seed + phase, (2) the orchestrator attaches the node id/type, (3) NO partial run
-	# progression occurred (the pure query cleared no node / advanced no turn) — the single-authority + fail-loud contract.
+	# resolve_combat_node_live returning it as a hard STOP) is exercised by no real generated board — because Story 10.8's
+	# moving-LoS predicate makes every reachable live hazard seen-before-contact -> PASS (even the Medium recipe's baked
+	# HAZARD wrinkles). Inject a hand-built GENUINELY-UNFAIR Darkness board (predicate (a): HAZARD on the entrance cell —
+	# forced turn-1 damage, no see-first step; the retained v0 FAIL config) through the live-path fairness seam and
+	# assert: (1) it STOPS (is_error) with the query's verbatim fairness_reason + seed + phase, (2) the orchestrator
+	# attaches the node id/type, (3) NO partial run progression (the pure query cleared no node / advanced no turn) — the
+	# single-authority + fail-loud contract.
 	var orchestrator: RunOrchestrator = RunOrchestrator.new()
 	assert_true(orchestrator.start(LIVE_SEED, false).succeeded, "Setup: start should succeed.")
 	var cleared_before: int = orchestrator.run.route.cleared_node_ids.size()
 	var map_before: Dictionary = _map_stream_snapshot(orchestrator.streams)
 
-	# A hand-built Darkness node + a GenerationResult whose payload board is UNFAIR: a reachable HAZARD cell placed well
-	# beyond the Darkness-reduced radius (unseen from the entrance at that radius) — "damage from unseen space" (FR58).
+	# A hand-built Darkness node + a GenerationResult whose payload board is GENUINELY UNFAIR: a HAZARD cell ON the
+	# entrance (forced turn-1 damage — predicate (a), the retained v0 unavoidable/no-see-first config under moving-LoS).
 	var node: RouteNode = RouteNode.new("m1_darkness_violation_node", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED)
 	var seed_text: String = "919191"
 	var generation: GenerationResult = GenerationResult.ok({
@@ -175,10 +178,10 @@ func _darkness_fairness_violation_on_the_live_path_stops_with_no_partial_progres
 	})
 
 	var fairness: ActionResult = orchestrator._check_darkness_fairness_live(generation, StringName("darkness"), node)
-	assert_true(fairness.is_error(), "M1: an unfair Darkness board STOPS the live fairness check (fail-loud, no partial progression).")
+	assert_true(fairness.is_error(), "M1: a genuinely-unfair Darkness board STOPS the live fairness check (fail-loud, no partial progression).")
 	assert_equal(String(fairness.error_code), String(&"darkness_fairness_violation"), "M1: the STOP carries the darkness_fairness_violation top-level code.")
 	# The query's verbatim failure fields are carried through the orchestrator seam (the single authority — not re-derived).
-	assert_equal(String(fairness.metadata.get("fairness_reason")), String(DarknessFairnessQuery.REASON_UNSEEN_HAZARD), "M1: the STOP reports the query's unseen-hazard fairness reason verbatim.")
+	assert_equal(String(fairness.metadata.get("fairness_reason")), String(DarknessFairnessQuery.REASON_ENTRANCE_ON_HAZARD), "M1: the STOP reports the query's entrance_on_hazard fairness reason verbatim (the retained predicate-(a) FAIL).")
 	assert_equal(String(fairness.metadata.get("seed")), seed_text, "M1: the STOP reports the level seed verbatim.")
 	assert_false(String(fairness.metadata.get("phase", "")).is_empty(), "M1: the STOP reports the fairness phase.")
 	# The orchestrator attaches the node context to the failure (mirroring live_combat_failed).
@@ -230,11 +233,12 @@ func _map_stream_snapshot(streams: RngStreamSet) -> Dictionary:
 	return (streams_field.get(String(RngStreamSet.STREAM_MAP), {}) as Dictionary).duplicate(true)
 
 
-# A BOARD SNAPSHOT (the wire dict the orchestrator restores via BoardState.try_from_snapshot) for an INTENTIONALLY-UNFAIR
-# Darkness board (Round-1 M1): a 14x12 open grid (WALL border, FLOOR interior, ENTRANCE at (1,6), EXIT at (12,6)) with a
-# reachable HAZARD at (8,6) on the corridor row — distance 7 from the entrance, well beyond the Darkness-reduced radius
-# (2), so it is UNSEEN from the entrance = "damage from unseen space" (FR58). Mirrors the fail-loud fixture in
-# test_darkness_fairness.gd::_unseen_hazard_at_reduced_radius_fails_loud, expressed as a serialized snapshot.
+# A BOARD SNAPSHOT (the wire dict the orchestrator restores via BoardState.try_from_snapshot) for a GENUINELY-UNFAIR
+# Darkness board (Round-1 M1): a 14x12 open grid (WALL border, FLOOR interior, EXIT at (12,6)) with a HAZARD ON the
+# ENTRANCE cell (1,6) — forced turn-1 damage with no earlier cell to see it from = predicate (a) entrance_on_hazard, the
+# retained v0 unavoidable/no-see-first config under Story 10.8's moving-LoS predicate (a reachable NON-entrance hazard is
+# now seen-before-contact -> PASS). Mirrors the fail-loud fixture in
+# test_darkness_fairness.gd::_genuinely_unfair_predicate_a_still_fails_loud, expressed as a serialized snapshot.
 func _unfair_darkness_board_snapshot() -> Dictionary:
 	var width: int = 14
 	var height: int = 12
@@ -246,12 +250,11 @@ func _unfair_darkness_board_snapshot() -> Dictionary:
 			if x == 0 or y == 0 or x == width - 1 or y == height - 1:
 				terrain = BoardCell.Terrain.WALL
 			elif x == 1 and y == corridor_row:
-				terrain = BoardCell.Terrain.ENTRANCE
+				# HAZARD ON the entrance cell (forced turn-1 damage — predicate (a), the retained v0 FAIL under moving-LoS).
+				# NOTE: this cell IS the entrance the orchestrator resolves (entrance {x:1,y:6} in the generation payload).
+				terrain = BoardCell.Terrain.HAZARD
 			elif x == width - 2 and y == corridor_row:
 				terrain = BoardCell.Terrain.EXIT
-			elif x == 8 and y == corridor_row:
-				# The unseen reachable hazard beyond the reduced radius (the FR58 violation Darkness introduces).
-				terrain = BoardCell.Terrain.HAZARD
 			cells.append({
 				"position": {"x": x, "y": y},
 				"terrain": terrain,
