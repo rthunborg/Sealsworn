@@ -29,12 +29,16 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AwardMetaProgressCommand = preload("res://scripts/core/commands/award_meta_progress_command.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const HeroSelectViewModel = preload("res://scripts/ui/view_models/hero_select_view_model.gd")
 const MergeRunDiscoveriesCommand = preload("res://scripts/core/commands/merge_run_discoveries_command.gd")
 const MetaAwardRules = preload("res://scripts/save/meta_award_rules.gd")
+const MetaSpendRules = preload("res://scripts/save/meta_spend_rules.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const ProfileRepository = preload("res://scripts/save/profile_repository.gd")
 const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
 const RecordFirstDeathCommand = preload("res://scripts/core/commands/record_first_death_command.gd")
+const RecordFirstVictoryCommand = preload("res://scripts/core/commands/record_first_victory_command.gd")
+const SpendOathShardsCommand = preload("res://scripts/core/commands/spend_oath_shards_command.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
@@ -71,6 +75,9 @@ func run() -> Dictionary:
 	_manual_seed_completed_run_denies_award_and_merge()
 	_manual_seed_death_denies_award_and_merge_but_still_latches_first_death()
 	_three_run_end_markers_are_order_independent()
+	# --- Story 11.6: the spend interleaves with the run-end markers + round-trips (AC3 caller-ordering) ---
+	_spend_interleaved_with_run_end_markers_leaves_each_independent()
+	_spend_then_persist_round_trips_the_applied_unlock()
 	_snapshots_serialize_no_scene_node()
 	_cleanup()
 	return result()
@@ -610,6 +617,86 @@ func _three_run_end_markers_are_order_independent() -> void:
 	assert_true(profile_a.first_death_recorded, "The first-death latch is set in both orders.")
 	assert_true(profile_a.echoes.has("echo_of_salt"), "The Echo is merged in both orders.")
 	assert_true((profile_a.unlock_progress.get(UnlockProgressRules.SEAL_FRAGMENTS_KEY) as Array).has("seal_a"), "The Seal Fragment is merged in both orders.")
+	_cleanup()
+
+
+func _spend_interleaved_with_run_end_markers_leaves_each_independent() -> void:
+	# Story 11.6 (AC3 — caller-ordering safety): a SPEND interleaved with the FOUR run-end markers (award / merge / first-
+	# death / first-victory) leaves each independent + correct, in ANY caller order. A spend reads/writes NONE of the four
+	# markers (it touches only the applied-unlock flag + the spend ledger, both namespaced away). Run
+	# award->spend->merge->first-victory vs first-victory->merge->spend->award on a COMPLETED eligible run + assert the two
+	# final profiles are IDENTICAL.
+	_cleanup()
+
+	# Order A: award -> spend -> merge -> first-victory (a completed eligible run — a victory awards + can latch victory).
+	var run_a: RunState = _completed_run(2, 4242, false)
+	var summary_a: RunSummary = RunSummary.build(run_a, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	var discoveries_a: Array = [DomainEvent.content_discovered(2, {"content_kind": "seal_fragment", "content_id": "seal_a"})]
+	var profile_a: ProfileSnapshot = ProfileSnapshot.new()
+	profile_a.oath_shards = 10  # enough to spend the necromancer unlock (3)
+	assert_true(AwardMetaProgressCommand.new(profile_a, summary_a, 1).execute(run_a).succeeded, "Order A: the award resolves.")
+	assert_true(SpendOathShardsCommand.new(profile_a, "necromancer", 2).execute(null).succeeded, "Order A: the spend resolves.")
+	assert_true(MergeRunDiscoveriesCommand.new(profile_a, discoveries_a, 3).execute(run_a).succeeded, "Order A: the merge resolves.")
+	assert_true(RecordFirstVictoryCommand.new(profile_a, 4).execute(run_a).succeeded, "Order A: the first-victory latches.")
+
+	# Order B: first-victory -> merge -> spend -> award (the SAME run + discoveries + starting profile).
+	var run_b: RunState = _completed_run(2, 4242, false)
+	var summary_b: RunSummary = RunSummary.build(run_b, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	var discoveries_b: Array = [DomainEvent.content_discovered(2, {"content_kind": "seal_fragment", "content_id": "seal_a"})]
+	var profile_b: ProfileSnapshot = ProfileSnapshot.new()
+	profile_b.oath_shards = 10
+	assert_true(RecordFirstVictoryCommand.new(profile_b, 1).execute(run_b).succeeded, "Order B: the first-victory latches first.")
+	assert_true(MergeRunDiscoveriesCommand.new(profile_b, discoveries_b, 2).execute(run_b).succeeded, "Order B: the merge resolves.")
+	assert_true(SpendOathShardsCommand.new(profile_b, "necromancer", 3).execute(null).succeeded, "Order B: the spend resolves.")
+	assert_true(AwardMetaProgressCommand.new(profile_b, summary_b, 4).execute(run_b).succeeded, "Order B: the award resolves last.")
+
+	# The two final profiles are IDENTICAL (order-independent — the spend + each marker is separately idempotent per its
+	# own scope, and the spend touches none of the four markers).
+	assert_equal(profile_a.to_dictionary(), profile_b.to_dictionary(), "A spend interleaved with award+merge+first-victory in ANY order must produce an IDENTICAL final profile.")
+	# The composed final state: the award raised the total (completed run: min(1+2,5)=3 -> 10+3=13), then the spend dropped
+	# it by 3 (necromancer) -> 10; the applied-unlock flag is set; the spend ledger records 3; the four markers are all set.
+	assert_equal(profile_a.oath_shards, 10, "award (+3) then spend (-3) nets to the starting 10.")
+	assert_true(bool(profile_a.unlock_progress.get("necromancer_unlocked")), "The applied-unlock flag is set (spend applied).")
+	assert_equal(MetaSpendRules.oath_shards_spent_in(profile_a.unlock_progress), 3, "The spend ledger records the spend.")
+	assert_equal(profile_a.last_awarded_run_seed, "4242", "The award marker is untouched by the spend.")
+	assert_equal(String(profile_a.unlock_progress.get(MergeRunDiscoveriesCommand.LAST_MERGED_RUN_SEED_KEY)), "4242", "The merge marker is untouched by the spend.")
+	assert_true(profile_a.first_victory_recorded, "The first-victory latch is untouched by the spend.")
+	assert_true((profile_a.unlock_progress.get(UnlockProgressRules.SEAL_FRAGMENTS_KEY) as Array).has("seal_a"), "The Seal Fragment merged independently of the spend.")
+	_cleanup()
+
+
+func _spend_then_persist_round_trips_the_applied_unlock() -> void:
+	# Story 11.6 (AC3 — the spend state survives a real restart): SPEND, PERSIST through the repository, SIMULATE AN APP
+	# RESTART (fresh repository), read back, and assert the lowered total + the applied-unlock flag + the spend ledger are
+	# byte-identical after a REAL JSON file round-trip. A profile-aware HeroSelectViewModel built off the RELOADED profile
+	# reports the formerly-locked class selectable (the end-to-end AC2 proof through the save layer).
+	_cleanup()
+	var profile: ProfileSnapshot = ProfileSnapshot.new()
+	profile.oath_shards = 8
+	assert_true(SpendOathShardsCommand.new(profile, "necromancer", 1).execute(null).succeeded, "The spend should resolve before persisting.")
+	var expected: Dictionary = profile.to_dictionary()
+
+	var write_repository: ProfileRepository = ProfileRepository.new()
+	assert_true(write_repository.write_profile(profile, TEST_PROFILE_PATH).succeeded, "The spent profile should persist.")
+
+	# Simulate an app restart: a FRESH repository reads the file back.
+	var read_repository: ProfileRepository = ProfileRepository.new()
+	var read_result: ActionResult = read_repository.read_profile(TEST_PROFILE_PATH)
+	assert_true(read_result.succeeded, "The spent profile should read back after a restart.")
+	var restored: ProfileSnapshot = read_result.metadata.get("snapshot")
+	# The lowered total + the applied-unlock flag + the spend ledger restore. The ledger is a nested int-in-dict, so a JSON
+	# round-trip decodes it as a float (the SAME encoding artifact as class_mastery — {"x": 3} != {"x": 3.0} across JSON);
+	# MetaSpendRules.oath_shards_spent_in int-coerces it, so the ledger read is faithful without a false failure (the 8.7
+	# class_mastery lesson). `expected` documents the pre-restart shape.
+	assert_true(expected.has("unlock_progress"), "Setup: the expected dict carries the spend state under unlock_progress.")
+	assert_equal(restored.oath_shards, 5, "The lowered total survives (necromancer cost 3 -> 8 - 3 == 5).")
+	assert_true(bool(restored.unlock_progress.get("necromancer_unlocked")), "The applied-unlock flag survives the restart.")
+	assert_equal(MetaSpendRules.oath_shards_spent_in(restored.unlock_progress), 3, "The spend ledger survives the restart (int-coercion aware).")
+
+	# End-to-end AC2 through the save layer: the reloaded profile drives a profile-aware HeroSelectViewModel that reports
+	# the formerly-locked class SELECTABLE.
+	var hero_select: HeroSelectViewModel = HeroSelectViewModel.new(ClassRepository.create_baseline_repository(), restored)
+	assert_true(hero_select.is_class_selectable(&"necromancer"), "AC2 end-to-end: the reloaded spent profile makes necromancer selectable.")
 	_cleanup()
 
 

@@ -44,7 +44,8 @@ enum Type {
 	BOSS_ENCOUNTER_STARTED,
 	BOSS_PHASE_CHANGED,
 	FIRST_VICTORY_RECORDED,
-	BOSS_DEFEATED
+	BOSS_DEFEATED,
+	OATH_SHARDS_SPENT
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -88,6 +89,7 @@ const EVENT_ID_BOSS_ENCOUNTER_STARTED := &"boss_encounter_started"
 const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"
 const EVENT_ID_FIRST_VICTORY_RECORDED := &"first_victory_recorded"
 const EVENT_ID_BOSS_DEFEATED := &"boss_defeated"
+const EVENT_ID_OATH_SHARDS_SPENT := &"oath_shards_spent"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -189,6 +191,16 @@ const RUN_END_DESTINATION_OUTPOST := &"outpost"
 # reason vocabulary. A manual-seed run awards NOTHING (no event at all — FR28/AC4), so there is NO ineligible reason here.
 const OATH_SHARDS_AWARDED_REASONS: Array[StringName] = [
 	&"run_completed_eligible"
+]
+
+# Story 11.6 (AC1, FR59): the allowlisted meta-SPEND REASON markers the oath_shards_spent payload may carry (lower_snake).
+# The SPEND counterpart of OATH_SHARDS_AWARDED_REASONS — records WHY the spend fired. v0 has a single reason (the player
+# spent Oath Shards to unlock a class at the outpost); the allowlist is future-proofed as a set (a later story MAY add
+# another spend kind) and pinned by test. The validator asserts the reason is in this set (mirroring the
+# OATH_SHARDS_AWARDED_REASONS allowlist-const pattern). SpendOathShardsCommand references it so the command + the
+# validator stay in lockstep on the reason vocabulary.
+const OATH_SHARDS_SPENT_REASONS: Array[StringName] = [
+	&"class_unlock"
 ]
 
 # Story 8.4 (AC1/AC2): the allowlisted DISCOVERED-CONTENT KIND markers the content_discovered payload may carry
@@ -562,6 +574,30 @@ static func boss_defeated(sequence_id: int, payload: Dictionary = {}) -> DomainE
 	payload_value["phase_id"] = String(payload.get("phase_id", ""))
 	payload_value["final_hp"] = int(payload.get("final_hp", 0))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.BOSS_DEFEATED, sequence_id, &"", payload_value)
+
+
+static func oath_shards_spent(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 11.6, AC1/FR59): the META-SPEND record — the oath_shards_awarded COUNTERPART at the
+	# OPPOSITE sign. Emitted by SpendOathShardsCommand AFTER an AFFORDABLE spend subtracts the profile's cross-run
+	# oath_shards (to unlock a class at the outpost). It closes the "spend what you earn" half of Epic 11 (the award was
+	# the "receive eligible progress" half). NOT an entity action, so it is NOT in _event_requires_actor (actor_id stays
+	# empty). `amount` is THIS spend's cost (a POSITIVE bounded int — a spend of 0 is not a spend; validator-enforced
+	# amount >= 1). oath_shards_before/oath_shards_after are the profile's cross-run total BEFORE/AFTER the spend
+	# (non-negative integral; the honest-record arithmetic before - amount == after — the OPPOSITE sign of
+	# oath_shards_awarded's before + amount == after — is validator-enforced; a spend never drives a negative total).
+	# `reason` is a lower_snake marker in the OATH_SHARDS_SPENT_REASONS allowlist (WHY the spend fired). `unlock_id` is the
+	# stable lower_snake id of the thing bought (the class-unlock id in v0 — tracked BY id, no content roster). `profile_id`
+	# is the profile the spend landed on (a plain string). UNLIKE passive_destroyed there is NO roll/draw_index — the spend
+	# is a RECORDED deterministic subtraction, not a roll (the oath_shards_awarded deterministic-shell precedent; the
+	# calculation draws ZERO RNG). No int64 encoding (bounded counts). Normalize/duplicate the payload defensively.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["amount"] = int(payload.get("amount", 0))
+	payload_value["oath_shards_before"] = int(payload.get("oath_shards_before", 0))
+	payload_value["oath_shards_after"] = int(payload.get("oath_shards_after", 0))
+	payload_value["reason"] = String(payload.get("reason", ""))
+	payload_value["unlock_id"] = String(payload.get("unlock_id", ""))
+	payload_value["profile_id"] = String(payload.get("profile_id", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.OATH_SHARDS_SPENT, sequence_id, &"", payload_value)
 
 
 static func item_gained(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -1146,6 +1182,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_first_victory_recorded_payload(payload_value)
 		Type.BOSS_DEFEATED:
 			return _validate_boss_defeated_payload(payload_value)
+		Type.OATH_SHARDS_SPENT:
+			return _validate_oath_shards_spent_payload(payload_value)
 		Type.ITEM_GAINED:
 			return _validate_item_gained_payload(payload_value)
 		Type.REWARD_OFFERED:
@@ -1381,6 +1419,36 @@ static func _validate_oath_shards_awarded_payload(payload_value: Dictionary) -> 
 		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
 	# Arithmetic consistency (the record must be honest): before + amount == after.
 	if int(payload_value.get("oath_shards_before")) + int(payload_value.get("amount")) != int(payload_value.get("oath_shards_after")):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
+	return _ok_result()
+
+
+static func _validate_oath_shards_spent_payload(payload_value: Dictionary) -> ActionResult:
+	# The meta-SPEND record (Story 11.6, AC1/FR59) — the oath_shards_awarded validator at the OPPOSITE sign. `reason` is
+	# lower_snake AND in the OATH_SHARDS_SPENT_REASONS allowlist (WHY the spend fired; the value set is pinned to match by
+	# test). `unlock_id` is a lower_snake CONTENT id (WHAT was bought — the class-unlock id; tracked BY id). `amount` is a
+	# POSITIVE integral spend cost (a spend of 0 is not a spend — a fabricated 0-amount spend is rejected). oath_shards_
+	# before/oath_shards_after are NON-NEGATIVE integral (a cross-run currency total is never negative). profile_id is a
+	# plain string (empty-tolerant; the node_id-tolerance precedent). UNLIKE passive_destroyed there is NO roll/draw_index
+	# (a recorded deterministic subtraction, not a roll). The honest-record arithmetic before - amount == after is enforced
+	# (the OPPOSITE sign of oath_shards_awarded's before + amount == after; a fabricated/hand-edited payload whose after
+	# diverges is rejected — the 7.1 economy_changed / 8.3 oath_shards_awarded precedent). A spend never drives a negative
+	# total: before - amount == after AND after >= 0 (both enforced by the non-negative after check + the arithmetic check).
+	if not _has_lower_snake_payload(payload_value, &"reason") \
+			or not OATH_SHARDS_SPENT_REASONS.has(StringName(String(payload_value.get("reason")))):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	if not _has_lower_snake_payload(payload_value, &"unlock_id"):
+		return _error_result(&"invalid_event_payload", {"field": "unlock_id"})
+	if not _has_positive_integral_payload(payload_value, &"amount"):
+		return _error_result(&"invalid_event_payload", {"field": "amount"})
+	if not _has_nonnegative_integral_payload(payload_value, &"oath_shards_before"):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_before"})
+	if not _has_nonnegative_integral_payload(payload_value, &"oath_shards_after"):
+		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
+	if not _has_string_payload(payload_value, &"profile_id"):
+		return _error_result(&"invalid_event_payload", {"field": "profile_id"})
+	# Arithmetic consistency (the record must be honest): before - amount == after (the OPPOSITE sign of the award).
+	if int(payload_value.get("oath_shards_before")) - int(payload_value.get("amount")) != int(payload_value.get("oath_shards_after")):
 		return _error_result(&"invalid_event_payload", {"field": "oath_shards_after"})
 	return _ok_result()
 
@@ -2367,6 +2435,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_FIRST_VICTORY_RECORDED
 		Type.BOSS_DEFEATED:
 			return EVENT_ID_BOSS_DEFEATED
+		Type.OATH_SHARDS_SPENT:
+			return EVENT_ID_OATH_SHARDS_SPENT
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2453,6 +2523,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.FIRST_VICTORY_RECORDED
 		EVENT_ID_BOSS_DEFEATED:
 			return Type.BOSS_DEFEATED
+		EVENT_ID_OATH_SHARDS_SPENT:
+			return Type.OATH_SHARDS_SPENT
 		_:
 			return Type.UNKNOWN
 

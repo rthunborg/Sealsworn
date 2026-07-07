@@ -250,8 +250,12 @@ func _init(
 
 	# AC1: the class-options roster is DELEGATED to a composed HeroSelectViewModel (the same class repository the caller's
 	# start seam uses; baseline default — the HeroSelectViewModel / RunStartCommand injection posture). The roster is NOT
-	# re-projected here.
-	_hero_select = HeroSelectViewModel.new(class_repository)
+	# re-projected here. Story 11.6 (AC2): the composed HeroSelectViewModel is PROFILE-AWARE — the RESOLVED profile is
+	# threaded in so a spend-UNLOCKED formerly-locked class projects selectable: true through class_options /
+	# selectable_class_ids (the outpost's class options reflect the applied unlock, flowing profile -> selectability). A
+	# fresh/null profile (resolved to ProfileSnapshot.fresh()) has no applied-unlock flags, so this is byte-identical to
+	# the pre-11.6 static roster (every existing caller stays correct). No new positional arg (the profile is arg 1 already).
+	_hero_select = HeroSelectViewModel.new(class_repository, resolved_profile)
 
 
 # AC4: build an outpost surface in a STRUCTURED RECOVERY state. This correctly represents BOTH recovery failure modes:

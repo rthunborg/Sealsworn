@@ -20,8 +20,10 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const MetaSpendRules = preload("res://scripts/save/meta_spend_rules.gd")
 const PassiveDefinition = preload("res://scripts/content/definitions/passive_definition.gd")
 const PassiveRepository = preload("res://scripts/content/repositories/passive_repository.gd")
+const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RuleTrigger = preload("res://scripts/rules/triggers/rule_trigger.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
@@ -66,6 +68,9 @@ func run() -> Dictionary:
 	_locked_and_unknown_class_reject_before_passive_resolution()
 	_start_with_passives_is_deterministic_for_same_inputs()
 	_seated_resolver_holds_only_passives_no_active_skill()
+	# Story 11.6 — the profile-aware authoritative class gate (AC2/FR43).
+	_profile_unlocked_class_starts_locked_class_still_rejects()
+	_null_profile_gate_is_byte_identical_static_reject()
 	return result()
 
 
@@ -241,6 +246,41 @@ func _start_with_locked_class_rejects_fail_closed() -> void:
 	assert_equal(started.error_code, &"class_not_selectable", "execute() should reject a locked class with class_not_selectable.")
 	assert_true(started.events.is_empty(), "A rejected locked-class start must emit zero events.")
 	assert_false(started.metadata.has("run"), "AC2: a rejected locked-class start must build NO run.")
+
+
+# Story 11.6 (AC2/FR43 — the authoritative half of the crux): the profile-aware RunStartCommand class gate. A
+# formerly-locked class the profile has UNLOCKED (its `<class>_unlocked` applied-unlock flag set) STARTS through the
+# authoritative gate; a class the profile has NOT unlocked STILL rejects (fail-closed symmetry — the VM affordance and
+# the gate agree, both reading the SAME MetaSpendRules unlock source). The fixture repo's `necromancer` carries a valid
+# baseline kit so an unlocked start actually runs (v0 authors no Necromancer content — the gate honoring the unlock is
+# what AC2 proves; the class-kit content is a later content story).
+func _profile_unlocked_class_starts_locked_class_still_rejects() -> void:
+	var repo: ClassRepository = _class_repo_with_locked_but_runnable(&"necromancer")
+
+	# (a) With the unlock APPLIED on the profile, the authoritative gate STARTS the formerly-locked class.
+	var unlocked_profile: ProfileSnapshot = ProfileSnapshot.new()
+	unlocked_profile.unlock_progress[MetaSpendRules.class_unlock_flag_key("necromancer")] = true
+	var started: ActionResult = RunStartCommand.new(42, false, 1, &"necromancer", repo, null, null, null, unlocked_profile).execute(null)
+	assert_true(started.succeeded, "AC2: a profile-unlocked class must START through the authoritative gate: %s" % started.metadata)
+	assert_true(started.metadata.has("run"), "AC2: an unlocked-class start builds a run.")
+	var run: RunState = started.metadata.get("run") as RunState
+	assert_equal(run.selected_class_id, &"necromancer", "AC2: the unlocked class is recorded on the started run.")
+
+	# (b) With NO unlock (a profile without the flag), the SAME class STILL rejects fail-closed (symmetry).
+	var locked_profile: ProfileSnapshot = ProfileSnapshot.new()  # empty unlock_progress
+	var rejected: ActionResult = RunStartCommand.new(42, false, 1, &"necromancer", repo, null, null, null, locked_profile).execute(null)
+	assert_true(rejected.is_error(), "AC2: a class the profile has NOT unlocked must still reject.")
+	assert_equal(rejected.error_code, &"class_not_selectable", "AC2: a still-locked class rejects with class_not_selectable.")
+	assert_false(rejected.metadata.has("run"), "AC2: a still-locked start builds NO run.")
+
+
+# Story 11.6 (AC2): a NULL profile leaves the gate byte-identical to the static Story-5.2 reject (every existing caller
+# is untouched). A baseline locked class with no profile still rejects.
+func _null_profile_gate_is_byte_identical_static_reject() -> void:
+	# The baseline necromancer (no kit) with no profile rejects at the class gate exactly as Story 5.2 (static behavior).
+	var rejected: ActionResult = RunStartCommand.new(42, false, 1, &"necromancer", null, null, null, null, null).execute(null)
+	assert_true(rejected.is_error(), "AC2: with no profile, a locked class rejects (static behavior).")
+	assert_equal(rejected.error_code, &"class_not_selectable", "AC2: the null-profile gate is the static class_not_selectable reject.")
 
 
 # Story 5.2 AC2: an UNKNOWN class id (not in the repository) is rejected fail-closed in BOTH validate() and
@@ -647,4 +687,22 @@ func _class_repo_with_bogus_passives(class_id: StringName, class_passive_id: Str
 	)
 	var registered: ActionResult = repo.register_class(fixture)
 	assert_true(registered.succeeded, "Fixture passive-class registration should succeed: %s" % registered.metadata)
+	return repo
+
+
+# Story 11.6: build a fixture ClassRepository whose `class_id` entry is LOCK_STATE_LOCKED (so the static gate rejects it)
+# BUT carries a VALID baseline kit (sword/shield + warrior passives) so an unlocked start actually RESOLVES + runs. A
+# LOCKED ClassDefinition validates as long as its unlock_hint is non-empty (validate() only checks the kit for a
+# SELECTABLE class), so a locked-but-runnable class is a legal fixture. The other three selectable baselines round it out
+# (warrior/pyromancer/ranger). Used to prove the AC2 gate honors a profile unlock WITHOUT authoring new Necromancer
+# content — v0's baseline necromancer has no kit (the class-kit content is a later content story).
+func _class_repo_with_locked_but_runnable(class_id: StringName) -> ClassRepository:
+	var definitions: Array[ClassDefinition] = [
+		ClassDefinition.new(&"warrior", "Warrior", ClassDefinition.LOCK_STATE_SELECTABLE, "", &"sword", &"shield", 18, &"warrior_unbreakable_guard", &"warrior_blade_and_board"),
+		ClassDefinition.new(&"pyromancer", "Pyromancer", ClassDefinition.LOCK_STATE_SELECTABLE, "", &"staff", &"tome", 18, &"pyromancer_kindling_focus", &"pyromancer_arcane_conduit"),
+		ClassDefinition.new(&"ranger", "Ranger", ClassDefinition.LOCK_STATE_SELECTABLE, "", &"bow", &"none", 18, &"ranger_steady_aim", &"ranger_hunters_quiver"),
+		ClassDefinition.new(class_id, "Locked Runnable", ClassDefinition.LOCK_STATE_LOCKED, "Unlock at the outpost.", &"sword", &"shield", 18, &"warrior_unbreakable_guard", &"warrior_blade_and_board")
+	]
+	var repo: ClassRepository = ClassRepository.create_repository_from_definitions(definitions)
+	assert_true(repo != null, "The locked-but-runnable fixture repository should build.")
 	return repo

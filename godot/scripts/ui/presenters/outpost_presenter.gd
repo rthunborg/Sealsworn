@@ -21,6 +21,7 @@ extends Control
 # fail-closed RefCounted seams (OutpostRenderView / RunEndProfileBridge / OutpostViewModel / RunFlowController), all
 # unit-tested. This presenter is thin glue.
 
+const OutpostSpendBridge = preload("res://scripts/ui/flow/outpost_spend_bridge.gd")
 const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
 const OutpostRenderView = preload("res://scripts/ui/view_models/outpost_render_view.gd")
@@ -34,6 +35,10 @@ const DEFAULT_DESCENT_SEED: int = 4242
 
 var _render_view: OutpostRenderView = null
 var _content: VBoxContainer = null
+# Story 11.6: the caller-driven spend seam the presenter drives on a spend request (load -> spend -> persist -> rebuild).
+# A throwaway on the real profile path (it drives ProfileRepository directly — the 11.5 posture; no SaveManager
+# delegator). Lazily created so a test-driven presenter can inject one if needed; the default drives the real profile.
+var _spend_bridge: OutpostSpendBridge = null
 
 func _ready() -> void:
 	_build_layout()
@@ -106,6 +111,13 @@ func _render_outpost() -> void:
 
 	# AC1: the four deferred named spaces (each display_name + an EXPLICIT "deferred" marker — never silently omitted).
 	_render_named_spaces()
+
+	# Story 11.6 (AC1/FR59): the shallow meta menu — the Seal Table spend affordances (spend Oath Shards to unlock a
+	# class). Rendered as a DISTINCT section (the seal_table/hall_of_oaths named-space tiles above stay `deferred` overview
+	# markers; this is the REALIZED live spend surface — [Decision] the spend menu is a distinct surface, so the overview
+	# tiles are not mislabeled). Skipped on a recovery surface (a load/write failure has no live spend affordance).
+	if not _render_view.is_recovery():
+		_render_spend_menu()
 
 	# AC1/FR1: the start-another-descent affordance (>=44x44) — closes the loop.
 	_render_descend_affordance()
@@ -206,6 +218,74 @@ func _render_descend_affordance() -> void:
 	descend_button.disabled = not _render_view.can_start_descent()
 	descend_button.pressed.connect(_on_descend_pressed)
 	_content.add_child(descend_button)
+
+
+# Story 11.6 (AC1/FR59): render the shallow meta menu — one spend tile per spendable class unlock (from the
+# OutpostRenderView.class_unlock_options render decisions). Each tile shows the class + the cost (number+label) + the
+# state via a NON-COLOR channel (an "Unlocked" marker for an applied unlock; the cost + an enabled Spend button for an
+# affordable one; the insufficient note for an unaffordable one). The Spend button (>=44x44) submits a spend REQUEST to
+# the OutpostSpendBridge (NOT a raw command — the presenter never mutates the profile directly), which loads -> spends ->
+# persists -> rebuilds; on failure the insufficient/error message renders fail-loud (never a silent no-op).
+func _render_spend_menu() -> void:
+	var options: Array = _render_view.class_unlock_options()
+	if options.is_empty():
+		return
+
+	var heading: Label = Label.new()
+	heading.text = "Seal Table — Class Unlocks"
+	_content.add_child(heading)
+
+	for option_value: Variant in options:
+		var option: Dictionary = option_value
+		var unlock_id: String = String(option.get("unlock_id", ""))
+		var display_name: String = String(option.get("display_name", ""))
+		var cost: int = int(option.get("cost", 0))
+		var state: String = String(option.get("state", ""))
+
+		var row: HBoxContainer = HBoxContainer.new()
+		row.add_theme_constant_override("separation", int(TacticalLayoutProfile.COMFORTABLE_SPACING))
+
+		var label: Label = Label.new()
+		# A non-color channel: the state reads by text/icon, the cost by number+label.
+		if state == OutpostRenderView.SPEND_STATE_APPLIED:
+			label.text = "[x] %s — Unlocked" % display_name
+		else:
+			label.text = "[#] %s — Cost: %d Oath Shards" % [display_name, cost]
+		row.add_child(label)
+
+		if state == OutpostRenderView.SPEND_STATE_AFFORDABLE:
+			var spend_button: Button = Button.new()
+			spend_button.text = "Unlock"
+			spend_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+			# Bind the unlock id into the handler (submits a spend REQUEST to the bridge).
+			spend_button.pressed.connect(_on_spend_pressed.bind(unlock_id))
+			row.add_child(spend_button)
+		elif state == OutpostRenderView.SPEND_STATE_INSUFFICIENT:
+			# Fail-loud: an unaffordable unlock shows the insufficient note (never a silent no-op).
+			var note: Label = Label.new()
+			note.text = "[!] %s" % OutpostRenderView.INSUFFICIENT_SHARDS_NOTE
+			row.add_child(note)
+
+		_content.add_child(row)
+
+
+# Story 11.6 (AC1/FR59): a spend button submitted a REQUEST for `unlock_id`. Drive the OutpostSpendBridge (load -> spend
+# -> persist -> rebuild off the LOADED profile — never the presenter's stale view), rebuild the render view from the
+# returned outpost, and re-render (the meta readout + the class options reflect the spend; an unaffordable spend re-
+# renders the insufficient note fail-loud). The presenter NEVER mutates the profile directly — the bridge owns the
+# load->command->persist. The prior render view is replaced by the rebuilt one (off the persisted profile).
+func _on_spend_pressed(unlock_id: String) -> void:
+	var bridge: OutpostSpendBridge = _spend_bridge if _spend_bridge != null else OutpostSpendBridge.new()
+	_spend_bridge = bridge
+	var outpost: OutpostViewModel = bridge.spend(unlock_id)
+	if outpost != null:
+		_render_view = OutpostRenderView.from_view_model(outpost)
+	_render_outpost()
+	if has_node("/root/Diagnostics"):
+		var result_code: String = ""
+		if bridge.last_spend_result() != null and bridge.last_spend_result().is_error():
+			result_code = String(bridge.last_spend_result().error_code)
+		Diagnostics.info(&"ui", &"outpost_spend", {"unlock_id": unlock_id, "error_code": result_code})
 
 
 func _on_descend_pressed() -> void:

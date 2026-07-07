@@ -81,6 +81,7 @@ const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteAdvanceCommand = preload("res://scripts/core/commands/route_advance_command.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RouteState = preload("res://scripts/run/route_state.gd")
+const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
 const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
@@ -186,8 +187,14 @@ func _init(
 # (the orchestrator stays unseeded; the caller cannot drive a rejected run). On success the seated run records
 # selected_class_id (AC3). The hero-select HeroSelectViewModel.is_class_selectable(id) is the UI-side pre-gate;
 # THIS command path is the authoritative fail-closed gate (AC2 — "no run can start with the locked class").
-func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = &"") -> ActionResult:
-	var start_result: ActionResult = RunStartCommand.new(root_seed, is_manual_seed, _next_sequence_id, class_id).execute(null)
+#
+# Story 11.6 (AC2 — the profile-aware class gate): an OPTIONAL trailing ProfileSnapshot (default null = the STATIC
+# gate) is threaded into RunStartCommand so a genuinely-unlocked formerly-locked class (its `<class>_unlocked` flag
+# set on the profile) STARTS, in LOCKSTEP with the profile-aware HeroSelectViewModel affordance (both read the SAME
+# unlock source). A null profile => today's static gate. The LAST positional arg so every existing .start(...) call is
+# untouched. The orchestrator does NOT own the profile — the caller (the outpost spend/start seam) supplies it.
+func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = &"", profile: ProfileSnapshot = null) -> ActionResult:
+	var start_result: ActionResult = RunStartCommand.new(root_seed, is_manual_seed, _next_sequence_id, class_id, null, null, null, null, profile).execute(null)
 	if start_result.is_error():
 		return start_result
 	run = start_result.metadata.get("run") as RunState

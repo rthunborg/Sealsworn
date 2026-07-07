@@ -23,3 +23,7 @@
 
 ## Story 11-5-outpost-scene-reveal-renders-and-another-descent
 - [Phase 3 — create-story] The run-end→profile→outpost bridge does not exist in the live flow (run_orchestrator has zero ProfileRepository/RecordFirstVictory/RunSummary/OutpostViewModel references; 11.2/11.3 drive the run terminal but never load/record/persist the profile) — 11.5's real crux and largest new-code surface, though the AC wording reads as pure render.
+
+## Story 11-6-meta-spend-and-unlock-application
+- [Phase 3 — create-story] 11.6 IS the deferred meta-spend story the 8.7 carve-out pointed at: the crux is making ClassDefinition's STATIC lock_state effectively profile-aware WITHOUT mutating static content — steered to a view-model/gate overlay; flagged as the likeliest review flashpoint.
+- [Phase 3 — create-story] FR28 is structural for 11.6, not a new gate: manual-seed runs never award shards, so there is nothing manual-seed-earned to spend — do NOT add a redundant manual-seed eligibility gate to the spend command.

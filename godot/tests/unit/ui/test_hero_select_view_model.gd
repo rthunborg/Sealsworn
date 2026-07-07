@@ -16,6 +16,7 @@ extends "res://tests/unit/test_case.gd"
 
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const HeroSelectViewModel = preload("res://scripts/ui/view_models/hero_select_view_model.gd")
+const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
 
 # The pinned per-entry key contract (sorted). A key never silently appears/vanishes (the
 # TacticalBoardViewModel discipline).
@@ -38,6 +39,11 @@ func run() -> Dictionary:
 	_convenience_id_reads_partition_the_roster()
 	_view_model_projection_is_a_pure_copy_not_a_live_handle()
 	_empty_repository_projects_an_empty_roster()
+	# Story 11.6 — the profile-aware selectability overlay (AC2/FR43).
+	_null_profile_is_byte_identical_to_static_behavior()
+	_profile_with_unlock_makes_the_locked_class_selectable()
+	_profile_without_unlock_keeps_the_class_locked()
+	_profile_unlock_partitions_move_the_class_to_selectable()
 	return result()
 
 
@@ -132,3 +138,45 @@ func _entries_by_id(view_model: HeroSelectViewModel) -> Dictionary:
 	for entry: Variant in view_model.classes():
 		by_id[String((entry as Dictionary).get("class_id", ""))] = entry
 	return by_id
+
+
+# ---- Story 11.6: profile-aware selectability overlay (AC2/FR43) --------------------------------------------------
+
+func _null_profile_is_byte_identical_to_static_behavior() -> void:
+	# A null profile => the STATIC Story-5.2 behavior (every existing caller stays correct). Necromancer stays locked.
+	var view_model: HeroSelectViewModel = HeroSelectViewModel.new(ClassRepository.create_baseline_repository(), null)
+	assert_equal(view_model.is_class_selectable(&"necromancer"), false, "With no profile, a locked class stays locked (static).")
+	assert_equal(view_model.selectable_class_ids(), [&"warrior", &"pyromancer", &"ranger"], "With no profile, the selectable roster is the static three.")
+	var entries: Dictionary = _entries_by_id(view_model)
+	assert_equal((entries.get("necromancer", {}) as Dictionary).get("selectable"), false, "With no profile, necromancer projects selectable: false.")
+
+
+func _profile_with_unlock_makes_the_locked_class_selectable() -> void:
+	# AC2 (the crux): a profile whose necromancer_unlocked flag is set makes the formerly-locked class SELECTABLE — through
+	# the view model, flowing profile -> selectability (never scene-owned state).
+	var profile: ProfileSnapshot = ProfileSnapshot.new()
+	profile.unlock_progress["necromancer_unlocked"] = true
+	var view_model: HeroSelectViewModel = HeroSelectViewModel.new(ClassRepository.create_baseline_repository(), profile)
+
+	assert_equal(view_model.is_class_selectable(&"necromancer"), true, "AC2: a profile-unlocked class is selectable.")
+	var entries: Dictionary = _entries_by_id(view_model)
+	assert_equal((entries.get("necromancer", {}) as Dictionary).get("selectable"), true, "AC2: the unlocked class projects selectable: true.")
+	# Shadeblade (no unlock) stays locked — the overlay flips ONLY the unlocked class.
+	assert_equal(view_model.is_class_selectable(&"shadeblade"), false, "AC2: a class the profile has NOT unlocked stays locked.")
+
+
+func _profile_without_unlock_keeps_the_class_locked() -> void:
+	# AC2 symmetry: a profile WITHOUT the unlock (empty unlock_progress) still reports the class locked.
+	var profile: ProfileSnapshot = ProfileSnapshot.new()  # empty unlock_progress
+	var view_model: HeroSelectViewModel = HeroSelectViewModel.new(ClassRepository.create_baseline_repository(), profile)
+	assert_equal(view_model.is_class_selectable(&"necromancer"), false, "AC2: a profile without the unlock keeps the class locked.")
+	assert_equal(view_model.is_class_selectable(&"shadeblade"), false, "AC2: a profile without the unlock keeps shadeblade locked.")
+
+
+func _profile_unlock_partitions_move_the_class_to_selectable() -> void:
+	# The convenience partitions are profile-aware: an unlocked class joins selectable_class_ids + leaves locked_class_ids.
+	var profile: ProfileSnapshot = ProfileSnapshot.new()
+	profile.unlock_progress["necromancer_unlocked"] = true
+	var view_model: HeroSelectViewModel = HeroSelectViewModel.new(ClassRepository.create_baseline_repository(), profile)
+	assert_equal(view_model.selectable_class_ids(), [&"warrior", &"pyromancer", &"ranger", &"necromancer"], "The unlocked class joins the selectable partition (in class_ids() order).")
+	assert_equal(view_model.locked_class_ids(), [&"shadeblade"], "The unlocked class leaves the locked partition; shadeblade (still locked) remains.")
