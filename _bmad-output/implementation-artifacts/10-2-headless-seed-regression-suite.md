@@ -4,7 +4,7 @@ baseline_commit: 3508181a37c2d7833ea73e522e73b90852ea590f
 
 # Story 10.2: Headless Seed Regression Suite
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
