@@ -133,7 +133,10 @@ byte-identical).
 - **10.3 (Generator Soft-Lock and Fairness Batch Checks).** Runs the fairness half over a batch of Small/Medium
   seeds. 10.2 keeps its generation seed catalog COMPATIBLE (the shared `[1001,2002,3003,4004,5005]` set) so the
   two harnesses agree on seeds; a coordinated generation-sample expansion (toward the 50/50 target) should
-  extend all three Epic-10 harnesses (10.1 level-load, 10.2 regression, 10.3 fairness) together.
+  extend all three Epic-10 harnesses (10.1 level-load, 10.2 regression, 10.3 fairness) together. (10.3 shipped
+  2026-07-07 — `godot/tests/integration/test_generator_fairness_batch.gd` + the ledger
+  `generator-fairness-batch-readiness.md`; it draws the SAME 5+5 catalog, re-pins NO terrain fingerprint, and
+  surfaced a Darkness FR58 `darkness_unseen_hazard` finding on Medium seeds 4004+5005 — see that ledger §4.)
 - **10.1 (Device Tiers and Performance Budgets).** Its §7 records the shared level-load seed sample and the
   10.2 handoff; this doc is the reciprocal seed-determinism readiness artifact.
 

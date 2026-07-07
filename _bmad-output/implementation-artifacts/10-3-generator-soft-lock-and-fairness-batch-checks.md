@@ -1,6 +1,10 @@
+---
+baseline_commit: c9c0fe000eb16926a909ed33cb87273154c0ba92
+---
+
 # Story 10.3: Generator Soft-Lock and Fairness Batch Checks
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -146,8 +150,8 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Inventory the existing validators + confirm their single canonical sources (AC1, AC2)**
-  - [ ] Read the two existing validation surfaces and confirm each is the SINGLE canonical check before
+- [x] **Task 1 — Inventory the existing validators + confirm their single canonical sources (AC1, AC2)**
+  - [x] Read the two existing validation surfaces and confirm each is the SINGLE canonical check before
         writing any batch harness (a second algorithm is a review miss):
         - **Soft-lock / reachability / placement / reward / readability / safe-first-reveal:**
           `godot/scripts/generation/level/level_validator.gd` — `validate(candidate)` returns
@@ -166,18 +170,18 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
           `invalid_darkness_candidate`. It re-asserts safe-first-reveal at the Darkness-REDUCED radius
           (`DarknessVisibilityLayer.DARKNESS_REDUCED_LINE_OF_SIGHT_RADIUS == 2`, floor 1) and fails a reachable
           hazard unseen at that radius. PURE.
-  - [ ] Read `godot/tests/unit/generation/test_seed_batch_regression.gd` (the 3.7 FULL-`generate` batch — the
+  - [x] Read `godot/tests/unit/generation/test_seed_batch_regression.gd` (the 3.7 FULL-`generate` batch — the
         CLOSEST sibling harness) for the batch-drive pattern (`LevelGenerator.generate` over
         `APPROVED_SEED_CATALOG`, `_terrain_fingerprint_from_payload` candidate reconstruction, the
         `_failure_report_shape_carries_seed_recipe_phase_reason` forced-failure shape). Read
         `godot/tests/unit/run/test_affinity_assignment.gd` for the `assign_affinity` → `map`-stream affinity
         pattern. REUSE these shapes — do NOT invent a new batch-drive or candidate-reconstruction pattern.
-  - [ ] Record the CURRENT approved seed catalog on disk (Small 5 / Medium 5 =
+  - [x] Record the CURRENT approved seed catalog on disk (Small 5 / Medium 5 =
         `[1001,2002,3003,4004,5005]` — the SHARED Epic-10 catalog the 10.1 level-load harness + the 10.2
         regression suite both draw over) — this is the baseline for the AC4 sample gap ledger.
 
-- [ ] **Task 2 — Build the batch generator-validation harness + uniform failure report (AC1)**
-  - [ ] Author a headless batch harness (a new `test_*.gd` under `godot/tests/integration/` — an
+- [x] **Task 2 — Build the batch generator-validation harness + uniform failure report (AC1)**
+  - [x] Author a headless batch harness (a new `test_*.gd` under `godot/tests/integration/` — an
         integration-level cross-system generator-safety batch is the right home; the seed-regression suite +
         finale suite already live under `godot/tests/integration/`) that drives the full approved Small +
         Medium seed catalog through `LevelGenerator.generate(request, recipes, enemies)` (default
@@ -189,16 +193,20 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
         SAME validator the pipeline uses (no second algorithm). EVERY failure assert carries
         `seed=%d phase=%s reason=%s` (from `GenerationResult.failed_phase`/`reason` on a generate failure, or
         the `LevelValidator` error code + `phase_for_code` on a direct-validate failure) — compact, NEVER a
-        grid/board dump.
-  - [ ] Include a FORCED-failure shape test (the `_failure_report_shape_carries_...` precedent) so the harness
+        grid/board dump. DONE in `godot/tests/integration/test_generator_fairness_batch.gd`
+        (`_batch_generate_passes_with_stable_status_and_compact_report`,
+        `_batch_direct_validate_confirms_every_zero_tolerance_code_clear`; candidate reconstruction via
+        `_candidate_from_payload`, the 3.7 `_terrain_fingerprint_from_payload` pattern + `BoardState.try_from_snapshot`).
+  - [x] Include a FORCED-failure shape test (the `_failure_report_shape_carries_...` precedent) so the harness
         can never silently pass a soft-lock/fairness regression: inject an always-fail validator via
         `LevelGenerator.generate`'s optional 4th `validator` param (the 3.6 test seam) and assert the
         `GenerationResult.error` carries `seed + failed_phase + error_code + reason` + `attempts ==
         MAX_GENERATION_ATTEMPTS` (bounded-retry exhaustion), and that the failing seed is captured for
-        preservation.
+        preservation. DONE (`_forced_failure_shape_carries_seed_phase_reason_and_exhausts_bounded_retry` +
+        the inner `AlwaysFailValidator` test seam).
 
-- [ ] **Task 3 — Add the affinity / Darkness fairness half over the batch (AC2)**
-  - [ ] For each batch level, ASSIGN the affinity via `RunOrchestrator.assign_affinity(node)` (the `map`-stream
+- [x] **Task 3 — Add the affinity / Darkness fairness half over the batch (AC2)**
+  - [x] For each batch level, ASSIGN the affinity via `RunOrchestrator.assign_affinity(node)` (the `map`-stream
         7.4 contract) OR drive a Darkness board directly, and run
         `DarknessFairnessQuery.check_board(board, affinity_id, repository, seed, entrance)` over the built
         board. Assert: neutral/non-Darkness returns the legal `not_a_darkness_level` PASS; a fair Darkness
@@ -206,36 +214,53 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
         at the reduced radius FAILS `darkness_unseen_hazard`, while a hazard SEEN at the reduced radius passes
         ("critical danger is inspectable/telegraphed"). EVERY fairness failure assert carries the AFFINITY TAG
         (`affinity_id` + `fairness_reason` + `seed` + `phase` — AC2 "failures are tagged by affinity"),
-        compact, no grid dump.
-  - [ ] Cover ALL FOUR implemented affinities in the fairness half where they are relevant (the baseline ids:
+        compact, no grid dump. DONE (`_batch_darkness_fairness_verdict_recorded_for_every_generated_board`,
+        `_assigned_affinity_fairness_reflects_the_query_verdict`,
+        `_unseen_hazard_fails_and_seen_hazard_passes_reflecting_the_query`). ⚠️ HONEST FINDING (see Completion
+        Notes): the Dev-Notes premise "generated boards are all-FLOOR" holds for Small but NOT Medium — Medium
+        seeds 4004 + 5005 bake HAZARD terrain that is unseen at the Darkness-reduced radius, so assigning
+        Darkness to them legitimately FAILS `darkness_unseen_hazard`. The batch REPORTS this honestly (classified,
+        flagged, preserved) rather than fabricating a pass.
+  - [x] Cover ALL FOUR implemented affinities in the fairness half where they are relevant (the baseline ids:
         `scorched`, `flooded_conductive`, `cursed`, `darkness`, plus neutral `none` — `AffinityRepository.
         BASELINE_AFFINITY_IDS`). Darkness is the affinity with the reduced-radius fairness risk (the query's
         active branch); Scorched/Flooded/Cursed/neutral return the `not_a_darkness_level` PASS (no reduced
         radius to re-assert) — assert that too so the batch demonstrably ran the fairness check for every
         affinity, not just Darkness. A batch affinity that surfaces in the sample must have its fairness verdict
         asserted (the 10.2 affinity-sample honesty posture — if an affinity never surfaces in the seed sample,
-        record it as a `temporary (N of TARGET)` gap, do NOT fabricate a verdict).
-  - [ ] REFLECT the query's verdict — do NOT re-derive a second fairness predicate (the `LiveAffinityReadModel`
+        record it as a `temporary (N of TARGET)` gap, do NOT fabricate a verdict). DONE
+        (`_batch_fairness_verdict_asserted_for_every_implemented_affinity` iterates
+        `AffinityRepository.BASELINE_AFFINITY_IDS`).
+  - [x] REFLECT the query's verdict — do NOT re-derive a second fairness predicate (the `LiveAffinityReadModel`
         11.4 discipline: reflect the `DarknessFairnessQuery` verdict, never compute your own). The harness reads
         `check_board`'s `ActionResult`; it does not re-implement the reachable-hazard-unseen-at-reduced-radius
-        flood/LoS.
+        flood/LoS. DONE (the single `_classify_darkness_fairness_over_batch` reflects `check_board`'s
+        `ActionResult`; no second flood/LoS anywhere in the harness).
 
-- [ ] **Task 4 — Failure-rate threshold → tuning flag + failing-seed preservation (AC3, AC4)**
-  - [ ] Compute a per-recipe-batch failure rate (validation failures + bounded-retry EXHAUSTIONS over the
+- [x] **Task 4 — Failure-rate threshold → tuning flag + failing-seed preservation (AC3, AC4)**
+  - [x] Compute a per-recipe-batch failure rate (validation failures + bounded-retry EXHAUSTIONS over the
         batch). STATE + ASSERT the zero-tolerance thresholds verbatim (0 soft-locks, 0 mandatory class/item
         gates, 0 unreachable mandatory exits, 0 unreachable intended mandatory rewards, 0 unavoidable
         untelegraphed first-reveal punishments) AND the ≤ 1% bounded-retry-exhaustion-per-recipe-batch
-        threshold. For the CURRENT approved catalog every threshold is MET (failure rate 0%, `attempts == 1`
-        per seed), so the zero-tolerance asserts pass by construction.
-  - [ ] Prove the threshold→flag→preserve REPORTING path fires (the forced-failure shape from Task 2): when the
+        threshold. For the CURRENT approved catalog every GENERATION zero-tolerance class is MET (failure rate
+        0%, `attempts == 1` per seed). DONE
+        (`_zero_tolerance_and_retry_exhaustion_thresholds_hold_for_the_approved_catalog`; `ZERO_TOLERANCE_CODES`
+        + `MAX_RETRY_EXHAUSTION_RATE` stated as consts). ⚠️ The FR58 darkness_unseen_hazard half is NOT zero for
+        the current catalog (Medium 4004/5005) — the harness does NOT falsely assert zero; it asserts the base
+        classes hold, classifies the Darkness-half finding, and records it for the 10.6 gate (Completion Notes +
+        ledger).
+  - [x] Prove the threshold→flag→preserve REPORTING path fires (the forced-failure shape from Task 2): when the
         injected failure drives the rate above threshold, the harness FLAGS the relevant recipe / validation
         rule / retry limit (`MAX_GENERATION_ATTEMPTS`) for tuning in its report AND PRESERVES the failing
         seed(s) as DATA (a preserved-seed list — kept + annotated, the 3.7 preserved-catalog discipline; never
         silently discarded). Assert the preserved-seed record carries the seed + the failing phase/reason +
-        the recipe so it is reproducible.
+        the recipe so it is reproducible. DONE
+        (`_threshold_breach_flags_recipe_rule_retry_limit_and_preserves_failing_seed` for the forced seam +
+        `_real_darkness_finding_flags_recipe_rule_and_preserves_failing_seeds` for the AUTHENTIC Darkness FR58
+        finding; `_preserved_seed_record` / `_tuning_flags_for_breach` / `_fairness_tuning_flags_for`).
 
-- [ ] **Task 5 — Durable readiness ledger + sample-size gap + 10.6 gate handoff (AC3, AC4)**
-  - [ ] Author the durable readiness artifact (a sibling to 10.1's
+- [x] **Task 5 — Durable readiness ledger + sample-size gap + 10.6 gate handoff (AC3, AC4)**
+  - [x] Author the durable readiness artifact (a sibling to 10.1's
         `device-tiers-and-performance-budgets.md` + 10.2's `seed-regression-suite-readiness.md`) at
         `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md`: STATE the zero-tolerance +
         ≤ 1% retry-exhaustion thresholds; STATE the `50 Small / 50 Medium` seed-sample target (shared with
@@ -244,31 +269,38 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
         three Epic-10 harnesses, OR an approved de-scope at the 10.6 gate)` gap; state plainly that a
         sub-target sample CANNOT pass final MVP readiness without an approved de-scope (10.6's decision, not
         10.3's); and record the affinity-fairness coverage (which affinities surfaced in the sample vs the
-        implemented four) as an honest gap where relevant.
-  - [ ] Record the 10.6 gate handoff (the batch harness + its threshold verdict + the sample-gap ledger are a
+        implemented four) as an honest gap where relevant. DONE — the ledger additionally records §4 the HONEST
+        Darkness FR58 `darkness_unseen_hazard` finding (Medium 4004/5005) as a real 10.6-gate readiness signal.
+  - [x] Record the 10.6 gate handoff (the batch harness + its threshold verdict + the sample-gap ledger are a
         direct input to 10.6 — 10.6 decides whether a still-temporary sub-target sample is an acceptable
         documented readiness LIMITATION or a hard blocker) AND the reciprocal cross-references to 10.1
         (`device-tiers-and-performance-budgets.md` §7) + 10.2
         (`seed-regression-suite-readiness.md` §3/§7 — the shared-catalog coordination). Do NOT implement 10.6's
-        gate decision here.
+        gate decision here. DONE — ledger §7 handoff; 10.2's §7 10.3-bullet updated reciprocally with the
+        shipped-artifact pointer + the FR58 finding.
 
-- [ ] **Task 6 — OPTIONAL report driver, cross-check, invariant re-verification, and gate handoff (AC1–AC4)**
-  - [ ] OPTIONAL headless report driver (only if it genuinely earns its place, the 10.1/10.2 discipline): a
+- [x] **Task 6 — OPTIONAL report driver, cross-check, invariant re-verification, and gate handoff (AC1–AC4)**
+  - [x] OPTIONAL headless report driver (only if it genuinely earns its place, the 10.1/10.2 discipline): a
         `godot/tools/dump_generator_fairness_report.gd` `extends SceneTree` (the `dump_*` precedent —
         `dump_seed_batch_report.gd` is the closest sibling; `dump_seed_regression_report.gd` is 10.2's) that
         prints the consolidated `[PASS|FAIL] recipe / seed: <validation verdict> | <affinity fairness verdict>`
         report across the batch for eyeballing / reproduction. NOT auto-discovered, excluded from every export
         preset (the `tools/**` exclude_filter — provably cannot ship, the 10.1 AC5 evidence), grants no
         progression, writes no `user://` artifact (print-only). Do not add if the batch test already gives full
-        coverage and no eyeball driver is needed.
-  - [ ] Run the full headless suite via PowerShell (the `godot` binary is NOT on the Bash/`where` PATH — it
+        coverage and no eyeball driver is needed. DONE + EARNED ITS PLACE — it is the reproduction surface for
+        the Darkness FR58 finding; verified output: Small all-PASS, Medium 4004 → `darkness_FAIL:darkness_unseen_hazard at (9,4)`,
+        Medium 5005 → `at (10,2)`; `validation=ok` for all (base checks clean). Confirmed all 3 export presets
+        exclude `tools/**`,`tests/**`,`**/test_*.gd`.
+  - [x] Run the full headless suite via PowerShell (the `godot` binary is NOT on the Bash/`where` PATH — it
         resolves via `C:\Users\Rasmus\bin\godot.cmd` / the console binary):
         `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
         --quit-after 10`. Apply the false-PASS grep guard: grep the RAW runner output; the SIX documented
         stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1) still PASS and MUST
         NOT be mis-cited as a regression. The suite outcome must stay green (the 10.2-close baseline of
-        **184 PASS / 0 `^FAIL`** plus this story's own new passing batch test(s)).
-  - [ ] Verify NO generation/validation invariant moved: `level_validator.gd` (`check_order()` unchanged, the
+        **184 PASS / 0 `^FAIL`** plus this story's own new passing batch test(s)). DONE — **185 PASS / 0 `^FAIL`**
+        ("Headless tests passed."); the new `test_generator_fairness_batch.gd` PASSES; the false-PASS guard is
+        clean (the 6 documented stderr negatives are the only ones, no new negative introduced).
+  - [x] Verify NO generation/validation invariant moved: `level_validator.gd` (`check_order()` unchanged, the
         8 stable codes + `phase_for_code` unchanged), `darkness_fairness_query.gd` (the 4 reasons + the
         reduced-radius predicate unchanged), `generation_result.gd` (the 11 `PHASE_*` unchanged),
         `level_generator.gd` (`MAX_GENERATION_ATTEMPTS == 8`, the bounded-retry contract, attempt-0-unperturbed
@@ -276,13 +308,20 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.3). Four AC groups (Given/Wh
         every level/route/finale seed-regression fingerprint byte-identical, the DEFAULT deterministic
         generation paths byte-identical. Confirm `git diff --check` is clean and no production `godot/`
         generator/validator/gameplay/save/RNG/content file was touched (only new test(s) + an optional `tools/`
-        report driver + the readiness ledger + the sprint-status/story-doc updates).
-  - [ ] Record the gate handoff: the batch harness + its threshold verdict + the sample-size gap ledger is a
+        report driver + the readiness ledger + the sprint-status/story-doc updates). DONE — re-verified every
+        listed constant/order live (8-code `check_order`, `MAX_GENERATION_ATTEMPTS == 8`, 11 `PHASE_*`, 4
+        fairness reasons + radius `== 2`, 7 RNG streams); `git status --short` shows ONLY new test + new tool +
+        the ledger + story/sprint/10.2-doc edits (NO production source touched); `git diff --check` clean (only a
+        benign LF→CRLF line-ending warning). The regression suites (`test_seed_batch_regression.gd`,
+        `test_seed_regression_suite.gd`) stayed green (fingerprints byte-identical — the batch re-pins none).
+  - [x] Record the gate handoff: the batch harness + its threshold verdict + the sample-size gap ledger is a
         direct input to **10.6 (MVP Readiness Gate)**. Cross-reference 10.2 (shares the Small/Medium seed
         catalog — keep them compatible so the two harnesses agree on seeds) and 10.7 (Asset/Audio/UX readiness
         gate — the Flooded `_placeholder` electric interaction is 10.7's item, NOT 10.3's; the batch reflects
         the Flooded fairness verdict but does not realize the electric chain). Do NOT implement 10.6's or
-        10.7's content here.
+        10.7's content here. DONE — ledger §7 (10.6 consumes the harness + threshold verdict + sample-gap +
+        the Darkness FR58 finding; 10.2 shared-catalog coordination; 10.7 owns the Flooded placeholder; the
+        affinity-driven GENERATION modifier stays deferred).
 
 ## Dev Notes
 
@@ -624,16 +663,79 @@ Extracted from `project-context.md` / `AGENTS.md` (the canonical rulebooks). The
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (1M context) — `claude-opus-4-8[1m]` (auto-gds dev-story delegate).
 
 ### Debug Log References
 
+- Full headless suite (baseline + final): `godot --headless --path C:\Sealsworn\godot --scene
+  res://tests/headless/test_runner.tscn --quit-after 10`. Baseline 184 PASS / 0 `^FAIL`; final **185 PASS / 0
+  `^FAIL`** ("Headless tests passed."). False-PASS grep guard applied — the only stderr negatives are the 6
+  documented ones (malformed-JSON ×3, `invalid_node_type` ×1, int64-range-rejection ×2); no new negative.
+- Diagnostic probes (scratchpad `SceneTree` scripts, NOT committed) that surfaced the Darkness FR58 finding:
+  drove the Small + Medium catalog through the real generator, dumped HAZARD cells + the `DarknessFairnessQuery`
+  verdict. Result: Small all-FLOOR (all pass); Medium 4004 has HAZARD (9,4), Medium 5005 has HAZARD (10,2)+(12,2)
+  → both FAIL `darkness_unseen_hazard` at the reduced radius. Reproduced by the shipped report driver.
+- Invariant re-verification (live greps): `LevelValidator.check_order()` 8 codes unchanged;
+  `MAX_GENERATION_ATTEMPTS == 8`; `GenerationResult` 11 `PHASE_*`; `DarknessFairnessQuery` 4 reasons + radius
+  `== 2`; `required_streams()` == 7. `git status --short`: only new test + new tool + ledger + story/sprint/10.2
+  doc edits (no production source). `git diff --check` clean (benign LF→CRLF warning only).
+
 ### Completion Notes List
 
+- **Delivered the generator-soft-lock + fairness BATCH harness** `godot/tests/integration/test_generator_fairness_batch.gd`
+  — drives the shared `[1001,2002,3003,4004,5005]` × {`small_combat_basic`, `medium_combat_basic`} catalog through
+  the REAL `LevelGenerator.generate` + default `LevelValidator` path, reconstructs the built candidate from the
+  payload (the 3.7 `_terrain_fingerprint_from_payload` pattern + `BoardState.try_from_snapshot` + `payload.rewards`)
+  and re-runs `LevelValidator.validate` DIRECTLY (AC1 belt-and-suspenders), runs `DarknessFairnessQuery.check_board`
+  over the DARKNESS affinity + every baseline affinity (AC2), computes the per-recipe-batch failure + retry-exhaustion
+  rate and asserts the AC4 zero-tolerance + ≤ 1% thresholds, and proves the AC3 flag+preserve path via BOTH a forced
+  always-fail validator (the 3.6 4th-param seam) AND the authentic Darkness finding. It REUSES the two canonical
+  validators — NO second soft-lock/fairness algorithm (a single `_classify_darkness_fairness_over_batch` reflects the
+  query's `ActionResult`; no second flood/LoS).
+- **Delivered the optional report driver** `godot/tools/dump_generator_fairness_report.gd` (`extends SceneTree`,
+  print-only, `tools/**`-excluded from all 3 export presets) — prints `[PASS|FLAG|FAIL] recipe / seed:
+  validation=<verdict> | <darkness fairness verdict>` for reproduction/eyeballing. It earned its place as the
+  reproduction surface for the Darkness FR58 finding.
+- **Delivered the durable readiness ledger** `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md`
+  — states the zero-tolerance + ≤ 1% thresholds, the 50/50 sample target + the 5-of-50 gap (shared-catalog
+  coordination, no isolated expansion), the affinity coverage, and §4 the honest Darkness FR58 finding; §7 hands off
+  to 10.6 and cross-refs 10.1/10.2/10.7 + the deferred affinity-into-generation modifier. Reciprocally updated the
+  10.2 ledger §7 10.3-bullet.
+- **⭐ KEY FINDING (deviation from the story's Dev-Notes premise — the most important outcome):** the Dev Notes
+  repeatedly assert "v0 generated boards are all-FLOOR" and "a generated Darkness board PASSES by construction." That
+  is TRUE for the Small recipe but FALSE for the Medium recipe: the Medium tactical-wrinkle phase bakes `Terrain.HAZARD`
+  cells (the `hazard` wrinkle kind — part of the pinned Medium terrain fingerprint, e.g. Medium 4004 → (9,4), Medium
+  5005 → (10,2)+(12,2)). Those hazards are reachable-but-UNSEEN at the Darkness-reduced radius (2), so assigning
+  Darkness to them legitimately FAILS `darkness_unseen_hazard` — exactly the FR58 risk 7.6 anticipated. The 7.6
+  fairness test never caught this because it only exercised Small seeds. **This is a real readiness signal, NOT a
+  harness bug and NOT a base soft-lock** (the levels are perfectly fair at the baseline radius — `LevelValidator`
+  passes). Per the story's explicit anti-fabrication rule, the harness does NOT pretend these levels are fair; it
+  CLASSIFIES the finding, asserts the base generation zero-tolerance classes hold (they do), flags the recipe + the
+  FR58 rule for tuning, preserves the failing seeds, and records the finding in the ledger §4 for the 10.6 gate to
+  own (tune the generator / strengthen the moving-LoS predicate / accept as a documented limitation). The batch
+  asserts the finding is PRESENT (fails loud if a future generator change silently makes Medium all-FLOOR).
+- **Scope discipline held:** touched NO production `godot/` generator/validator/gameplay/save/RNG/content file — only
+  a new `tests/` batch + a new `tools/` driver + the planning ledger + tracking docs. Re-pinned NO terrain
+  fingerprint. Left every generation/determinism invariant byte-identical (verified live). No affinity-into-generation
+  modifier, no Flooded electric-chain realization (10.7's).
+- **Sample-size honesty:** the batch drives the FULL current approved 5+5 catalog (all pass the GENERATION
+  zero-tolerance classes by construction); the 50/50 target + the 5-of-50 gap are the recorded 10.6-owned item, with
+  the coordinated-expansion (not isolated) discipline stated.
+
 ### File List
+
+- `godot/tests/integration/test_generator_fairness_batch.gd` — NEW. The batch soft-lock + fairness harness (AC1–AC4).
+- `godot/tools/dump_generator_fairness_report.gd` — NEW. Optional `tools/`-gated print-only report/reproduction driver.
+- `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` — NEW. The durable 10.6-gate readiness ledger.
+- `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` — MODIFIED. §7 10.3-bullet updated reciprocally
+  (shipped-artifact pointer + the FR58 finding).
+- `_bmad-output/implementation-artifacts/10-3-generator-soft-lock-and-fairness-batch-checks.md` — MODIFIED. Frontmatter
+  `baseline_commit`, task checkboxes, Dev Agent Record, Change Log, Status.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED. `10-3-...` in-progress → review; `last_updated`.
 
 ## Change Log
 
 | Date | Change |
 |---|---|
+| 2026-07-07 | Story 10.3 IMPLEMENTED (dev-story). Built the generator-soft-lock + fairness BATCH harness `godot/tests/integration/test_generator_fairness_batch.gd` (AC1–AC4): drives the shared 5+5 catalog through the REAL `LevelGenerator.generate` + `LevelValidator` (+ a direct `validate` re-run) + `DarknessFairnessQuery.check_board` over the DARKNESS + every baseline affinity, under one compact `seed + phase + reason` (+ `affinity`) contract; states + asserts the zero-tolerance + ≤ 1% retry-exhaustion thresholds; proves the flag+preserve path via a forced always-fail validator AND the authentic finding. REUSES the two canonical validators (no second algorithm — a single `_classify_darkness_fairness_over_batch` reflects the query verdict). Added the optional `tools/`-gated print-only report driver `godot/tools/dump_generator_fairness_report.gd` + the durable ledger `_bmad-output/planning-artifacts/generator-fairness-batch-readiness.md` (thresholds, 50/50 target + 5-of-50 gap, affinity coverage, §4 the honest Darkness FR58 finding, §7 the 10.6/10.2/10.7 handoff). ⭐ DISCOVERED + recorded a real finding: the Dev-Notes "all-FLOOR" premise holds for Small but NOT Medium — Medium seeds 4004 (hazard (9,4)) + 5005 (hazards (10,2)+(12,2)) bake HAZARD terrain that is unseen at the Darkness-reduced radius, so assigning Darkness FAILS `darkness_unseen_hazard` (fair at the baseline radius — `LevelValidator` passes; a genuine FR58 reduced-radius readiness signal for 10.6, surfaced honestly, not fabricated as a pass). NO production `godot/` source touched; NO fingerprint re-pinned; every generation invariant byte-identical (verified live). Suite 184 → **185 PASS / 0 `^FAIL`**. Status → review. |
 | 2026-07-07 | Story 10.3 context created (create-story). Generator-soft-lock-and-fairness-batch-checks scope framed as the generator-safety analog of 10.1 (performance) + 10.2 (seed determinism): BATCH the two EXISTING validators (`LevelValidator` from 3.6, `DarknessFairnessQuery` from 7.6) over the shared Small/Medium seed catalog + each level's assigned affinity, report per-seed PASS/FAIL with compact `seed + phase + reason` (+ `affinity`) diagnostics, apply the AC4 zero-tolerance (0 soft-locks / gates / unreachable exits / unreachable mandatory rewards / unavoidable untelegraphed first-reveal punishments) + ≤ 1% bounded-retry-exhaustion-per-recipe-batch thresholds, flag out-of-threshold recipes/rules/retry-limits for tuning, preserve + tag every failing seed, and record the current-vs-target (5-of-50) sample gap as a 10.6-owned honest-scope ledger. REUSE-not-fork the validators (no second soft-lock/fairness algorithm — the #1 review risk); keep the generation seed catalog compatible with the 10.1/10.2 shared `[1001,2002,3003,4004,5005]` set (no isolated expansion → no fingerprint drift); the affinity-driven GENERATION modifier stays DEFERRED (must NOT wire affinity into reward odds/generation); the Flooded `_placeholder` electric interaction is 10.7's, not 10.3's; leave every generation/determinism invariant (7 RNG streams, `LevelValidator` check-order+codes, `DarknessFairnessQuery` reasons, `GenerationResult` phases, `MAX_GENERATION_ATTEMPTS == 8`, 23-key RunSnapshot, all fingerprints) byte-identical. Status → ready-for-dev. |
