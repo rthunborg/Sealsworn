@@ -29,6 +29,7 @@ const PassiveRewardCommitFlow = preload("res://scripts/ui/view_models/passive_re
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
+const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
 
 # The region -> slot vocabulary (the appendix §1.2 region plan; the TacticalLayoutProfile region names).
 const REGION_NAMES: Array[String] = [
@@ -58,6 +59,14 @@ var _text_scale: float = TacticalTextScale.DEFAULT_TEXT_SCALE
 # read surface the status/log region composes (exactly like the G1 HUD), NOT a key on the board VM's pinned set.
 var _affinity_id: StringName = AffinityDefinition.AFFINITY_NONE
 var _affinity_fairness: Dictionary = {}
+
+# Story 12.1 — the LIVE interactive-fight session (set by the hosting shell when a combat/elite node begins). When
+# bound, the board's tap methods route each player action into the STEP-DRIVEN session (which owns the SAME command
+# bridge + two-step commit flow), instead of the shell driving the atomic auto-resolver. The session owns the live
+# board/turn/outcome; the presenter renders a read of it (no scene node owns tactical truth). `_on_action_committed`
+# is the shell callback invoked after each COMMITTED action so the shell re-renders + routes on a terminal outcome.
+var _session: InteractiveCombatSession = null
+var _on_action_committed: Callable = Callable()
 
 func _ready() -> void:
 	_build_regions()
@@ -268,3 +277,68 @@ func passive_reward_modal(index: int) -> Dictionary:
 	if _run == null:
 		return PassiveRewardModalViewModel.new().project_offer(null, index)
 	return PassiveRewardModalViewModel.new().project_offer(_run.pending_reward_offer, index)
+
+
+# --- Story 12.1: the LIVE interactive tap seam (route each tap into the step-driven session) --------------------
+
+# Bind the LIVE interactive-fight session hosted by the shell. When bound, the board renders the session's live
+# (mutated-in-place) board + turn state and routes each tap into the session (which owns the SAME command bridge +
+# two-step commit flow the non-live tap methods use — NOT a parallel path). `on_action_committed` is the shell
+# callback invoked after each COMMITTED action (a move / a confirmed attack) so the shell re-renders + routes on a
+# terminal outcome. Binds the render inputs (the live board/turn/run + affinity + fairness) from the session in one call.
+func bind_interactive_session(
+	session: InteractiveCombatSession,
+	run: RunState,
+	on_action_committed: Callable = Callable(),
+	affinity_id: StringName = AffinityDefinition.AFFINITY_NONE,
+	affinity_fairness: Dictionary = {}
+) -> void:
+	_session = session
+	_on_action_committed = on_action_committed
+	# The LIVE board + turn state (mutated-in-place by the session) drive the render — NOT a throwaway PLAYER_PLANNING
+	# stub, so the HUD's turn slot + action_availability reflect the real turn (preview/commit/inspect gate correctly).
+	if session != null:
+		bind_live_state(session.board(), session.turn_state(), run, _text_scale, affinity_id, affinity_fairness)
+
+
+# The current live interactive session (or null when the board is not hosting a live fight). A pure read.
+func interactive_session() -> InteractiveCombatSession:
+	return _session
+
+
+# Route a MOVE tap into the live session (the human's move action). The session drives ONE MoveCommand through the
+# command bridge + runs the enemy phase on a committed move. Re-renders the live board + notifies the shell (the
+# terminal check + route). Returns the session's ActionResult. A no-op ok when no session is bound.
+func interactive_submit_move(target_cell: Vector2i, movement_budget: int = -1):
+	if _session == null:
+		return null
+	var result_value = _session.submit_move(target_cell, movement_budget)
+	render()
+	_notify_action_committed()
+	return result_value
+
+
+# Route an ATTACK tap into the live session (the two-step commit — first tap PREVIEWS/arms, second COMMITS). The
+# session runs the enemy phase on a committed attack. Re-renders + notifies the shell. Returns the commit-flow result.
+func interactive_tap_attack(target_cell: Vector2i, attacker_support = null, defender_support = null):
+	if _session == null:
+		return null
+	var flow_result = _session.tap_attack(target_cell, attacker_support, defender_support)
+	render()
+	_notify_action_committed()
+	return flow_result
+
+
+# Route an INSPECT tap into the live session (metadata-only — no mutation, no turn advance). Returns the
+# CommandBridgeResult. Does NOT notify the shell (inspect commits nothing).
+func interactive_inspect(target_cell: Vector2i):
+	if _session == null:
+		return null
+	return _session.inspect(target_cell)
+
+
+# Notify the shell that a session action resolved (the shell re-renders the HUD + routes on a terminal outcome). Guards
+# a null/invalid callback (a dead callback silently no-ops — but this is bound by the shell by construction, not probed).
+func _notify_action_committed() -> void:
+	if _on_action_committed.is_valid():
+		_on_action_committed.call()
