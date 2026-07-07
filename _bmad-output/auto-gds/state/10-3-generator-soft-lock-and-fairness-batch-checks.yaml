@@ -3,10 +3,10 @@ epic_num: 10
 story_num: 3
 branch: story/10-3-generator-soft-lock-and-fairness-batch-checks
 status: in-progress
-updated_at: "2026-07-07T12:05:14Z"
+updated_at: "2026-07-07T12:13:13Z"
 started_at: "2026-07-07T11:31:00Z"
 completed_at: null
-active_seconds: 1960
+active_seconds: 2350
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 7
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 1
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["b9fb8c7", "c9c0fe0"]
+commits: ["b9fb8c7", "c9c0fe0", "28ec14d"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
