@@ -47,6 +47,33 @@ next pipeline phase).
   (no existing fixture drives a class support); the `LiveCombatResolver.resolve(...)` default + `run_to_completion`
   are UNTOUCHED.
 
+## Deferred from: code review of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 1 / Low 3; 1 open `[Review][Patch]` — the
+sibling-driver `hero_support` param-slot alignment, non-blocking; 1 open `[Review][Decision]` — the support-slot
+modeling shape). The suite was independently re-run (`Headless tests passed.`, exit 0, false-PASS guard clean, only
+the 6 documented stderr negatives); `LiveCombatResolver.resolve` byte-identical, 7 streams / 42-event enum / 23-key
+gate intact, no finale/seed-regression fixture moved. Two `[Review][Defer]` findings carried forward:
+
+- [ ] **[Review][Defer]** (Med, from code review of 12-2, 2026-07-07) — the `ReferenceCombatDriver` winnability proof
+  (`test_reference_combat_driver.gd`) covers ONLY `small_combat_basic` / `SIZE_SMALL` boards with NEUTRAL affinity for
+  the whole approved batch [4242, 8080, 6006, 2048, 512]. The shipped interactive path (`begin_interactive_combat_node`)
+  also hosts the class loadout on `elite_combat` (`medium_combat_basic` / `SIZE_MEDIUM`, `run_orchestrator.gd:1007,1275`)
+  nodes and applies the node's assigned affinity (Scorched hazard DoT / Darkness / Cursed) before hero placement — so
+  18-HP winnability is proven for the depth-0/Small neutral family only, NOT the Medium/elite or affinity-loaded live
+  surface, even though AC2's wording says "Small/**Medium**" and the driver's `resolve(...)` accepts (never receives)
+  affinity params. Not a correctness defect (the proven family is the primary hands-on entry; the human ≥ the reference
+  driver), but the claim is narrower than AC2's intent. Fast-follow before/within 10.4: add a Medium/elite seed × class
+  row + at least one Scorched-affinity live seed to the catalog, OR explicitly scope AC2 to Small-neutral and assign the
+  Medium/affinity winnability proof to 10.4/10.6.
+
+- [ ] **[Review][Defer]** (Low, from code review of 12-2, 2026-07-07) — `ReferenceCombatDriver._best_end_cell` calls
+  `_relocate_scratch` for every reachable cell every hero turn, and `_relocate_scratch` does a full `board.to_snapshot()`
+  → `try_from_snapshot` round-trip per candidate cell. It is a headless PROOF harness (not the on-screen loop) and the
+  approved clears run well under the 64-round cap, so there is no runtime concern today — but if the catalog grows
+  (esp. the larger Medium/elite boards from the Med finding above), the proof-suite runtime could climb. Optional:
+  replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model).
+
 ## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0 open `[Review][Patch]`; 1 open

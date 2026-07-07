@@ -37,11 +37,12 @@ extends RefCounted
 # ⭐ RNG DISCIPLINE (AC4 — the determinism guard): the driver draws gameplay RNG ONLY through the injected run-level
 # RngStreamSet, on the `combat` stream (via AttackCommand's existing draws — the shield_block roll / a proc weapon). It
 # NEVER calls randi/randf, constructs a fresh RandomNumberGenerator, or opens a new stream. A hero with NO support and a
-# no-proc weapon (the ranger bow / a plain sword) draws ZERO `combat` RNG. A warrior shield (defender_support) engages
-# the seeded shield_block roll; a pyromancer tome (attacker_support) adds the +1 staff bonus — the INTENTIONAL,
-# reproducible AC4 change on the CLASS path. The support is threaded into BOTH AttackCommand slots (a hero carries ONE
-# off-hand): the tome activates only in the attacker slot, the shield only in the defender slot; each is a legal no-op
-# in the other slot.
+# no-proc weapon (the ranger bow / a plain sword) draws ZERO `combat` RNG. A pyromancer tome (the hero's ATTACKER
+# support) adds the +1 staff bonus to the hero's own attacks; a warrior shield (the hero's DEFENDER support) engages the
+# seeded shield_block roll on INCOMING enemy attacks — the shield-protects-its-OWNER seam (the hero's shield NEVER lands
+# on the enemy the hero strikes). Both are the INTENTIONAL, reproducible AC4 draw on the CLASS path. The hero's own
+# AttackCommand carries the support ONLY in the attacker slot (tome bonus); the shield is threaded into the enemy phase
+# as the DEFENDER support (EnemyTurnResolver -> EnemyCommandAdapter), where an enemy hit on the hero rolls the block.
 #
 # ⭐ IT ALWAYS TERMINATES: a bounded round cap (MAX_ROUNDS) guards a non-progressing board. On the cap it returns a
 # structured `live_combat_did_not_resolve` (fail-loud) carrying the round count — a caller treats an unwinnable seed as
@@ -93,18 +94,19 @@ func _init(enemy_repository: EnemyRepository = null, weapon_repository: WeaponRe
 
 # Resolve a live combat from a generated level payload's board snapshot to a TERMINAL CombatOutcomeState, driving the
 # STRENGTHENED LoS-aware hero. Same signature shape as LiveCombatResolver.resolve, with the class-kit `hero_support` as
-# an ADDITIVE trailing param (null = the neutral no-support path). Returns ok with { outcome, is_victory, is_defeat,
-# rounds, board, outcome_state } — or a structured error (a rejected board restore / affinity apply / unknown weapon /
-# unresolved fight) with ZERO partial progression.
+# an ADDITIVE TRAILING param (null = the neutral no-support path) — placed LAST, mirroring
+# InteractiveCombatSession.begin's ordering (the two sibling drivers keep `hero_support` in the SAME slot). Returns ok
+# with { outcome, is_victory, is_defeat, rounds, board, outcome_state } — or a structured error (a rejected board restore /
+# affinity apply / unknown weapon / unresolved fight) with ZERO partial progression.
 func resolve(
 	board_snapshot: Dictionary,
 	entrance: Dictionary,
 	streams: RngStreamSet,
 	hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP,
 	hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON,
-	hero_support: SupportDefinition = null,
 	affinity_id: StringName = AffinityDefinition.AFFINITY_NONE,
-	affinity_repository: AffinityRepository = null
+	affinity_repository: AffinityRepository = null,
+	hero_support: SupportDefinition = null
 ) -> ActionResult:
 	if streams == null:
 		return _error(&"invalid_streams")
@@ -162,7 +164,10 @@ func resolve(
 	# The pending-telegraph list is SHARED with the context so the seer marks are visible to the detonation-dodge policy.
 	var pending_telegraphs: Array[Dictionary] = []
 	var context: TacticalActionContext = TacticalActionContext.new(board, turn_state, streams, pending_telegraphs)
-	var enemy_resolver: EnemyTurnResolver = EnemyTurnResolver.new(_enemy_repository, HERO_ID)
+	# Story 12.2 (AC3 — the hero-defense seam): the hero's loadout support is the DEFENDER support on the enemy phase — a
+	# warrior shield engages the seeded shield_block roll on INCOMING enemy attacks (it protects its OWNER). The hero's own
+	# attacks carry only the ATTACKER support (a tome bonus); the shield never lands on the enemy the hero strikes.
+	var enemy_resolver: EnemyTurnResolver = EnemyTurnResolver.new(_enemy_repository, HERO_ID, hero_support)
 	var outcome_state: CombatOutcomeState = CombatOutcomeState.new()
 	var event_log: Array[DomainEvent] = []
 	var is_ranged: bool = weapon.attack_range >= 2
@@ -229,10 +234,13 @@ func _drive_hero_turn(
 		if hero == null or hero.is_dead():
 			return ActionResult.ok([])
 
-	# (2) Attack the best in-range aligned enemy from the (possibly new) position.
+	# (2) Attack the best in-range aligned enemy from the (possibly new) position. The hero's support is the ATTACKER
+	# support ONLY (a pyromancer tome adds its +1 staff bonus); the DEFENDER slot is null — the hero's shield never
+	# protects the enemy it strikes. The shield instead protects the HERO on the enemy phase (the hero-defense seam,
+	# threaded into EnemyTurnResolver as the defender support).
 	var target: TacticalEntityState = _best_attackable_enemy(board, weapon)
 	if target != null:
-		var attack: AttackCommand = AttackCommand.new(HERO_ID, target.position, weapon, hero_support, hero_support)
+		var attack: AttackCommand = AttackCommand.new(HERO_ID, target.position, weapon, hero_support, null)
 		if attack.validate(context).succeeded:
 			var attack_result: ActionResult = attack.execute(context)
 			if attack_result.is_error():

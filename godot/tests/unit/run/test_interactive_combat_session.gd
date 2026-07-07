@@ -223,13 +223,15 @@ func _zero_enemy_board_begins_already_victorious() -> void:
 
 # ---- Story 12.2 (AC3/AC4): the class-kit loadout support threads through the tap loop -------------
 
-# The seated class-kit SHIELD support engages the seeded shield_block `combat` roll on a TAP-committed attack (the
-# on-screen path carries the class off-hand). The session STORES the loadout support (begin's hero_support param) and
-# uses it as the default attacker+defender support on tap_attack — so a warrior's shield block chance is live on screen,
-# exactly as the reference driver proves. The block roll is the INTENTIONAL, seeded AC4 class-path draw.
+# The seated class-kit SHIELD support engages the seeded shield_block `combat` roll when an ENEMY attacks the hero on the
+# TAP-driven path (the on-screen path carries the class off-hand; the shield protects its OWNER — the hero-defense seam).
+# The session STORES the loadout support (begin's hero_support param) and seats it on the enemy resolver as the defender
+# support — so a warrior's shield block chance is live on screen, exactly as the reference driver proves. The block roll
+# is the INTENTIONAL, seeded AC4 class-path draw (drawn on the enemy phase, synced back to the injected run-level stream).
 func _loadout_shield_support_engages_the_shield_block_combat_roll_through_the_tap_loop() -> void:
-	# A hero ADJACENT to a durable (10-HP) enemy, armed with the class SHIELD loadout. A committed sword attack rolls the
-	# shield_block on the `combat` stream (the enemy survives the first hit so the block roll is engaged).
+	# A hero ADJACENT to a durable (10-HP) iron_cultist, armed with the class SHIELD loadout. The hero attacks (does not
+	# kill it), then the enemy phase runs and the adjacent cultist melee-attacks the SHIELDED hero -> the shield_block roll
+	# fires on the `combat` stream (the shield protects its owner on incoming enemy hits).
 	var snapshot: Dictionary = _durable_adjacent_duel_snapshot()
 	var shield: SupportDefinition = SupportRepository.create_baseline_repository().get_support(&"shield")
 	var session: InteractiveCombatSession = InteractiveCombatSession.new()
@@ -238,11 +240,12 @@ func _loadout_shield_support_engages_the_shield_block_combat_roll_through_the_ta
 	assert_equal(String(session.loadout_support().support_id), String(SupportDefinition.SUPPORT_SHIELD), "The session STORES the class-kit shield loadout support.")
 
 	var target: Vector2i = Vector2i(2, 1)
-	# Two taps: arm, then commit the sword attack (the caller passes NO support -> the session inherits the seated shield).
+	# Two taps: arm, then commit the sword attack. The committed attack advances the turn -> the enemy phase runs, and the
+	# adjacent cultist attacks the shielded hero -> the shield_block roll engages (the hero-defense seam).
 	session.tap_attack(target)
 	session.tap_attack(target)
-	# The committed attack engaged a shield_block roll on the `combat` stream (the intentional class-path draw).
-	assert_true(_shield_block_roll_count(session.event_log()) > 0, "A tap-committed attack with the class shield loadout engages the shield_block `combat` roll (the on-screen class-path draw).")
+	# The incoming enemy attack against the shielded hero engaged a shield_block roll on the `combat` stream.
+	assert_true(_shield_block_roll_count(session.event_log()) > 0, "An enemy attack against the class-shield hero engages the shield_block `combat` roll on the tap path (the shield protects its owner).")
 
 
 # The DEFAULT (no loadout support) tap attack stays byte-identical to a session begun with an explicit null support —
@@ -410,8 +413,9 @@ func _empty_board_snapshot() -> Dictionary:
 	return board.to_snapshot()
 
 
-# A tiny 4x3 board: WALL border, entrance(1,1), a DURABLE 10-HP enemy adjacent at (2,1). A single sword hit does not kill
-# it, so the shield_block roll (defender_support) is engaged on the committed attack (the enemy survives to be blocked).
+# A tiny 4x3 board: WALL border, entrance(1,1), a DURABLE 10-HP iron_cultist adjacent at (2,1). A single sword hit does
+# not kill it, so it survives the hero's attack and melee-attacks the SHIELDED hero on the enemy phase — engaging the
+# shield_block roll on the hero's DEFENDER support (the shield protects its owner on incoming hits — the hero-defense seam).
 func _durable_adjacent_duel_snapshot() -> Dictionary:
 	var width: int = 4
 	var height: int = 3

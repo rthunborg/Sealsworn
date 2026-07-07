@@ -37,15 +37,14 @@ extends RefCounted
 # save). The hero loadout is DRIVER-SUPPLIED (DEFAULT_HERO_HP 60 / sword by default).
 #
 # ⭐ STORY 12.2 (AC1/AC3/AC4) — the CLASS-KIT LOADOUT is now threaded in: begin(...) additively accepts the loadout
-# hero_support (the class off-hand — warrior shield / pyromancer tome / ranger none). The session STORES it and uses it
-# as the DEFAULT attacker+defender support on every tap_attack the caller does not override. A warrior shield engages
-# the seeded shield_block roll on the `combat` stream in AttackCommand; a pyromancer tome adds the +1 staff bonus — the
+# hero_support (the class off-hand — warrior shield / pyromancer tome / ranger none). The session STORES it and applies
+# it the way a hero carries ONE off-hand: the hero's OWN attacks (tap_attack) carry it as the ATTACKER support (a
+# pyromancer tome adds its +1 staff bonus), and it is seated on the enemy resolver as the DEFENDER support so an INCOMING
+# enemy attack on the hero rolls the seeded shield_block on the `combat` stream (a warrior shield protects its OWNER —
+# the hero-defense seam). The hero's shield NEVER lands on the enemy the hero strikes. The block / bonus is the
 # INTENTIONAL, seeded, reproducible AC4 change on the CLASS path (re-pin any live-combat fixture it moves). The DEFAULT
 # (null support / the neutral SUPPORT_NONE) is the byte-identical no-support path — it never carries a `combat` draw, so
-# the neutral default / auto-resolve / generator paths stay byte-identical. The support is threaded into BOTH the
-# attacker and defender slots because a hero carries ONE off-hand: the tome activates only in the attacker slot (bonus
-# damage), the shield only in the defender slot (the block roll); each support is a legal no-op in the OTHER slot (a
-# shield has 0 bonus_damage; a tome is not SUPPORT_SHIELD and carries 0 armor), so no cross-slot side effect appears.
+# the neutral default / auto-resolve / generator paths stay byte-identical.
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
@@ -93,8 +92,9 @@ var _enemy_resolver: EnemyTurnResolver = null
 var _outcome_state: CombatOutcomeState = null
 var _weapon: WeaponDefinition = null
 # Story 12.2 (AC3) — the hero's class-kit loadout support (the off-hand — shield/tome; null for the neutral SUPPORT_NONE
-# or a kit-less run). Set by begin(); used as the DEFAULT attacker+defender support on tap_attack when the caller does
-# not pass its own. Null keeps the tap loop byte-identical to the plain (no-support) session.
+# or a kit-less run). Set by begin(); used as the hero's ATTACKER support on tap_attack (a tome bonus) AND seated on the
+# enemy resolver as the DEFENDER support (a shield block on incoming enemy attacks — the hero-defense seam). Null keeps
+# the tap loop byte-identical to the plain (no-support) session.
 var _loadout_support: SupportDefinition = null
 var _event_log: Array[DomainEvent] = []
 var _affinity_id: StringName = AffinityDefinition.AFFINITY_NONE
@@ -188,7 +188,10 @@ func begin(
 	_weapon = weapon
 	_turn_state = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, HERO_ID)
 	_context = TacticalActionContext.new(_board, _turn_state, streams, [])
-	_enemy_resolver = EnemyTurnResolver.new(_enemy_repository, HERO_ID)
+	# Story 12.2 (AC3 — the hero-defense seam): the seated loadout support is the DEFENDER support on the enemy phase — a
+	# warrior shield engages the seeded shield_block roll on INCOMING enemy attacks (it protects its OWNER on screen). A
+	# null loadout support keeps the enemy phase byte-identical to the plain (no-support) session.
+	_enemy_resolver = EnemyTurnResolver.new(_enemy_repository, HERO_ID, _loadout_support)
 	_outcome_state = CombatOutcomeState.new()
 	_event_log = []
 	_begun = true
@@ -300,15 +303,15 @@ func tap_attack(
 	if is_terminal():
 		return _commit_flow.clear_for_mode_switch(&"session_terminal")
 
-	# Story 12.2 (AC3) — default BOTH support slots to the stored class-kit loadout support when the caller does not
-	# override (the on-screen shell / the scripted proof driver pass none and inherit the seated class off-hand). A hero
-	# carries ONE off-hand: the tome activates only as attacker_support (bonus damage), the shield only as
-	# defender_support (the seeded shield_block roll); each is a legal no-op in the other slot, so no cross-slot effect
-	# leaks. A null loadout support keeps this byte-identical to the plain no-support tap.
+	# Story 12.2 (AC3) — default the ATTACKER support to the stored class-kit loadout support when the caller does not
+	# override (the on-screen shell / the scripted proof driver pass none and inherit the seated class off-hand). The
+	# hero's OWN attack carries the support only in the ATTACKER slot: a pyromancer tome adds its +1 staff bonus. The
+	# DEFENDER slot is the ENEMY the hero strikes (no support by default) — the hero's shield NEVER protects the enemy; it
+	# protects the HERO on the enemy phase (seated on _enemy_resolver as the defender support — the hero-defense seam). A
+	# null loadout support keeps this byte-identical to the plain no-support tap.
 	var resolved_attacker_support: SupportDefinition = attacker_support if attacker_support != null else _loadout_support
-	var resolved_defender_support: SupportDefinition = defender_support if defender_support != null else _loadout_support
 	var flow_result = _commit_flow.tap_attack_target(
-		_context, HERO_ID, target_cell, _weapon, resolved_attacker_support, resolved_defender_support, _command_bridge
+		_context, HERO_ID, target_cell, _weapon, resolved_attacker_support, defender_support, _command_bridge
 	)
 	# A COMMITTED attack (the second confirming tap that executed through the bridge) advances the turn -> run the enemy
 	# phase. An arm/cancel/reject does not (the fight is untouched).

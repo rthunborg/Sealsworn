@@ -17,13 +17,15 @@ extends "res://tests/unit/test_case.gd"
 #           winnability tension the story pins — an HP swap alone fails; the strengthened driver is required).
 #   - AC4 — DETERMINISM: the SAME (seed, class) -> the SAME terminal outcome + round count + a byte-identical event log.
 #   - AC4 — the ranger (no support, no-proc bow) draws ZERO `combat` RNG; the warrior shield ENGAGES the seeded
-#           shield_block roll on the `combat` stream (the INTENTIONAL class-path draw); RngStreamSet.required_streams()
+#           shield_block roll on the `combat` stream — on INCOMING enemy attacks, the shield-protects-its-OWNER seam (the
+#           block draw runs on the enemy phase and is synced back to the run-level stream); RngStreamSet.required_streams()
 #           stays 7 (no new stream / draw site).
-#   - AC3 — per-class DISTINCTNESS on the SAME seed: warrior fights emit shield_block combat rolls; pyromancer fights
-#           emit tome +1 bonus damage; ranger fights emit neither — a demonstrable, non-cosmetic per-class difference
-#           (the direct input to 10.4's class-comparison AC).
+#   - AC3 — per-class DISTINCTNESS on the SAME seed: warrior fights emit shield_block combat rolls (a block on incoming
+#           enemy hits); pyromancer fights emit tome +1 bonus damage (on the hero's own attacks); ranger fights emit
+#           neither — a demonstrable, non-cosmetic per-class difference (the direct input to 10.4's class-comparison AC).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const CombatOutcomeState = preload("res://scripts/tactical/outcomes/combat_outcome_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
@@ -135,6 +137,7 @@ func _naive_focus_fire_dies_at_18_where_the_strengthened_driver_wins() -> void:
 
 	var strengthened: ActionResult = ReferenceCombatDriver.new().resolve(
 		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(4242), CLASS_HP, &"sword",
+		AffinityDefinition.AFFINITY_NONE, null,
 		SupportRepository.create_baseline_repository().get_support(&"shield")
 	)
 	assert_true(strengthened.succeeded and bool(strengthened.metadata.get("is_victory")), "The STRENGTHENED driver WINS the same seed + 18-HP warrior loadout (the retro-T2 winnable hero).")
@@ -148,7 +151,7 @@ func _an_unwinnable_seed_fails_loud_for_triage() -> void:
 	# the round cap. The driver FAILS LOUD (live_combat_did_not_resolve carrying the round count), never a fabricated
 	# outcome — the triage path a caller treats as a hard combat error (like a generation failure).
 	var result_value: ActionResult = ReferenceCombatDriver.new().resolve(
-		_sealed_snapshot(), {"x": 1, "y": 1}, RngStreamSet.new(1), CLASS_HP, &"sword", null
+		_sealed_snapshot(), {"x": 1, "y": 1}, RngStreamSet.new(1), CLASS_HP, &"sword"
 	)
 	assert_true(result_value.is_error(), "An unwinnable (sealed) fixture must FAIL LOUD (never a fabricated outcome).")
 	assert_equal(result_value.error_code, &"live_combat_did_not_resolve", "The fail-loud uses the stable live_combat_did_not_resolve code (the triage signal).")
@@ -183,22 +186,24 @@ func _ranger_draws_zero_combat_rng_and_warrior_shield_engages_the_combat_stream(
 	var ranger_streams: RngStreamSet = RngStreamSet.new(4242)
 	var ranger_before: Dictionary = ranger_streams.to_snapshot()
 	var ranger: ActionResult = ReferenceCombatDriver.new().resolve(
-		generation.payload.get("board", {}), generation.payload.get("entrance", {}), ranger_streams, CLASS_HP, &"bow", null
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), ranger_streams, CLASS_HP, &"bow"
 	)
 	assert_true(ranger.succeeded and bool(ranger.metadata.get("is_victory")), "Setup: the ranger should win seed 4242.")
 	assert_equal(ranger_streams.to_snapshot(), ranger_before, "The ranger (no support, no-proc bow) draws ZERO combat RNG (the injected stream set is unchanged — the byte-identical no-support path).")
 
-	# The warrior shield ENGAGES the seeded shield_block roll on the `combat` stream — the INTENTIONAL class-path draw.
-	# The injected stream ADVANCES (a real draw), and the event log carries shield_block combat rolls.
+	# The warrior shield ENGAGES the seeded shield_block roll on the `combat` stream — the INTENTIONAL class-path draw, now
+	# on INCOMING enemy attacks (the shield protects its OWNER). The enemy-phase block draw is synced back to the run-level
+	# stream, so the injected stream ADVANCES (a real, seeded draw) and the event log carries shield_block combat rolls.
 	var warrior_streams: RngStreamSet = RngStreamSet.new(4242)
 	var warrior_before: Dictionary = warrior_streams.to_snapshot()
 	var warrior: ActionResult = ReferenceCombatDriver.new().resolve(
 		generation.payload.get("board", {}), generation.payload.get("entrance", {}), warrior_streams, CLASS_HP, &"sword",
+		AffinityDefinition.AFFINITY_NONE, null,
 		supports.get_support(&"shield")
 	)
 	assert_true(warrior.succeeded and bool(warrior.metadata.get("is_victory")), "Setup: the warrior should win seed 4242.")
-	assert_true(warrior_streams.to_snapshot() != warrior_before, "The warrior shield ENGAGES the `combat` stream (the injected stream ADVANCES — the INTENTIONAL class-path draw).")
-	assert_true(_shield_block_roll_count(warrior.events) > 0, "The warrior fight emits shield_block combat rolls (the seeded off-hand draw).")
+	assert_true(warrior_streams.to_snapshot() != warrior_before, "The warrior shield ENGAGES the `combat` stream (the run-level stream ADVANCES — the INTENTIONAL class-path draw, synced back from the enemy phase).")
+	assert_true(_shield_block_roll_count(warrior.events) > 0, "The warrior fight emits shield_block combat rolls (the seeded off-hand draw on incoming enemy attacks).")
 
 
 func _no_new_rng_stream_is_added() -> void:
@@ -212,8 +217,10 @@ func _no_new_rng_stream_is_added() -> void:
 func _the_three_classes_are_tactically_distinct_on_the_same_seed() -> void:
 	# On the SAME seed, each class produces a demonstrable, non-cosmetic difference in the RESOLVED fight (the direct
 	# input to 10.4's class-comparison AC):
-	#   - warrior sword+shield -> shield_block `combat` rolls present (block events); melee grind (a distinct round count).
-	#   - pyromancer staff+tome -> tome +1 bonus damage present (support_bonus_damage > 0); NO shield_block.
+	#   - warrior sword+shield -> shield_block `combat` rolls present (a block chance on INCOMING enemy hits — the shield
+	#     protects its OWNER); melee grind (a distinct round count).
+	#   - pyromancer staff+tome -> tome +1 bonus damage present on the hero's own attacks (support_bonus_damage > 0); NO
+	#     shield_block.
 	#   - ranger bow+none -> NEITHER a shield_block NOR a tome bonus (the real no-op support).
 	var generation: GenerationResult = _generate(4242)
 	var supports: SupportRepository = SupportRepository.create_baseline_repository()
@@ -223,14 +230,14 @@ func _the_three_classes_are_tactically_distinct_on_the_same_seed() -> void:
 	var ranger: ActionResult = _drive(generation, 4242, PLAYABLE_CLASSES[2], supports)
 	assert_true(warrior.succeeded and pyromancer.succeeded and ranger.succeeded, "Setup: all three classes resolve seed 4242.")
 
-	# Warrior: the shield engages block rolls; the others do not.
-	assert_true(_shield_block_roll_count(warrior.events) > 0, "WARRIOR is distinct: its shield engages shield_block `combat` rolls (a block chance on the melee trade).")
+	# Warrior: the shield engages block rolls on incoming enemy attacks; the others do not.
+	assert_true(_shield_block_roll_count(warrior.events) > 0, "WARRIOR is distinct: its shield engages shield_block `combat` rolls (a block chance on INCOMING enemy hits — the shield protects its owner).")
 	assert_equal(_shield_block_roll_count(pyromancer.events), 0, "PYROMANCER carries NO shield_block roll (it wields a tome, not a shield).")
 	assert_equal(_shield_block_roll_count(ranger.events), 0, "RANGER carries NO shield_block roll (its support is the real no-op none).")
 
-	# Pyromancer: the tome adds +1 bonus damage on its staff attacks; the others deal no support bonus.
-	assert_true(_max_support_bonus_damage(pyromancer.events) > 0, "PYROMANCER is distinct: its tome adds +1 bonus damage to staff attacks (support_bonus_damage > 0).")
-	assert_equal(_max_support_bonus_damage(warrior.events), 0, "WARRIOR deals NO support bonus damage (a shield adds armor/block, not bonus damage).")
+	# Pyromancer: the tome adds +1 bonus damage on its OWN staff attacks; the others deal no support bonus.
+	assert_true(_max_support_bonus_damage(pyromancer.events) > 0, "PYROMANCER is distinct: its tome adds +1 bonus damage to its own staff attacks (support_bonus_damage > 0).")
+	assert_equal(_max_support_bonus_damage(warrior.events), 0, "WARRIOR deals NO support bonus damage (a shield adds armor/block on defense, not bonus damage).")
 	assert_equal(_max_support_bonus_damage(ranger.events), 0, "RANGER deals NO support bonus damage (the no-op none support).")
 
 	# The resolved fights differ in shape (round count) — a demonstrable per-class difference, not merely a label.
@@ -246,13 +253,13 @@ func _the_three_classes_are_tactically_distinct_on_the_same_seed() -> void:
 # ---- error paths ----------------------------------------------------------------------------------
 
 func _rejects_a_corrupt_board_snapshot_and_unknown_weapon() -> void:
-	var corrupt: ActionResult = ReferenceCombatDriver.new().resolve({"width": 3}, {"x": 0, "y": 0}, RngStreamSet.new(1), CLASS_HP, &"sword", null)
+	var corrupt: ActionResult = ReferenceCombatDriver.new().resolve({"width": 3}, {"x": 0, "y": 0}, RngStreamSet.new(1), CLASS_HP, &"sword")
 	assert_true(corrupt.is_error(), "A corrupt board snapshot must be rejected (no fabricated outcome).")
 	assert_equal(corrupt.error_code, &"invalid_board_snapshot", "A rejected board uses the stable invalid_board_snapshot code.")
 
 	var generation: GenerationResult = _generate(4242)
 	var unknown: ActionResult = ReferenceCombatDriver.new().resolve(
-		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(1), CLASS_HP, &"not_a_weapon", null
+		generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(1), CLASS_HP, &"not_a_weapon"
 	)
 	assert_true(unknown.is_error(), "An unknown hero weapon must be rejected.")
 	assert_equal(unknown.error_code, &"unknown_hero_weapon", "A missing weapon uses the stable unknown_hero_weapon code.")
@@ -264,12 +271,16 @@ func _drive(generation: GenerationResult, seed_value: int, playable: Dictionary,
 	var support: SupportDefinition = null
 	if StringName(playable["support_id"]) != SupportDefinition.SUPPORT_NONE:
 		support = supports.get_support(StringName(playable["support_id"]))
+	# hero_support is the TRAILING param (aligned with InteractiveCombatSession.begin); the affinity pair is passed as its
+	# neutral default so the trailing support lands in the right slot.
 	return ReferenceCombatDriver.new().resolve(
 		generation.payload.get("board", {}),
 		generation.payload.get("entrance", {}),
 		RngStreamSet.new(seed_value),
 		CLASS_HP,
 		StringName(playable["weapon_id"]),
+		AffinityDefinition.AFFINITY_NONE,
+		null,
 		support
 	)
 
