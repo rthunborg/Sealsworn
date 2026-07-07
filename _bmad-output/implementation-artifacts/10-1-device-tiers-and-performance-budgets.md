@@ -4,7 +4,7 @@ baseline_commit: 6e5a7be9d491ec83672dd2e37b66c052f5876e03
 
 # Story 10.1: Device Tiers and Performance Budgets
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
