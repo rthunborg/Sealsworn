@@ -98,13 +98,26 @@ func _drive_current_stage() -> void:
 		# player's taps (routed into the session via the board presenter); it does NOT resolve the fight here.
 		var setup = orchestrator.begin_interactive_combat_node(current, flow.hero_hp())
 		if setup.is_error():
+			# M1-symmetric fix (Story 12.1 review): a live-combat SETUP error (level_generation_failed /
+			# darkness_fairness_violation / affinity_assignment_failed / interactive_combat_begin_failed) leaves the run
+			# NON-TERMINAL with no fight to drive, so a bare _render_between_levels + return would STRAND the player on the
+			# shell with no navigation (the same soft-lock class the boss branch's M1 fix guards). FAIL LOUD (log the error,
+			# same as the boss branch) then surface the recoverable dead-end via _route_to_dead_end so the player boots back
+			# to the run-end/recovery landing rather than soft-locking. The setup error stays loud/structural upstream; this
+			# recovery only prevents the run stranding.
 			if has_node("/root/Diagnostics"):
 				Diagnostics.info(&"ui", &"gameplay_shell_live_node_setup_failed", {"error_code": String(setup.error_code)})
 			_render_between_levels(run)
+			_route_to_dead_end(flow)
 			return
 		var session: InteractiveCombatSession = setup.metadata.get("session")
 		if session == null:
+			# A null session with a non-error setup is a structural contract break (begin returns a session on success);
+			# treat it as the same non-terminal strand class and route to the recoverable dead-end (never a silent return).
+			if has_node("/root/Diagnostics"):
+				Diagnostics.info(&"ui", &"gameplay_shell_live_node_setup_failed", {"error_code": "missing_session"})
 			_render_between_levels(run)
+			_route_to_dead_end(flow)
 			return
 		var affinity_id: StringName = StringName(String(setup.metadata.get("affinity_id", "")))
 		_active_session = session

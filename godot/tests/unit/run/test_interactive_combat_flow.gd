@@ -43,6 +43,7 @@ func run() -> Dictionary:
 	_interactive_defeat_finish_auto_fires_the_hero_death_source()
 	_interactive_path_resolves_depth_0_before_any_route_advance()
 	_finish_rejects_a_non_terminal_session()
+	_begin_fails_closed_on_a_setup_error_and_leaves_the_run_recoverable()
 	_auto_resolve_default_is_unperturbed_by_the_interactive_seam()
 	_default_run_to_completion_is_byte_identical_to_a_second_run()
 	_invariants_hold_no_new_stream_no_new_event()
@@ -161,6 +162,42 @@ func _finish_rejects_a_non_terminal_session() -> void:
 	assert_equal(finish.error_code, &"interactive_combat_not_terminal", "The reject uses the stable interactive_combat_not_terminal code.")
 	assert_false(orchestrator.run.route.cleared_node_ids.has(orchestrator.run.route.current_node_id), "A rejected finish does NOT clear the node.")
 	assert_false(orchestrator.run.is_terminal(), "A rejected finish does NOT end the run.")
+
+
+# ---- Story 12.1 review: the SETUP-error contract the shell recovery routes off (M1-symmetric) -----
+
+func _begin_fails_closed_on_a_setup_error_and_leaves_the_run_recoverable() -> void:
+	# Story 12.1 review (M1-symmetric fix): begin_interactive_combat_node fail-CLOSES on a setup error, returning a
+	# genuine ActionResult.is_error() (a stable error_code) and leaving the run NON-TERMINAL with the node NOT cleared —
+	# the EXACT precondition under which the gameplay shell now mirrors the boss branch's _route_to_dead_end recovery
+	# (a non-terminal run with no fight to drive would otherwise STRAND the player on the shell). This proves the seam the
+	# shell keys its recovery off (setup.is_error()) behaves symmetrically to auto_play_boss_fight's error contract: a
+	# structural error surfaces + STOPS with zero partial progression, so the shell's recovery routing is well-founded.
+	# (Presenter routing itself is verified by construction + the compile guardrail — no SceneTree test per project rules;
+	# this test pins the orchestrator-seam half the recovery depends on.)
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(LIVE_SEED, false).succeeded, "Setup: start should succeed.")
+	var start_node: RouteNode = orchestrator.run.route.node_by_id(orchestrator.run.route.current_node_id)
+	assert_false(orchestrator.run.is_terminal(), "Setup: the fresh run is non-terminal on the parked node.")
+	assert_true(orchestrator.run.route.cleared_node_ids.is_empty(), "Setup: the parked node starts uncleared.")
+
+	# A null node is a fail-closed setup error (the general invalid-input case the shell's setup.is_error() branch covers).
+	var null_setup: ActionResult = orchestrator.begin_interactive_combat_node(null)
+	assert_true(null_setup.is_error(), "A null combat node fails the interactive setup closed (the shell routes this to the dead-end).")
+	assert_equal(null_setup.error_code, &"invalid_combat_node", "The null-node setup uses the stable invalid_combat_node code.")
+	# Zero partial progression — the run is left exactly recoverable (non-terminal, node uncleared, still structurally valid):
+	# this is why the shell mirrors the boss branch (_route_to_dead_end) instead of stranding — the run can be booted back
+	# to the recovery landing, it did not silently advance or clear.
+	assert_false(orchestrator.run.is_terminal(), "A failed setup leaves the run NON-TERMINAL (the recoverable-strand precondition the shell routes off).")
+	assert_true(orchestrator.run.route.cleared_node_ids.is_empty(), "A failed setup clears NO node (zero partial progression).")
+	assert_true(orchestrator.run.validate().succeeded, "A failed setup leaves the run structurally valid (recoverable).")
+
+	# An unseated orchestrator (no active run) is likewise a fail-closed setup error (the no_active_run guard) — the shell's
+	# setup.is_error() branch covers the same non-terminal strand class regardless of the specific upstream cause.
+	var unseated: RunOrchestrator = RunOrchestrator.new()
+	var unseated_setup: ActionResult = unseated.begin_interactive_combat_node(start_node)
+	assert_true(unseated_setup.is_error(), "An unseated interactive setup fails closed (no active run).")
+	assert_equal(unseated_setup.error_code, &"no_active_run", "The unseated setup uses the stable no_active_run code.")
 
 
 # ---- AC4: the auto-resolve default is unperturbed by the interactive seam -------------------------
