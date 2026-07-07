@@ -30,7 +30,7 @@ repeatedly flagged as a MANDATORY gate (lines 436, 444, 742, 832, 920, 934, 944,
 4. The build-profile gating mechanism + the no-production-cheat-tools guarantee + the pre-export validation
    checklist item (AC5).
 5. A consolidated "Measurement Availability Gaps" ledger (each gap → owning follow-up) and the Epic-10 gate
-   handoff (10.2 / 10.6 / 10.7) — Section 7 and Section 8.
+   handoff (10.2 / 10.6 / 10.7) — Section 6 and Section 7.
 
 **Out of scope (explicitly NOT this story):** any change to a gameplay command, event, RNG stream,
 `RunSnapshot` / `ProfileSnapshot` / `SettingsSnapshot` schema, save key, generator / route / finale
@@ -48,7 +48,7 @@ view models; headless simulation is render/audio/scene-free). The measurement ha
 first with Windows desktop/laptop parity (NFR1 / NFR3). `godot/export_presets.cfg` already carries three
 presets: **Windows Desktop MVP** (`preset.0`), **Android MVP** (`preset.1`), and an **iOS MVP** scaffold
 (`preset.2`, `runnable=false`, empty signing identity + icons — iOS packaging remains deferred until
-macOS/Xcode access per the project-context Platform rule; recorded as a tier-source gap in Section 7, not a
+macOS/Xcode access per the project-context Platform rule; recorded as a tier-source gap in Section 6, not a
 blocker). The MVP is offline-first single-player: no accounts, cloud, telemetry, or live-service dependency
 (NFR11).
 
@@ -92,7 +92,7 @@ explicit availability gap (AC2 permits this; AC4 conditions battery on "when mea
 - **Battery/performance note:** target **stable 60 FPS where feasible**, gracefully degrading to 30 FPS
   under load with input still responsive (NFR6). Battery target ≤ 15% over 30 minutes.
 - **Named measurement source:** **`availability gap` → physical-device measurement pass** (Android now;
-  iOS after the macOS/Xcode gap in Section 7 is discharged). No mid-tier device/simulator provisioned here.
+  iOS after the macOS/Xcode gap in Section 6 is discharged). No mid-tier device/simulator provisioned here.
 
 ### 2.3 High tier — current flagship phone/tablet
 
@@ -137,7 +137,7 @@ explicit availability gap (AC2 permits this; AC4 conditions battery on "when mea
 | 1 | **Generated level load < 3 s** | NFR4 | `LevelGenerator.generate(...)` — the bounded-retry pipeline (worst case ≤ `MAX_GENERATION_ATTEMPTS` = 8, kept inside the < 3 s budget by design). | **Yes** — wall-clock over a seed sample. |
 | 2 | **UI preview response < 100 ms** | NFR5 | The tactical preview view-models + command bridge (`TacticalMovementPreview` / `TacticalAttackPreview` via `TacticalCommandBridge`) — pure reads, no RNG. | **Domain compute: yes** (the representative combat-step LoS/command timings are the proxy). **On-device render-to-glass latency: gap.** |
 | 3 | **Selection response < 100 ms** | NFR5 | Same surface (selection / inspect intent). | **Domain compute: yes.** **On-device touch-to-feedback latency: gap.** |
-| 4 | **Stable 60 FPS where feasible / 30 FPS acceptable lower-end** | NFR6 | The live scene under `gameplay_shell.tscn` (Epic 11). | **No (headless)** — sustained frame stability is an on-device / windowed render-profiler concern; a headless run has no render frame loop. **Gap** (Section 7). |
+| 4 | **Stable 60 FPS where feasible / 30 FPS acceptable lower-end** | NFR6 | The live scene under `gameplay_shell.tscn` (Epic 11). | **No (headless)** — sustained frame stability is an on-device / windowed render-profiler concern; a headless run has no render frame loop. **Gap** (Section 6). |
 
 The budgets are encoded once, as constants, in `PerformanceBudgetReport`
 (`godot/scripts/diagnostics/performance_budget_report.gd`): `BUDGET_LEVEL_LOAD_MS = 3000`,
@@ -195,7 +195,7 @@ PASS**:
 These desktop numbers are the **Windows-desktop-parity headless-measurable budgets, MET with enormous
 margin**, and a strong lower bound for the mobile tiers (mobile CPUs are slower, but the absolute compute is
 so far inside budget that even a 100× slowdown on the weakest tier stays inside NFR4/NFR5 for the domain
-compute). They do NOT substitute for the on-device render/frame/latency numbers (Section 7 gaps).
+compute). They do NOT substitute for the on-device render/frame/latency numbers (Section 6 gaps).
 
 ## 4. Representative Run + Memory / Battery / Thermal Protocol (AC4)
 
@@ -242,7 +242,7 @@ During the representative run, sample:
 
 No physical low/mid/high phone, no simulator/emulator, and no physical mobile battery is provisioned in this
 environment. Therefore the **peak-memory-on-device, thermal-state, and battery-drain numbers are recorded as
-explicit `availability gap → physical-device measurement pass` notes** (Section 7). The protocol above is the
+explicit `availability gap → physical-device measurement pass` notes** (Section 6). The protocol above is the
 exact method a later physical-device pass follows, so each gap is dischargeable without re-designing the
 method. **No device number is invented** — the headless/desktop harness reports only what it can genuinely
 measure (Section 3.3), and everything else is an owned gap.
@@ -296,7 +296,7 @@ checklist"*, the pre-release-export checklist must include:
 - [ ] Confirm `PlatformServices` is still the local no-op (no telemetry/cloud sink wired).
 - [ ] Confirm no debug overlay / seed / fog / LoS viewer / cheat path is registered in the shipped scene tree.
 
-## 7. Measurement Availability Gaps (each gap → owning follow-up)
+## 6. Measurement Availability Gaps (each gap → owning follow-up)
 
 The honest-scope deliverable (mirroring 11.1's contract-gap ledger). Each gap names the gap, the tier/budget
 it affects, and the owning follow-up. The **10.6 MVP-readiness gate** decides whether a still-open gap is an
@@ -313,7 +313,7 @@ job is to make each gap explicit and dischargeable, not to close all of them.
 | G6 | No **physical mobile battery / thermal** measurement (no device / battery provisioned). | AC4 battery (≤ 15% / 30 min) + thermal-throttling proxy, mobile tiers. | The physical-device 30-minute representative-run pass (Section 4) reading battery % + OS thermal state. |
 | G7 | **iOS packaging deferred** — `preset.2` is a scaffold (`runnable=false`, empty signing identity + icons); iOS exports require macOS + Xcode (project-context Platform rule). | iOS-class mid/high tiers (AC2 source, iOS side). | Complete the iOS export (signing identity, icons, provisioning) once macOS/Xcode access is available, then run the on-device pass. |
 
-## 8. Epic-10 Gate Handoff and Cross-References
+## 7. Epic-10 Gate Handoff and Cross-References
 
 This document feeds the sibling Epic-10 readiness stories (their content is NOT implemented here — only the
 handoff is recorded):
@@ -324,7 +324,7 @@ handoff is recorded):
   agree on which seeds a level-load number is reported for.
 - **10.6 (MVP Readiness Gate and Playable-Build Preservation).** Consumes the **tier definitions + the four
   budget thresholds + the measured headless/desktop results (Section 3.3) + the availability-gaps ledger
-  (Section 7)**. The gate decides, per gap, "acceptable documented readiness limitation" vs "must discharge
+  (Section 6)**. The gate decides, per gap, "acceptable documented readiness limitation" vs "must discharge
   via a physical-device pass first."
 - **10.7 (Asset/Audio-Placeholder and UX-Readiness Gate).** Consumes the **perf/readability posture** (the
   NFR6 frame-stability + NFR7 phone-readability framing). The Flooded `_placeholder` electric-interaction
@@ -338,7 +338,7 @@ byte-identical. The harness is read-only, build-profile-gated, draws no gameplay
 domain/save state. The full headless suite stays green (adding only this story's passing harness-contract
 test).
 
-## 9. Change Log
+## 8. Change Log
 
 | Date | Version | Change | Author |
 |---|---|---|---|

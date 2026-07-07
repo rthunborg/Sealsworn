@@ -72,12 +72,17 @@ func _init(new_enabled: bool = false) -> void:
 
 # Record ONE measurement against its budget (AC3). Inert when disabled/release (records nothing). Draws
 # ZERO RNG, mutates nothing external. `measured_ms` is clamped to >= 0 (a negative is a caller/clock bug;
-# clamp rather than record a nonsense negative — the BossAttemptDiagnostics clamp discipline). `delta_ms`
-# is measured - budget (negative = headroom, positive = over budget); `passed` is measured <= budget (an
-# INCLUSIVE ceiling — a value exactly AT the budget passes, a hair over fails).
+# clamp rather than record a nonsense negative — the BossAttemptDiagnostics clamp discipline). `budget_ms`
+# MUST be strictly positive: a budget is a ceiling in ms, and a non-positive budget would yield a
+# meaningless `delta_ms` and a spurious PASS/FAIL verdict, so it fails LOUD (assert, dev-build only — the
+# report only runs under a debug build) rather than silently recording a nonsense record. Every current
+# call site passes a positive module-constant budget; the assert guards a future dynamic-budget caller.
+# `delta_ms` is measured - budget (negative = headroom, positive = over budget); `passed` is measured <=
+# budget (an INCLUSIVE ceiling — a value exactly AT the budget passes, a hair over fails).
 func record_measurement(system: String, subject: String, measured_ms: float, budget_ms: float) -> void:
 	if not enabled:
 		return
+	assert(budget_ms > 0.0, "PerformanceBudgetReport.record_measurement requires a strictly positive budget_ms (a non-positive budget yields a meaningless delta + verdict); got %f for %s/%s." % [budget_ms, system, subject])
 	var clamped_measured: float = maxf(0.0, measured_ms)
 	_records.append({
 		"system": system,

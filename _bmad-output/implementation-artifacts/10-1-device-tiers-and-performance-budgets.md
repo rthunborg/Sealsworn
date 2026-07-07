@@ -521,3 +521,35 @@ Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
 | Date | Change |
 |---|---|
 | 2026-07-07 | Story 10.1 implemented: authored the device-tiers + performance-budgets readiness plan (discharges canonical NFR20), added the build-profile-gated `PerformanceBudgetReport` measurement seam + `dump_performance_budgets.gd` headless report driver (reusing `LocalTimingRecorder` / `Epic1MicroCombatScenario` / `LevelGenerator.generate` — no parallel primitive) + the harness-contract unit test. Full suite 183 PASS / 0 FAIL; simulation byte-identical. Status → review. |
+
+## Review Findings
+
+**Round 1 of 3**
+
+Reviewer: gds-code-review (auto-gds delegate, Opus 4.8). Date: 2026-07-07. Scope: current-branch diff
+vs `main` (merge-base `3a8f3e3`), excluding `_bmad` / `_bmad-output` / cache / non-code files. Spec/story
+file: this file. Three adversarial layers (Blind-Hunter correctness, Edge-Case-Hunter branch/boundary,
+Acceptance-Auditor AC compliance) run against the three new GDScript files
+(`godot/scripts/diagnostics/performance_budget_report.gd`, `godot/tools/dump_performance_budgets.gd`,
+`godot/tests/unit/diagnostics/test_performance_budget_report.gd`), with the AC1/AC2/AC4 primary deliverable
+(`_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md`) audited for AC coverage.
+
+**Verdict: Approve.** All 5 AC groups met (AC1/AC2 tiers + RAM bands + named sources in doc §2; AC3 four
+budgets verbatim + measured live in doc §3 and the harness — the report driver runs end-to-end producing
+12/12 PASS with the actionable `[PASS|FAIL] system / subject: measured=… budget=… delta=…` diagnostic;
+AC4 20-min representative-run protocol + per-tier peak-memory budgets + battery target + gaps in doc §4/§7;
+AC5 `OS.is_debug_build()` gating + export-filter evidence verified — all three presets exclude
+`tools/**` + `tests/**` + `**/test_*.gd`, `PlatformServices` stays no-op). Full headless suite re-run
+**183 PASS / 0 `^FAIL`** (the six documented benign stderr negatives confirmed, not miscounted);
+`git diff --check` clean; simulation byte-identical (only 3 new files added, zero existing gameplay/save/
+RNG/content file touched). Signatures of every reused seam independently verified against source
+(`LevelGenerator.generate(request, recipes, enemies)`, `Epic1MicroCombatScenario.run_win_path(true)` →
+`metadata.timing_records`, `ActionResult`/`GenerationResult` fields, both `create_baseline_repository`
+factories, both baseline recipe ids). No parallel timing primitive was forked (retro §7 honored).
+
+Severity counts: **Critical 0 / High 0 / Medium 0 / Low 3.** No blocking findings. The Patch/Decision
+items below are non-blocking hardening/editorial nits recorded as action items; none gates the story.
+
+- [ ] [Review][Decision] Live report driver never measures a distinct `selection` response (nor the frame budgets) — `dump_performance_budgets.gd` records against `BUDGET_LEVEL_LOAD_MS` and `BUDGET_PREVIEW_RESPONSE_MS` only; `BUDGET_SELECTION_RESPONSE_MS`, `BUDGET_FRAME_60FPS_MS`, `BUDGET_FRAME_30FPS_MS` are exercised only by the unit test, not the live driver [godot/tools/dump_performance_budgets.gd:46,129-136]. This is *arguably intentional*: the doc (§3.1) states selection "shares the preview surface" and frame stability is an on-device availability gap (§7 G4), so the same LoS/command domain-compute proxy stands in for both preview and selection, and there is no headless frame loop. The Decision for a human: accept the shared-surface proxy as-is (recommended — it matches AC3's "domain compute measurable, on-device latency is a gap" framing and the story's explicit design), OR emit a separately-labelled `selection` domain-compute measurement so the report line-items every NFR5 budget by name. Non-blocking; AC3 is already met via the preview proxy + the documented gap. **UNRESOLVED (2026-07-07 review-fix pass):** no human-chosen fix direction was supplied for this `[Review][Decision]`, so it is intentionally left open (a direction was NOT invented). The reviewer's recommended default is to accept the shared-surface proxy as-is; a human must confirm that or elect the separately-labelled `selection` measurement before this item is actioned.
+- [x] [Review][Patch] `record_measurement` clamps `measured_ms` but not `budget_ms` [godot/scripts/diagnostics/performance_budget_report.gd:78-89]. A non-positive `budget_ms` would yield a meaningless `delta_ms` and a spurious PASS/FAIL verdict. Not reachable today (every call site passes a positive module-constant budget — `BUDGET_LEVEL_LOAD_MS`/`BUDGET_PREVIEW_RESPONSE_MS`), so this is latent-only defensive hardening. Optional fix: guard/`assert` `budget_ms > 0.0` (or clamp) at the top of `record_measurement` so a future caller passing a bad budget fails loud rather than recording a nonsense record. Low; leave as action item unless a future caller supplies dynamic budgets. **RESOLVED (2026-07-07):** added `assert(budget_ms > 0.0, …)` at the top of `record_measurement` (after the `enabled` guard) so a future dynamic-budget caller passing a non-positive budget fails LOUD in debug/CI (the only context where the report is enabled) rather than recording a nonsense delta/verdict; the assert message states the offending value + system/subject. Godot `assert()` is an engine-level abort in debug and is stripped in release, so it cannot be unit-triggered without aborting the runner — no new test asserts on the abort; the existing suite already exercises only positive budgets, confirming the assert never fires on valid input. Suite still 183 PASS / 0 `^FAIL`.
+- [x] [Review][Patch] Planning-doc section numbering skips Section 6 — headings jump `## 5. Build-Profile Gating…` directly to `## 7. Measurement Availability Gaps…` with no `## 6` [_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md:250,299]. Purely cosmetic: every AC and the availability-gaps ledger + gate handoff are fully present (Section 5 = AC5, Section 7 = gaps, Section 8 = handoff), so no content is missing. Trivial editorial fix: renumber 7→6, 8→7, 9→8 (or relabel to "Section 6" / add a note). Non-blocking; a doc-polish nit only. **RESOLVED (2026-07-07):** renumbered the trailing headings `## 7→## 6` (Measurement Availability Gaps), `## 8→## 7` (Epic-10 Gate Handoff), `## 9→## 8` (Change Log) so the sections are now sequential 1–8 with no gap, and updated every in-doc self-reference to those sections ("Section 7"→"Section 6", "Section 7 and Section 8"→"Section 6 and Section 7") at the purpose/scope summary, the iOS-gap notes, the frame-stability + domain-compute rows, and the memory-protocol + 10.6-handoff references. The Epic-11-retro `§7`/`§9`/`§10` citations (external-doc sections, not this doc's) were deliberately left untouched.

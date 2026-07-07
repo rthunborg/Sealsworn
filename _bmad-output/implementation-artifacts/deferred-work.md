@@ -1,3 +1,12 @@
+## Deferred from: code review of 10-1-device-tiers-and-performance-budgets (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 1 open `[Review][Decision]` — a human
+call; 2 `[Review][Patch]` action items). **No `[Review][Defer]` findings were raised** — this readiness/measurement
+story added only a build-profile-gated measurement seam + a headless report driver + a harness-contract unit test + the
+planning doc, with the full suite green (183 PASS / 0 FAIL) and the simulation byte-identical. All findings are
+non-blocking hardening/editorial nits recorded as action items in the story file's `### Review Findings` section, not
+deferred pre-existing issues. Nothing to carry forward on this ledger from this review.
+
 ## Deferred from: code review of 11-6-meta-spend-and-unlock-application (2026-07-06)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 1 open `[Review][Decision]` — a human
