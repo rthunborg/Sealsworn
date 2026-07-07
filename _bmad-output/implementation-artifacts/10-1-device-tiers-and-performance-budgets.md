@@ -1,6 +1,10 @@
+---
+baseline_commit: 6e5a7be9d491ec83672dd2e37b66c052f5876e03
+---
+
 # Story 10.1: Device Tiers and Performance Budgets
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -108,36 +112,36 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.1). Five AC groups (Given/Wh
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Create the readiness planning doc and frame it (AC1, AC2)**
-  - [ ] Author `_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md` (a PLANNING
+- [x] **Task 1 — Create the readiness planning doc and frame it (AC1, AC2)**
+  - [x] Author `_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md` (a PLANNING
         artifact, NOT under `godot/`). Keep it discoverable and self-documenting; reference it from
         the Epic-10 readiness gate (Story 10.6 MVP readiness gate + 10.7 UX/asset gate consume it —
         neither exists as a file yet; the doc self-documents the linkage the way 11.1's appendix did
         for 10.7).
-  - [ ] Open with: purpose (discharges the canonical **NFR20** production-readiness gap the
+  - [x] Open with: purpose (discharges the canonical **NFR20** production-readiness gap the
         implementation-readiness report flagged as a mandatory Epic-10 gate), scope (define tiers +
         measurement method + budgets + representative-run protocol; measure what is headless/desktop
         measurable; record physical-device measurements as availability gaps), and a one-line pointer
         to the project-context Performance rules + `game-architecture.md`.
-  - [ ] Define the three mobile tiers + Windows-desktop-parity (AC1/AC2) using the AC wording as the
+  - [x] Define the three mobile tiers + Windows-desktop-parity (AC1/AC2) using the AC wording as the
         floor: **low** = budget Android-class phone/tablet ~4 GB RAM; **mid** = current-minus-two-years
         Android/iOS-class ~6 GB RAM; **high** = current flagship phone/tablet; **desktop parity** =
         integrated-GPU laptop/desktop. For EACH tier record: measurement method, memory expectation,
         battery/performance note, and the named measurement source (physical device / emulator /
         `availability gap`).
-  - [ ] State the platform posture: production is Godot 4.6.3 standard GDScript, Mobile renderer,
+  - [x] State the platform posture: production is Godot 4.6.3 standard GDScript, Mobile renderer,
         iOS/Android-first + Windows parity (NFR1/NFR3); `export_presets.cfg` already exists (Windows +
         Android scaffolding from Story 1.1). iOS packaging remains deferred until macOS/Xcode access
         (project-context Platform rule) — record it as a tier-source gap, not a blocker.
 
-- [ ] **Task 2 — Define the performance budgets + the headless/desktop measurement harness (AC3)**
-  - [ ] State the four budget thresholds verbatim to the AC + the project-context Performance rules:
+- [x] **Task 2 — Define the performance budgets + the headless/desktop measurement harness (AC3)**
+  - [x] State the four budget thresholds verbatim to the AC + the project-context Performance rules:
         generated level load < 3 s (NFR4), UI preview response < 100 ms (NFR5), selection response
         < 100 ms (NFR5), stable 60 FPS where feasible / 30 FPS acceptable lower-end (NFR6). Map each to
         the system that produces it (level load → `LevelGenerator.generate`; preview/selection →
         the tactical view-model / command-bridge preview path; frame stability → the live scene under
         `gameplay_shell.tscn` on device).
-  - [ ] REUSE the existing instrumentation seam — do NOT author a parallel one. `LocalTimingRecorder`
+  - [x] REUSE the existing instrumentation seam — do NOT author a parallel one. `LocalTimingRecorder`
         (`godot/scripts/diagnostics/local_timing_recorder.gd`) already: gates on `OS.is_debug_build()`
         in `_init`, exposes `begin(label)`/`end(label)`/`records()`, and captures the exact Epic-1
         labels a representative combat run needs (`board_query`, `line_of_sight_update`,
@@ -145,65 +149,65 @@ Sourced verbatim from `epics.md` (Epic 10, Story 10.1). Five AC groups (Given/Wh
         (`godot/scripts/tactical/scenarios/epic_1_micro_combat_scenario.gd`) already drives a scripted
         combat path with `enable_timing` and returns `timing_records`. Extend/compose these; do not
         reinvent a timing primitive.
-  - [ ] Build the headless-measurable measurement path: a build-profile-gated harness (a `tools/`
+  - [x] Build the headless-measurable measurement path: a build-profile-gated harness (a `tools/`
         `SceneTree` script and/or a diagnostics `RefCounted`) that measures level-load time over a seed
         sample (via `LevelGenerator.generate` wall-clock), the representative-run command/LoS/turn
         timings (via the `LocalTimingRecorder` labels), compares each to its budget, and emits an
         ACTIONABLE report (system + seed/label + measured value + budget + delta + pass/fail). Follow
         the `tools/dump_*` `extends SceneTree` + `print(...)` + `quit()` precedent
         (`dump_run_pacing_survey.gd`, `dump_seed_batch_report.gd`) for the headless report driver.
-  - [ ] Record which budgets are headless/desktop-measurable (level load, command/LoS/turn timings,
+  - [x] Record which budgets are headless/desktop-measurable (level load, command/LoS/turn timings,
         desktop wall-clock) vs which require an on-device render/frame profiler (sustained 60/30 FPS
         frame stability, on-device preview/selection latency under real touch). The latter go in the
         doc as `availability gap → physical-device measurement pass` notes — measured numbers only
         where the harness or a desktop run can genuinely produce them.
 
-- [ ] **Task 3 — Representative-run + memory/battery/thermal protocol (AC4)**
-  - [ ] Define the 20-minute representative run: the hands-off live run driver Epic 11 shipped
+- [x] **Task 3 — Representative-run + memory/battery/thermal protocol (AC4)**
+  - [x] Define the 20-minute representative run: the hands-off live run driver Epic 11 shipped
         (`RunOrchestrator.run_to_completion_live` / `auto_play_full_run` on the verified finale seed
         4242, or a scripted-simulation stand-in) is the closest existing "representative run" —
         reference it as the run under measurement; the headless harness exercises the scripted
         simulation, the on-device pass exercises the same flow on hardware. Do NOT build a new gameplay
         loop; compose the existing live driver.
-  - [ ] Define the sampled signals + budgets: per-tier peak-memory budget (with the headless/desktop
+  - [x] Define the sampled signals + budgets: per-tier peak-memory budget (with the headless/desktop
         `OS.get_static_memory_usage()` / `Performance.get_monitor(...)` proxy noted as the
         instrumentation, gated on build profile), thermal-throttling / sustained-input-degradation
         proxy, and the battery target (≤ 15% over 30 min on a comparable physical mobile device). State
         the pass criteria verbatim (no OS memory warning/termination; below per-tier peak-memory
         budget; no sustained thermal throttling or input degradation).
-  - [ ] Record the physical-device memory/battery/thermal measurements as explicit `availability gap`
+  - [x] Record the physical-device memory/battery/thermal measurements as explicit `availability gap`
         notes (no device provisioned here). Provide the exact protocol a later physical-device pass
         follows so the gap is dischargeable without re-designing the method.
 
-- [ ] **Task 4 — Build-profile gating + no-production-cheat-tools guarantee (AC5)**
-  - [ ] State the gating mechanism: all measurement instrumentation gates on `OS.is_debug_build()` (the
+- [x] **Task 4 — Build-profile gating + no-production-cheat-tools guarantee (AC5)**
+  - [x] State the gating mechanism: all measurement instrumentation gates on `OS.is_debug_build()` (the
         `LocalTimingRecorder._init` precedent — `enabled = new_enabled and OS.is_debug_build()`), so it
         is a no-op in a non-debug/release export. Any `tools/` measurement script is a dev/CI driver
         that is NOT wired into a shipped scene or autoload.
-  - [ ] Confirm + document the no-production-cheat-tools posture: `PlatformServices`
+  - [x] Confirm + document the no-production-cheat-tools posture: `PlatformServices`
         (`godot/scripts/platform/platform_services.gd`) stays a local no-op (`record_telemetry` /
         `unlock_achievement` / `sync_save` are inert — NFR11/NFR19); no debug overlay, seed/fog/LoS
         viewer, or cheat path is registered in a production build. Record the pre-export validation
         checklist item (the project-context Platform rule "build-profile flags plus pre-export
         validation and manual release checklist") that verifies this before a release export.
-  - [ ] If you add a measurement test, keep it a NEW `test_*.gd` under `tests/unit/diagnostics/` (the
+  - [x] If you add a measurement test, keep it a NEW `test_*.gd` under `tests/unit/diagnostics/` (the
         `test_boss_attempt_diagnostics.gd` precedent) or `tests/unit/tools/` that asserts on the
         harness's records shape + budget-comparison logic — NOT on gameplay outcomes, and NOT requiring
         a `SceneTree`/render/device. The full suite stays green.
 
-- [ ] **Task 5 — Cross-check, gap ledger, and Epic-10 gate handoff (AC1–AC5)**
-  - [ ] Consolidate every `availability gap → owning action` note (physical low/mid/high device
+- [x] **Task 5 — Cross-check, gap ledger, and Epic-10 gate handoff (AC1–AC5)**
+  - [x] Consolidate every `availability gap → owning action` note (physical low/mid/high device
         measurement; on-device FPS/latency profiling; physical battery/thermal; iOS packaging) into a
         single "Measurement Availability Gaps" section, each naming the gap, the tier/budget affected,
         and the owning follow-up (a physical-device measurement pass; the 10.6/10.7 readiness gate).
         This is the honest-scope deliverable — the gate story (10.6) decides whether an availability
         gap is an acceptable documented readiness limitation or a hard blocker.
-  - [ ] Cross-reference the sibling Epic-10 readiness stories the doc feeds: 10.2 (headless seed
+  - [x] Cross-reference the sibling Epic-10 readiness stories the doc feeds: 10.2 (headless seed
         regression suite — the seed sample the level-load measurement draws over should be compatible),
         10.6 (MVP readiness gate — consumes the tier + budget definitions), 10.7 (asset/audio/UX
         readiness gate — consumes the perf/readability posture). Do NOT implement those stories'
         content here; record the handoff.
-  - [ ] Verify the full headless suite is unchanged-green and `git diff --check` is clean; confirm no
+  - [x] Verify the full headless suite is unchanged-green and `git diff --check` is clean; confirm no
         production `godot/` gameplay/save/RNG/content path was touched (only a new `tools/`/diagnostics
         measurement harness + its test + the planning doc).
 
@@ -449,10 +453,71 @@ bear on THIS story:
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
 
 ### Debug Log References
 
+- Full headless suite (post-implementation): **183 PASS / 0 `^FAIL`** — the Epic-11-close baseline of 182
+  PASS plus the one new `test_performance_budget_report.gd`. The six documented stderr negatives (int64
+  overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1) still PASS as designed and were not mis-cited.
+  Command: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn
+  --quit-after 10` (via `C:\Users\Rasmus\bin\godot.cmd` through PowerShell).
+- Report-driver dev-verification (`godot --headless --path C:\Sealsworn\godot --script
+  res://tools/dump_performance_budgets.gd`): 12 measurements, all PASS. Level load `small_combat_basic`
+  ~4.3–7.0 ms, `medium_combat_basic` ~9.9–11.4 ms (budget 3000 ms); representative combat-step compute worst
+  `line_of_sight_update` ~0.52 ms, `command_execution` ~1.94 ms (budget 100 ms). These are the real
+  Windows-desktop-parity headless-measurable numbers cited in the doc (Section 3.3).
+- `git diff --check` clean (only benign LF→CRLF normalization notice on the markdown story file).
+
 ### Completion Notes List
 
+- **Primary deliverable (the doc):** `_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md`
+  — covers all five AC groups: (AC1/AC2) three mobile tiers (low ~4 GB / mid ~6 GB / high flagship) +
+  Windows-desktop-parity (integrated-GPU), each with measurement method + memory expectation +
+  battery/performance note + a NAMED measurement source (an explicit `availability gap` for every unprovisioned
+  physical device; the development desktop for the headless-measurable budgets); (AC3) the four budgets stated
+  verbatim + mapped to their producing system + the harness + the measured desktop results; (AC4) the
+  20-minute representative-run protocol + per-tier peak-memory budgets + thermal/input-degradation proxy +
+  battery target (≤15%/30min) with physical numbers recorded as gaps; (AC5) the `OS.is_debug_build()` gating +
+  export-filter evidence + `PlatformServices` no-op + pre-export checklist; plus a consolidated 7-entry
+  availability-gaps ledger + the 10.2/10.6/10.7 gate handoff.
+- **Harness (reuses existing seams — no parallel primitive):** `PerformanceBudgetReport`
+  (`scripts/diagnostics/performance_budget_report.gd`) — a build-profile-gated `RefCounted` (the
+  `LocalTimingRecorder`/`BossAttemptDiagnostics` sibling; `enabled = new_enabled and OS.is_debug_build()`).
+  Encodes the four budgets as constants, computes delta + inclusive-ceiling pass/fail, emits an actionable
+  `[PASS|FAIL] system / subject: measured=… budget=… delta=…` diagnostic (never a bare "slow"),
+  shape-pins `RECORD_KEYS`, and is a pure in-memory observer (zero RNG/telemetry/save/mutation). The
+  `tools/dump_performance_budgets.gd` `SceneTree` driver composes `LevelGenerator.generate` (level load) +
+  `Epic1MicroCombatScenario.run_win_path(true)` (`LocalTimingRecorder` step labels) and prints the report.
+- **Test:** `tests/unit/diagnostics/test_performance_budget_report.gd` asserts on the harness's OWN contract
+  (budget constants, record shape, delta + inclusive boundary, actionable diagnostic, disabled-inert gate,
+  deep-copy purity) — NOT on gameplay outcomes, no SceneTree/render/device required. Written RED-first
+  (parse-failed with the class absent), then GREEN.
+- **Simulation untouched (verified):** no gameplay command / event / RNG stream / `RunSnapshot` /
+  `ProfileSnapshot` / `SettingsSnapshot` schema / save key / generator-route-finale fingerprint / view model /
+  content definition changed. The harness READS existing surfaces (generate wall-clock, scenario timings) and
+  mutates nothing. The default `run_to_completion` is byte-identical.
+- **Finding (accurate to disk, corrects a Dev-Notes assumption):** `export_presets.cfg` already carries an
+  **iOS preset (`preset.2`)** scaffold (`runnable=false`, empty signing identity + icons), not just Windows +
+  Android as the Dev Notes stated. Documented accurately (iOS packaging still deferred → gap G7). Load-bearing
+  AC5 evidence: **all three** presets share the identical `exclude_filter` excluding `tools/**`, `tests/**`,
+  and `**/test_*.gd`, so the harness driver + test provably cannot ship.
+- **No new autoload, no shipped scene, no always-on overlay, no telemetry sink** — AC5 posture held.
+
 ### File List
+
+- `_bmad-output/planning-artifacts/device-tiers-and-performance-budgets.md` (new — the primary readiness-plan
+  deliverable)
+- `godot/scripts/diagnostics/performance_budget_report.gd` (new — build-profile-gated budget-comparison seam)
+- `godot/tools/dump_performance_budgets.gd` (new — headless/desktop measurement report driver; excluded from
+  every export preset)
+- `godot/tests/unit/diagnostics/test_performance_budget_report.gd` (new — harness-contract unit test)
+- `_bmad-output/implementation-artifacts/10-1-device-tiers-and-performance-budgets.md` (modified — frontmatter
+  `baseline_commit`, task checkboxes, Dev Agent Record, Status)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified — 10-1 status + `last_updated`)
+
+## Change Log
+
+| Date | Change |
+|---|---|
+| 2026-07-07 | Story 10.1 implemented: authored the device-tiers + performance-budgets readiness plan (discharges canonical NFR20), added the build-profile-gated `PerformanceBudgetReport` measurement seam + `dump_performance_budgets.gd` headless report driver (reusing `LocalTimingRecorder` / `Epic1MicroCombatScenario` / `LevelGenerator.generate` — no parallel primitive) + the harness-contract unit test. Full suite 183 PASS / 0 FAIL; simulation byte-identical. Status → review. |

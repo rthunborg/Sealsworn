@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-07T12:00:00+00:00
+last_updated: 2026-07-07T13:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -146,7 +146,7 @@ development_status:
   11-6-meta-spend-and-unlock-application: done
   epic-11-retrospective: done
   epic-10: in-progress
-  10-1-device-tiers-and-performance-budgets: ready-for-dev
+  10-1-device-tiers-and-performance-budgets: review
   10-2-headless-seed-regression-suite: backlog
   10-3-generator-soft-lock-and-fairness-batch-checks: backlog
   # SPRINT CHANGE 2026-07-07 (sprint-change-proposal-2026-07-07.md):
