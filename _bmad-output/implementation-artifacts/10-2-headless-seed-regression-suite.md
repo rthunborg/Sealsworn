@@ -627,3 +627,62 @@ Opus 4.8 (1M context) — `claude-opus-4-8[1m]` (auto-gds dev-story delegate).
 |---|---|
 | 2026-07-07 | Story 10.2 context created (create-story). Consolidated-headless-seed-regression-suite scope framed as the seed-determinism analog of 10.1: CONSOLIDATE + report the six existing per-system deterministic surfaces (tactical/generation/route/reward/affinity/boss) under one `fingerprint + pass/fail + seed/system/phase/reason` contract, cover the 2.8 pause/resume interrupted==uninterrupted proof + cosmetic independence, state the AC2 MVP-readiness sample targets and record the current-vs-target sample gap as a 10.6-owned honest-scope ledger, enforce the ratified DELIBERATE-UPDATE no-silent-drift + no-second-fingerprint-format + int→float-footgun conventions, and leave every determinism/save invariant (7 RNG streams, 23-key RunSnapshot, SCHEMA_VERSION==1, all fingerprints) byte-identical. Status → ready-for-dev. |
 | 2026-07-07 | Story 10.2 implemented (dev-story). NEW consolidated suite `godot/tests/integration/test_seed_regression_suite.gd` drives all six systems under one `fingerprint + pass/fail + seed/system/phase/reason` contract (reusing each system's SINGLE canonical source + the per-system pinned catalogs by IMPORT — no second format), a forced-failure shape test, the pause/resume-in-simulation proof across a seed sample (real SaveRepository + RunResumeService, first-divergence locators), and cosmetic-stream independence. AC2: route sample EXPANDED 8 → 20 (target MET, regenerated via `dump_route_fingerprints.gd`, original 8 unchanged); all other systems recorded as explicit temporary-sample gaps in the NEW readiness ledger `_bmad-output/planning-artifacts/seed-regression-suite-readiness.md` (10.6-owned). NEW tools/-gated report driver `godot/tools/dump_seed_regression_report.gd`. No production gameplay/save/RNG/content source touched; every determinism/save invariant byte-identical. Full suite 183 → 184 PASS / 0 `^FAIL`. Status → review. |
+
+## Dev Agent Record — Review
+
+### Review Findings
+
+**Round 1 of 3**
+
+**Reviewer:** auto-gds code-review delegate (`gds-code-review`, adversarial primary review). **Date:** 2026-07-07.
+**Scope:** current branch diff vs `main`, code files only — `godot/tests/integration/test_seed_regression_suite.gd` (NEW),
+`godot/tests/unit/generation/test_route_generation_seed_regression.gd` (route sample 8→20), `godot/tools/dump_route_fingerprints.gd`
+(seed list 8→20), `godot/tools/dump_seed_regression_report.gd` (NEW). The `dump_route_fingerprints.gd` edit is the Task-3-sanctioned
+route expansion (judged on merits, not scope drift).
+
+**Verdict: Approve.** Counts — Critical 0 · High 0 · Medium 0 · Low 3 · (open `[Review][Decision]` needing a human call: 0).
+
+**Independent verification performed (not taken on trust from the Dev Agent Record):**
+- Full headless suite re-run via the console binary: **184 PASS / 0 `^FAIL`**, "Headless tests passed." (exit 0). Confirms the 183→184
+  claim. False-PASS grep guard applied: exactly the SIX documented stderr negatives present (int64-overflow ×2, `invalid_node_type` ×1,
+  malformed-JSON ×3) — no new stderr error introduced by this story.
+- Report driver (`tools/dump_seed_regression_report.gd`) re-run: all 51 report lines `[PASS]`; the printed generation/route fingerprints
+  match the pinned catalogs byte-for-byte (spot-checked route/1001, route/123456789, all five generation seeds).
+- API-correctness audited against the live sources: `GenerationResult` (`.succeeded/.failed_phase/.reason/.payload`), `RouteGenerator`
+  (`.generate/.fingerprint/.route_from_result`), `RunSnapshot.from_between_level(board,streams,options)`, `RunResumeService.resume`
+  (metadata keys `board`/`rng_streams`/`tactical_snapshot`), `RunOrchestrator.generate_reward_offer` / `generate_passive_reward_offer`
+  / `assign_affinity` (`metadata.stream_name`/`affinity_id`), `test_case.gd::run()` → `{"failures":[…]}`. All match; no silent API drift.
+- `git diff --check main...HEAD -- godot/**`: clean (no whitespace/conflict markers).
+- No-second-fingerprint-format discipline (the story's stated #1 review risk): CONFIRMED HELD. The suite imports the per-system pinned
+  catalogs by `const preload` (`APPROVED_SEED_CATALOG`, `APPROVED_FINGERPRINTS`, `APPROVED_BOSS_SEED_CATALOG`) — there is literally no
+  second copy, and `_consolidated_pins_agree_with_live_canonical_sources` invokes each per-system test's `run()` and asserts zero failures.
+- Invariants: no production gameplay/save/RNG/content source touched (diff is the new suite + route-fixture expansion + the two `tools/`
+  drivers + planning docs). 23-key RunSnapshot / 7 RNG streams / SCHEMA_VERSION==1 / all fingerprint SOURCES byte-identical — verified via
+  the green suite (the 23-key gate + rng-stream + schema tests all PASS).
+
+**Findings:**
+
+- [x] **[Review][Decision] L-1 (Low, informational — no change required):** reward/affinity/tactical get *determinism* coverage (same
+  seed → identical output across two fresh runs), NOT a *pinned regression*, in the consolidated suite. A generator/algorithm change to
+  these three that STAYED internally deterministic (e.g. a reward-table reweighting) would pass the suite silently. This is BY DESIGN and
+  faithful to the source-of-truth tests: `test_reward_offer_generate.gd` and `test_affinity_assignment.gd` themselves pin no expected
+  value — they assert determinism + divergence only. The readiness ledger §2 discloses this accurately (`n/a — per-seed determinism, not a
+  pinned fingerprint`). Recorded so 10.6 knows these three rows are determinism-guarded, not drift-pinned, when it weighs the gap. Not a
+  defect; no fix — flagged as a scoping fact a human may wish to note. **RESOLVED (2026-07-07, review loop): accepted as recorded — reviewer classified this as requiring no change; retained as a noted fact for the 10.6 gate.**
+- [x] **[Review][Decision] L-2 (Low, informational — no change required):** `_deliberate_update_contract_is_recorded` (suite lines ~684–698)
+  verifies only that the four generation/route regenerator `tools/dump_*` files EXIST (`FileAccess.file_exists`); its comment claims the
+  re-pin instruction is "proven by construction above," but there is no programmatic assertion that the regression assert-message strings
+  actually contain the re-pin text. AC4 is nonetheless genuinely MET — the real drift tripwire is the pinned-fingerprint asserts
+  themselves (generation + route), which fail loudly on an un-re-pinned change and DO carry the re-pin instruction in their message. The
+  "contract recorded" test is softer than its comment implies; acceptable as-is. No fix required. **RESOLVED (2026-07-07, review loop): accepted as recorded — reviewer classified this as requiring no change; retained as a noted fact for the 10.6 gate.**
+- [x] **[Review][Decision] L-3 (Low, cosmetic — no change required):** garbled comment fragment in the suite (`_generation_fingerprint`
+  doc, line ~167): "via generate_layout (the SAME path + static the seed-regression fixtures pin)" — the word "static" is a leftover
+  editing artifact. Comment-only; no behavioral impact. Optional tidy on any future touch of this file. **RESOLVED (2026-07-07, review loop): accepted as recorded — reviewer classified this as requiring no change; retained as a noted fact for the 10.6 gate.**
+
+**Notes for the record (verified, no finding):** (a) the `dump_route_fingerprints.gd` 8→20 expansion preserves the original eight seeds
+verbatim as the list prefix, so the first-8 dump order is unchanged and the original 8 pins are a byte-identical ADD (not a re-pin) —
+Task-3-sanctioned and mechanically sound (the tool prints the exact `seed: "fp",` shape the catalog consumes). (b) The affinity sample of
+8 seeds surfaces only Scorched/Cursed/neutral (Flooded-Conductive + Darkness never appear; no affinity reaches 10) — the ledger discloses
+this honestly as `temporary (8 mixed of 10-per-affinity)`, exactly the AC2 "do not present a sub-target sample as met" posture; compliant.
+(c) The consolidated suite's `const preload` of three per-system test scripts is a deliberate single-source-of-truth coupling: a rename of
+those files/constants would break the suite at PARSE time (a loud failure), which is the intended behavior, not a fragility defect.
