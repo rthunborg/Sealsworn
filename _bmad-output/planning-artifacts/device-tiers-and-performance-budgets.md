@@ -321,7 +321,12 @@ handoff is recorded):
 - **10.2 (Headless Seed Regression Suite).** The level-load measurement draws over the seed sample
   `[1001, 2002, 3003, 4004, 5005]` × {`small_combat_basic`, `medium_combat_basic`}, kept **compatible** with
   the approved Small + Medium seed catalog the seed-batch report / regression suite use, so the two harnesses
-  agree on which seeds a level-load number is reported for.
+  agree on which seeds a level-load number is reported for. **10.2 shipped 2026-07-07** — its consolidated
+  regression suite (`godot/tests/integration/test_seed_regression_suite.gd`) + sample-size gap ledger
+  (`_bmad-output/planning-artifacts/seed-regression-suite-readiness.md`) holds the generation Small/Medium
+  sample at the shared `[1001,2002,3003,4004,5005]` catalog (recorded there as a temporary 5-of-50 gap so a
+  coordinated generation-sample expansion extends this level-load harness, the 10.2 regression suite, and the
+  10.3 fairness batch together).
 - **10.6 (MVP Readiness Gate and Playable-Build Preservation).** Consumes the **tier definitions + the four
   budget thresholds + the measured headless/desktop results (Section 3.3) + the availability-gaps ledger
   (Section 6)**. The gate decides, per gap, "acceptable documented readiness limitation" vs "must discharge

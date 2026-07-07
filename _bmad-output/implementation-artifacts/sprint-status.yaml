@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-07T11:15:00+00:00
+last_updated: 2026-07-07T11:30:21+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -147,7 +147,7 @@ development_status:
   epic-11-retrospective: done
   epic-10: in-progress
   10-1-device-tiers-and-performance-budgets: done
-  10-2-headless-seed-regression-suite: backlog
+  10-2-headless-seed-regression-suite: done
   10-3-generator-soft-lock-and-fairness-batch-checks: backlog
   # SPRINT CHANGE 2026-07-07 (sprint-change-proposal-2026-07-07.md):
   # epic-12 executes BETWEEN epic-10's 10-3 and 10-4 (file order = execution order) —

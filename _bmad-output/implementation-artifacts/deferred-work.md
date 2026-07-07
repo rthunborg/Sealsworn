@@ -1,3 +1,17 @@
+## Deferred from: code review of 10-2-headless-seed-regression-suite (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 0 open `[Review][Patch]`; 3
+`[Review][Decision]` informational items — none requiring a change). **No `[Review][Defer]` findings were raised.**
+This regression-consolidation/readiness story added only a read-only consolidated seed-regression suite
+(`godot/tests/integration/test_seed_regression_suite.gd`), a `tools/`-gated report driver
+(`godot/tools/dump_seed_regression_report.gd`), the Task-3-sanctioned route sample expansion 8→20 (canonical fixture +
+its dump tool; original 8 pins byte-identical), and the readiness ledger planning doc. The full headless suite was
+independently re-run green (**184 PASS / 0 `^FAIL`**, exactly the 6 documented stderr negatives, no new one); the
+no-second-fingerprint-format discipline, all domain/save APIs, and every determinism/save invariant (23-key RunSnapshot,
+7 RNG streams, SCHEMA_VERSION==1, all fingerprint sources) were verified intact. The three Low findings are
+informational scoping/cosmetic notes recorded in the story file's `### Review Findings` section, not deferred
+pre-existing issues. Nothing to carry forward on this ledger from this review.
+
 ## Deferred from: code review of 10-1-device-tiers-and-performance-budgets (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 1 open `[Review][Decision]` — a human
