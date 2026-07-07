@@ -1,3 +1,25 @@
+## Deferred from: code review of 10-8-darkness-fairness-moving-los-and-readiness-sample-expansion (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 3; 0 open `[Review][Patch]`; 3
+`[Review][Decision]` informational items — all forward-looking notes on cases the crux already handles correctly,
+none requiring a change now). **No `[Review][Defer]` findings were raised — nothing to carry forward on this ledger
+from this review.** This readiness/fairness story strengthened ONE pure board-scoped query
+(`DarknessFairnessQuery` predicate (b): static-from-entrance → moving reduced-radius LoS "seen-before-contact",
+resolving the FR58 `darkness_unseen_hazard` finding on Medium 4004/5005 — Medium flips to legitimate PASS), plus a
+COORDINATED additive seed-sample expansion (Small/Medium 5→50, tactical 8→25, reward 8→20, boss 5→10, affinity →40
+curated at 10-per-implemented-affinity proven live; route untouched at 20/20). The reviewer verified all three
+v0-facts against source, that the predicate stays genuinely re-trippable (walks reachable 4-neighbours, actually
+tests LoS — not a hard-coded PASS) with a REAL FAIL retained in the new proof pair (entrance-on-hazard), that the
+four deliberate-update sites are correct (the 11.4 re-shaped violation board still proves the live hard-gate STOP
+path), that the Part B originals are byte-identical (only a trailing comma added after the `5005` pin) and the new
+pins came from the sanctioned `tools/dump_*` drivers, and that no new RNG draw site / no schema-save-key change was
+introduced (`run_orchestrator.gd` is provably comment-only). The full headless suite was independently re-run green
+(**185 PASS / 0 `^FAIL` / exit 0 / 49s**, exactly the documented stderr negatives, no new one); the false-PASS grep
+guard is clean. The three Low `[Review][Decision]` items (single-reason-code conflation of two future-unfair
+classes; the 11.4 fixture's implicit entrance-passed-in-payload coupling; the radius-floor leg of the moving-LoS
+proof) are informational and recorded in the story file's `### Review Findings` section, not deferred pre-existing
+issues. The G1–G7 physical-device readiness gaps remain 10.6-owned (unchanged by this story).
+
 ## Deferred from: code review of 10-3-generator-soft-lock-and-fairness-batch-checks (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 5; 0 open `[Review][Patch]`; 2

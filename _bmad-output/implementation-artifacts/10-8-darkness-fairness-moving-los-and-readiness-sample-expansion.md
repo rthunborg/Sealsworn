@@ -720,3 +720,54 @@ Planning / ledgers:
 | Date | Change |
 |---|---|
 | 2026-07-07 | Story 10.8 implemented (auto-gds dev-story). Part A: strengthened `DarknessFairnessQuery` predicate (b) to moving reduced-radius LoS (seen-before-contact) — Medium 4004/5005 flip to PASS, three stale FAIL sites deliberately updated, a new moving-LoS proof + a retained predicate-(a) FAIL case added, the false "all-FLOOR" premise comments corrected (comment-only), the FR58 resolution recorded in the fairness ledger; NO generator change, NO Part-A fingerprint re-pin, NO affinity-into-generation. Part B: coordinated additive sample expansion (generation Small/Medium 5→50 via the sanctioned dump tools with original pins byte-identical; tactical 8→25; reward 8→20; boss 5→10; affinity mixed-8 → 40 curated with 10-per-implemented-affinity proven live; route untouched at 20/20), both readiness ledgers' gap tables discharged (G1-G7 stay 10.6-owned), the honest-sample assertion flipped to the MET targets. Full suite 185 PASS / 0 FAIL / ~49s; false-PASS guard clean; determinism/save invariants hold. Status → review. |
+
+### Review Findings
+
+**Round 1 of 3**
+
+> Disposition (2026-07-07, review loop): all three `[Review][Decision]` bullets below are Low informational awareness notes the reviewer classified as requiring no change now; ticked as accepted-as-recorded. Revisit triggers are stated inside each bullet (new unfair-damage classes; the 11.4 payload-entrance coupling; a lowered authored Darkness radius).
+
+Adversarial code review (gds-code-review, 2026-07-07, auto-gds delegate). Reviewed the branch diff vs `main`
+(15 code/tool/test files) against this story's ACs, with the production validator-semantics change
+(`DarknessFairnessQuery` predicate (b)) as the highest-stakes focus. **Verdict: APPROVE.** Critical 0 / High 0 /
+Medium 0 / Low 3. The full headless suite was re-run independently by the reviewer: **185 PASS / 0 `^FAIL` /
+exit 0 / 49s wall-clock** ("Headless tests passed."), the false-PASS grep guard is clean (0 raw `^FAIL`), and the
+documented stderr negatives are unchanged (no new signatures). All three v0-facts underpinning the moving-LoS proof
+were verified against source (`board_cell.gd:33-34` WALL-only LoS block; `tactical_line_query.gd:63`
+`range(1, max(1, line.size()-1))` empty for adjacent cells; `darkness_visibility_layer.gd:76-77` radius 2 floor 1).
+The predicate genuinely walks the reachable 4-neighbours and calls `has_line_of_sight` (not a hard-coded PASS), so
+it stays re-trippable; the new proof pair includes a REAL FAIL (`_genuinely_unfair_predicate_a_still_fails_loud`,
+entrance-on-hazard). The four deliberate-update sites (7.6 unit, 10.3 batch, 11.4 live gate, 10.2 honest-sample)
+are each correct and deliberate — the 11.4 re-shaped violation board still proves the live hard-gate STOP path
+(verbatim reason + node context + no partial progression + no `map` RNG) because the entrance is passed explicitly
+in the generation payload. Part B originals (Small/Medium 5+5, boss 5, route 20) are byte-identical (only a trailing
+comma added after the `5005` pin); the 45+45 new pins came from the sanctioned dump drivers and match the shared
+50-seed catalog order in all sites; the `AFFINITY_SEED_BY_AFFINITY` sample lands exactly 10-per-affinity on all four
+implemented affinities (scorched/flooded_conductive/cursed/darkness), PROVEN live via `assign_affinity` (not
+proxied). No new RNG draw sites, no schema/save-key changes, `run_orchestrator.gd` is provably comment-only.
+
+The Low findings below are informational/no-code-change — all are cases where the crux is already correctly handled
+and the note is a forward-looking observation for a FUTURE story. None block review or `done`.
+
+- [x] **[Review][Decision]** (Low) `_seen_before_contact` collapses TWO distinct future-unfair classes under the
+      single reason code `darkness_unseen_hazard`: (1) a future sight-BLOCKING hazard that occludes the adjacent LoS,
+      and (2) a forced-teleport-only landing with NO reachable 4-neighbour step-from cell. Both make the helper return
+      `false` → same `REASON_UNSEEN_HAZARD`. For v0 this is moot (neither class exists). But a future forced-movement
+      story would surface a hazard that is perfectly VISIBLE yet still unfair (teleport-reachable), reported as
+      "unseen" — a slightly misleading reason string. This is intentional per the code header (which explicitly lists
+      both classes under this code). Human call: accept the single-code conflation, or, when such a class is added,
+      split a distinct reason (e.g. `darkness_unavoidable_forced_landing`). No change needed now.
+      [`godot/scripts/generation/level/darkness_fairness_query.gd:277-289`]
+- [x] **[Review][Decision]** (Low) The 11.4 re-shaped `_unfair_darkness_board_snapshot()` no longer contains ANY
+      `Terrain.ENTRANCE` cell — the entrance (1,6) is now HAZARD, and the test relies on `_check_darkness_fairness_live`
+      resolving the entrance from the `entrance:{x:1,y:6}` field in the generation payload (which it does, correctly).
+      This is a pre-existing coupling, not a regression, and it passes today. Flagged only so a future change to how
+      the live gate derives the entrance (falling back to the ENTRANCE-terrain scan) would silently turn this FAIL
+      into an `invalid_darkness_candidate` rather than the asserted `entrance_on_hazard`. Human awareness only.
+      [`godot/tests/unit/run/test_live_affinity_flow.gd:174-262`, `godot/scripts/run/run_orchestrator.gd:1120-1124`]
+- [x] **[Review][Decision]** (Low) The `reduced_radius_for` clamp (`max(DARKNESS_RADIUS_FLOOR=1, AUTHORED=2)` = 2)
+      means the radius floor is currently never the binding constraint. The moving-LoS proof holds at the floor
+      (a 4-neighbour is at squared distance 1 ≤ radius_squared 1), so if a future authored value dropped to the floor
+      the predicate would still pass every reachable hazard. Verified correct; recorded so the "radius floor 1" leg of
+      the proof is not silently invalidated if the authored radius is ever lowered.
+      [`godot/scripts/tactical/fog/darkness_visibility_layer.gd:105-114`]

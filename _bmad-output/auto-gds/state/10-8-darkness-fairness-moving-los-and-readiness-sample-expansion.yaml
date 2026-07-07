@@ -3,10 +3,10 @@ epic_num: 10
 story_num: 8
 branch: story/10-8-darkness-fairness-moving-los-and-readiness-sample-expansion
 status: in-progress
-updated_at: "2026-07-07T13:39:27Z"
+updated_at: "2026-07-07T13:48:55Z"
 started_at: "2026-07-07T12:43:00Z"
 completed_at: null
-active_seconds: 3320
+active_seconds: 3790
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 8
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 1
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["3ce6e9b", "31f462a"]
+commits: ["3ce6e9b", "31f462a", "b193307"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
