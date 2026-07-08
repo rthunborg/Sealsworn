@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-08T12:50:00+00:00
+last_updated: 2026-07-08T13:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -167,7 +167,7 @@ development_status:
   12-1-interactive-combat-tap-loop-and-live-board-render: done
   12-2-class-loadout-and-winnable-hands-on-fights: done
   10-4-gameplay-comprehension-and-playtest-checklist: done
-  10-5-accessibility-and-readability-audit: backlog
+  10-5-accessibility-and-readability-audit: ready-for-dev
   10-6-mvp-readiness-gate-and-playable-build-preservation: backlog
   10-7-asset-audio-placeholder-and-ux-readiness-gate: backlog
   epic-10-retrospective: optional
