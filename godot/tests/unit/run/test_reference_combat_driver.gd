@@ -26,6 +26,7 @@ extends "res://tests/unit/test_case.gd"
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
+const AffinityRepository = preload("res://scripts/content/repositories/affinity_repository.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const CombatOutcomeState = preload("res://scripts/tactical/outcomes/combat_outcome_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
@@ -68,6 +69,44 @@ const APPROVED_LIVE_COMBAT_SEED_CATALOG: Array[Dictionary] = [
 	}
 ]
 
+# Story 10.4 (Task 5, AC7 — the 12.2 Medium/affinity fast-follow, EXTENDED disposition) — the APPROVED MEDIUM/elite
+# live-combat seed catalog. The original catalog above covers ONLY small_combat_basic / SIZE_SMALL NEUTRAL boards, but
+# the shipped interactive path (begin_interactive_combat_node) also hosts the class loadout on elite_combat
+# (medium_combat_basic / SIZE_MEDIUM) nodes. These entries prove 18-HP winnability by EVERY class on a MEDIUM board,
+# closing the "Small only" gap the 12.2 code review flagged. INLINE annotated catalog (the finale discipline — no combat
+# dump tool; each entry's enemy mix + round counts come from a LIVE ReferenceCombatDriver run, Story 10.4's probe). A
+# NON-winnable Medium seed FAILS LOUD (seed + class + reason) for triage — it is NOT silently dropped.
+const APPROVED_MEDIUM_LIVE_COMBAT_SEED_CATALOG: Array[Dictionary] = [
+	{
+		"seed": 128,
+		"notes": "Medium/elite board (~14x12), 2 iron_cultist + 1 gate_brute. A compact three-melee-body Medium clear winnable by all three classes (warrior ~14 / pyromancer ~12 / ranger ~17 rounds): the warrior commits to the melee bodies one at a time, the ranged classes kite the melee trio down the flank routes. The canonical Medium-neutral winnability entry."
+	},
+	{
+		"seed": 512,
+		"notes": "Medium/elite board (~14x12), 1 ash_seer + 1 iron_cultist + 2 gate_brute — a mixed seer+melee Medium mix. Winnable by all three classes (warrior ~25 / pyromancer ~28 / ranger ~34 rounds): the seer forces mark-dodging on the larger board while three melee bodies pressure the approach; a longer, representative Medium clear. Distinct seed from the Small-neutral seed 512 above (different recipe/size -> different board)."
+	}
+]
+
+# Story 10.4 (Task 5, AC7) — the APPROVED SCORCHED-AFFINITY live-combat seed catalog: MEDIUM boards with the Scorched
+# AffinityDefinition applied POST-generation (the driver's affinity params + AffinityRepository — the generator stays
+# affinity-blind). Scorched stamps HAZARD cells that tick a burning DoT on any unit lingering in them, so these prove
+# 18-HP winnability UNDER real affinity pressure (not just neutral). The affinity genuinely alters the fight: seed 512,
+# all-win Medium-NEUTRAL, is NOT all-win under Scorched (the DoT changes outcomes) — so these are deliberately chosen
+# Scorched all-win seeds. Round counts are from LIVE Scorched-affinity driver runs (Story 10.4's probe).
+const APPROVED_SCORCHED_LIVE_COMBAT_SEED_CATALOG: Array[Dictionary] = [
+	{
+		"seed": 7,
+		"notes": "Medium/elite + Scorched, 1 iron_cultist + 3 gate_brute (melee-heavy). Winnable by all three classes in ~11 rounds each under the Scorched hazard-DoT: a decisive short engagement (Scorched rewards not lingering in the flames), which the strengthened driver's commit/kite policy achieves without eating sustained burn. The canonical Scorched winnability entry."
+	},
+	{
+		"seed": 99,
+		"notes": "Medium/elite + Scorched, 3 iron_cultist + 2 gate_brute. Winnable by all three classes (warrior ~9 / pyromancer ~10 / ranger ~10 rounds) under Scorched: a denser melee mix cleared quickly enough to stay ahead of the burning DoT. A second, distinct-mix Scorched proof."
+	}
+]
+
+# The Scorched affinity id (a POST-generation board effect on a BUILT board; the generator is affinity-blind).
+const SCORCHED_AFFINITY_ID := &"scorched"
+
 # The three playable classes' live loadouts (the class_repository baseline kits): weapon + support id. All at 18 HP.
 const PLAYABLE_CLASSES: Array[Dictionary] = [
 	{"class_id": "warrior", "weapon_id": &"sword", "support_id": &"shield"},
@@ -79,6 +118,8 @@ const CLASS_HP: int = 18
 
 func run() -> Dictionary:
 	_every_approved_seed_is_winnable_by_every_class()
+	_every_approved_medium_seed_is_winnable_by_every_class()
+	_every_approved_scorched_seed_is_winnable_by_every_class()
 	_naive_focus_fire_dies_at_18_where_the_strengthened_driver_wins()
 	_an_unwinnable_seed_fails_loud_for_triage()
 	_resolution_is_byte_deterministic_per_seed_and_class()
@@ -119,6 +160,54 @@ func _every_approved_seed_is_winnable_by_every_class() -> void:
 			var board = result_value.metadata.get("board")
 			assert_equal(_living_enemy_count(board), 0, "seed=%d class=%s: a victory leaves ZERO living enemies." % [seed_value, String(playable["class_id"])])
 			assert_true(board.get_entity(&"hero").is_alive(), "seed=%d class=%s: the hero survives the victory." % [seed_value, String(playable["class_id"])])
+
+
+# ---- Story 10.4 (AC7): every approved MEDIUM/elite seed is winnable by every class (the Small->Medium gap) --------
+
+func _every_approved_medium_seed_is_winnable_by_every_class() -> void:
+	var supports: SupportRepository = SupportRepository.create_baseline_repository()
+	for entry: Dictionary in APPROVED_MEDIUM_LIVE_COMBAT_SEED_CATALOG:
+		var seed_value: int = int(entry["seed"])
+		var generation: GenerationResult = _generate_medium(seed_value)
+		assert_true(generation.succeeded, "Setup: approved Medium seed %d should generate a Medium combat level." % seed_value)
+		assert_true(_enemy_count(generation.payload.get("board", {})) >= 1, "Setup: approved Medium seed %d places at least one enemy." % seed_value)
+		for playable: Dictionary in PLAYABLE_CLASSES:
+			var result_value: ActionResult = _drive(generation, seed_value, playable, supports)
+			# A failing Medium seed x class is a HARD combat error carrying seed + class + reason (the fail-loud contract) —
+			# surfaced for triage, NOT silently dropped (a genuine balance/threshold finding to hand to 10.6 if it fires).
+			assert_true(
+				result_value.succeeded and bool(result_value.metadata.get("is_victory")),
+				"MEDIUM seed=%d class=%s: the strengthened driver must WIN on the Medium board (outcome=%s rounds=%d err=%s)" % [
+					seed_value, String(playable["class_id"]), String(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
+				]
+			)
+			var board = result_value.metadata.get("board")
+			assert_equal(_living_enemy_count(board), 0, "MEDIUM seed=%d class=%s: a victory leaves ZERO living enemies." % [seed_value, String(playable["class_id"])])
+			assert_true(board.get_entity(&"hero").is_alive(), "MEDIUM seed=%d class=%s: the hero survives the victory." % [seed_value, String(playable["class_id"])])
+
+
+# ---- Story 10.4 (AC7): every approved SCORCHED-affinity Medium seed is winnable by every class (affinity pressure) ---
+
+func _every_approved_scorched_seed_is_winnable_by_every_class() -> void:
+	var supports: SupportRepository = SupportRepository.create_baseline_repository()
+	var affinities: AffinityRepository = AffinityRepository.create_baseline_repository()
+	for entry: Dictionary in APPROVED_SCORCHED_LIVE_COMBAT_SEED_CATALOG:
+		var seed_value: int = int(entry["seed"])
+		var generation: GenerationResult = _generate_medium(seed_value)
+		assert_true(generation.succeeded, "Setup: approved Scorched seed %d should generate a Medium combat level." % seed_value)
+		for playable: Dictionary in PLAYABLE_CLASSES:
+			# Scorched is applied POST-generation on the built board (the driver's affinity params + the repository) — the
+			# generator stays affinity-blind. This proves 18-HP winnability UNDER real Scorched hazard-DoT pressure.
+			var result_value: ActionResult = _drive_with_affinity(generation, seed_value, playable, supports, SCORCHED_AFFINITY_ID, affinities)
+			assert_true(
+				result_value.succeeded and bool(result_value.metadata.get("is_victory")),
+				"SCORCHED seed=%d class=%s: the strengthened driver must WIN under Scorched (outcome=%s rounds=%d err=%s)" % [
+					seed_value, String(playable["class_id"]), String(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
+				]
+			)
+			var board = result_value.metadata.get("board")
+			assert_equal(_living_enemy_count(board), 0, "SCORCHED seed=%d class=%s: a victory leaves ZERO living enemies." % [seed_value, String(playable["class_id"])])
+			assert_true(board.get_entity(&"hero").is_alive(), "SCORCHED seed=%d class=%s: the hero survives the victory under DoT pressure." % [seed_value, String(playable["class_id"])])
 
 
 # ---- AC2: the winnability TENSION — the naive driver dies at 18 where the strengthened driver wins ----
@@ -288,6 +377,30 @@ func _drive(generation: GenerationResult, seed_value: int, playable: Dictionary,
 func _generate(seed_value: int) -> GenerationResult:
 	var request: GenerationRequest = GenerationRequest.new(seed_value, &"node_1_0", &"combat", &"small_combat_basic", GenerationRequest.SIZE_SMALL)
 	return LevelGenerator.generate(request, LevelRecipeRepository.create_baseline_repository(), EnemyRepository.create_baseline_repository())
+
+
+# Story 10.4 — the MEDIUM/elite generation request (medium_combat_basic / SIZE_MEDIUM), the elite_combat live path shape.
+func _generate_medium(seed_value: int) -> GenerationResult:
+	var request: GenerationRequest = GenerationRequest.new(seed_value, &"node_1_0", &"elite_combat", &"medium_combat_basic", GenerationRequest.SIZE_MEDIUM)
+	return LevelGenerator.generate(request, LevelRecipeRepository.create_baseline_repository(), EnemyRepository.create_baseline_repository())
+
+
+# Story 10.4 — drive a class through the ReferenceCombatDriver with an AFFINITY applied post-generation (the driver's
+# affinity params + the repository — the generator stays affinity-blind). Mirrors _drive but with a real affinity pair.
+func _drive_with_affinity(generation: GenerationResult, seed_value: int, playable: Dictionary, supports: SupportRepository, affinity_id: StringName, affinities: AffinityRepository) -> ActionResult:
+	var support: SupportDefinition = null
+	if StringName(playable["support_id"]) != SupportDefinition.SUPPORT_NONE:
+		support = supports.get_support(StringName(playable["support_id"]))
+	return ReferenceCombatDriver.new().resolve(
+		generation.payload.get("board", {}),
+		generation.payload.get("entrance", {}),
+		RngStreamSet.new(seed_value),
+		CLASS_HP,
+		StringName(playable["weapon_id"]),
+		affinity_id,
+		affinities,
+		support
+	)
 
 
 func _enemy_count(board_snapshot: Dictionary) -> int:
