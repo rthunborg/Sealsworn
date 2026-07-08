@@ -1,5 +1,8 @@
 # Epic 10 — Auto-GDS retro notes
 
+## Story 10-4-gameplay-comprehension-and-playtest-checklist
+- [Phase 5 — dev-story] The 12.2 Medium/affinity winnability gap is now genuinely CLOSED with added coverage (not scoped away): Medium boards are materially harder — the melee warrior frequently hits the round cap, so all-win Medium seeds are relatively rare, and Scorched DoT flips some neutral-winnable seeds to losses (seed 512 wins neutral but loses for 2/3 classes under Scorched). `ReferenceCombatDriver` handles Scorched hazard cells but does not dodge them (mark-dodge only covers seer telegraphs); winnability holds because the commit/kite policy clears fights fast enough to stay ahead of the burn.
+
 ## Story 10-8-darkness-fairness-moving-los-and-readiness-sample-expansion
 - [Phase 0 — sprint-change] Second "numbered-last-but-executes-earlier" insertion (after the Epic-12 precedent): `story_plan.py` honors sprint-status FILE ORDER for picking (10-8 correctly selected before 12-1) but derives `is_last_in_epic` from NUMBERING — for 10-8 it returns true although Epic 10 execution continues at 10-4 after Epic 12. Orchestrator must override/skip Phase 8 (epic-end) for such insertions; the real Epic 10 close is after 10-7.
 - [Phase 3 — create-story] Predicate-semantics changes fan out beyond the obvious sites: four stale static-from-entrance Darkness-FAIL expectations existed but only two were named in the epics.md ACs — `test_live_affinity_flow.gd`'s live-gate violation board and 10.2's honest-sample assertion block were only found by a full-codebase deliberate-update sweep. Convention: when changing a validator/predicate contract, grep-sweep ALL tests/tools/ledgers for baked expectations before scoping ACs.
