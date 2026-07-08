@@ -1,3 +1,72 @@
+## dev of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+Story 12.2 wired the class-kit → live-combat LOADOUT (the pure `CombatLoadout` source over `run.starting_kit`,
+threaded into `RunFlowController.hero_hp()`/`hero_weapon_id()`/`hero_support()` → the 12-1 `begin_interactive_combat_node`/
+`InteractiveCombatSession` seam) and delivered the strengthened LoS-aware reference driver (`ReferenceCombatDriver`), a
+headless winnability PROOF harness that clears the approved live-combat seed batch [4242, 8080, 6006, 2048, 512] with
+every playable class at the 18-HP class loadout. The `project-context.md` 11.2-boundary rule (lines 262 + 453) was
+revised in the same change (AC1). These are the dev-side forward residuals (no code review has run yet — that is the
+next pipeline phase).
+
+- [Review resolution → ARCHIVED] Epic-11 retro T2 (universally-winning hands-on hero path) — **RESOLVED by Story 12.2** (class-kit → combat-loadout wiring + the strengthened LoS-aware `ReferenceCombatDriver` winnability proof over the approved batch); full entry archived to `deferred-work-resolved.md` during the Epic 12 closeout (2026-07-08).
+- **RE-RECORD, do NOT close (T3 — the Necromancer/Shadeblade class-kit CONTENT).** 12-2 wired the loadout for the THREE
+  SELECTABLE classes (warrior / pyromancer / ranger) ONLY. The baseline `necromancer`/`shadeblade` `ClassDefinition`s
+  still carry NO kit, so starting an unlocked locked-baseline class would still fail `RunStartCommand`'s kit resolution.
+  A later CONTENT story authors their real kit AND threads the profile into the standalone `hero_select_presenter.gd` +
+  makes `ClassStartSummaryViewModel.re_derive_kit` profile-aware (`project-context.md` line 456; deferred-work "dev of
+  11-6"). 12-2's `CombatLoadout` source fails OPEN (falls back to the driver default) for a kit-less class so it never
+  crashes on a hypothetical kit-less start — but 12-2 does NOT author their kit.
+
+- **RE-RECORD, do NOT close (T4 — the run-level event STORE / `RunSummary.outcome_or_cause`).** 12-2's proof driver +
+  interactive finish key victory/death off the terminal `CombatOutcomeState` / the orchestrator's run_failed/victory
+  metadata (the 12-1 pattern), NOT `outcome_or_cause` (which stays BLANK until the run-level event store lands — a
+  later save-shape story, originating 11.5). 12-2 builds no event store; a run-end summary render still keys off
+  `phase` (`project-context.md` line 456).
+
+- **RE-RECORD, do NOT close (still open, NOT 12-2's).** The LIVE `content_discovered` discovery source; the LIVE
+  in-node board / pending-fight SAVE (the in-node fight stays EPHEMERAL; the 23-key gate stays 23); the G4 settings
+  view model; the Flooded electric-interaction `_placeholder` (Epic-10 readiness, 10-7); the affinity-driven
+  GENERATION modifier; and a passive-combat-effect operation engine (`scripts/rules/conditions/` stays EMPTY,
+  `scripts/rules/operations/` stays exactly one file — 12-2's AC3 distinctness is carried by equipment + support +
+  preview, NOT a new passive-effect engine; the kit's passive ids are RECORDED on the loadout, not newly effect-wired).
+
+- **NOTE (intentional, seeded AC4 change — NOT a defect).** Threading a class **support** into the live loadout draws
+  the `combat` stream where the flat sword default drew zero: a warrior `shield` (defender slot) engages the seeded
+  `shield_block` roll in `AttackCommand`; a pyromancer `tome` (attacker slot) adds +1 bonus damage (deterministic, no
+  draw). This is the INTENTIONAL class-path re-pin — the NEUTRAL default-driver / auto-resolve / generator / route /
+  finale paths stay byte-identical (they never carry a class support). No live-combat seed-regression fixture moved
+  (no existing fixture drives a class support); the `LiveCombatResolver.resolve(...)` default + `run_to_completion`
+  are UNTOUCHED.
+
+## Deferred from: code review of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 1 / Low 3; 1 open `[Review][Patch]` — the
+sibling-driver `hero_support` param-slot alignment, non-blocking; 1 open `[Review][Decision]` — the support-slot
+modeling shape). The suite was independently re-run (`Headless tests passed.`, exit 0, false-PASS guard clean, only
+the 6 documented stderr negatives); `LiveCombatResolver.resolve` byte-identical, 7 streams / 42-event enum / 23-key
+gate intact, no finale/seed-regression fixture moved. Two `[Review][Defer]` findings carried forward:
+
+- [ ] **[Review][Defer]** (Med, from code review of 12-2, 2026-07-07) — the `ReferenceCombatDriver` winnability proof
+  (`test_reference_combat_driver.gd`) covers ONLY `small_combat_basic` / `SIZE_SMALL` boards with NEUTRAL affinity for
+  the whole approved batch [4242, 8080, 6006, 2048, 512]. The shipped interactive path (`begin_interactive_combat_node`)
+  also hosts the class loadout on `elite_combat` (`medium_combat_basic` / `SIZE_MEDIUM`, `run_orchestrator.gd:1007,1275`)
+  nodes and applies the node's assigned affinity (Scorched hazard DoT / Darkness / Cursed) before hero placement — so
+  18-HP winnability is proven for the depth-0/Small neutral family only, NOT the Medium/elite or affinity-loaded live
+  surface, even though AC2's wording says "Small/**Medium**" and the driver's `resolve(...)` accepts (never receives)
+  affinity params. Not a correctness defect (the proven family is the primary hands-on entry; the human ≥ the reference
+  driver), but the claim is narrower than AC2's intent. Fast-follow before/within 10.4: add a Medium/elite seed × class
+  row + at least one Scorched-affinity live seed to the catalog, OR explicitly scope AC2 to Small-neutral and assign the
+  Medium/affinity winnability proof to 10.4/10.6.
+
+- [ ] **[Review][Defer]** (Low, from code review of 12-2, 2026-07-07) — `ReferenceCombatDriver._best_end_cell` calls
+  `_relocate_scratch` for every reachable cell every hero turn, and `_relocate_scratch` does a full `board.to_snapshot()`
+  → `try_from_snapshot` round-trip per candidate cell. It is a headless PROOF harness (not the on-screen loop) and the
+  approved clears run well under the 64-round cap, so there is no runtime concern today — but if the catalog grows
+  (esp. the larger Medium/elite boards from the Med finding above), the proof-suite runtime could climb. Optional:
+  replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model).
+
+- [Review][Defer → RESOLVED + ARCHIVED] (Low, Round 2) `project-context.md` line-478 Epic-11 rollup staleness — **RESOLVED by the Epic-12 context refresh (2026-07-08)**; full entry archived to `deferred-work-resolved.md` during the Epic 12 closeout (2026-07-08).
+
 ## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
 
 Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0 open `[Review][Patch]`; 1 open

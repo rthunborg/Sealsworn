@@ -98,25 +98,17 @@ func execute(state: Variant) -> ActionResult:
 	var block_succeeded: bool = false
 	var rng_draws: Array[Dictionary] = []
 
-	if _support_id(defender_support) == SupportDefinition.SUPPORT_SHIELD:
-		var block_result: ActionResult = context.rng_streams.rand_float(
-			RngStreamSet.STREAM_COMBAT,
-			{
-				"command": "attack",
-				"effect_id": "shield_block",
-				"actor_id": String(actor_id),
-				"target_entity_id": String(target_entity_id)
-			}
-		)
-		if block_result.is_error():
-			return block_result
-		block_succeeded = float(block_result.metadata.get("value", 1.0)) <= defender_support.block_chance
-		rng_draws.append(_combat_draw_metadata(
-			block_result.metadata,
-			&"shield_block",
-			defender_support.block_chance,
-			block_succeeded
-		))
+	# The defender-support shield-block roll — the SINGLE seeded block mechanism on the `combat` stream. Story 12.2
+	# threads a DEFENDING hero's own shield here on the ENEMY's attack against it (the hero-defense seam, via
+	# EnemyCommandAdapter), so the same roll protects the shield's OWNER; the hero's own attack no longer carries a
+	# defender shield (it never protected the enemy). A null / non-shield defender_support draws NOTHING (byte-identical).
+	var block: ActionResult = roll_shield_block(context.rng_streams, defender_support, actor_id, target_entity_id)
+	if block.is_error():
+		return block
+	block_succeeded = bool(block.metadata.get("block_succeeded", false))
+	var block_draw: Dictionary = block.metadata.get("draw", {})
+	if not block_draw.is_empty():
+		rng_draws.append(block_draw)
 
 	var final_damage: int = post_armor_damage
 	if block_succeeded:
@@ -181,6 +173,43 @@ func execute(state: Variant) -> ActionResult:
 		metadata["knockback_succeeded"] = false
 		metadata["knockback_blocked_reason"] = "target_defeated" if not target_survives else "not_attempted"
 	return ActionResult.ok(events, metadata)
+
+
+# Story 12.2 (AC3 — the hero-defense seam) — the SINGLE seeded shield-block roll, factored out so BOTH the attack path
+# (a defender that carries a shield) AND the enemy-attack-against-a-shielded-hero path (EnemyCommandAdapter) engage the
+# EXACT SAME mechanism on the `combat` stream — no parallel block mechanic, no new RNG stream. Rolls only when
+# `defender_support` is a real SUPPORT_SHIELD; otherwise it is a ZERO-draw no-op (the byte-identical neutral path).
+# Returns ok with { block_succeeded: bool, draw: Dictionary } — draw is the `combat` rng_draws entry (empty when no
+# roll happened). Surfaces the rng error verbatim on a stream fault.
+static func roll_shield_block(
+	rng_streams: RngStreamSet,
+	defender_support: SupportDefinition,
+	actor_id: StringName,
+	target_entity_id: StringName
+) -> ActionResult:
+	if defender_support == null or defender_support.support_id != SupportDefinition.SUPPORT_SHIELD:
+		return ActionResult.ok([], {"block_succeeded": false, "draw": {}})
+	var block_result: ActionResult = rng_streams.rand_float(
+		RngStreamSet.STREAM_COMBAT,
+		{
+			"command": "attack",
+			"effect_id": "shield_block",
+			"actor_id": String(actor_id),
+			"target_entity_id": String(target_entity_id)
+		}
+	)
+	if block_result.is_error():
+		return block_result
+	var block_succeeded: bool = float(block_result.metadata.get("value", 1.0)) <= defender_support.block_chance
+	return ActionResult.ok([], {
+		"block_succeeded": block_succeeded,
+		"draw": _static_combat_draw_metadata(
+			block_result.metadata,
+			&"shield_block",
+			defender_support.block_chance,
+			block_succeeded
+		)
+	})
 
 
 func _roll_proc_if_needed(
@@ -369,6 +398,15 @@ func _damage_event_payload(
 
 
 func _combat_draw_metadata(
+	rng_metadata: Dictionary,
+	effect_id: StringName,
+	threshold: float,
+	succeeded: bool
+) -> Dictionary:
+	return _static_combat_draw_metadata(rng_metadata, effect_id, threshold, succeeded)
+
+
+static func _static_combat_draw_metadata(
 	rng_metadata: Dictionary,
 	effect_id: StringName,
 	threshold: float,

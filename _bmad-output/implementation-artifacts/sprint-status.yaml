@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-07-04T12:00:00+00:00
+# last_updated: 2026-07-07T00:00:00+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-07T16:44:59+00:00
+last_updated: 2026-07-08T09:36:11+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -163,12 +163,12 @@ development_status:
   # the interactive tap-loop + winnable class loadout are prerequisites for 10-4's
   # hands-on sessions and 10-6's "die or win" loop gate. Epic numbering intentionally
   # NOT reshuffled.
-  epic-12: in-progress
+  epic-12: done
   12-1-interactive-combat-tap-loop-and-live-board-render: done
-  12-2-class-loadout-and-winnable-hands-on-fights: backlog
+  12-2-class-loadout-and-winnable-hands-on-fights: done
   10-4-gameplay-comprehension-and-playtest-checklist: backlog
   10-5-accessibility-and-readability-audit: backlog
   10-6-mvp-readiness-gate-and-playable-build-preservation: backlog
   10-7-asset-audio-placeholder-and-ux-readiness-gate: backlog
   epic-10-retrospective: optional
-  epic-12-retrospective: optional
+  epic-12-retrospective: done

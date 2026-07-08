@@ -30,6 +30,8 @@ const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
+const SupportRepository = preload("res://scripts/content/repositories/support_repository.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalPathQuery = preload("res://scripts/tactical/movement/tactical_path_query.gd")
 
@@ -47,6 +49,8 @@ func run() -> Dictionary:
 	_auto_resolve_default_is_unperturbed_by_the_interactive_seam()
 	_default_run_to_completion_is_byte_identical_to_a_second_run()
 	_invariants_hold_no_new_stream_no_new_event()
+	# Story 12.2 — the class-kit loadout (HP/weapon/support) threads through begin_interactive_combat_node.
+	_begin_interactive_combat_node_threads_the_class_kit_loadout()
 	return result()
 
 
@@ -229,6 +233,25 @@ func _invariants_hold_no_new_stream_no_new_event() -> void:
 	assert_equal(RngStreamSet.required_streams().size(), 7, "The 7 named RNG streams are invariant (no new stream for the tap-loop).")
 	assert_equal(int(DomainEvent.Type.size()), 42, "The DomainEvent.Type enum has 42 members (unchanged — the tap-loop adds no event).")
 	assert_equal(int(DomainEvent.Type.OATH_SHARDS_SPENT), 41, "The enum tail is OATH_SHARDS_SPENT at index 41 (the Epic-11 tail is unchanged).")
+
+
+# ---- Story 12.2: the class-kit loadout threads through the interactive seam -----------------------
+
+func _begin_interactive_combat_node_threads_the_class_kit_loadout() -> void:
+	# begin_interactive_combat_node additively accepts the class-kit loadout (HP / weapon / support) and threads it into
+	# the InteractiveCombatSession: the kit weapon becomes the session hero_weapon, and the kit support is SEATED on the
+	# session (the on-screen taps inherit it). Proven with the warrior kit (sword + shield) on the canonical live seed.
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(LIVE_SEED, false, &"warrior").succeeded, "Setup: start a warrior run should succeed.")
+	var start_node: RouteNode = orchestrator.run.route.node_by_id(orchestrator.run.route.current_node_id)
+	var shield: SupportDefinition = SupportRepository.create_baseline_repository().get_support(&"shield")
+
+	var setup: ActionResult = orchestrator.begin_interactive_combat_node(start_node, 18, &"sword", shield)
+	assert_true(setup.succeeded, "The kit-loadout interactive setup should succeed: %s" % setup.metadata)
+	var session: InteractiveCombatSession = setup.metadata.get("session")
+	assert_true(session != null, "The setup hands back the session.")
+	assert_equal(String(session.hero_weapon().weapon_id), "sword", "The session hero weapon is the kit weapon (sword).")
+	assert_equal(String(session.loadout_support().support_id), String(SupportDefinition.SUPPORT_SHIELD), "The session SEATS the class-kit shield support (the taps inherit it).")
 
 
 # ---- helpers -------------------------------------------------------------------------------------

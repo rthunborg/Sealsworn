@@ -11,6 +11,7 @@ const EnemyRepository = preload("res://scripts/content/repositories/enemy_reposi
 const PendingTelegraphState = preload("res://scripts/tactical/turns/pending_telegraph_state.gd")
 const PrototypeEnemyAi = preload("res://scripts/ai/prototype_enemy_ai.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
@@ -18,12 +19,22 @@ const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_st
 var _enemy_repository: EnemyRepository = null
 var _player_id: StringName = &"hero"
 var _ai: PrototypeEnemyAi = null
-var _adapter: EnemyCommandAdapter = EnemyCommandAdapter.new()
+var _adapter: EnemyCommandAdapter = null
+# Story 12.2 (AC3 — the hero-defense seam): the seated player's loadout defender support (the class off-hand). When a
+# shield, an enemy attack against the player engages the SAME seeded AttackCommand.roll_shield_block on the `combat`
+# stream — the shield protects its OWNER. Null (the default) is the neutral no-defense case (byte-identical enemy phase).
+var _player_defender_support: SupportDefinition = null
 
-func _init(new_enemy_repository: EnemyRepository = null, new_player_id: StringName = &"hero") -> void:
+func _init(
+	new_enemy_repository: EnemyRepository = null,
+	new_player_id: StringName = &"hero",
+	new_player_defender_support: SupportDefinition = null
+) -> void:
 	_enemy_repository = new_enemy_repository
 	_player_id = new_player_id
+	_player_defender_support = new_player_defender_support
 	_ai = PrototypeEnemyAi.new(_enemy_repository)
+	_adapter = EnemyCommandAdapter.new(new_player_id, new_player_defender_support)
 
 
 func resolve_after_player_action(
@@ -54,6 +65,13 @@ func resolve_after_player_action(
 		})
 	if _player_id == &"":
 		_player_id = resolved_player_id
+	# Story 12.2 (AC3 — the hero-defense seam, Review Round 2 hardening): the adapter was built ONCE in _init with the
+	# original (possibly empty) player id and is never rebuilt. Sync the now-resolved, validated (non-empty per the
+	# invalid_active_actor guard above) player id into it BEFORE the enemy phase runs, so a caller that relies on the
+	# late-bind (e.g. EnemyTurnResolver.new(repo, &"", shield_support)) cannot leave the adapter holding &"" and SILENTLY
+	# drop the hero's shield defense. This is the resolver's single source of truth for the player id; the adapter always
+	# reflects it. A no-op (byte-identical) when the id was already concrete — every current production/test caller.
+	_adapter.set_player_id(_player_id)
 
 	var simulation_context: TacticalActionContext = _copy_context_for_simulation(context)
 	if simulation_context == null:
@@ -72,6 +90,16 @@ func resolve_after_player_action(
 	var pending_result: ActionResult = PendingTelegraphState.apply_events(context.pending_telegraphs, events)
 	if pending_result.is_error():
 		return pending_result
+
+	# Story 12.2 (AC3 — the hero-defense seam): sync the simulation streams back to the run-level context. The enemy phase
+	# draws RNG ONLY when a shielded hero is attacked (AttackCommand.roll_shield_block on the `combat` stream, on the
+	# simulation copy). Restoring the copy's advanced state makes that a REAL, seeded, reproducible run-level `combat` draw
+	# (never a throwaway simulation draw). When NO draw happened (the neutral no-shield enemy phase — every pre-12.2 caller,
+	# the auto-resolve driver, the boss path) the copy is byte-identical to the original snapshot, so this restore is a
+	# no-op and the run-level streams stay byte-identical.
+	var streams_sync: ActionResult = context.rng_streams.try_restore(simulation_context.rng_streams.to_snapshot())
+	if streams_sync.is_error():
+		return _invalid(&"invalid_stream_sync", {"inner_error_code": String(streams_sync.error_code)})
 
 	context.turn_state.turn_number = simulation_context.turn_state.turn_number
 	context.turn_state.phase = simulation_context.turn_state.phase

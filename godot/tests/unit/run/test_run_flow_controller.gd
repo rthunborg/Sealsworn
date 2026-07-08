@@ -22,6 +22,8 @@ const ProfileRepository = preload("res://scripts/save/profile_repository.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 
 # Story 11.5: a throwaway profile path for the finalize_run_end bridge seam (so the controller test does not touch the
 # real user://profile.json).
@@ -42,6 +44,10 @@ func run() -> Dictionary:
 	_finalize_run_end_builds_the_outpost_off_a_terminal_run()
 	_finalize_run_end_is_null_on_an_unstarted_controller()
 	_next_sequence_id_is_a_readonly_cursor_past_the_start()
+	# Story 12.2 (AC1) — the live-combat loadout accessors are now KIT-DERIVED (the 11.2 boundary revision).
+	_hero_loadout_accessors_derive_from_the_class_kit()
+	_hero_hp_falls_back_to_the_driver_default_on_a_kitless_run()
+	_hands_off_flow_stays_on_the_tuned_default_loadout()
 	_cleanup()
 	return result()
 
@@ -180,6 +186,52 @@ func _next_sequence_id_is_a_readonly_cursor_past_the_start() -> void:
 	var cursor: int = controller.orchestrator().next_sequence_id()
 	assert_true(cursor > 0, "The sequence cursor is a positive id (a valid record sequence id).")
 	assert_equal(controller.orchestrator().next_sequence_id(), cursor, "next_sequence_id() is a PURE READ — it does not advance on read (two reads agree).")
+
+
+# ---- Story 12.2 (AC1): the live-combat loadout accessors are KIT-DERIVED ---------------------------
+
+func _hero_loadout_accessors_derive_from_the_class_kit() -> void:
+	# The 11.2 boundary revision: hero_hp() / hero_weapon_id() / hero_support() now derive from the seated class's
+	# StartingKit (run.starting_kit) instead of the flat DEFAULT_HERO_HP/sword. Proven for each of the three classes.
+	var warrior: RunFlowController = RunFlowController.new()
+	assert_true(warrior.start(FINALE_SEED, false, &"warrior").get("started"), "Setup: seat a warrior run.")
+	assert_equal(warrior.hero_hp(), 18, "hero_hp() derives the warrior kit baseline_hp (18 — NOT the flat DEFAULT_HERO_HP 60).")
+	assert_equal(String(warrior.hero_weapon_id()), "sword", "hero_weapon_id() derives the warrior kit weapon (sword).")
+	assert_true(warrior.hero_support() != null and String(warrior.hero_support().support_id) == String(SupportDefinition.SUPPORT_SHIELD), "hero_support() derives the warrior kit shield.")
+
+	var pyromancer: RunFlowController = RunFlowController.new()
+	assert_true(pyromancer.start(FINALE_SEED, false, &"pyromancer").get("started"), "Setup: seat a pyromancer run.")
+	assert_equal(String(pyromancer.hero_weapon_id()), "staff", "hero_weapon_id() derives the pyromancer kit weapon (staff).")
+	assert_true(pyromancer.hero_support() != null and String(pyromancer.hero_support().support_id) == String(SupportDefinition.SUPPORT_TOME), "hero_support() derives the pyromancer kit tome.")
+
+	var ranger: RunFlowController = RunFlowController.new()
+	assert_true(ranger.start(FINALE_SEED, false, &"ranger").get("started"), "Setup: seat a ranger run.")
+	assert_equal(String(ranger.hero_weapon_id()), "bow", "hero_weapon_id() derives the ranger kit weapon (bow).")
+	assert_true(ranger.hero_support() == null, "hero_support() is null for the ranger (its support is the real no-op none).")
+
+
+func _hero_hp_falls_back_to_the_driver_default_on_a_kitless_run() -> void:
+	# A seed-only (empty-class) run records NO kit — the loadout accessors FALL OPEN to the driver default so the run
+	# still resolves (the AC1 fail-open fallback; a run with NO kit uses the driver default).
+	var controller: RunFlowController = RunFlowController.new()
+	assert_true(controller.start(FINALE_SEED, false, &"").get("started"), "Setup: seat a seed-only (kitless) run.")
+	assert_true(controller.run().starting_kit == null, "Setup: a seed-only run records NO kit.")
+	assert_equal(controller.hero_hp(), LiveCombatResolver.DEFAULT_HERO_HP, "A kitless run falls back to the driver default HP (60).")
+	assert_equal(String(controller.hero_weapon_id()), String(LiveCombatResolver.DEFAULT_HERO_WEAPON), "A kitless run falls back to the driver default weapon (sword).")
+	assert_true(controller.hero_support() == null, "A kitless run carries no support (the byte-identical default path).")
+
+
+func _hands_off_flow_stays_on_the_tuned_default_loadout() -> void:
+	# AC4: the hands-off AUTO-RESOLVE smoke path is DECOUPLED from the now-kit-derived hero_hp() — it stays on the tuned
+	# DEFAULT loadout (60/sword) so the byte-identical focus-fire LiveCombatResolver still reaches a terminal victory
+	# (threading the warrior 18 HP into the focus-fire driver would reproduce the 11.3 death). A warrior run's hands-off
+	# flow reaches a terminal outcome (it does NOT use the 18-HP kit HP that would kill the focus-fire driver).
+	var controller: RunFlowController = RunFlowController.new()
+	assert_true(controller.start(FINALE_SEED, false, &"warrior").get("started"), "Setup: seat a warrior run.")
+	assert_equal(controller.hero_hp(), 18, "Setup: the warrior kit HP is 18 (the focus-fire driver would die on it).")
+	var result_data: Dictionary = controller.play_hands_off_to_run_end()
+	assert_true(result_data.get("ok", false), "The hands-off flow (on the tuned DEFAULT loadout, NOT the 18-HP kit) reaches a terminal outcome: %s" % result_data)
+	assert_equal(String(result_data.get("phase")), String(RunState.PHASE_COMPLETED), "The hands-off flow completes the run (the tuned default loadout wins — it is NOT crippled by the 18-HP kit).")
 
 
 func _cleanup() -> void:

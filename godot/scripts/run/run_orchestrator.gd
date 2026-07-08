@@ -87,6 +87,7 @@ const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
@@ -1111,12 +1112,17 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 # node-resolution; the atomic resolve_combat_node_live stays UNCHANGED + reachable (the auto-resolve/proof path). Returns
 # ok with { session, board, turn_state, affinity_id, darkness_fairness, node_id, node_type } for the render, or a
 # structured error (a rejected enter/generate/affinity/fairness/board-restore) with ZERO partial progression (the node is
-# neither entered forward nor cleared — a failed setup surfaces structurally). `hero_hp` / `hero_weapon_id` are the
-# driver-supplied loadout (the class-kit -> combat-loadout wiring is Story 12.2).
+# neither entered forward nor cleared — a failed setup surfaces structurally). `hero_hp` / `hero_weapon_id` /
+# `hero_support` are the driver-supplied loadout. Story 12.2 (AC1/AC3) threads the CLASS-KIT loadout here: the caller
+# (the gameplay shell via RunFlowController's CombatLoadout source) passes the selected class's kit HP / weapon /
+# off-hand support. A null hero_support (the neutral SUPPORT_NONE / a kit-less run) is the byte-identical no-support path;
+# a warrior shield / pyromancer tome engages the seeded `combat`-stream draw in AttackCommand — the INTENTIONAL AC4
+# change on the CLASS path.
 func begin_interactive_combat_node(
 	node: RouteNode,
 	hero_hp: int = LiveCombatResolver.DEFAULT_HERO_HP,
-	hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON
+	hero_weapon_id: StringName = LiveCombatResolver.DEFAULT_HERO_WEAPON,
+	hero_support: SupportDefinition = null
 ) -> ActionResult:
 	if run == null:
 		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
@@ -1175,7 +1181,8 @@ func begin_interactive_combat_node(
 		hero_hp,
 		hero_weapon_id,
 		affinity_id,
-		_affinity_repository
+		_affinity_repository,
+		hero_support
 	)
 	if begin.is_error():
 		# A rejected board restore / affinity apply / hero placement is a hard setup error: surface it structurally + STOP

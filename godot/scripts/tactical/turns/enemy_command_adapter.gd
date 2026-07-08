@@ -3,13 +3,39 @@ extends RefCounted
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AiDecision = preload("res://scripts/ai/ai_decision.gd")
+const AttackCommand = preload("res://scripts/core/commands/attack_command.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const EnemyDefinition = preload("res://scripts/content/definitions/enemy_definition.gd")
 const PendingTelegraphState = preload("res://scripts/tactical/turns/pending_telegraph_state.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalLineQuery = preload("res://scripts/tactical/targeting/tactical_line_query.gd")
+
+# Story 12.2 (AC3 — the hero-defense seam): the DEFENDING player's identity + its loadout defender support (the class
+# off-hand). When an enemy attack resolves against THIS player id and the support is a shield, the SAME seeded
+# AttackCommand.roll_shield_block runs on the `combat` stream (armor + block-halving protect the shield's OWNER). Both
+# default to the neutral no-defense case (&"" / null) so every existing caller — the auto-resolve driver, the boss path,
+# the direct adapter tests — stays BYTE-IDENTICAL (a null defender support draws NOTHING). Set by EnemyTurnResolver.
+var _player_id: StringName = &""
+var _player_defender_support: SupportDefinition = null
+
+func _init(new_player_id: StringName = &"", new_player_defender_support: SupportDefinition = null) -> void:
+	_player_id = new_player_id
+	_player_defender_support = new_player_defender_support
+
+
+# Story 12.2 (AC3 — the hero-defense seam, Review Round 2 hardening): keep the adapter's defending-player identity in
+# lockstep with EnemyTurnResolver's own (possibly late-bound) `_player_id`. The resolver builds this adapter ONCE in its
+# _init, but late-binds its player id from the active actor when constructed with the empty default. Without this sync,
+# the adapter would keep the ORIGINAL empty id and _defender_support_for(...) would silently return null for the hero —
+# dropping the shield defense (no block roll, no armor) with no error. The resolver calls this right after it resolves
+# the late-bound id (which is already validated non-empty by that point), so the stale-id state is impossible before the
+# enemy phase ever consults the adapter. A no-op when the id is unchanged (every concrete-id caller stays byte-identical).
+func set_player_id(new_player_id: StringName) -> void:
+	_player_id = new_player_id
+
 
 func apply_decision(
 	context: TacticalActionContext,
@@ -54,10 +80,37 @@ func _apply_attack(
 	if distance > definition.melee_range or not _is_cardinally_aligned(actor.position, target.position):
 		return _invalid(&"invalid_target")
 
-	var damage: int = definition.melee_damage
+	var base_damage: int = definition.melee_damage
+	var source_id: StringName = definition.melee_source_id()
+
+	# Story 12.2 (AC3 — the hero-defense seam): if THIS attack lands on the seated player and it carries a shield off-hand,
+	# resolve the SAME defender-support finalization AttackCommand applies — the shield's armor reduces the raw hit, then
+	# the SINGLE seeded AttackCommand.roll_shield_block (the `combat` stream) halves it on a block. The shield protects its
+	# OWNER (the hero). The neutral case (no defender support / a non-hero target) is a ZERO-draw no-op that yields the
+	# byte-identical damage the enemy always dealt. The block draw runs on the SIMULATION context's `combat` stream here;
+	# EnemyTurnResolver syncs that advanced stream back to the run-level context so the roll is a real, seeded, reproducible
+	# run-level `combat` draw (never a throwaway).
+	var defender_support: SupportDefinition = _defender_support_for(target)
+	var armor_reduction: int = _armor_reduction_for(defender_support, base_damage)
+	var post_armor_damage: int = max(0, base_damage - armor_reduction)
+	var block: ActionResult = AttackCommand.roll_shield_block(context.rng_streams, defender_support, actor.entity_id, target.entity_id)
+	if block.is_error():
+		return block
+	var block_succeeded: bool = bool(block.metadata.get("block_succeeded", false))
+	var block_draw: Dictionary = block.metadata.get("draw", {})
+	var rng_draws: Array[Dictionary] = []
+	if not block_draw.is_empty():
+		rng_draws.append(block_draw)
+
+	var damage: int = post_armor_damage
+	if block_succeeded:
+		damage = int(floor(float(post_armor_damage) * 0.5))
+	# A neutral (unshielded) hit deals the raw melee_damage byte-for-byte; only a real shield floors the damage at >= 1.
+	if defender_support != null:
+		damage = max(1, damage)
+
 	var hp_before: int = target.current_hp
 	var hp_after: int = max(0, hp_before - damage)
-	var source_id: StringName = definition.melee_source_id()
 	var first_sequence_id: int = board.next_sequence_id()
 	var events: Array[DomainEvent] = [
 		DomainEvent.entity_attacked(
@@ -76,7 +129,16 @@ func _apply_attack(
 			hp_before,
 			hp_after,
 			target.max_hp,
-			_damage_payload(source_id, damage, definition.melee_damage_type, _attack_explanation(definition, target.entity_id, damage))
+			_attack_damage_payload(
+				source_id,
+				base_damage,
+				damage,
+				armor_reduction,
+				block_succeeded,
+				rng_draws,
+				definition.melee_damage_type,
+				_attack_explanation(definition, target.entity_id, damage)
+			)
 		)
 	]
 	return _apply_events(board, events, decision)
@@ -340,6 +402,51 @@ func _damage_payload(
 		"rng_draws": [],
 		"explanation": explanation
 	}
+
+
+# Story 12.2 (AC3 — the hero-defense seam) — the melee damage payload carrying the DEFENDER-side shield outcome (armor +
+# block + the seeded rng_draws), mirroring AttackCommand's damage payload shape. Enemies carry no attacker support, so
+# support_bonus_damage is always 0. For the neutral (unshielded) hit — armor_reduction 0, block_succeeded false, empty
+# rng_draws, base_damage == final_damage — this is BYTE-IDENTICAL to the pre-12.2 _damage_payload output.
+func _attack_damage_payload(
+	source_id: StringName,
+	base_damage: int,
+	final_damage: int,
+	armor_reduction: int,
+	block_succeeded: bool,
+	rng_draws: Array[Dictionary],
+	damage_type: StringName,
+	explanation: String
+) -> Dictionary:
+	return {
+		"weapon_id": String(source_id),
+		"base_damage": base_damage,
+		"support_bonus_damage": 0,
+		"armor_reduction": armor_reduction,
+		"block_succeeded": block_succeeded,
+		"final_damage": final_damage,
+		"damage_type": String(damage_type),
+		"rng_draws": rng_draws.duplicate(true),
+		"explanation": explanation
+	}
+
+
+# The DEFENDER support for an enemy's target: the seated player's loadout shield when the target IS the seated player
+# (the hero-defense seam), else null (a non-hero target, or no seated defender support — the neutral no-defense case).
+func _defender_support_for(target: TacticalEntityState) -> SupportDefinition:
+	if _player_defender_support == null or _player_id == &"":
+		return null
+	if target.entity_id != _player_id:
+		return null
+	return _player_defender_support
+
+
+# The shield's flat armor reduction, clamped to the incoming damage (mirrors AttackCommand._armor_reduction). A null /
+# non-shield support reduces nothing.
+func _armor_reduction_for(defender_support: SupportDefinition, damage_before_defense: int) -> int:
+	if defender_support == null:
+		return 0
+	return min(defender_support.armor, max(0, damage_before_defense))
 
 
 func _attack_explanation(definition: EnemyDefinition, target_entity_id: StringName, damage: int) -> String:
