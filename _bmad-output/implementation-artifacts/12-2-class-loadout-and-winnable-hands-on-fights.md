@@ -4,7 +4,7 @@ baseline_commit: 3ceaffd5981d648a4cbe42d8107a4128a3c2b123
 
 # Story 12.2: Class Loadout and Winnable Hands-On Fights
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
