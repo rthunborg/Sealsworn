@@ -2,6 +2,38 @@
 
 Entries moved out of `deferred-work.md` once verified resolved. Archived during epic closeouts by auto-gds (and ad-hoc when an item is confirmed done). Newest archive batch on top.
 
+## Archived during epic 12 closeout (2026-07-08)
+
+### Originally tracked from: dev of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+- **RESOLVED (owner: this story): Epic-11 retro T2 — a universally-winning hands-on hero path.** 12-2 is the story the
+  2026-07-07 sprint change + the Epic-11 retro assigned T2 to (retro line 185, MED-HIGH). It delivers BOTH prongs the
+  T2 item offered: (a) the class-kit → combat-LOADOUT wiring (the live hero is armed from `run.starting_kit` — HP /
+  weapon / support — instead of the flat 60/sword default; a null-kit run falls open to the driver default), and (b)
+  the STRENGTHENED LoS-aware reference driver (`ReferenceCombatDriver`) that dodges ash-seer detonations + kites
+  (ranged) / commits to the nearest melee body (melee), making the 18-HP class loadout WINNABLE on the approved seed
+  batch where the naive focus-fire `LiveCombatResolver` provably dies. An unwinnable seed still fails loud
+  (`live_combat_did_not_resolve` — seed + reason) for triage before 10.4. The retro T2 residual is CLOSED. (The T1
+  interactive tap-loop it paired with was resolved by 12-1.)
+
+### Originally deferred from: code review of 12-2-class-loadout-and-winnable-hands-on-fights, Round 2 (2026-07-07)
+
+- [x] **[Review][Defer]** (Low, from code review of 12-2 **Round 2**, 2026-07-07) — `project-context.md` line 478 (the
+  dated "Last Updated: 2026-07-06" Epic-11 rollup paragraph) still says "the live driver uses
+  `LiveCombatResolver.DEFAULT_HERO_HP` (60)" and "183 test files / 182 PASS", both superseded by Story 12.2 (the
+  interactive live loadout is now class-derived via `CombatLoadout`; the suite is 189 PASS). The two AC1-pinned boundary
+  lines the story had to revise (line 262 class_kit_rules + line 453 run-flow-scene-hud-rules) ARE both correctly updated
+  and accurate — line 478 is a historical epic-retrospective snapshot line outside the AC1-pinned scope, so this is a
+  cosmetic doc-staleness nit, not an AC1 miss. Fold the "DEFAULT_HERO_HP (60)" clause + the PASS count into the next
+  `project-context.md` "Last Updated" refresh (e.g. at the Epic-12 close) so the rollup does not contradict 262/453.
+  - **RESOLVED BY THE EPIC-12 CONTEXT REFRESH (2026-07-08, `gds-generate-project-context`).** The stale Epic-11 rollup
+    clauses were corrected in the `project-context.md` refresh: the "the live driver uses `LiveCombatResolver.DEFAULT_HERO_HP`
+    (60)" clause is now scoped to "the auto-resolve/hands-off default driver" + carries an explicit `[SUPERSEDED by Epic 12:
+    the INTERACTIVE live loadout is now class-derived via CombatLoadout …]` marker pointing at the new Epic-12 rollup, and
+    the "183 test files / 182 PASS" line is annotated `[Suite is now 189 PASS after Epic 12 …]`. A new "Last Updated:
+    2026-07-08 (refreshed after Epic 12 …)" header was added above the (now-prior) Epic-11 line; the two AC1-pinned lines
+    (262/453) stay accurate. The rollup no longer contradicts 262/453.
+
 ## Archived during epic 9 closeout (2026-07-04)
 
 ### Originally deferred from: code review of 9-2-larval-avatar-definition-and-phases (2026-07-03)

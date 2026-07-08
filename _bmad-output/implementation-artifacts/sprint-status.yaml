@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-07T18:30:00+00:00
+last_updated: 2026-07-08T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -171,4 +171,4 @@ development_status:
   10-6-mvp-readiness-gate-and-playable-build-preservation: backlog
   10-7-asset-audio-placeholder-and-ux-readiness-gate: backlog
   epic-10-retrospective: optional
-  epic-12-retrospective: optional
+  epic-12-retrospective: done

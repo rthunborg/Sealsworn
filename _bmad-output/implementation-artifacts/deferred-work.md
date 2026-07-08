@@ -8,16 +8,7 @@ every playable class at the 18-HP class loadout. The `project-context.md` 11.2-b
 revised in the same change (AC1). These are the dev-side forward residuals (no code review has run yet — that is the
 next pipeline phase).
 
-- **RESOLVED (owner: this story): Epic-11 retro T2 — a universally-winning hands-on hero path.** 12-2 is the story the
-  2026-07-07 sprint change + the Epic-11 retro assigned T2 to (retro line 185, MED-HIGH). It delivers BOTH prongs the
-  T2 item offered: (a) the class-kit → combat-LOADOUT wiring (the live hero is armed from `run.starting_kit` — HP /
-  weapon / support — instead of the flat 60/sword default; a null-kit run falls open to the driver default), and (b)
-  the STRENGTHENED LoS-aware reference driver (`ReferenceCombatDriver`) that dodges ash-seer detonations + kites
-  (ranged) / commits to the nearest melee body (melee), making the 18-HP class loadout WINNABLE on the approved seed
-  batch where the naive focus-fire `LiveCombatResolver` provably dies. An unwinnable seed still fails loud
-  (`live_combat_did_not_resolve` — seed + reason) for triage before 10.4. The retro T2 residual is CLOSED. (The T1
-  interactive tap-loop it paired with was resolved by 12-1.)
-
+- [Review resolution → ARCHIVED] Epic-11 retro T2 (universally-winning hands-on hero path) — **RESOLVED by Story 12.2** (class-kit → combat-loadout wiring + the strengthened LoS-aware `ReferenceCombatDriver` winnability proof over the approved batch); full entry archived to `deferred-work-resolved.md` during the Epic 12 closeout (2026-07-08).
 - **RE-RECORD, do NOT close (T3 — the Necromancer/Shadeblade class-kit CONTENT).** 12-2 wired the loadout for the THREE
   SELECTABLE classes (warrior / pyromancer / ranger) ONLY. The baseline `necromancer`/`shadeblade` `ClassDefinition`s
   still carry NO kit, so starting an unlocked locked-baseline class would still fail `RunStartCommand`'s kit resolution.
@@ -74,14 +65,7 @@ gate intact, no finale/seed-regression fixture moved. Two `[Review][Defer]` find
   (esp. the larger Medium/elite boards from the Med finding above), the proof-suite runtime could climb. Optional:
   replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model).
 
-- [ ] **[Review][Defer]** (Low, from code review of 12-2 **Round 2**, 2026-07-07) — `project-context.md` line 478 (the
-  dated "Last Updated: 2026-07-06" Epic-11 rollup paragraph) still says "the live driver uses
-  `LiveCombatResolver.DEFAULT_HERO_HP` (60)" and "183 test files / 182 PASS", both superseded by Story 12.2 (the
-  interactive live loadout is now class-derived via `CombatLoadout`; the suite is 189 PASS). The two AC1-pinned boundary
-  lines the story had to revise (line 262 class_kit_rules + line 453 run-flow-scene-hud-rules) ARE both correctly updated
-  and accurate — line 478 is a historical epic-retrospective snapshot line outside the AC1-pinned scope, so this is a
-  cosmetic doc-staleness nit, not an AC1 miss. Fold the "DEFAULT_HERO_HP (60)" clause + the PASS count into the next
-  `project-context.md` "Last Updated" refresh (e.g. at the Epic-12 close) so the rollup does not contradict 262/453.
+- [Review][Defer → RESOLVED + ARCHIVED] (Low, Round 2) `project-context.md` line-478 Epic-11 rollup staleness — **RESOLVED by the Epic-12 context refresh (2026-07-08)**; full entry archived to `deferred-work-resolved.md` during the Epic 12 closeout (2026-07-08).
 
 ## Deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
 
