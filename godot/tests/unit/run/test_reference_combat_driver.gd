@@ -381,7 +381,7 @@ func _generate(seed_value: int) -> GenerationResult:
 
 # Story 10.4 — the MEDIUM/elite generation request (medium_combat_basic / SIZE_MEDIUM), the elite_combat live path shape.
 func _generate_medium(seed_value: int) -> GenerationResult:
-	var request: GenerationRequest = GenerationRequest.new(seed_value, &"node_1_0", &"combat", &"medium_combat_basic", GenerationRequest.SIZE_MEDIUM)
+	var request: GenerationRequest = GenerationRequest.new(seed_value, &"node_1_0", &"elite_combat", &"medium_combat_basic", GenerationRequest.SIZE_MEDIUM)
 	return LevelGenerator.generate(request, LevelRecipeRepository.create_baseline_repository(), EnemyRepository.create_baseline_repository())
 
 

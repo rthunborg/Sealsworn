@@ -3,10 +3,10 @@ epic_num: 10
 story_num: 4
 branch: story/10-4-gameplay-comprehension-and-playtest-checklist
 status: in-progress
-updated_at: "2026-07-08T11:04:00Z"
+updated_at: "2026-07-08T11:28:00Z"
 started_at: "2026-07-08T10:20:03Z"
 completed_at: null
-active_seconds: 2545
+active_seconds: 3720
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -19,14 +19,14 @@ git_mode: remote
 base_branch: main
 epic_story_count: 8
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["31400c5", "85cb115"]
+commits: ["31400c5", "85cb115", "969dbf1"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -38,6 +38,7 @@ merge_commit: null
 branch_deleted: false
 open_questions: []
 deferred_work:
+  - "ReferenceCombatDriver._relocate_scratch per-cell snapshot perf, materialized by the Medium/elite catalog growth (~57s solo for test_reference_combat_driver.gd) — future reference-driver perf pass, candidate 10.6 (review round 1 defer)"
   - "warding_salve weigh-in vs deliberate-omission decision left to the frequency-tuning pass (checklist section 8.2 + tripwire test)"
   - "Observed-human playtest dimensions (>=5 sessions, felt distinctness/value/pacing) recorded as availability gaps OSG-1..OSG-4, owned by the 10.6 readiness gate"
 blockers: []
