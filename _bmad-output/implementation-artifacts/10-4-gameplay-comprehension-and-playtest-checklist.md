@@ -4,7 +4,7 @@ baseline_commit: 85cb1152179ecae50102da8bbfbfdf09f7d855af
 
 # Story 10.4: Gameplay Comprehension and Playtest Checklist
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
