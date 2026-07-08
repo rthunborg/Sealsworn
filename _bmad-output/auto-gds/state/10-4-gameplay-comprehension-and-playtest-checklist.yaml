@@ -32,10 +32,10 @@ planning_drift: []
 pr_url: "https://github.com/rthunborg/Sealsworn/pull/64"
 ci_run_url: null
 ci_status: none
-pr_merged: false
-merge_method: null
-merge_commit: null
-branch_deleted: false
+pr_merged: true
+merge_method: merge
+merge_commit: "1d47c45"
+branch_deleted: true
 open_questions: []
 deferred_work:
   - "Medium/Scorched winnability tests assert victory only and are excluded from the driver byte-determinism proof (Small catalog only) — non-blocking, fix alongside the _relocate_scratch perf defer (review round 2 defer, Low)"
