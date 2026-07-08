@@ -248,10 +248,11 @@ The class-selection grid; locked vs selectable classes.
 
 The between-node run map: node types + reveal state.
 
-- **Colorblind-safe:** ✅ Node type + reveal state read via icon/label + pattern/label (§14.2), not color. (Note
-  contract gap G2 — no dedicated route VM; the map reads `RouteState`/`RouteNode` directly. That is a
-  build-owner concern (11.3), NOT an accessibility gap: the node-type/reveal meanings are non-color regardless of
-  whether a thin route VM is added.) `RouteMapViewModel` exists and is scene-load verified.
+- **Colorblind-safe:** ✅ Node type + reveal state read via icon/label + pattern/label (§14.2), not color. The
+  scene-free `RouteMapViewModel` (Story 11.3) projects the route reads — per-node `type` via icon+label and
+  `reveal_state` via pattern+label (the appendix §5.4 non-color channels); it closes the appendix §16 contract
+  gap G2 (which flagged the earlier absence of a dedicated route VM), and it is scene-load verified. Either way
+  the node-type/reveal meanings are non-color, so this was never an accessibility gap.
 - **Scalable text / Non-overlap:** ✅ Node labels respect the clamp; the route graph is the dominant region per
   profile (§14.1).
 - **No color-only meaning:** ✅ Node type (combat / elite / boss / event) + reveal (revealed / hidden) read via
