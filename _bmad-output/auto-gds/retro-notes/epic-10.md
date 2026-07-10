@@ -21,3 +21,5 @@
 
 ## Story 10-6-mvp-readiness-gate-and-playable-build-preservation
 - [Phase 3 — create-story] Naming collision: device-tiers §6 "G4" (on-device FPS-stability profiler, physical-device G1–G7) vs UX-appendix §16 "G4" (settings view-model gap, PARKED) — both 10.6-adjacent, easy to conflate; doc ambiguity persists for 10.7 and the settings-scene story.
+- [Phase 5 — dev-story] Int64-overflow stderr reconcile: ×2 (catalog-exact) on gate build 3d59e25 — the ×1 flagged by 10-8 did not reproduce; both sites (test_domain_event.gd + test_manual_seed_loader.gd) fire. Settles the ×1/×2 ambiguity for this head.
+- [Phase 5 — dev-story] Env gotcha: running the PowerShell headless-suite command inline via Bash lets Git Bash expand $LASTEXITCODE before PowerShell parses it (silent parse failure). Write a .ps1 and run -File instead of -Command.
