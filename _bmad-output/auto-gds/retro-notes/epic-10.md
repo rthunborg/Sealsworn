@@ -18,3 +18,6 @@
 
 ## Story 10-2-headless-seed-regression-suite
 - [Phase 5 — dev-story] Story-context task phrasing conflicted: Task 6 said "every existing `tools/dump_*` UNTOUCHED" while Task 3 explicitly sanctioned expanding route seeds via `dump_route_fingerprints.gd`. Resolved in favor of the specific instruction (Task 3) — the route dump tool was intentionally extended 8→20 seeds, not scope drift. Future story contexts should avoid blanket "untouched" clauses that contradict a specific task's sanctioned edit.
+
+## Story 10-6-mvp-readiness-gate-and-playable-build-preservation
+- [Phase 3 — create-story] Naming collision: device-tiers §6 "G4" (on-device FPS-stability profiler, physical-device G1–G7) vs UX-appendix §16 "G4" (settings view-model gap, PARKED) — both 10.6-adjacent, easy to conflate; doc ambiguity persists for 10.7 and the settings-scene story.
