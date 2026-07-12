@@ -1,3 +1,11 @@
+## Deferred from: code review of 10-7-asset-audio-placeholder-and-ux-readiness-gate (2026-07-12)
+
+Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 1; 0 open `[Review][Decision]`). Doc-primary GATE story — the review subject is `asset-audio-placeholder-ux-readiness-gate.md` + the sanctioned `asset_sources/asset-manifest.md` provenance refinement + the story file; NO production `godot/` code touched (diff name-status confirmed). Suite INDEPENDENTLY re-run on the review head: **191 PASS / 0 `^FAIL`** (exit 0, false-PASS guard clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — NOT regressions); `git diff --check` clean.
+
+**No new deferrals from this review.** The single Low finding is a `[Review][Patch]` (passive-glyph count precision — 28 on disk stated as both 28 and 30 across the deliverable/manifest; AC1's 20–30 band is met either way), recorded in the story file's `### Review Findings` as a fix-in-place patch, not a deferral. The gate report's §6 disposition ledger + §8 availability-gaps ledger (AG-1..AG-4) already record every overlapping open placeholder (Flooded conductive F-1, the audio track, the Story-8.2 summary tallies/F-2, the settings paper-audit/F-3, the Story-4.5 node offers) against a named owner + target discharge path — nothing reopened, re-deferred, or added here.
+
+---
+
 ## Deferred from: code review of 10-6-mvp-readiness-gate-and-playable-build-preservation (2026-07-12, round 2)
 
 Round 2 alternate-model secondary (diversity) review (verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 0; 0 open `[Review][Decision]`). Doc-primary GATE story; NO production `godot/` code touched. The AC2 suite was INDEPENDENTLY re-run on the review head on a different model: **191 PASS / 0 `^FAIL`** (exit 0, false-PASS guard clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — NOT regressions). All three Round-1 `[Review][Decision]` fixes verified landed correctly; a fresh, non-overlapping set of source citations re-verified TRUE.
