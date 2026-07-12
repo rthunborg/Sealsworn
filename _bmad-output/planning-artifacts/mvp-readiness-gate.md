@@ -113,14 +113,16 @@ integration (`tests/integration/finale/`) — **no loop was rebuilt.**
 | 3 | **choose class** | `HeroSelectViewModel` (locked/selectable) + the class-kit → live-combat `CombatLoadout` (Epic 12) over `run.starting_kit` | `test_combat_loadout.gd` (each of warrior/pyromancer/ranger derives its loadout at baseline_hp 18); `test_hero_select_view_model.gd` | ✅ present |
 | 4 | **generate or enter levels** | `NodeEnterCommand` + `LevelGenerator.generate` (the route↔level handoff inside `begin_interactive_combat_node` / `resolve_combat_node_live`); `route_map.tscn` | `test_live_run_flow.gd`; `test_seed_regression_suite.gd` + `test_generator_fairness_batch.gd` (generation determinism/fairness); `test_run_flow_scenes_load.gd` | ✅ present |
 | 5 | **fight** | The INTERACTIVE tap-loop `InteractiveCombatSession` (one action per tap through `TacticalCommandBridge` / `TacticalAttackCommitFlow`) + the additive `begin_interactive_combat_node` / `finish_interactive_combat_node` seams (Epic 12); the headless auto-resolve `LiveCombatResolver` | `test_interactive_combat_session.gd`; `test_interactive_combat_flow.gd`; `test_live_combat_resolver.gd`; `test_reference_combat_driver.gd` (winnability proof, all 3 classes) | ✅ present |
-| 6 | **collect rewards** | Epic-6 reward flow: `RunOrchestrator.generate_reward_offer` / `generate_passive_reward_offer` (`rewards` stream) → `RewardOfferBuilder`; the reward modal data contract | `test_loot_passive_build_smoke_run.gd`; `test_reward_offer.gd`; `test_reward_offer_builder.gd` | ✅ present |
-| 7 | **make passive choices** | Consume vs Destroy: `ConsumePassiveCommand` / `DestroyPassiveCommand` + `PassiveRewardCommitFlow`; `PassiveRewardModalViewModel` | `test_consume_passive_command.gd`; `test_destroy_passive_command.gd`; `test_passive_reward_modal_view_model.gd` | ✅ present |
+| 6 | **collect rewards** | Epic-6 reward flow: `RunOrchestrator.generate_reward_offer` / `generate_passive_reward_offer` (`rewards` stream) → `RewardOfferBuilder`; the reward modal data contract | `test_loot_passive_build_smoke_run.gd`; `test_reward_offer.gd`; `test_reward_offer_builder.gd` | ⚠️ present (integration-proven; §3.3) |
+| 7 | **make passive choices** | Consume vs Destroy: `ConsumePassiveCommand` / `DestroyPassiveCommand` + `PassiveRewardCommitFlow`; `PassiveRewardModalViewModel` | `test_consume_passive_command.gd`; `test_destroy_passive_command.gd`; `test_passive_reward_modal_view_model.gd` | ⚠️ present (integration-proven; §3.3) |
 | 8 | **die or win** | Live hero DEATH → `PHASE_FAILED` via `run_to_completion_live` (`run_orchestrator.gd:1336`); boss VICTORY via `resolve_boss_victory` (`:826`, clears boss node + `resolve_run_end(victory)` → `PHASE_COMPLETED`) driven through the finale chain | `test_finale_full_run.gd` (full run → boss fight → victory/death through the shell); `test_finale_seed_regression.gd`; `test_live_run_flow.gd` | ✅ present |
 | 9 | **view summary** | `RunSummary.build(run, ...)` (`run_summary.gd:199`) via `RunEndProfileBridge` (`scripts/ui/flow/run_end_profile_bridge.gd`) → the outpost run-end landing (`run_end.tscn` → `outpost.tscn`) | `test_run_summary.gd`; `test_meta_summary_save_load.gd`; `outpost_view_model.gd:239` builds the summary in the live flow | ⚠️ present but THIN (§3.1) |
 | 10 | **start another descent** | The outpost `start_run_request` / `is_startable` seam (`outpost_view_model.gd:162-172`) → a fresh `RunStartCommand` (the loop closes) | `test_outpost_view_model.gd`; `test_live_run_flow.gd` (start → end → start) | ✅ present |
 
 **Every named loop step is PRESENT.** No step is outright MISSING, so **no step BLOCKS MVP readiness** per the AC.
-One step (view summary) is present-but-thin and recorded as a known limitation (§3.1), NOT a block.
+Three steps carry a present-but-qualified callout, each recorded as a known limitation (NOT a block): view summary
+is present-but-thin (§3.1); collect rewards + make passive choices are present + integration-proven but
+live-HUD-wiring-deferred (§3.3).
 
 ### 3.1 The known THIN-step limitation (recorded, not fixed) — the "view summary" step
 
@@ -146,8 +148,30 @@ compile guardrail verify the loop's STRUCTURE + DETERMINISM now; the felt hands-
 physical-device dimension, dispositioned in §8 as an acceptable documented limitation for the v0 candidate with a
 pre-ship follow-up owner.
 
-**AC1 verdict:** MET — every named step verified against its shipped seam + evidence; the one thin step recorded
-with its owner; no step missing (nothing blocks readiness); the hands-on-device pass recorded as a G1-G7 gap.
+### 3.3 The caller-driven / live-HUD-wiring qualifier (recorded, not a block) — "collect rewards" + "make passive choices"
+
+The "collect rewards" (row 6) and "make passive choices" (row 7) steps are genuinely PRESENT in the domain and
+INTEGRATION-PROVEN end-to-end — `tests/integration/reward_flow/test_loot_passive_build_smoke_run.gd` clears a real
+node, then generates a loot offer + a 3-choice passive offer and resolves EACH disposition through a real command
+(`ResolveRewardCommand` / `PickupItemCommand` for loot; `ConsumePassiveCommand` / `DestroyPassiveCommand` for
+passives). But that proof is CALLER-DRIVEN: per the harness's own header, "generate is caller-driven, NOT
+auto-wired into `run_to_completion`", and the harness "constructs the commands DIRECTLY ... NOT a scene/HUD" — "the
+HUD wiring of the commit-intent -> command call site is a later HUD story". So these two steps are integration-proven
+in the domain, but NOT yet live-HUD-proven in the played flow — the same present-in-domain / thin-in-live-flow
+distinction the view-summary step gets in §3.1 (they are PRESENT, not missing, so they do not BLOCK AC1).
+
+- **Disposition:** acceptable documented readiness limitation for the v0 candidate — the steps are PRESENT +
+  integration-proven (not missing → they do NOT block AC1); only the live-HUD/scene wiring is deferred. The overall
+  verdict `READY_WITH_GATES` is unchanged.
+- **Owner:** the reward/passive live-HUD-wiring story (a later HUD story, per the
+  `test_loot_passive_build_smoke_run.gd` header).
+- **Cross-refs:** `test_loot_passive_build_smoke_run.gd` header; the §8 gap-ledger row "Reward/passive live-HUD
+  wiring". **NOT wired here.**
+
+**AC1 verdict:** MET — every named step verified against its shipped seam + evidence; the present-but-qualified
+steps recorded with their owners (view summary thin §3.1; collect rewards + make passive choices caller-driven /
+live-HUD-wiring-deferred §3.3); no step missing (nothing blocks readiness); the hands-on-device pass recorded as a
+G1-G7 gap.
 
 ---
 
@@ -292,12 +316,14 @@ interactive fight is EPHEMERAL — the 23-key gate stays 23; `interactive_combat
 
 ### 5.4 (d) No cloud / telemetry / multiplayer / live-service dependency — PASS
 
-`PlatformServices` (`scripts/platform/platform_services.gd`) is a **local no-op**: `record_telemetry` and
-`unlock_achievement` are empty `pass` bodies; `sync_save` returns `ActionResult.ok()` without any network/cloud
-call. No telemetry sink, cloud call, account, or live-service dependency is wired (the local no-op sits behind the
-`TelemetrySink` / `SaveSyncProvider` / `AchievementProvider` / `CrashReporter` interface posture per the
-project-context Platform rule). `test_export_setup.gd::_export_setup_avoids_forbidden_dependencies` additionally
-asserts the export setup adds no `telemetry`, `multiplayer`, or `cloud` service (NFR11).
+`PlatformServices` (`scripts/platform/platform_services.gd`) is a **local no-op** with exactly three bare methods:
+`record_telemetry` and `unlock_achievement` are empty `pass` bodies, and `sync_save` returns `ActionResult.ok()`
+without any network/cloud call. No telemetry sink, cloud call, account, or live-service dependency is wired. The
+class defines NO `TelemetrySink` / `SaveSyncProvider` / `AchievementProvider` / `CrashReporter` type OR method —
+there is no `CrashReporter` at all; those four names are the **project-context Platform *interface posture*** (the
+design-time naming for the seams a future integration would sit behind, echoed in this story's Dev Notes), NOT types
+that exist in this code. `test_export_setup.gd::_export_setup_avoids_forbidden_dependencies` additionally asserts the
+export setup adds no `telemetry`, `multiplayer`, or `cloud` service (NFR11).
 
 ### 5.5 (e) Offline-first single-player — PASS
 
@@ -489,6 +515,7 @@ makes the loop genuinely unplayable or violates a hard invariant — **none curr
 | **Harness perf** | `ReferenceCombatDriver` proof harness ~57 s in isolation (`_relocate_scratch` per-cell snapshot round-trip) | Acceptable documented limitation (dev-experience; harness excluded from export; suite green) | Reference-driver perf/coverage pass (candidate; NOT committed) | Replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model) |
 | **Determinism coverage** | The reference-driver byte-determinism proof covers only the original Small catalog, not the added Medium/Scorched entries (a coverage-completeness gap; determinism DOES hold in fact) | Acceptable documented limitation (not a correctness defect; suite green) | Same reference-driver harness pass (best fixed with the perf item) | Fold the Medium + Scorched catalogs into the determinism loop (a second run + event-log compare per new seed × class) |
 | **Thin run summary** | The "view summary" step's `outcome_or_cause` stays BLANK + empty passives/loot/discovery in the live flow (no run-level event store) — F-2 / T4 | Acceptable documented limitation (thin-but-present step §3.1; outcome conveyed non-color via reveal beats + `phase`) | Run-level event-store / summary-render story (origin 11.5) | Thread a run-level event store; a summary-render keys the outcome label off `phase` until then |
+| **Reward/passive live-HUD wiring** | The "collect rewards" + "make passive choices" steps are present + integration-proven (`test_loot_passive_build_smoke_run.gd`, caller-driven) but not yet wired into the live run-flow HUD/scene (generate is caller-driven, not auto-wired into `run_to_completion`; the harness constructs the commands directly, not a scene/HUD) — §3.3 | Acceptable documented limitation (present + integration-proven; not missing → non-blocking) | Reward/passive live-HUD-wiring story (a later HUD story) | Wire the reward + passive-reward modals into the live run-flow HUD/shell |
 | **Flooded `_placeholder`** | The full conductive-interaction art/VFX + final cue (F-1) | Acceptable documented limitation (tracked placeholder; non-color channel already present) → HAND OFF | **10.7** (dedicated asset/UX gate) | 10.7 replaces / de-scopes / blocks the placeholder |
 | **Observed-session gaps (OSG-1..4)** | ≥5 observed human sessions; felt consumable value; felt class distinctness; felt pacing (10.4) | Acceptable documented limitation (the objective backings are verified headless) | 10.6 observed-playtest pass owner (intersects G1-G7 mobile form factor) | A physical-device observed-playtest pass (≥5 sessions across mobile + desktop) |
 | **Human-eyes accessibility (ASG-1/ASG-2)** | Real contrast-ratio + pixel-level non-overlap on a physical display; real portrait/landscape font legibility + thumb-reach (10.5) | Acceptable documented limitation (the CONTRACT-level checks are verified headless) | 10.6 physical-device accessibility pass owner (intersects G1-G7) | A physical-device accessibility pass |
@@ -513,7 +540,7 @@ real on-device launch is the G1-G7 pass.
 | **Build id / git commit** | `3d59e2565f0c4d724804085a262ea77dae2b2910` (short `3d59e25`, "docs(story-10-6): create story context file") — the head this gate ran against |
 | **Engine** | Godot 4.6.3 stable standard build (Mobile renderer), typed GDScript |
 | **Test-result summary** | **191 PASS / 0 `^FAIL`**, runner exit 0 (`Headless tests passed.`), false-PASS guard clean, ~175 s wall-clock; 6 documented stderr negatives (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — all deliberate fail-path assertions, §4.3) |
-| **Live-loop status** | Complete + winnable (all 10 AC1 steps present; §3); one thin step (view summary, §3.1) |
+| **Live-loop status** | Complete + winnable (all 10 AC1 steps present; §3); one thin step (view summary, §3.1) + two caller-driven / live-HUD-wiring-deferred steps (collect rewards + make passive choices, §3.3) |
 | **Pre-export invariants** | HELD (all 5 AC3 clauses; §5); the release checklist §5.6 is the manual pre-export gate |
 | **Difficulty non-goal** | CONFIRMED at the contract level (regression-enforced) + surface level (§6) |
 
@@ -631,3 +658,4 @@ already covered, §5.8). The full headless suite stays green + byte-for-byte unc
 | Date | Version | Change | Author |
 |---|---|---|---|
 | 2026-07-10 | 1.0 | Initial authoring — the final Epic-10 MVP-readiness GATE: the AC1 per-step live-loop verification (all 10 steps present; the thin view-summary step recorded, the hands-on-device pass as a gap); the AC2 fresh full-suite run (191 PASS / 0 `^FAIL` / exit 0 / ~175 s, false-PASS guard clean) with the 12-family mapping + the 6 documented stderr negatives (each risk + owner; int64-overflow ×2 on this build) + the wall-clock guard + the reference-driver harness-perf note; the AC3 pre-export validation (5 clauses PASS with shipped evidence + the release checklist + iOS G7); the AC4 settings & challenge-scope (difficulty non-goal contract+surface confirmed, settings paper-audit dispositioned, post-MVP challenge scope); the Epic-10 threshold roll-up (device/perf/seed/fairness/playtest/accessibility + the 10.7 asset/audio/placeholder handoff); the gap-disposition ledger (G1-G7 + appendix §16 G4 settings + harness-perf + determinism-coverage + thin-summary + Flooded placeholder + OSG/ASG — all acceptable documented limitations for the v0 candidate); the playable-build-candidate manifest (commit `3d59e25`, per-preset producibility, de-scope notes); overall verdict `READY_WITH_GATES`. VERIFIES + DECIDES + ROLLS UP; touches no production code; adds no test; the suite stays byte-for-byte green. Discharges FR70 + the FR30 gate half. | Story 10.6 (dev agent) |
+| 2026-07-12 | 1.1 | Code-review round-1 response (doc-precision/parity `[Review][Decision]` items). §3 rows 6-7 + new §3.3 + §8 gap-ledger row + §9 manifest line: qualify collect-rewards + make-passive-choices as PRESENT + integration-proven (`test_loot_passive_build_smoke_run.gd`) but caller-driven / live-HUD-wiring-deferred (parity with the view-summary thin step §3.1); verdict `READY_WITH_GATES` unchanged, no step missing. §5.4 softened to describe `platform_services.gd` as its 3 bare no-op methods (`record_telemetry`/`unlock_achievement`/`sync_save`; no `CrashReporter` type or method) with the TelemetrySink/SaveSyncProvider/AchievementProvider/CrashReporter naming attributed to the project-context Platform *interface posture*, not code-level types. No production `godot/` code touched; suite byte-for-byte unchanged (191 PASS / 0 `^FAIL`). | Story 10.6 (dev agent, review response) |

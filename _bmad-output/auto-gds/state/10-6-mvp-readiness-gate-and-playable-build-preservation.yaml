@@ -3,7 +3,7 @@ epic_num: 10
 story_num: 6
 branch: story/10-6-mvp-readiness-gate-and-playable-build-preservation
 status: in-progress
-updated_at: "2026-07-10T13:05:00Z"
+updated_at: "2026-07-12T09:30:00Z"
 started_at: "2026-07-10T12:07:04Z"
 completed_at: null
 active_seconds: 0
@@ -34,6 +34,7 @@ commits:
   - "cf022da"
   - "3d59e25"
   - "92d61b0"
+  - "f0a55e7"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
