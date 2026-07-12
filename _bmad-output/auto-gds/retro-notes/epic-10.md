@@ -26,3 +26,4 @@
 
 ## Story 10-7-asset-audio-placeholder-and-ux-readiness-gate
 - [Phase 3 — create-story] Asset work landed out-of-band from the story pipeline: asset_sources/asset-manifest.md pre-declares "Satisfies the Story 10.7 readiness gate", pre-backing much of AC1/AC3. Dev/review must VERIFY + reconcile against on-disk state (art present; godot/assets/audio/** is 0 files) rather than assume it authoritative — "deliverable partly pre-built" coordination risk.
+- [Phase 5 — dev-story] Dev delegate correctly skipped baseline_commit capture (git is orchestrator-owned); orchestrator set it in story frontmatter at commit time (10-6 precedent). Worth folding into the delegate prompt template so review-diff tooling always has it.

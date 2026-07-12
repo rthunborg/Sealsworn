@@ -123,33 +123,55 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 > `overlay.move_range`, `attack_range`, `blocked_line`, `fog_hidden`, `fog_memory` are **engine-drawn** flat Godot fills/shaders (NFR9), not Recraft art — they stay `planned` until built in-engine. `seer_mark` + the win/lose banners are the only generated overlay art.
 
 ## SFX (tool TBD — ElevenLabs suggested) — cue map per Story 10.7
+> **Story 10.7 readiness-gate disposition (AC4):** DE-SCOPED for the v0 candidate as an approved MVP limitation — **NON-GATING** (nothing is audio-only per the 10.5 audio-off audit §7; only the two preview/commit cues even declare an optional audio id, each keeping a non-color visual channel). Owner: a post-MVP audio-production pass. Target: author + import + `approve` the 14 SFX. See `_bmad-output/planning-artifacts/asset-audio-placeholder-ux-readiness-gate.md` §4 (the cue map) + §6.4 (the disposition).
+
 | ID | Cue | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| sfx.move | Movement | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.weapon_hit | Weapon hit | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.enemy_action | Enemy action | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.hazard | Hazard | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.preview | Preview cue | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.confirm | Confirm cue (distinct from preview) | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.passive_pickup | Passive pickup | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.consume | Consume | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.destroy | Destroy | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.curse | Curse / corruption | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.door_seal | Door sealing | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.death | Death | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.reward_reveal | Reward reveal | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
-| sfx.boss_victory | Boss victory | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | planned | ☐ |
+| sfx.move | Movement | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.weapon_hit | Weapon hit | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.enemy_action | Enemy action | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.hazard | Hazard | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.preview | Preview cue | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.confirm | Confirm cue (distinct from preview) | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.passive_pickup | Passive pickup | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.consume | Consume | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.destroy | Destroy | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.curse | Curse / corruption | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.door_seal | Door sealing | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.death | Death | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.reward_reveal | Reward reveal | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
+| sfx.boss_victory | Boss victory | asset_sources/audio/sfx/ | godot/assets/audio/sfx/ | descoped | ☐ |
 
 ## Ambient loops (tool TBD — Suno / Stable Audio suggested)
+> **Story 10.7 readiness-gate disposition (AC4):** DE-SCOPED for the v0 candidate as an approved MVP limitation — **NON-GATING** (ambient is atmosphere, never a required-information channel; the v0 candidate ships silent). Owner: a post-MVP audio-production pass. Target: author + import + `approve` the 7 ambient loops. See `asset-audio-placeholder-ux-readiness-gate.md` §6.4.
+
 | ID | Loop | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| amb.labyrinth | Labyrinth exploration | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.outpost | Outpost / menu | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.scorched | Scorched | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.flooded | Flooded/Conductive | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.cursed | Cursed | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.darkness | Darkness | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
-| amb.boss | Boss / finale | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | planned | ☐ |
+| amb.labyrinth | Labyrinth exploration | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.outpost | Outpost / menu | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.scorched | Scorched | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.flooded | Flooded/Conductive | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.cursed | Cursed | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.darkness | Darkness | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+| amb.boss | Boss / finale | asset_sources/audio/ambient/ | godot/assets/audio/ambient/ | descoped | ☐ |
+
+---
+
+## Story 10.7 readiness-gate dispositions (AC4)
+
+The Epic-10 Asset/Audio/Placeholder/UX readiness gate (`_bmad-output/planning-artifacts/asset-audio-placeholder-ux-readiness-gate.md`)
+dispositions every open placeholder for the offline-first v0 candidate. Summary (full rows in the gate report §6):
+
+| Item | Disposition | Owner | Target |
+|---|---|---|---|
+| Audio track (14 SFX + 7 ambient, 0 files) | **de-scoped** (approved MVP limitation, non-gating — nothing is audio-only) | post-MVP audio-production pass | author + import + `approve` the SFX + ambient |
+| Flooded conductive-interaction art/VFX (`affinity_conductive_danger_placeholder_vfx`; a code-level cue in `affinity_effect_resolver.gd`, no manifest row) | **de-scoped** (approved MVP limitation; the placeholder cue already reads non-color) | a later affinity-effects / conductive-interaction VFX story | replace the `_placeholder` cue/visual ids with FINAL ids + author the conductive art/VFX when the live mechanic ships |
+| Generated-but-unapproved icons (weapons ×9, support ×2, passives ×28, currency ×4) | tracked **generated** ☐ (approval pending — NOT descoped; present + intended for v0) | an asset-approval pass | confirm the 3-point gate on import + check the Approved box (`generated → approved`) |
+| Planned in-engine UI frames (`ui.*` ×9) + engine-drawn overlays (`overlay.move_range/attack_range/blocked_line/fog_hidden/fog_memory`) | tracked **planned** (assembled/drawn in-engine when scenes build) | the scene stories (11.3 HUD / 11.4 treatment / outpost-summary scene owners) | assemble the frames in-engine from the frame kit; draw the overlays as flat Godot fills/shaders |
+
+None is classified `blocking` — every non-color cue channel is present and the live loop is complete + winnable
+(the 10.6 gate §3). The visual roster (classes / enemies / boss / affinities / tiles / props) is `approved` and
+passed the 3-point readability gate.
 
 ---
 
