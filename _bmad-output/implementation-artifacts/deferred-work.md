@@ -1,3 +1,11 @@
+## Deferred from: code review of 10-6-mvp-readiness-gate-and-playable-build-preservation (2026-07-12, round 2)
+
+Round 2 alternate-model secondary (diversity) review (verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 0; 0 open `[Review][Decision]`). Doc-primary GATE story; NO production `godot/` code touched. The AC2 suite was INDEPENDENTLY re-run on the review head on a different model: **191 PASS / 0 `^FAIL`** (exit 0, false-PASS guard clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — NOT regressions). All three Round-1 `[Review][Decision]` fixes verified landed correctly; a fresh, non-overlapping set of source citations re-verified TRUE.
+
+**No new deferrals from this review.** No new `[Review][Defer]` findings surfaced in Round 2; the gate report's §8 gap-disposition ledger already records every overlapping open deferral against a named owner + target discharge path (unchanged from Round 1). Nothing reopened, re-deferred, or added.
+
+---
+
 ## Deferred from: code review of 10-6-mvp-readiness-gate-and-playable-build-preservation (2026-07-10)
 
 Round 1 primary review (verdict: **Approve**; Critical 0 / High 0 / Med 1 / Low 2; 3 open `[Review][Decision]` — all non-blocking precision/parity nits, no code impact). Doc-primary GATE story: the review subject is `mvp-readiness-gate.md` + the story file + the `sprint-status.yaml` move; NO production `godot/` code touched. Suite INDEPENDENTLY re-run on the review head: **191 PASS / 0 `^FAIL`** (exit 0, false-PASS guard clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — NOT regressions).
