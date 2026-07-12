@@ -4,7 +4,7 @@ baseline_commit: 3d59e2565f0c4d724804085a262ea77dae2b2910
 
 # Story 10.6: MVP Readiness Gate and Playable Build Preservation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
