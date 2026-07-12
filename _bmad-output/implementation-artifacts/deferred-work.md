@@ -26,7 +26,7 @@ Round 1 primary review (verdict: **Approve**; Critical 0 / High 0 / Med 1 / Low 
 
 Round 1 primary review (verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 1; 1 open `[Review][Decision]` — a doc-precision nit, no code impact). Readiness/AUDIT story: the deliverables are the planning-artifact `accessibility-and-readability-audit.md` + ONE additive test (`test_run_flow_accessibility_coverage.gd`); NO production `godot/` code touched. Suite INDEPENDENTLY re-run: **191 PASS / 0 `^FAIL`** (false-PASS guard clean; the 6 documented stderr negatives unchanged, NOT regressions), `git diff --check` clean. All three deferrals below are PRE-EXISTING items the audit RECORDS against named owners (each folded from an existing ledger entry above) — NONE is a 10.5 fix, NONE is reopened elsewhere; re-recorded here for this review's traceability.
 
-- [ ] **[Review][Defer]** (Low → F-1, from code review of 10-5, 2026-07-08) — the Flooded conductive-danger `_placeholder` full treatment. `affinity_conductive_danger_placeholder` (+ `..._vfx`) in `affinity_effect_resolver.gd` / `tactical_accessibility_model.gd` is a TRACKED, distinct-from-final MVP placeholder that ALREADY carries a non-color `shape`(+label+text) channel (the conductive danger reads with color stripped even as a placeholder) — so it is NOT a color-only or missing-cue violation. The full conductive-interaction art/VFX + final cue (replace / de-scope / block) is owned by **10.7**. The audit records the tracked-placeholder status (§4.6 / §5 F-1); it does not flip or resolve it. Supersedes nothing — same root item as the standing "Flooded electric-interaction `_placeholder` (Epic-10 readiness, 10-7)" entry, surfaced through the 10.5 accessibility lens.
+- [Review][Defer → RESOLVED + ARCHIVED] (Low → F-1) the Flooded conductive-danger `_placeholder` replace/de-scope/block call — **RESOLVED by Story 10.7 (2026-07-12)**: de-scoped for v0 as an approved documented limitation (gate `asset-audio-placeholder-ux-readiness-gate.md`; non-color channel intact, ids unchanged); residual live art/VFX + final cue is gate follow-up AG-4 (later affinity-effects/VFX story). Full entry archived to `deferred-work-resolved.md` during the Epic 10 closeout (2026-07-12).
 - [ ] **[Review][Defer]** (Low → F-2, from code review of 10-5, 2026-07-08) — the outpost run-summary panel surfaces no explicit victory/death outcome LABEL. Appendix §8.5 wants "outcome via label+icon" on the summary panel, but `outpost_presenter._render_run_summary` (`outpost_presenter.gd:159`) renders only the "not yet tallied" note; the outcome IS conveyed non-color via the SEPARATE reveal beats + `phase` (`outcome_or_cause` stays BLANK until the run-level event store lands). A readability-completeness gap, NOT a color-only violation. Owner: the **run-level event-store / summary-render story (origin 11.5 code review Low)** — a summary-render MUST key the label off `phase`, not `outcome_or_cause`. Same item as the standing 11-5 code-review Low entry; not wired here.
 - [ ] **[Review][Defer]** (Med → F-3, from code review of 10-5, 2026-07-08) — the settings surface is a PAPER audit (gap G4). No settings VIEW model and no settings SCENE exists (G4, PARKED), so the settings-screen accessibility is a paper audit against the `SettingsSnapshot` contract + appendix §12.5; the human-eyes readability of the real settings scene cannot be audited until it is built. The difficulty NON-GOAL is confirmed at the contract level (`SettingsSnapshot.PREFERENCE_KEYS` carries no difficulty key, regression-enforced). Owner: the **settings-scene owner (11.3/11.5)**; the 10.6 gate weighs whether shipping MVP with a paper-only settings audit is acceptable. Same item as the standing "G4 — the settings view model (RE-RECORDED PARKED)" entry; not built here.
 
@@ -85,24 +85,9 @@ modeling shape). The suite was independently re-run (`Headless tests passed.`, e
 the 6 documented stderr negatives); `LiveCombatResolver.resolve` byte-identical, 7 streams / 42-event enum / 23-key
 gate intact, no finale/seed-regression fixture moved. Two `[Review][Defer]` findings carried forward:
 
-- [ ] **[Review][Defer]** (Med, from code review of 12-2, 2026-07-07) — the `ReferenceCombatDriver` winnability proof
-  (`test_reference_combat_driver.gd`) covers ONLY `small_combat_basic` / `SIZE_SMALL` boards with NEUTRAL affinity for
-  the whole approved batch [4242, 8080, 6006, 2048, 512]. The shipped interactive path (`begin_interactive_combat_node`)
-  also hosts the class loadout on `elite_combat` (`medium_combat_basic` / `SIZE_MEDIUM`, `run_orchestrator.gd:1007,1275`)
-  nodes and applies the node's assigned affinity (Scorched hazard DoT / Darkness / Cursed) before hero placement — so
-  18-HP winnability is proven for the depth-0/Small neutral family only, NOT the Medium/elite or affinity-loaded live
-  surface, even though AC2's wording says "Small/**Medium**" and the driver's `resolve(...)` accepts (never receives)
-  affinity params. Not a correctness defect (the proven family is the primary hands-on entry; the human ≥ the reference
-  driver), but the claim is narrower than AC2's intent. Fast-follow before/within 10.4: add a Medium/elite seed × class
-  row + at least one Scorched-affinity live seed to the catalog, OR explicitly scope AC2 to Small-neutral and assign the
-  Medium/affinity winnability proof to 10.4/10.6.
+- [Review][Defer → RESOLVED + ARCHIVED] (Med) Medium/elite + affinity winnability proof gap — **RESOLVED by Story 10.4 (2026-07-08)** via the EXTENDED disposition (2 Medium-neutral + 2 Scorched-affinity seeds × 3 classes, all VICTORY); full entry archived to `deferred-work-resolved.md` during the Epic 10 closeout (2026-07-12). The residual harness-perf/coverage costs live on as the ACTIVE 10-4 entries above.
 
-- [ ] **[Review][Defer]** (Low, from code review of 12-2, 2026-07-07) — `ReferenceCombatDriver._best_end_cell` calls
-  `_relocate_scratch` for every reachable cell every hero turn, and `_relocate_scratch` does a full `board.to_snapshot()`
-  → `try_from_snapshot` round-trip per candidate cell. It is a headless PROOF harness (not the on-screen loop) and the
-  approved clears run well under the 64-round cap, so there is no runtime concern today — but if the catalog grows
-  (esp. the larger Medium/elite boards from the Med finding above), the proof-suite runtime could climb. Optional:
-  replace the per-cell snapshot round-trip with an in-place relocate-and-restore (or a lighter positional model).
+- [Review][Defer → RESOLVED + ARCHIVED] (Low) `_relocate_scratch` per-cell snapshot round-trip cost — **SUPERSEDED by the 10-4 Med entry (2026-07-08)**, which materialized this predicted cost (~57s measured) and is now the single live tracking entry; full entry archived to `deferred-work-resolved.md` during the Epic 10 closeout (2026-07-12).
 
 - [Review][Defer → RESOLVED + ARCHIVED] (Low, Round 2) `project-context.md` line-478 Epic-11 rollup staleness — **RESOLVED by the Epic-12 context refresh (2026-07-08)**; full entry archived to `deferred-work-resolved.md` during the Epic 12 closeout (2026-07-08).
 
