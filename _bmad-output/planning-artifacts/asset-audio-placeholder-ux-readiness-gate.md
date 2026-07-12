@@ -203,7 +203,7 @@ MIRRORS the event, it never drives domain control flow):
 | 9 | Destroy | `sfx.destroy` | `PASSIVE_DESTROYED` |
 | 10 | Curse / corruption | `sfx.curse` | `CURSE_APPLIED` |
 | 11 | Door sealing | `sfx.door_seal` | `ROUTE_SEALED` (Story 4.4 — "doors seal behind the hero as a containment law"; GDD FR46) |
-| 12 | Death | `sfx.death` | `RUN_COMPLETED` (outcome `failed`/`run_failed`) + `FIRST_DEATH_RECORDED` |
+| 12 | Death | `sfx.death` | `RUN_FAILED` (the run-FAILED boundary; `cause` ∈ `RUN_FAILED_CAUSES`, drives `PHASE_FAILED` — the run-level FAILED counterpart of the Story-4.5 `run_completed` boss boundary) + `FIRST_DEATH_RECORDED` |
 | 13 | Reward reveal | `sfx.reward_reveal` | `REWARD_OFFERED` + `REWARD_RESOLVED` |
 | 14 | Boss victory | `sfx.boss_victory` | `BOSS_DEFEATED` + `RUN_COMPLETED` (outcome `victory`) + `FIRST_VICTORY_RECORDED` |
 
@@ -568,7 +568,7 @@ The one sanctioned ledger edit is `asset_sources/asset-manifest.md` (the AC3/AC4
   `godot/tests/unit/ui/test_tactical_accessibility_cues.gd`
   (`_audio_feedback_cues_always_have_visual_or_textual_equivalents`).
 - **The domain-event vocabulary (AC2 event sources):** `godot/scripts/core/events/domain_event.gd` — `ENTITY_MOVED`
-  / `DAMAGE_APPLIED` / `TILE_MARKED` / `ROUTE_SEALED` / `NODE_PLACEHOLDER_RESOLVED` / `RUN_COMPLETED` /
+  / `DAMAGE_APPLIED` / `TILE_MARKED` / `ROUTE_SEALED` / `NODE_PLACEHOLDER_RESOLVED` / `RUN_COMPLETED` / `RUN_FAILED` /
   `PASSIVE_CONSUMED` / `PASSIVE_DESTROYED` / `ITEM_GAINED` / `REWARD_OFFERED` / `REWARD_RESOLVED` / `CURSE_APPLIED` /
   `FIRST_DEATH_RECORDED` / `FIRST_VICTORY_RECORDED` / `BOSS_DEFEATED`.
 - **The placeholder cue-catalog source (AC4 F-1):** `godot/scripts/ui/view_models/tactical_accessibility_model.gd`
