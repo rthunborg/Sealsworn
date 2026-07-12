@@ -7,7 +7,7 @@ Direction: [`style-bible.md`](style-bible.md) · Prompts: [`prompt-pack.md`](pro
 **Per-asset provenance to capture at generation** (append to the row or a sibling `provenance-log.md`): tool, prompt-pack id, seed, date, source ref, license/provenance, approval status. Editable source under `asset_sources/...`, runtime export under `godot/assets/...`.
 **Approval = passes the 3-point readability gate** (grayscale · phone-size · silhouette).
 
-Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinities, 9 tiles, 11 item icons, 30 passive glyphs, 4 currency, 9 UI frames, ~9 overlays/banners) · **SFX 14** · **ambient 7**.
+Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinities, 9 tiles, 11 item icons, 28 passive glyphs, 4 currency, 9 UI frames, ~9 overlays/banners) · **SFX 14** · **ambient 7**.
 
 ---
 
@@ -78,7 +78,7 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 | icon.support.tome | Tome | asset_sources/icons/support/ | godot/assets/icons/support/ | generated | ☐ |
 | icon.support.shield | Shield | asset_sources/icons/support/ | godot/assets/icons/support/ | generated | ☐ |
 
-## Passive glyphs (Recraft) — Epic 6 — `icon.passive.001`–`030`
+## Passive glyphs (Recraft) — Epic 6 — `icon.passive.001`–`028`
 | ID range | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
 | icon.passive.001–028 | 28 placeholder glyphs (4 archetypes), each mapped to `icon.passive.NNN.svg`. V4.1 Pro Vector; see prompt-pack §B. | asset_sources/icons/passives/ | godot/assets/icons/passives/ | generated | ☐ |

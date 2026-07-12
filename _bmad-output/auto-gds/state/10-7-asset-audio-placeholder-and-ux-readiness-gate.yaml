@@ -3,7 +3,7 @@ epic_num: 10
 story_num: 7
 branch: story/10-7-asset-audio-placeholder-and-ux-readiness-gate
 status: in-progress
-updated_at: "2026-07-12T10:05:00Z"
+updated_at: "2026-07-12T10:25:00Z"
 started_at: "2026-07-12T08:54:00Z"
 completed_at: null
 active_seconds: 0
@@ -34,6 +34,7 @@ commits:
   - "d232864"
   - "2156772"
   - "f6fb2fa"
+  - "3a451ad"
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

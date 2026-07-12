@@ -137,7 +137,7 @@ placeholder ids exist"). The visual roster is `approved` / `generated`; only aud
 | 14 | Ambient loops | 7 | `amb.{labyrinth,outpost,scorched,flooded,cursed,darkness,boss}` | **planned** / 0-file → **descoped** (§6.4) |
 
 Totals (v0, per the manifest): **~92 visual** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinities, 9 tiles, 11
-item icons, 30 passive glyphs, 4 currency, 9 UI frames, ~9 overlays/banners) · **14 SFX** · **7 ambient**. Every
+item icons, 28 passive glyphs, 4 currency, 9 UI frames, ~9 overlays/banners) · **14 SFX** · **7 ambient**. Every
 AC1-required class has a tracked-or-better id; **no roster class is a "no id, no asset" gap.**
 
 ### 3.2 The readability basis (the "readable enough" half of AC1)
