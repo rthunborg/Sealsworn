@@ -2,6 +2,17 @@
 
 Entries moved out of `deferred-work.md` once verified resolved. Archived during epic closeouts by auto-gds (and ad-hoc when an item is confirmed done). Newest archive batch on top.
 
+## Archived during epic 10 closeout (2026-07-12)
+
+### Originally deferred from: code review of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
+
+- **RESOLVED (by Story 10.4, 2026-07-08): [Review][Defer] (Med) — Medium/elite + affinity winnability proof gap.** The 12-2 winnability proof covered only Small-neutral boards for the approved batch; the deferral asked for a Medium/elite seed × class row + at least one Scorched-affinity live seed, OR an explicit AC2 re-scope with the proof assigned to 10.4/10.6. Story 10.4's Task-5 catalog extension delivered the EXTENDED disposition: 2 Medium-neutral + 2 Scorched-affinity seeds × 3 classes = 12 full `ReferenceCombatDriver` runs, all VICTORY (the 10-4 ledger section explicitly records "the 12-2 Med Medium/affinity winnability deferral is RESOLVED here via the EXTENDED disposition"). The residual costs it exposed (harness runtime ~57s; determinism-loop coverage of the new catalogs) live on as the two ACTIVE 10-4 entries — the root Medium/affinity proof gap itself is closed.
+- **RESOLVED — SUPERSEDED (by the 10-4 Med entry, 2026-07-08): [Review][Defer] (Low) — `ReferenceCombatDriver._relocate_scratch` per-cell snapshot round-trip cost.** The predicted cost materialized exactly as this deferral warned when 10.4 grew the catalog (Medium/elite boards); the 10-4 Med entry ("a MATERIALIZATION of the 12-2 Round-1 Low defer … Supersedes/updates the 12-2 Round-1 Low `_relocate_scratch` defer, same root cause, now realized") is now the single live tracking entry, with the measured ~57s figure and the in-place relocate-and-restore fix direction. Archived as superseded — the live item is the 10-4 Med entry; owner unchanged (reference-driver harness-perf pass).
+
+### Originally deferred from: code review of 10-5-accessibility-and-readability-audit (2026-07-08)
+
+- **RESOLVED (by Story 10.7, 2026-07-12): [Review][Defer] (Low → F-1) — the Flooded conductive-danger `_placeholder` replace / de-scope / block call.** The deferral's ask was precisely the 10.7-owned disposition call. Story 10.7's gate (`planning-artifacts/asset-audio-placeholder-ux-readiness-gate.md`) made it: **de-scoped for v0 as an approved, documented limitation** — the placeholder already carries a non-color `[SHAPE,LABEL,TEXT]`/`danger` channel (never a color-only violation), no live conductive mechanic exists yet, and ids stay unchanged. The residual (live conductive-interaction art/VFX + final cue) is now gate follow-up **AG-4**, owned by a later affinity-effects/VFX story. The 10.5-lens deferral itself is discharged.
+
 ## Archived during epic 12 closeout (2026-07-08)
 
 ### Originally tracked from: dev of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)

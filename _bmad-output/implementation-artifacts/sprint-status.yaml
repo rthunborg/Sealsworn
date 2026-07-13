@@ -145,7 +145,7 @@ development_status:
   11-5-outpost-scene-reveal-renders-and-another-descent: done
   11-6-meta-spend-and-unlock-application: done
   epic-11-retrospective: done
-  epic-10: in-progress
+  epic-10: done
   10-1-device-tiers-and-performance-budgets: done
   10-2-headless-seed-regression-suite: done
   10-3-generator-soft-lock-and-fairness-batch-checks: done
@@ -170,5 +170,5 @@ development_status:
   10-5-accessibility-and-readability-audit: done
   10-6-mvp-readiness-gate-and-playable-build-preservation: done
   10-7-asset-audio-placeholder-and-ux-readiness-gate: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
   epic-12-retrospective: done
