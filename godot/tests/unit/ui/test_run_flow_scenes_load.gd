@@ -20,6 +20,7 @@ func _every_run_flow_presenter_script_compiles() -> void:
 		"res://scripts/ui/presenters/hero_select_presenter.gd",
 		"res://scripts/ui/presenters/route_map_presenter.gd",
 		"res://scripts/ui/presenters/tactical_board_presenter.gd",
+		"res://scripts/ui/presenters/tactical_board_grid.gd",
 		"res://scripts/ui/presenters/gameplay_shell_presenter.gd",
 		"res://scripts/ui/presenters/run_end_presenter.gd",
 		"res://scripts/ui/presenters/outpost_presenter.gd",

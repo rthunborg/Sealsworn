@@ -1,3 +1,10 @@
+## Deferred from: code review of 13-1-live-board-render-and-tap-input (2026-07-14)
+
+Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 4; 1 open `[Review][Decision]` — the `.gd.uid` VC-convention call, recorded in the story file). Suite INDEPENDENTLY re-run on the review head: **193 PASS / 0 `^FAIL`** (exit 0; false-PASS guard clean; the 6 documented stderr negatives reproduced exactly; zero new import/texture-load error from the 26 added `.import` sidecars). Two `[Review][Defer]` carried forward:
+
+- [ ] **[Review][Defer]** (Low, from code review of 13-1, 2026-07-14) — Inspect taps produce no on-screen feedback. `interactive_inspect(cell)` (`tactical_board_presenter.gd:417-420`) routes into `_session.inspect(cell)` (metadata-only) but neither re-renders nor surfaces the returned result, and the VM `inspect` slot is not populated by a metadata-only inspect — so every inspect-routed tap (hero cell / wall / fogged-memory cell / dead body) leaves the inspect region reading "Inspect: tap a cell". AC2 requires only routing into the seam (met), so this is below the AC bar. Owner: Story 13.2 reward/passive-HUD story, or a later board-polish pass.
+- [ ] **[Review][Defer]** (Low, from code review of 13-1, 2026-07-14) — On-device human playtest verification of the live tap-to-fight loop is outstanding. The headless suite + the dev's throwaway SceneTree smoke prove the RefCounted seams / geometry round-trip / draw-op + hit-test wiring, but NOT the human-eyes dimensions: real render legibility, tap accuracy and effective target size on a physical display, and completing an actual combat node by tapping. 13.1 UNBLOCKS the Epic-10 retro §7 pre-ship backlog (OSG-1..4 / ASG-1/2 / AG-1) but cannot itself close it headlessly (the honesty posture). Owner: the physical-device observed-playtest pass owner.
+
 ## Deferred from: code review of 10-7-asset-audio-placeholder-and-ux-readiness-gate (2026-07-12)
 
 Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 1; 0 open `[Review][Decision]`). Doc-primary GATE story — the review subject is `asset-audio-placeholder-ux-readiness-gate.md` + the sanctioned `asset_sources/asset-manifest.md` provenance refinement + the story file; NO production `godot/` code touched (diff name-status confirmed). Suite INDEPENDENTLY re-run on the review head: **191 PASS / 0 `^FAIL`** (exit 0, false-PASS guard clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1 — NOT regressions); `git diff --check` clean.
@@ -97,7 +104,7 @@ Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2; 0
 `[Review][Decision]` — the combat-setup-error strand-on-shell consistency call, verified pre-existing from 11.3/11.4
 and recommended for deferral). One `[Review][Defer]` carried forward:
 
-- [ ] **[Review][Defer]** (Low, from code review of 12-1, 2026-07-07) — gesture→cell pixel hit-testing (mapping a raw
+- [x] **[Review][Defer]** (Low, from code review of 12-1, 2026-07-07 — **RESOLVED by Story 13-1, 2026-07-14**: the pixel→cell hit-test now exists, reusing the tested `TacticalBoardZoomState.screen_to_cell` via the new `TacticalBoardGridFit`/`TacticalBoardTapRouter` seams, routed into the existing `interactive_*` seams; suite 193 PASS) — gesture→cell pixel hit-testing (mapping a raw
   screen tap to a board `Vector2i`) is deliberately NOT implemented in 12.1: no board-geometry hit-test exists today,
   and the presenter/session tap seam operates at the already-resolved cell-intent level
   (`interactive_submit_move(target_cell)` / `interactive_tap_attack(target_cell)` / `interactive_inspect(target_cell)`),

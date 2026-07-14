@@ -4,7 +4,7 @@ baseline_commit: f35e3f0a761afbb555235889e34e8f86ba8bd2b2
 
 # Story 13.1: Live Board Render and Tap Input
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -101,14 +101,14 @@ RNG streams are unchanged; `TacticalBoardViewModel.to_dictionary()` keeps its ex
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Draw the board region as a tile grid from the VM (the render half of the L-gap fix).** (AC1)
-  - [ ] In `tactical_board_presenter.gd`, replace the text-only board-region render
+- [x] **Task 1 — Draw the board region as a tile grid from the VM (the render half of the L-gap fix).** (AC1)
+  - [x] In `tactical_board_presenter.gd`, replace the text-only board-region render
     (`_set_region_text("board", "Board %dx%d — %d occupants" ...)` at `:139-141`) with a real tile-grid Control
     hosted inside the board region Panel. Suggested shape: a dedicated child `Control` under the board Panel
     that draws in `_draw()` via `draw_texture_rect` (ONE draw pass per `render()` — call `queue_redraw()`, do
     NOT draw per-frame in `_process`; project-context perf rule line 322). Keep the other five regions
     (`preview`, `confirm_cancel`, `inspect`, `status`, `log_or_outcome`) rendering exactly as today.
-  - [ ] Render each cell from `vm.cells` (each is `{position:{x,y}, visibility_state, [terrain], [blocks_line_of_sight],
+  - [x] Render each cell from `vm.cells` (each is `{position:{x,y}, visibility_state, [terrain], [blocks_line_of_sight],
     [terrain_blocks_occupancy], [occupant_id]}` — see `TacticalCellView.from_visibility_fact`). Map
     `visibility_state`: `hidden` → fog tile (no terrain leak — `hidden` cells expose NO terrain per the VM
     contract); `memory` → dimmed last-known terrain; `visible` → lit terrain. Map `terrain` (int, `BoardCell.Terrain`)
@@ -117,24 +117,24 @@ RNG streams are unchanged; `TacticalBoardViewModel.to_dictionary()` keeps its ex
     current_hp, max_hp, is_alive, ...}`): the hero (`faction`/`entity_type` = player) uses the class sprite, enemies
     use their `definition_id` sprite. Occupants already come pre-filtered to VISIBLE cells only (see
     `_build_occupant_views`) — do not re-derive visibility.
-  - [ ] Apply the level's **affinity treatment** as the floor variant using `_affinity_id` (the presenter already
+  - [x] Apply the level's **affinity treatment** as the floor variant using `_affinity_id` (the presenter already
     holds it via `bind_live_state` / `bind_interactive_session`). The 4 approved treatments are full-tile FLOOR
     variants (`godot/assets/tiles/affinities/affinity.{scorched,flooded,cursed,darkness}.png`), NOT transparent
     overlays (manifest note: transparent overlays deferred to board-renderer time — use the full-tile variant for
     v0). A neutral (`none`) level uses the plain `tile.floor`. The affinity id is the SEPARATE
     `LiveAffinityReadModel` surface, NOT a board-VM key — read it from `_affinity_id`, do not add a VM key.
-  - [ ] Color-independence (NFR9 / §14.2): fog/memory/visible, hero-vs-enemy, and hazard/blocker each carry a
+  - [x] Color-independence (NFR9 / §14.2): fog/memory/visible, hero-vs-enemy, and hazard/blocker each carry a
     non-color channel (the art silhouette + a label/pattern), never color alone. The affinity danger cue ids
     already resolve non-color (`LiveAffinityReadModel`); the tile art is silhouette-distinct (passed the 3-point
     grayscale/phone-size/silhouette gate). Respect the `TacticalTextScale` clamp for any label text.
-- [ ] **Task 2 — Hit-test a tap to a cell and route it into the EXISTING interactive seams (the input half).** (AC2)
-  - [ ] Add a `_gui_input(event)` handler (or connect the `gui_input` signal) on the board-grid Control. On a
+- [x] **Task 2 — Hit-test a tap to a cell and route it into the EXISTING interactive seams (the input half).** (AC2)
+  - [x] Add a `_gui_input(event)` handler (or connect the `gui_input` signal) on the board-grid Control. On a
     `InputEventMouseButton` press (left button; Godot's default `emulate_mouse_from_touch` makes this cover mobile
     taps too), take `event.position` (local to the grid Control) and hit-test it to a `Vector2i` via
     `TacticalBoardZoomState.screen_to_cell(position)` — REUSE the tested seam; do NOT write a second pixel→cell
     formula. An `available: false` mapping (out-of-bounds / invalid-geometry / NaN) is a safe no-op (log via
     Diagnostics if useful; never fabricate a cell).
-  - [ ] Route the resolved cell into the EXISTING presenter seams (they already exist — do NOT add new ones):
+  - [x] Route the resolved cell into the EXISTING presenter seams (they already exist — do NOT add new ones):
     `interactive_submit_move(cell)` for a move tap, `interactive_tap_attack(cell)` for an attack tap (the two-step
     arm→confirm is inside the session's `TacticalAttackCommitFlow` — first tap PREVIEWS, second on the SAME target
     COMMITS), `interactive_inspect(cell)` for inspect. The move-vs-attack routing decision (is the tapped cell a
@@ -142,7 +142,7 @@ RNG streams are unchanged; `TacticalBoardViewModel.to_dictionary()` keeps its ex
     `RefCounted` seam (AC4) so it is headlessly testable; the presenter just calls it. A tap on an already-armed
     attack target is the confirming COMMIT; a tap elsewhere clears/re-previews (the session's commit flow already
     handles `clear_for_non_attack_tile` / mode switches).
-  - [ ] Compute the grid geometry (cell_size + origin) to FIT the board into the dominant board-region rect:
+  - [x] Compute the grid geometry (cell_size + origin) to FIT the board into the dominant board-region rect:
     `cell_size = min(region_w / board_width, region_h / board_height)` (square cells), centered origin. Feed
     `board_width`/`board_height` (from `vm.width`/`vm.height`) + the computed `cell_size`/`origin` +
     `viewport_size` into `TacticalBoardZoomState.from_options({...})`, then use `cell_rect(cell)` to lay out the
@@ -152,16 +152,16 @@ RNG streams are unchanged; `TacticalBoardViewModel.to_dictionary()` keeps its ex
     narrow phone may yield sub-44px raw cells, and that is acceptable for v0 — the two-step attack commit is the
     mis-tap protection (§14), and the existing zoom seam (`TacticalBoardZoomState`, Story 2.4) is the inspect/zoom
     affordance. Full pan/zoom chrome is NOT required by these ACs (non-goal).
-- [ ] **Task 3 — Fix the route_map fresh-run diagnostics error.** (AC3)
-  - [ ] In `route_map_presenter.gd` `_ready()` (`:29-33`): the `has_node("/root/Diagnostics")` at `:32` runs AFTER
+- [x] **Task 3 — Fix the route_map fresh-run diagnostics error.** (AC3)
+  - [x] In `route_map_presenter.gd` `_ready()` (`:29-33`): the `has_node("/root/Diagnostics")` at `:32` runs AFTER
     `_render_map()` at `:31`, which on a fresh run synchronously navigates away (`SceneManager.go_to_stage("tactical_board")`
     → `change_scene_to_file` removes the current scene from the tree immediately), so `:32` executes out-of-tree →
     the engine ERROR. Fix: EITHER emit the `route_map_ready` diagnostics line BEFORE `_render_map()`, OR guard it
     with `is_inside_tree()`. Prefer emitting before `_render_map()` (the diagnostics intent is "route map entered",
     which is true before the render). The OTHER `has_node("/root/Diagnostics")` calls in this file (`:146`, `:164`,
     inside the `_on_choice_picked` signal handler) are in-tree and fine — do not touch them.
-- [ ] **Task 4 — Tests: RefCounted seam coverage + the scene compile guardrail.** (AC1, AC2, AC4)
-  - [ ] Add headless unit tests for the NEW `RefCounted` seams (the grid-fit helper + the tap-routing decision
+- [x] **Task 4 — Tests: RefCounted seam coverage + the scene compile guardrail.** (AC1, AC2, AC4)
+  - [x] Add headless unit tests for the NEW `RefCounted` seams (the grid-fit helper + the tap-routing decision
     seam) under `godot/tests/unit/ui/` (auto-discovered — the runner recursively walks `res://tests/unit` +
     `res://tests/integration`; NO manifest edit). Prove: (a) the fit helper computes square cells that fit the
     region for an 8×8 and a 14×12 board, centered origin; (b) a pixel inside cell `(x,y)` round-trips
@@ -169,20 +169,20 @@ RNG streams are unchanged; `TacticalBoardViewModel.to_dictionary()` keeps its ex
     (c) an out-of-bounds pixel maps to `available: false` (safe no-op); (d) the tap-routing decision returns
     move/attack/inspect/no-op for the right cell states (empty-reachable → move, enemy-on-cell → attack,
     armed-target re-tap → commit).
-  - [ ] Confirm the existing `test_run_flow_scenes_load.gd` compile guardrail still covers the modified
+  - [x] Confirm the existing `test_run_flow_scenes_load.gd` compile guardrail still covers the modified
     `tactical_board_presenter.gd` + `route_map_presenter.gd` + `tactical_board.tscn` (both load with their modified
     scripts — the guardrail is green). Do NOT write a SceneTree test for the presenter (project-context line 260:
     the harness is scene-free; assertable logic lives in RefCounted seams).
-  - [ ] Prove the invariants hold: `RngStreamSet.required_streams()` still == 7; no new `DomainEvent.Type` member
+  - [x] Prove the invariants hold: `RngStreamSet.required_streams()` still == 7; no new `DomainEvent.Type` member
     (tail `OATH_SHARDS_SPENT`, preceded by `BOSS_DEFEATED` — render/hit-test emit ZERO events); the
     `TacticalBoardViewModel.to_dictionary()` 16-key contract is unchanged (`test_tactical_board_view_model.gd` still
     green — you added no VM key). Reuse the existing invariant tests where possible rather than adding redundant ones.
-- [ ] **Task 5 — Run the full headless suite + the false-PASS grep guard + `git diff --check`.** (AC4)
-  - [ ] Run: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`
+- [x] **Task 5 — Run the full headless suite + the false-PASS grep guard + `git diff --check`.** (AC4)
+  - [x] Run: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`
     via a PowerShell `.ps1` + `-File` (NOT inline `-Command` through Bash — Git Bash expands `$LASTEXITCODE` before
     PowerShell parses it → silent parse failure; Epic-10 retro §8 P3). Expect **≥191 PASS / 0 `^FAIL`** (baseline
     191 + any new seam tests), exit 0.
-  - [ ] Grep the RAW runner output for `SCRIPT ERROR|Parse Error|^FAIL` — no matches; exactly the 6 documented
+  - [x] Grep the RAW runner output for `SCRIPT ERROR|Parse Error|^FAIL` — no matches; exactly the 6 documented
     stderr negatives (int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1) and ZERO new documented
     negative. `git diff --check` clean.
 
@@ -404,13 +404,51 @@ the more restrictive interpretation):
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+Claude Opus 4.8 (claude-opus-4-8[1m]) — gds-dev-story delegate, 2026-07-14.
 
 ### Debug Log References
 
+- Full headless suite (post-implementation): **193 PASS / 0 `^FAIL`** (baseline 191 + 2 new seam tests), exit 0.
+  False-PASS grep `SCRIPT ERROR|Parse Error|^FAIL` = 0 matches; exactly the 6 documented stderr negatives
+  (int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1), ZERO new negative. No trailing-whitespace /
+  space-indent issues in changed files (`git diff --check` equivalent, run by orchestrator).
+- Full headless suite (Round-1 review follow-up, post `accept_event()` reorder + `--import` UID regen): **193 PASS
+  / 0 `^FAIL`**, exit 0 (via PowerShell `.ps1` + `-File`; output is UTF-16LE — decode with `tr -d '\000'` before
+  grepping). False-PASS grep clean; the same 6 documented stderr negatives, ZERO new negative; both new seam tests
+  and the `test_run_flow_scenes_load.gd` compile guardrail (covers `tactical_board_grid.gd`) green.
+- Throwaway SceneTree render smoke (`tools/smoke_board_render.gd`, deleted after use): the real `tactical_board.tscn`
+  built 6 regions + the grid, rendered **84 draw ops** from a revealed 6×6 fixture VM with **7 approved-art textures
+  loaded** (scorched affinity floor + wall/entrance/exit tiles + warrior/iron_cultist/ash_seer sprites); the tap
+  hit-test **round-tripped cell (3,2) → screen center → (3,2)** on the live rendered board; the null/between-levels
+  board rendered **0 ops** (safe empty state); zero runtime errors across neutral/affinity/empty/live renders.
+
 ### Completion Notes List
 
-- Ultimate context engine analysis completed — comprehensive developer guide created (create-story, 2026-07-13).
+- **Implemented (2026-07-14):** the board region now renders a real, tappable tile grid — closing the Epic-13 L-gap
+  (text-label board + no input). Two NEW pure `RefCounted` seams carry all AC4 assertable geometry/decision logic:
+  `TacticalBoardGridFit` (square-cell centered fit → builds the SHARED `TacticalBoardZoomState` used for BOTH draw
+  and hit-test) and `TacticalBoardTapRouter` (cell-state → move/attack/inspect/none intent). A thin
+  `tactical_board_grid.gd` Control draws the presenter-built op list and forwards a tap pixel via `cell_tapped`.
+  The presenter draws tiles/occupants/affinity-floor from the VM + `_affinity_id`, hit-tests taps via the shared
+  geometry, and routes into the EXISTING `interactive_submit_move` / `interactive_tap_attack` / `interactive_inspect`
+  seams — NO new command/event/RNG/VM-key/autoload. `route_map_presenter._ready` now emits its diagnostics line
+  BEFORE `_render_map()` (AC3 fix).
+- **Invariants held (AC4):** no board-VM key added (16-key contract green via `test_tactical_board_view_model.gd`);
+  `required_streams()` still 7; `DomainEvent.Type` tail unchanged (render/hit-test emit zero events); render/hit-test
+  draw zero RNG; no new autoload. All verified by the existing invariant tests staying green (reused, not duplicated).
+- **Color-independence (NFR9/§14.2):** fog = featureless dark fill (no terrain leak), memory = dimmed (brightness)
+  modulate, visible = full art; hero-vs-enemy = silhouette-distinct approved sprites + a distinct hero border + a
+  per-occupant HP bar (a grayscale-safe length channel); hazards = a bright outline pattern over the silhouette-
+  distinct hazard art. All non-color channels hold with color stripped.
+- **Asset wiring (needed to render the approved art):** the board art existed on disk but was NEVER imported
+  (no `.png.import` sidecars, no `.godot/` cache), so `preload`/`load` of the PNGs could not resolve. Ran a headless
+  `--import` to generate the 26 `.import` sidecars (25 tiles/affinities/characters/enemies + 1 icon SVG) so any
+  build renders the real art; **removed the 404 unrelated `.gd.uid` script-uid sidecars** the full editor import also
+  emitted (churn the project does not track). The presenter loads textures DEFENSIVELY at runtime (guarded `load()`,
+  never `preload`) so its script compiles even where the machine-local `.godot/` cache is absent (compile guardrail
+  robust on a fresh checkout); an un-imported checkout degrades to flat terrain-colored fallback tiles (never a
+  crash / black board).
+- **Verified (create-story, 2026-07-13):** Ultimate context engine analysis completed — comprehensive developer guide created.
   Folds in: the Epic 13 / Story 13.1 canonical ACs; the 2026-07-13 sprint change scope; the desktop-playtest
   investigation's two root causes; the 12-1 `[Review][Defer]` pixel→cell hit-test (the core item this story
   resolves); the Epic-10 retro forward items (§7 pre-ship backlog: this story UNBLOCKS OSG/ASG/AG-1; reward/passive
@@ -418,5 +456,60 @@ the more restrictive interpretation):
   key anti-reinvention find is pinned: the pixel↔cell geometry seam (`TacticalBoardZoomState`) AND the tap seams
   (`interactive_*` + `bind_interactive_session`) already exist and are tested — this story draws the grid + wires a
   `_gui_input` hit-test into them, adding no domain/VM/event/RNG/autoload change.
+- **Round-1 review follow-up (2026-07-14):** resolved the 2 open findings from the primary adversarial review.
+  ✅ `[Review][Patch]` (Low) — reordered `tactical_board_grid.gd _gui_input` to `accept_event()` BEFORE
+  `cell_tapped.emit(...)` so input consumption is independent of the emitted handler chain's synchronous scene swap
+  (mirrors the AC3 out-of-tree discipline); free, compile-clean, guardrail green. ✅ `[Review][Decision]` (Low) —
+  resolved direction (a): COMMIT the script-UID sidecars per Godot 4.4+ official guidance. Regenerated the 405
+  `*.gd.uid` files via a headless `--import` (a prior implementation had deleted them), verified none are gitignored
+  and added `*.gd.uid` to NO `.gitignore`, and left them untracked for the orchestrator to commit — so a future
+  `--import` is a no-op and the "git status clean" invariant holds. The 2 `[Review][Defer]` items (inspect on-screen
+  feedback → 13.2/polish; on-device human playtest → physical-device owner) stay logged in `deferred-work.md`.
 
 ### File List
+
+**New (production):**
+- `godot/scripts/ui/view_models/tactical_board_grid_fit.gd` — pure `RefCounted` grid-fit seam (square cells, centered origin) that builds the shared `TacticalBoardZoomState`.
+- `godot/scripts/ui/view_models/tactical_board_tap_router.gd` — pure `RefCounted` tap-routing DECISION seam (cell-state → move/attack/inspect/none).
+- `godot/scripts/ui/presenters/tactical_board_grid.gd` — thin tile-grid draw surface + `cell_tapped` forwarder Control.
+
+**New (tests):**
+- `godot/tests/unit/ui/test_tactical_board_grid_fit.gd`
+- `godot/tests/unit/ui/test_tactical_board_tap_router.gd`
+
+**Modified (production):**
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd` — tile-grid render (replaces the text-only board region), tap hit-test + routing into the existing `interactive_*` seams, defensive art texture loading.
+- `godot/scripts/ui/presenters/route_map_presenter.gd` — emit the `route_map_ready` diagnostics line before `_render_map()` (AC3 out-of-tree fix).
+
+**Modified (tests):**
+- `godot/tests/unit/ui/test_run_flow_scenes_load.gd` — added `tactical_board_grid.gd` to the compile guardrail.
+
+**New (asset import sidecars — wire the approved art so it renders):**
+- `godot/assets/**/*.png.import` (25) + `godot/assets/art/ui/icons/icon_placeholder.svg.import` (1) — generated by a headless `--import`. Machine-local `.godot/` cache is gitignored.
+
+**New (script-UID sidecars — review Decision resolution, to be committed):**
+- `godot/**/*.gd.uid` (405) — the Godot 4.6 script-UID sidecars. Per the resolved `[Review][Decision]` (direction (a): commit the UID sidecars, per Godot 4.4+ official guidance), these are now REGENERATED (a prior implementation deleted them) and RETAINED untracked in the worktree for the orchestrator to commit. Verified NOT matched by any `.gitignore` rule; `*.gd.uid` was NOT added to any `.gitignore`.
+
+### Change Log
+
+- 2026-07-14 — Story 13.1 implemented: live board tile-grid render + tap hit-test wired into the existing interactive combat seams; `route_map` fresh-run diagnostics fix; approved board art imported. Suite 193 PASS / 0 FAIL. Status → review.
+- 2026-07-14 — Round-1 review follow-up (2 open findings resolved): (1) `[Review][Patch]` — `tactical_board_grid.gd _gui_input` now calls `accept_event()` before `cell_tapped.emit(...)` (input consumption independent of the emitted chain's scene swap); (2) `[Review][Decision]` — resolved direction (a): regenerated + retained the 405 `*.gd.uid` script-UID sidecars (untracked, for commit), verified not gitignored, `*.gd.uid` NOT added to any `.gitignore`. The 2 `[Review][Defer]` items (inspect feedback; on-device playtest) remain logged in `deferred-work.md`. Suite re-run 193 PASS / 0 `^FAIL`, exit 0, false-PASS guard clean.
+
+### Review Findings
+
+**Round 1 of 3**
+
+Primary adversarial code review (`gds-code-review`, 2026-07-14) — verdict **Approve**. Critical 0 / High 0 / Med 0 / Low 4; **1 open `[Review][Decision]`** (a human call). Diff reviewed: branch `story/13-1-live-board-render-and-tap-input` vs `main`, code files only (excluded `_bmad-output`, `*.import`, cache). Three adversarial layers (Blind Hunter / Edge Case Hunter / Acceptance Auditor) executed with source-grounded verification; 7 candidate concerns investigated and dismissed as noise (see below).
+
+- **Suite independently re-run on the review head:** **193 PASS / 0 `^FAIL`**, exit 0; false-PASS guard (`SCRIPT ERROR|Parse Error|^FAIL`) clean; exactly the 6 documented stderr negatives (int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1), and **zero** new import/texture-load error from the 26 added `.import` sidecars. Both new seam tests PASS.
+- **AC1–AC4 all met.** Every "wired" claim was grepped against source (the 11.3 dead-probe lesson): session `board()`/`turn_state()`/`submit_move`/`tap_attack`/`inspect`/`commit_flow_state` all exist; `Diagnostics.info(category, code, payload)` exists (`autoloads/diagnostics.gd:13`); `RunState.selected_class_id` exists; `entity_type` resolves to `player`/`enemy` (`id_for_entity_type`), matching the hero/enemy detection strings; the 4 hardcoded affinity ids (`scorched`/`flooded_conductive`/`cursed`/`darkness`) match the `AffinityRepository` baseline; `BoardCell.Terrain` = {FLOOR,WALL,HAZARD,ENTRANCE,EXIT} is fully covered by `_terrain_texture`.
+- **Invariants held:** 16-key board VM (no key added), 7 RNG streams, no new `DomainEvent.Type`/autoload/RNG draw; compile guardrail (`test_run_flow_scenes_load.gd`) extended to `tactical_board_grid.gd`; draw+hit-test share ONE `TacticalBoardZoomState` (no wrong-cell class of bug); fog/occupant reads honor the VM's pre-filtered visibility (no fairness leak). AC3 route_map fix verified exact (old `_render_map()` removed from top, re-added after the guarded diagnostics probe — no duplication; the in-tree `:153`/`:171` Diagnostics calls untouched).
+
+- [x] **[Review][Decision]** (Low) — `.gd.uid` script-UID tracking convention is unresolved. This story is the FIRST to import the Godot project (to wire the approved art), so Godot 4.6 generates ~404 `.gd.uid` script-UID sidecars. The dev deleted them post-import, but `godot/.gitignore` ignores `.godot/` and `.import/` — NOT `*.gd.uid` — so the next editor-open or headless `--import` regenerates all ~404 as untracked files, breaking the mandatory "git status clean" invariant going forward. Human call on the project's VC convention: **(a)** commit the `.gd.uid` files (Godot's recommended practice for UID stability across renames), or **(b)** add `*.gd.uid` to `godot/.gitignore`. Worktree is clean now, so non-blocking — the decision only governs future churn.
+  - **RESOLVED 2026-07-14 — direction (a): COMMIT the `*.gd.uid` sidecars** (per Godot 4.4+ official guidance to version-control UID sidecars, like `*.import`). Regenerated all **405** `*.gd.uid` sidecars via a headless import (`Godot ... --headless --path C:/Sealsworn/godot --import --quit-after 60`, exit 0 — the "Missing .uid file ... re-created from cache" warnings confirm regeneration). Verified they are **NOT** matched by any `.gitignore` rule: no `*.gd.uid` pattern in root `.gitignore` or `godot/.gitignore`, and read-only `git check-ignore` on samples (`ai_action.gd.uid`, `tactical_board_grid.gd.uid`, `diagnostics.gd.uid`) returns exit 1 = not ignored (control: a `.godot/` path returns exit 0 = ignored, proving the check works). Did **NOT** add `*.gd.uid` to any `.gitignore` and did **NOT** delete them this time — left untracked in the worktree for the orchestrator to commit. A subsequent `--import` is now a no-op, so the "git status clean" invariant holds going forward.
+- [x] **[Review][Patch]** (Low) — Grid tap handler emits before consuming the event [`godot/scripts/ui/presenters/tactical_board_grid.gd:56-61`]. `_gui_input` calls `cell_tapped.emit(button.position)` and THEN `accept_event()`. On a fight-ending tap the emitted handler chain synchronously navigates (`_on_board_grid_tapped` → `interactive_tap_attack` → session commit → shell `_on_interactive_action_committed` → `SceneManager.go_to_stage`/`route_after_run_end` → `change_scene_to_file`), which — by the *very* AC3 out-of-tree mechanism this story fixes ("`change_scene_to_file` removes THIS scene from the tree") — can leave the grid detached when `accept_event()` runs. Worst case is a benign printed engine error (Godot guards `accept_event` from a hard crash, and input-time scene swaps are usually deferred), so Low and likely already safe — but the fix is free and mirrors the AC3 discipline: call `accept_event()` BEFORE `cell_tapped.emit(...)`. Unverifiable in the scene-free harness; confirm on-device on a winning/losing tap.
+  - **RESOLVED 2026-07-14:** `_gui_input` now calls `accept_event()` **BEFORE** `cell_tapped.emit(button.position)` (`tactical_board_grid.gd:56-67`), so input consumption is independent of the emitted handler chain's synchronous scene swap (mirrors the AC3 out-of-tree discipline); added an inline comment recording why the order is load-bearing. Suite re-run **193 PASS / 0 `^FAIL`**, exit 0, false-PASS guard clean; the compile guardrail `test_run_flow_scenes_load.gd` (which covers `tactical_board_grid.gd`) stays green, confirming the reorder is compile-clean. On-device winning/losing-tap confirmation remains tracked under the on-device-playtest `[Review][Defer]` above.
+- [x] **[Review][Defer]** (Low) — Inspect taps produce no on-screen feedback [`godot/scripts/ui/presenters/tactical_board_presenter.gd:417-420`]. `interactive_inspect(cell)` routes into `_session.inspect(cell)` (metadata-only) but neither re-renders nor surfaces the returned result, and the VM `inspect` slot is not populated by a metadata-only inspect — so every inspect-routed tap (hero cell, wall, fogged/memory cell, dead body) leaves the inspect region reading "Inspect: tap a cell". AC2 only requires routing into the seam (met), so this is below the AC bar; defer the visible-inspect wiring to Story 13.2 / a later polish pass. (logged to `deferred-work.md`)
+- [x] **[Review][Defer]** (Low) — On-device human playtest verification of the live tap-to-fight loop is outstanding. The suite + the dev's throwaway SceneTree smoke prove the RefCounted seams, the geometry round-trip, and the draw-op/hit-test wiring — but NOT the human-eyes dimensions: real render legibility, tap accuracy / effective target size on a physical display, and completing an actual combat node by tapping. This story UNBLOCKS the Epic-10 retro §7 pre-ship backlog (OSG-1..4 / ASG-1/2 / AG-1) but cannot itself close it headlessly (the honesty posture). Assign to the physical-device observed-playtest owner. (logged to `deferred-work.md`)
+
+**Dismissed as noise (7, investigated + cleared):** blocker/door/reward terrain-art gap (the `Terrain` enum has no such values — coverage complete); affinity-id mismatch (ids match exactly); `entity_type` vocab mismatch (`id_for_entity_type` returns `player`/`enemy`); dead-probe on session/`Diagnostics`/`RunState` methods (all exist in source); degenerate sub-4px rect draws (unreachable on the dominant board region; cosmetic-only worst case); fight-end re-entrancy freeing the grid mid-callback (the `render()`→`_notify_action_committed()` order is safe; folded into the Patch above); import binaries gitignored → fresh-checkout fallback to flat-color tiles (expected Godot behavior, handled defensively via `ResourceLoader.exists` guards, suite clean).
