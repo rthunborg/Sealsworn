@@ -28,9 +28,15 @@ var _status_label: Label = null
 
 func _ready() -> void:
 	_build_layout()
-	_render_map()
+	# Story 13.1 (AC3) — emit the "route map entered" diagnostics line BEFORE _render_map(). On a fresh run
+	# _render_map() takes the resolve-then-advance branch and synchronously navigates away
+	# (SceneManager.go_to_stage -> change_scene_to_file removes THIS scene from the tree mid-_ready), so probing
+	# has_node("/root/Diagnostics") AFTER the render would run out-of-tree and print an engine ERROR. The
+	# diagnostics intent ("route map entered") is already true here, before the render. The other in-tree
+	# Diagnostics calls in this presenter (the _on_choice_picked handler) stay put — they run in-tree.
 	if has_node("/root/Diagnostics"):
 		Diagnostics.info(&"ui", &"route_map_ready", {})
+	_render_map()
 
 
 func _build_layout() -> void:
