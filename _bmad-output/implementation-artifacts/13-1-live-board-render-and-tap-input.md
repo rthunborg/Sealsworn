@@ -4,7 +4,7 @@ baseline_commit: f35e3f0a761afbb555235889e34e8f86ba8bd2b2
 
 # Story 13.1: Live Board Render and Tap Input
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
