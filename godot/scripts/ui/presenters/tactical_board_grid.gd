@@ -57,8 +57,13 @@ func _gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var button: InputEventMouseButton = event
 		if button.pressed and button.button_index == MOUSE_BUTTON_LEFT:
-			cell_tapped.emit(button.position)
+			# Consume the event BEFORE emitting: the emitted handler chain can synchronously
+			# navigate on a fight-ending tap (interactive_tap_attack -> session commit -> shell
+			# route_after_run_end -> change_scene_to_file), which detaches this grid from the tree
+			# — the same out-of-tree mechanism AC3 guards against. Calling accept_event() first
+			# keeps input consumption independent of what the tap triggers.
 			accept_event()
+			cell_tapped.emit(button.position)
 
 
 func _rect(op: Dictionary) -> Rect2:
