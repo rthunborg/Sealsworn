@@ -510,6 +510,14 @@ Players drive moment-to-moment combat by hand on the live tactical board — tap
 
 **Implementation notes:** Added 2026-07-07 via sprint change proposal (see `sprint-change-proposal-2026-07-07.md`) to allocate the Epic-11 retro's T1/T2 residual (the interactive tap-loop + a winnable hero path — the last piece of hands-on play). **Sequencing: executes between Epic 10's Stories 10.3 and 10.4.** The tap-loop follows the run-flow UX appendix §14 contract (first tap PREVIEWS, second tap COMMITS, ≥44px targets); all decision logic lives in RefCounted seams (scene-free harness); the default hands-off auto-resolve driver stays available and byte-identical for seed-batch proofs; resolve-then-advance is preserved; no new autoload; every pinned fingerprint holds unless intentionally re-pinned in the same change.
 
+### Epic 13: Human-Playable Board
+
+A human can actually play the fight: the tactical board draws as a real tile grid (terrain, occupants, fog, affinity treatments from the approved board art), mouse clicks and taps resolve to board cells and drive the existing interactive-combat seams, and the post-fight reward/passive choices are clickable on screen.
+
+**FRs covered:** the human-facing delivery of FR3, FR4, FR8, FR9, FR10, FR11, FR12 (Epic 12 shipped the live input *seams*; this epic ships the visual render + pixel→cell input that lets a person use them), plus the on-screen delivery of the Epic-6 reward/passive-choice contracts (loop steps 6/7). Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
+
+**Implementation notes:** Added 2026-07-13 via sprint change proposal (see `sprint-change-proposal-2026-07-13.md`) after the first human desktop playtest found the board region renders as one text label with no input path (investigation: `desktop-playtest-black-board-investigation.md`). Resolves the 12-1 `[Review][Defer]` pixel→cell hit-test item and the 10-6 gate §3.3 rows-6/7 "later HUD story" item; unblocks the Epic-10 retro §7 human-playtest backlog (OSG-1..4, ASG-1/2, AG-1). Additive presentation only: render from `TacticalBoardViewModel` reads, submit through the existing `interactive_*` session seams and Epic-6 reward/modal contracts — no domain change, no new autoload, no new RNG draw site, hands-off driver and every pinned fingerprint byte-identical.
+
 ## Epic 1: Core Tactical Combat Slice
 
 Players can launch a small tactical test level, move, see line of sight and fog, use weapon-shaped attacks, resolve enemy turns, take damage, win or die, and understand why combat outcomes occurred.
@@ -2889,3 +2897,59 @@ So that hands-on combat is fair and classes feel tactically distinct.
 **When** the loadout wiring lands
 **Then** no new RNG stream or unnamed draw site is added, the 23-key RunSnapshot gate stays 23, and the in-node fight state remains ephemeral
 **And** any intentionally changed live-combat fixture/fingerprint is re-pinned in the same change, with the hands-off default path otherwise byte-identical.
+
+## Epic 13: Human-Playable Board
+
+A human can actually play the fight on the live tactical board — see it, click it, win or die by it — and then collect the reward and make the passive choice on screen.
+
+> **Sequencing:** added 2026-07-13 via sprint change proposal (post-MVP-close playability gap; see `sprint-change-proposal-2026-07-13.md`). Executes after Epic 10's close as the first pre-ship backlog epic.
+
+### Story 13.1: Live Board Render and Tap Input
+
+As a player,
+I want the tactical board drawn as a real tile grid I can click,
+So that I can fight the battle myself instead of reading a text summary of it.
+
+**Acceptance Criteria:**
+
+**Given** a run is parked on a combat, elite_combat, or boss node in the gameplay shell
+**When** the node begins
+**Then** the board region renders a visible tile grid from `TacticalBoardViewModel` reads — terrain, hero, enemies, blockers/hazards, fog-of-war/visibility states, and the level's affinity treatment (using the approved board art under `godot/assets/`)
+**And** the render remains a projection of the domain board — no scene node owns tactical truth, and a null board still renders the empty state without crashing.
+
+**Given** the board is rendered and it is the player's turn
+**When** the player clicks/taps inside the board region
+**Then** the pixel position hit-tests to a board `Vector2i` cell (≥44px effective targets per UX appendix §14)
+**And** the resolved cell routes into the EXISTING seams — `interactive_submit_move`, `interactive_tap_attack` (first tap PREVIEWS, second confirming tap COMMITS), `interactive_inspect` — with no parallel combat path and no new command surface.
+
+**Given** the route map navigates to the board on a fresh run
+**When** `route_map_presenter._ready` triggers the resolve-then-advance navigation
+**Then** no engine error is printed (the out-of-tree diagnostics probe at `route_map_presenter.gd:32` is guarded or reordered).
+
+**Given** the headless suite and seed regressions run
+**When** this story lands
+**Then** all hit-test/geometry decision logic lives in RefCounted seams testable without a SceneTree (scene wiring verified by construction + the scene-load compile guardrail)
+**And** the hands-off auto-resolve driver and every pinned fingerprint stay byte-identical; no new autoload; no new RNG draw site.
+
+### Story 13.2: Live Reward and Passive-Choice HUD
+
+As a player,
+I want the post-fight reward and passive Consume/Destroy choices presented as clickable UI,
+So that I can complete the loop steps a fight earns me without a test harness.
+
+**Acceptance Criteria:**
+
+**Given** a resolved node yields a reward offer
+**When** the shell returns from the board (or resolves a non-combat node)
+**Then** the pending reward offer renders on screen from the EXISTING Epic-6 contracts (`RewardOfferBuilder` offer on the run, `PassiveRewardModalViewModel` pinned MODAL_KEYS)
+**And** the player can accept/resolve it with clicks driving the EXISTING `ResolveRewardCommand` path through the command bridge.
+
+**Given** a passive reward requires the Consume/Destroy choice
+**When** the modal is shown
+**Then** the two-step `PassiveRewardCommitFlow` drives the choice (arm → confirm, ≥44px targets), submitting the EXISTING `ConsumePassiveCommand`/`DestroyPassiveCommand`
+**And** cancel/back-out leaves the run state unmutated.
+
+**Given** the 10-6 MVP readiness gate's §3.3 qualifier (loop steps 6/7 integration-proven only)
+**When** this story lands
+**Then** collect-rewards and make-passive-choices are live-HUD-proven end to end by a human on desktop
+**And** the headless suite stays green with every pinned fingerprint byte-identical; no domain command/contract change.

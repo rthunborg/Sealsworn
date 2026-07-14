@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-12T00:00:00+00:00
+last_updated: 2026-07-13T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -172,3 +172,14 @@ development_status:
   10-7-asset-audio-placeholder-and-ux-readiness-gate: done
   epic-10-retrospective: done
   epic-12-retrospective: done
+  # SPRINT CHANGE 2026-07-13 (sprint-change-proposal-2026-07-13.md):
+  # epic-13 added post-MVP-close after the first human desktop playtest found the
+  # tactical board has no visual render and no pixel->cell input (investigation:
+  # desktop-playtest-black-board-investigation.md). Human-facing delivery of the
+  # Epic-12 interactive seams + the Epic-6 reward/passive contracts; resolves the
+  # 12-1 hit-test defer and the 10-6 gate 3.3 rows-6/7 "later HUD story" item;
+  # unblocks the retro 7 human-playtest backlog (OSG/ASG/AG-1).
+  epic-13: backlog
+  13-1-live-board-render-and-tap-input: backlog
+  13-2-live-reward-and-passive-choice-hud: backlog
+  epic-13-retrospective: optional
