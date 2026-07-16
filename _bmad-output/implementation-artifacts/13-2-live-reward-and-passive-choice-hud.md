@@ -469,15 +469,19 @@ Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
     run-command bridges (`RunEndProfileBridge`/`OutpostSpendBridge`) rather than `view_models/` — the story's Task 3
     "mirror `RunEndProfileBridge`" is the more specific instruction, and `flow/` is the established home for a seam that
     EXECUTES commands; the pure render projection stays in `view_models/` per Task 6.
-- **[Decision — the one genuine design latitude] v0 node→table policy** (`RewardHudViewModel.table_for_node_type`): a
-  `combat` node earns a generic single-pick reward (`standard_combat_reward` → the accept-click `ResolveRewardCommand`
-  path); an `elite_combat` node earns the passive Consume/Destroy 3-choice moment (`passive_reward_choice`); every
-  other node type earns no combat-node reward HUD (its own surface owns its offer — the event-node 7.3 pair is out of
-  scope). This is deterministic and one of the story's explicitly-sanctioned defaults ("elite → passive"): a normal
-  desktop playtest that clears one combat AND one elite node exercises BOTH a generic reward AND a passive choice.
-  `elite_combat_reward` is intentionally unused in the v0 live policy (still validated + tested). **Flag for review:**
-  if a stronger reward-policy intent is read into the AC (e.g. elite should give `elite_combat_reward` and the passive
-  moment fire on a separate cadence), this is the one knob to revisit — it is isolated in a single tested seam.
+- **[Decision — RESOLVED by human ratify, 2026-07-16] v0 node→table policy** (`RewardHudViewModel.table_for_node_type(node_type, node_depth)`):
+  the guaranteed **depth-0 opener combat node** earns the passive Consume/Destroy 3-choice moment
+  (`passive_reward_choice`); a **deeper `combat` node** earns a generic single-pick reward (`standard_combat_reward` →
+  the accept-click `ResolveRewardCommand` path); an **`elite_combat` node** earns the richer generic single-pick reward
+  (`elite_combat_reward`); every other node type earns no combat-node reward HUD (its own surface owns its offer — the
+  event-node 7.3 pair is out of scope). This resolves the review's `[Review][Decision]` in the human-chosen direction
+  (elite → `elite_combat_reward`, plus a DIFFERENT deterministic passive trigger). The passive trigger — the depth-0
+  opener — is deterministic (the route generator ALWAYS seats depth 0 as `combat` with no type RNG; the run parks there
+  at start) and ALWAYS reachable (the FIRST fight of every run), so a normal desktop playtest exercises the passive
+  Consume/Destroy UI on the opening victory AND a generic reward on every deeper combat/elite victory. All THREE
+  baseline tables are now used in the live flow (`elite_combat_reward` is no longer intentionally-unused). The policy
+  stays isolated in the single tested seam; the seam unit test pins the new mapping, and the hands-off driver +
+  seed-regression fingerprints stay byte-identical (the reward GENERATE is wired into the interactive shell path only).
 - **[Decision] Task 5 — the carried 13-1 inspect-feedback defer is PICKED UP (closed), not carried forward.** Since
   13.2 already modifies the presenter HUD regions, `interactive_inspect` now stores the returned `CommandBridgeResult`
   cell facts + re-renders, so an inspect tap surfaces the tapped cell (coords, visibility, occupant id/type/HP) in the
@@ -530,3 +534,102 @@ Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
   modal) as an additive clickable overlay, and routed clicks into the EXISTING run-domain commands via the new
   `RewardResolutionBridge`. Picked up the carried 13-1 inspect-feedback defer (Task 5). Added no domain/command/event/
   RNG/VM-key/autoload/save-key change. Suite 195 PASS / 0 FAIL; all AC3 invariants byte-identical. Status → review.
+- 2026-07-16 — Review round 1 `[Review][Decision]` RESOLVED (human ratify). Re-pointed the v0 node→table policy:
+  `elite_combat` → `elite_combat_reward` (the richer generic single-pick, previously unused), and the passive 3-choice
+  moment now fires on a DIFFERENT deterministic trigger — the guaranteed depth-0 opener combat node (deterministic +
+  always reachable, the first fight of every run). Extended the isolated policy seam to
+  `RewardHudViewModel.table_for_node_type(node_type, node_depth)` and threaded `_active_node.depth` at the one presenter
+  call site; updated the seam unit test to the new mapping. Hands-off driver + seed-regression fingerprints unchanged
+  (reward GENERATE stays interactive-only). Suite re-run 195 PASS / 0 `^FAIL`, exit 0; false-PASS guard clean; the 6
+  documented stderr negatives only, zero new. The 3 `[Review][Defer]` items remain deferred (unchanged).
+
+### Review Findings
+
+**Round 1 of 3**
+
+Primary adversarial code review (`gds-code-review`, 2026-07-16; branch `story/13-2-live-reward-and-passive-choice-hud`
+vs `main`). **Verdict: Approve.** Critical 0 / High 0 / Med 0 / Low 3; 1 open `[Review][Decision]` (a human call).
+Suite INDEPENDENTLY re-run on the review head: **195 PASS / 0 `^FAIL`** (exit 0; false-PASS guard
+`SCRIPT ERROR|Parse Error|^FAIL` clean; exactly the 6 documented stderr negatives — int64-overflow ×2 / malformed-JSON
+×3 / `invalid_node_type` ×1, ZERO new; `git diff --check` clean). Both new seam tests
+(`test_reward_hud_view_model.gd`, `test_reward_resolution_bridge.gd`) present + green.
+
+AC1/AC2/AC3 verified against source, not prose:
+- The reward GENERATE is wired into the interactive-shell victory boundary ONLY — `generate_reward_offer` /
+  `generate_passive_reward_offer` grep-confirmed to have exactly ONE live caller (`gameplay_shell_presenter._begin_reward_step`),
+  never `run_to_completion` / `_resolve_combat` / `auto_play_boss_fight`; `finish_interactive_combat_node` generates no
+  offer, so the `reward_offer_pending` guard cannot trip at the victory boundary (AC3 fingerprints byte-identical).
+- `RunFlowController.run()` returns `_orchestrator.run` (SAME object), so the offer the generate stores on
+  `orchestrator.run.pending_reward_offer` IS the one the board presenter renders via `_run.pending_reward_offer`.
+- The three resolution commands are constructed with the exact real signatures + the run-level `orchestrator.streams`
+  + `orchestrator.next_sequence_id()`; Destroy draws exactly ONE `STREAM_REWARDS` draw through the run streams (test
+  pins the +1 draw-index advance + same-seed determinism); exactly-one-command holds (a second resolve fails closed
+  `reward_offer_already_resolved`).
+- The node→table policy routes the UI deterministically with no category/UI mismatch: both baseline combat tables
+  (`standard_combat_reward` / `elite_combat_reward`) draw ONLY non-passive categories, and only `passive_reward_choice`
+  yields `passive` entries, so `RewardHudViewModel.is_passive_offer` (reads the offer's actual entries) always matches
+  the intended surface. [Updated post-resolution, 2026-07-16] Under the ratified mapping the surfaces are: the depth-0
+  opener combat → passive Consume/Destroy (`passive_reward_choice`); a deeper combat → generic Accept
+  (`standard_combat_reward`); an elite → generic Accept (`elite_combat_reward`).
+- Task 5 (inspect feedback) is NOT a dead probe: `_inspect_facts_from` reads `target_cell.{x,y}` +
+  `cell.{visibility_state, occupant_id, entity_type, current_hp}`, which match `TacticalCommandBridge._build_inspect_result`
+  (`target_cell` = `_cell_metadata` = `{x,y}`; `cell` = the `visible_facts_for_cell` fact) and
+  `TacticalVisibilityQuery.visible_facts_for_cell` (occupant fields present only for a visible + occupied cell) exactly.
+  The carried 13-1 inspect-feedback `[Review][Defer]` is legitimately CLOSED (ledger entry marked resolved).
+
+- **[Review][Decision] — RESOLVED (human ratify, 2026-07-16)** — the v0 **node → reward-table policy**
+  (`RewardHudViewModel.table_for_node_type`) is the story's one explicitly-flagged design latitude. The human chose the
+  "stronger reward-policy intent" direction the finding flagged as the knob to revisit: **elite nodes now route to the
+  richer generic `elite_combat_reward` table (previously the unused table), and the passive 3-choice moment fires on a
+  DIFFERENT deterministic trigger — the guaranteed depth-0 opener combat node.** The seam was updated to
+  `table_for_node_type(node_type, node_depth)` (still the single isolated policy static):
+  - `combat` at **depth 0** → `passive_reward_choice` (the passive Consume/Destroy 3-choice moment). The route
+    generator ALWAYS seats depth 0 as a `combat` node with NO type RNG (`route_generator.gd`: "the depth-0 start … is
+    always `combat`"), and the run parks there at start (`RouteState.new(ordered_nodes, ordered_nodes[0].id, …)`), so
+    this trigger is **deterministic** (fixed by the route STRUCTURE, not an RNG draw — independent of seed) and **always
+    reachable** — it is the FIRST fight of every run, so a desktop playtester sees the passive UI immediately.
+  - `combat` at **depth > 0** → `standard_combat_reward` (generic single-pick).
+  - `elite_combat` (any depth) → `elite_combat_reward` (the richer generic single-pick; elites never appear at depth 0,
+    so no depth branch is needed for them).
+  - every OTHER node type → no reward HUD.
+  Consequences preserved: (1) the reward step is still wired ONLY at the interactive-combat victory boundary — the
+  non-combat resolve path (`gameplay_shell_presenter.gd`) does NOT call `_begin_reward_step`, so AC1's "or resolves a
+  non-combat node" is discharged by the policy returning `has_reward=false` for non-combat, and a future policy that
+  wants non-combat rewards must ALSO wire `_begin_reward_step` into that path. (2) The hands-off driver stays
+  byte-identical — the reward GENERATE is wired into the INTERACTIVE shell path only (no seed-regression fixture drives
+  it; `test_seed_regression_suite.gd` calls `generate_reward_offer`/`generate_passive_reward_offer` DIRECTLY, never
+  through this policy), so changing the table mapping moves NO pinned fingerprint. (3) All three baseline tables are now
+  exercised in the live flow (`standard_combat_reward` / `elite_combat_reward` generic; `passive_reward_choice` passive)
+  — `elite_combat_reward` is no longer intentionally-unused. Both baseline combat tables draw ONLY non-passive
+  categories and only `passive_reward_choice` yields `passive` entries, so `RewardHudViewModel.is_passive_offer` (reads
+  the offer's actual entries) always matches the intended surface (opener → passive Consume/Destroy; deeper combat +
+  elite → generic Accept). Isolated in the single tested seam; the seam unit test
+  (`test_reward_hud_view_model.gd::_node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults`) pins the new
+  mapping (depth-0 opener passive; deeper-combat generic; elite `elite_combat_reward`; other none). Suite re-run green.
+- **[Review][Defer]** (Low) — the GENERIC reward HUD has no skip/drop affordance. A backpack-category reward resolved
+  against a FULL backpack returns `inventory_full` and (by the documented Epic-6 domain decision,
+  `resolve_reward_command.gd:25`) leaves the offer `pending`; the shell re-renders and does NOT advance
+  (`gameplay_shell_presenter._on_reward_resolution_requested:254-259`), but the generic overlay exposes ONLY an
+  "Accept reward" button — clicking it re-triggers the same reject, a potential **soft-lock with no player escape**.
+  The fail-closed domain behavior is CORRECT; the missing HUD escape hatch is the gap. Not reachable in an early
+  desktop playtest (the backpack starts empty; `standard_combat_reward` yields gold ~⅓ of the time, which always
+  resolves). Owner: the later replacement-choice / full-backpack disposition UX (the `resolve_reward_command.gd:25`
+  residual). Since 13.2 is the story that made this a live human-playable path, it is logged here so the escape-hatch
+  gap is tracked, not just the domain residual.
+- **[Review][Defer]** (Low) — the reward overlay uses hardcoded geometry (a full-rect `Panel`, fixed 24px
+  `MarginContainer` insets, fixed header `font_size` 22) and a plain `VBoxContainer` with NO `ScrollContainer`, instead
+  of honoring the semantic `TacticalLayoutProfile` region plan (`tactical_board_presenter.gd:850-999`). On a small
+  viewport, the passive 3-choice modal (name + flavor + effect + consume + destroy + optional unknown-downside ≈ 6
+  lines × 3 choices, plus per-choice Consume/Destroy rows) can overflow vertically and push the ≥44×44 targets off
+  the bottom edge, weakening §14.1 "targets reachable on every layout profile." Presentation-only, verified by
+  construction (no SceneTree test); the ≥44px minimum size itself is set (`_reward_button`). Owner: the on-device
+  layout / board-polish pass (the same physical-device human-eyes pass this story UNBLOCKS for loop steps 6/7).
+- **[Review][Defer]** (Low) — `_inspect_facts_from` (Task 5, `tactical_board_presenter.gd:478-496`) is a pure
+  `CommandBridgeResult` → facts-dict transform that lives in the presenter and is therefore untested. Its key reads are
+  correct against source TODAY (verified this review), but per the story's own "assertable logic in `RefCounted` seams"
+  rule + the 11.3 dead-probe lesson, extracting it into a tiny `RefCounted` seam with a unit test would guard those
+  metadata keys against a future silent inspect-fact-shape drift. Optional hardening; non-blocking (no correctness
+  defect). Owner: a later board-polish / test-hardening pass.
+
+Deferrals copied to the cross-story ledger (`deferred-work.md`) under
+`## Deferred from: code review of 13-2-live-reward-and-passive-choice-hud (2026-07-16)`.

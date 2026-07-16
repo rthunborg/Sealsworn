@@ -9,7 +9,8 @@ extends "res://tests/unit/test_case.gd"
 #   - a PASSIVE 3-choice offer projects is_passive == true / three choices, each carrying the full MODAL_KEYS
 #     modal (has_passive == true) + the passive display name as the label;
 #   - is_passive_offer detection (generic false, passive true, empty false);
-#   - the v0 node -> table policy (combat -> standard single-pick; elite -> passive 3-choice; other -> no reward).
+#   - the v0 node -> table policy (the GUARANTEED depth-0 opener combat -> passive 3-choice; a deeper combat ->
+#     standard single-pick; elite -> the richer generic single-pick `elite_combat_reward`; other -> no reward).
 
 const PassiveRewardModalViewModel = preload("res://scripts/ui/view_models/passive_reward_modal_view_model.gd")
 const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
@@ -24,7 +25,7 @@ func run() -> Dictionary:
 	_generic_offer_projects_one_non_passive_choice()
 	_passive_offer_projects_three_passive_choices_with_modals()
 	_is_passive_offer_detection()
-	_node_table_policy_maps_combat_elite_and_defaults()
+	_node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults()
 	return result()
 
 
@@ -141,17 +142,33 @@ func _is_passive_offer_detection() -> void:
 	assert_equal(RewardHudViewModel.is_passive_offer(empty_offer), false, "An empty offer is not a passive offer.")
 
 
-func _node_table_policy_maps_combat_elite_and_defaults() -> void:
-	var combat: Dictionary = RewardHudViewModel.table_for_node_type(&"combat")
-	assert_equal(combat.get("has_reward"), true, "A combat node earns a reward.")
-	assert_equal(combat.get("table_id"), &"standard_combat_reward", "A combat node earns the standard single-pick reward.")
-	assert_equal(combat.get("is_passive"), false, "A combat node earns a generic (non-passive) reward.")
+func _node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults() -> void:
+	# The GUARANTEED depth-0 opener combat node earns the passive Consume/Destroy 3-choice moment (the v0
+	# deterministic trigger — the route generator always seats depth 0 as `combat`, so this fires on the FIRST
+	# fight of every run; PASSIVE_TRIGGER_DEPTH == 0).
+	var opener: Dictionary = RewardHudViewModel.table_for_node_type(&"combat", 0)
+	assert_equal(opener.get("has_reward"), true, "The depth-0 opener combat node earns a reward.")
+	assert_equal(opener.get("table_id"), &"passive_reward_choice", "The depth-0 opener combat node earns the passive 3-choice moment.")
+	assert_equal(opener.get("is_passive"), true, "The depth-0 opener combat node earns the passive Consume/Destroy reward.")
 
-	var elite: Dictionary = RewardHudViewModel.table_for_node_type(&"elite_combat")
-	assert_equal(elite.get("has_reward"), true, "An elite node earns a reward.")
-	assert_equal(elite.get("table_id"), &"passive_reward_choice", "An elite node earns the passive 3-choice moment.")
-	assert_equal(elite.get("is_passive"), true, "An elite node earns the passive Consume/Destroy reward.")
+	# Every DEEPER combat node earns the generic single-pick standard reward (never the passive) — the passive
+	# trigger is the fixed depth-0 opener ONLY.
+	for deep_depth: int in [1, 2, 5]:
+		var deep_combat: Dictionary = RewardHudViewModel.table_for_node_type(&"combat", deep_depth)
+		assert_equal(deep_combat.get("has_reward"), true, "A deeper combat node (depth %d) earns a reward." % deep_depth)
+		assert_equal(deep_combat.get("table_id"), &"standard_combat_reward", "A deeper combat node earns the standard single-pick reward.")
+		assert_equal(deep_combat.get("is_passive"), false, "A deeper combat node earns a generic (non-passive) reward.")
 
+	# An elite node earns the richer generic single-pick reward (`elite_combat_reward`), at ANY depth (elites
+	# never appear at depth 0, so no depth branch is needed for them).
+	for elite_depth: int in [1, 3, 6]:
+		var elite: Dictionary = RewardHudViewModel.table_for_node_type(&"elite_combat", elite_depth)
+		assert_equal(elite.get("has_reward"), true, "An elite node (depth %d) earns a reward." % elite_depth)
+		assert_equal(elite.get("table_id"), &"elite_combat_reward", "An elite node earns the richer generic single-pick reward.")
+		assert_equal(elite.get("is_passive"), false, "An elite node earns a generic (non-passive) reward.")
+
+	# Every other node type earns NO combat-node reward HUD (their own surfaces own their offers), at any depth.
 	for other: StringName in [&"shop", &"event", &"secret", &"boss", &"reforge", &"gambling"]:
-		var policy: Dictionary = RewardHudViewModel.table_for_node_type(other)
-		assert_equal(policy.get("has_reward"), false, "Node type %s earns NO combat-node reward HUD." % String(other))
+		for any_depth: int in [0, 3]:
+			var policy: Dictionary = RewardHudViewModel.table_for_node_type(other, any_depth)
+			assert_equal(policy.get("has_reward"), false, "Node type %s earns NO combat-node reward HUD (depth %d)." % [String(other), any_depth])

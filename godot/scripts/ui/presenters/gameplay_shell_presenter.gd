@@ -185,9 +185,12 @@ func _on_interactive_action_committed() -> void:
 		return
 
 	var orchestrator: RunOrchestrator = flow.orchestrator()
-	# Story 13.2 — capture the resolved node's TYPE before the handle is cleared (the reward node->table policy keys
-	# off it: a combat node earns a generic reward, an elite node earns the passive Consume/Destroy 3-choice moment).
+	# Story 13.2 — capture the resolved node's TYPE + deterministic route DEPTH before the handle is cleared (the
+	# reward node->table policy keys off both: the guaranteed depth-0 opener combat node earns the passive
+	# Consume/Destroy 3-choice moment; a deeper combat node earns the generic standard reward; an elite node earns
+	# the richer generic elite reward).
 	var node_type: String = String(_active_node.type)
+	var node_depth: int = _active_node.depth
 	var finish = orchestrator.finish_interactive_combat_node(_active_node, _active_session)
 	var run: RunState = flow.run()
 	# Clear the live-fight handle (the fight is resolved — ephemeral, not saved).
@@ -206,7 +209,7 @@ func _on_interactive_action_committed() -> void:
 	# Story 13.2 — a live VICTORY earns a reward: GENERATE the offer at THIS interactive boundary, RENDER the reward
 	# HUD, and AWAIT the resolve click (the click drives the EXISTING run-domain command, then advances). When the
 	# node earns no reward (or the generate fails loud), advance straight to the route map exactly as before.
-	if _begin_reward_step(orchestrator, run, node_type):
+	if _begin_reward_step(orchestrator, run, node_type, node_depth):
 		return
 	_advance_to_route_map()
 
@@ -215,8 +218,8 @@ func _on_interactive_action_committed() -> void:
 # orchestrator generate (single-pick or the 3-choice passive), then show the reward HUD. Returns true when an offer
 # is now pending + rendered (the resolve click advances the flow); false when the node earns no reward or the
 # generate fails loud (the caller advances normally). Wired into the INTERACTIVE path ONLY — never run_to_completion.
-func _begin_reward_step(orchestrator: RunOrchestrator, run: RunState, node_type: String) -> bool:
-	var policy: Dictionary = RewardHudViewModel.table_for_node_type(StringName(node_type))
+func _begin_reward_step(orchestrator: RunOrchestrator, run: RunState, node_type: String, node_depth: int) -> bool:
+	var policy: Dictionary = RewardHudViewModel.table_for_node_type(StringName(node_type), node_depth)
 	if not bool(policy.get("has_reward", false)):
 		return false
 	var table_id: StringName = StringName(String(policy.get("table_id", "")))

@@ -15,11 +15,14 @@ extends RefCounted
 #     single-pick; up to three for a passive 3-choice). Each choice carries the pinned CHOICE_KEYS: index,
 #     category, content_id, a human label, is_passive, and `modal` (the PassiveRewardModalViewModel MODAL_KEYS
 #     projection — identity-absent for a non-passive entry, the full modal for a passive entry).
-#   - table_for_node_type(node_type) -> the v0 node -> table policy: a combat node earns a generic single-pick
-#     reward (`standard_combat_reward`); an elite node earns the passive Consume/Destroy 3-choice moment
-#     (`passive_reward_choice`); every other node type earns NO combat-node reward HUD (their own surfaces own
-#     their offers). Deterministic (documented in the story's Completion Notes) so a normal desktop playtest that
-#     clears one combat node AND one elite node exercises BOTH a generic reward AND a passive choice.
+#   - table_for_node_type(node_type, node_depth) -> the v0 node -> table policy: the GUARANTEED depth-0
+#     opener combat node earns the passive Consume/Destroy 3-choice moment (`passive_reward_choice`); every
+#     DEEPER combat node earns the generic single-pick standard reward (`standard_combat_reward`); an elite
+#     node earns the richer generic single-pick reward (`elite_combat_reward`); every other node type earns
+#     NO combat-node reward HUD (their own surfaces own their offers). Deterministic — the passive fires on the
+#     fixed depth-0 opener the route generator ALWAYS seats as `combat` with no type RNG, so it is reachable on
+#     the FIRST fight of every run — and documented in the story's Completion Notes; a normal desktop playtest
+#     that clears the opener AND a deeper combat/elite node exercises BOTH a passive choice AND a generic reward.
 #
 # WHAT IT IS NOT:
 #   - It executes NO reward/passive command (that is RewardResolutionBridge — a run-command bridge), holds NO
@@ -35,7 +38,15 @@ const PASSIVE_CATEGORY := "passive"
 
 # The v0 node -> table policy table ids (the three EXISTING baseline reward tables — no new content).
 const TABLE_STANDARD_COMBAT := &"standard_combat_reward"
+const TABLE_ELITE_COMBAT := &"elite_combat_reward"
 const TABLE_PASSIVE_CHOICE := &"passive_reward_choice"
+
+# The route DEPTH of the guaranteed run-opener combat node — the v0 deterministic trigger for the passive
+# Consume/Destroy 3-choice moment. The route generator ALWAYS seats a `combat` node at depth 0 as the run
+# opener (route_generator.gd: "the depth-0 start ... is always `combat`", short-circuited with NO type RNG),
+# so this trigger is deterministic (fixed by the route STRUCTURE, not an RNG draw) and ALWAYS reachable (it is
+# the FIRST fight of every run). Deeper combat nodes earn the generic single-pick reward instead.
+const PASSIVE_TRIGGER_DEPTH := 0
 
 # The EXACT key set of project() (the exact-key discipline — a key never silently appears/vanishes; a test pins it).
 const REWARD_KEYS: Array[String] = [
@@ -103,14 +114,19 @@ static func is_passive_offer(offer: RewardOffer) -> bool:
 
 
 # The v0 node -> reward-table policy (the presentation-flow decision this story owns). Returns {has_reward,
-# table_id, is_passive}. Deterministic; other node types (shop/event/secret/boss/...) earn NO combat-node reward
-# HUD here (their own offer surfaces are out of scope).
-static func table_for_node_type(node_type: StringName) -> Dictionary:
+# table_id, is_passive}, keyed off the node TYPE + its deterministic route DEPTH. Deterministic; other node
+# types (shop/event/secret/boss/...) earn NO combat-node reward HUD here (their own offer surfaces are out of
+# scope). The passive Consume/Destroy 3-choice moment fires on the GUARANTEED depth-0 opener combat node (see
+# PASSIVE_TRIGGER_DEPTH — always `combat`, always reachable, no RNG); a DEEPER combat node earns the generic
+# single-pick standard reward; an elite node earns the richer generic single-pick elite reward.
+static func table_for_node_type(node_type: StringName, node_depth: int) -> Dictionary:
 	match node_type:
 		&"combat":
+			if node_depth == PASSIVE_TRIGGER_DEPTH:
+				return {"has_reward": true, "table_id": TABLE_PASSIVE_CHOICE, "is_passive": true}
 			return {"has_reward": true, "table_id": TABLE_STANDARD_COMBAT, "is_passive": false}
 		&"elite_combat":
-			return {"has_reward": true, "table_id": TABLE_PASSIVE_CHOICE, "is_passive": true}
+			return {"has_reward": true, "table_id": TABLE_ELITE_COMBAT, "is_passive": false}
 		_:
 			return {"has_reward": false, "table_id": &"", "is_passive": false}
 
