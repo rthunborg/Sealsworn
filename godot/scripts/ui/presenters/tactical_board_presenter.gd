@@ -37,6 +37,12 @@ const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_s
 const TacticalBoardGrid = preload("res://scripts/ui/presenters/tactical_board_grid.gd")
 const TacticalBoardGridFit = preload("res://scripts/ui/view_models/tactical_board_grid_fit.gd")
 const TacticalBoardTapRouter = preload("res://scripts/ui/view_models/tactical_board_tap_router.gd")
+# Story 13.2 — the post-victory reward HUD (an ADDITIVE overlay surface, NOT a board-VM key). It renders
+# run.pending_reward_offer via the RewardHudViewModel projection (which reuses PassiveRewardModalViewModel's pinned
+# MODAL_KEYS) and drives the two-step Consume/Destroy via the already-imported PassiveRewardCommitFlow. The resolving
+# click routes back to the hosting shell (which owns the RewardResolutionBridge + the orchestrator).
+const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
+const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 
 # The approved board art (godot/assets/, all `approved` in the manifest). Loaded DEFENSIVELY at runtime (never
 # preload) so the presenter SCRIPT compiles even where the machine-local import cache (.godot/, gitignored) is
@@ -127,6 +133,20 @@ var _affinity_fairness: Dictionary = {}
 # is the shell callback invoked after each COMMITTED action so the shell re-renders + routes on a terminal outcome.
 var _session: InteractiveCombatSession = null
 var _on_action_committed: Callable = Callable()
+
+# Story 13.2 — the post-victory reward HUD state. `_passive_commit_flow` is the two-step Consume/Destroy arm->confirm
+# view state (the EXISTING Epic-6 contract, finally instantiated + wired). `_reward_overlay`/`_reward_box` are the
+# additive clickable overlay (built lazily, drawn on top of the board so it captures the tap). `_on_reward_resolution`
+# is the shell callback invoked on a RESOLVING click (a generic accept / a confirmed passive commit); a cancel/back-out
+# never calls it (the two-step un-arms internally, zero mutation). `_reward_active` gates rendering.
+var _passive_commit_flow: PassiveRewardCommitFlow = PassiveRewardCommitFlow.new()
+var _reward_overlay: Panel = null
+var _reward_box: VBoxContainer = null
+var _on_reward_resolution: Callable = Callable()
+var _reward_active: bool = false
+# Story 13.2 (Task 5 — the carried 13-1 inspect-feedback defer): the last interactive inspect facts (the tapped
+# cell), surfaced in the inspect region so an inspect tap produces on-screen feedback. Reset on a new fight bind.
+var _last_inspect: Dictionary = {}
 
 # Story 13.1 — the live tile-grid surface (built in _build_regions), the board Panel that hosts it, and the
 # SHARED per-render geometry object used for BOTH the tile draw (cell_rect) and the tap hit-test
@@ -291,7 +311,7 @@ func _confirm_cancel_text(commit_flow: Dictionary, availability: Dictionary) -> 
 # affinity-affected-cell counts + the non-color cue ids surfaced through the EXISTING affinity preview / Darkness cue
 # surfaces (the scene MAPS the cue_ids to visuals; it invents no new reason/cue). A neutral read appends nothing.
 func _inspect_text(inspect: Dictionary, affinity: Dictionary) -> String:
-	var base: String = "Inspect: tap a cell" if inspect.is_empty() else "Inspect: %s" % String(inspect.get("visibility_state", ""))
+	var base: String = _inspect_base_text(inspect)
 	if not bool(affinity.get("has_affinity", false)):
 		return base
 	var preview: Dictionary = affinity.get("preview", {})
@@ -302,6 +322,30 @@ func _inspect_text(inspect: Dictionary, affinity: Dictionary) -> String:
 	return "%s | Danger: %d hazard / %d conductive / %d pathing | Cues: %s" % [
 		base, hazard, conductive, pathing, ", ".join(PackedStringArray(cue_ids))
 	]
+
+
+# Story 13.2 (Task 5) — the inspect region base line. Prefer the last INTERACTIVE inspect facts (the tapped cell:
+# coords + visibility + occupant/HP) so an inspect tap produces real on-screen feedback (the carried 13-1 defer);
+# fall back to the VM inspect slot, then the static "tap a cell" prompt when nothing has been inspected.
+func _inspect_base_text(inspect: Dictionary) -> String:
+	if not _last_inspect.is_empty():
+		if bool(_last_inspect.get("unavailable", false)):
+			return "Inspect: unavailable (%s)" % String(_last_inspect.get("reason", ""))
+		var text: String = "Inspect: (%d,%d) %s" % [
+			int(_last_inspect.get("x", 0)),
+			int(_last_inspect.get("y", 0)),
+			String(_last_inspect.get("visibility_state", ""))
+		]
+		if _last_inspect.has("occupant_id"):
+			text += " | %s %s HP %d" % [
+				String(_last_inspect.get("entity_type", "")),
+				String(_last_inspect.get("occupant_id", "")),
+				int(_last_inspect.get("current_hp", 0))
+			]
+		return text
+	if inspect.is_empty():
+		return "Inspect: tap a cell"
+	return "Inspect: %s" % String(inspect.get("visibility_state", ""))
 
 
 func _log_text(log_summary: Array, outcome: Dictionary) -> String:
@@ -378,6 +422,8 @@ func bind_interactive_session(
 ) -> void:
 	_session = session
 	_on_action_committed = on_action_committed
+	# Story 13.2 (Task 5) — a new fight clears any stale inspect feedback from the previous node.
+	_last_inspect = {}
 	# The LIVE board + turn state (mutated-in-place by the session) drive the render — NOT a throwaway PLAYER_PLANNING
 	# stub, so the HUD's turn slot + action_availability reflect the real turn (preview/commit/inspect gate correctly).
 	if session != null:
@@ -414,10 +460,40 @@ func interactive_tap_attack(target_cell: Vector2i, attacker_support = null, defe
 
 # Route an INSPECT tap into the live session (metadata-only — no mutation, no turn advance). Returns the
 # CommandBridgeResult. Does NOT notify the shell (inspect commits nothing).
+# Story 13.2 (Task 5 — closing the carried 13-1 inspect-feedback defer): the inspect result is no longer discarded.
+# The returned cell facts are stored + the board re-rendered, so the inspect region surfaces the tapped cell (coords,
+# visibility, occupant + HP) instead of the static "Inspect: tap a cell". Still a pure read — no mutation, no turn.
 func interactive_inspect(target_cell: Vector2i):
 	if _session == null:
 		return null
-	return _session.inspect(target_cell)
+	var inspect_result = _session.inspect(target_cell)
+	_last_inspect = _inspect_facts_from(inspect_result)
+	render()
+	return inspect_result
+
+
+# Distill the interactive inspect CommandBridgeResult into the flat facts the inspect region renders (Task 5). An
+# unavailable inspect (out-of-bounds / a disabled result) records the reason; a visible cell records its coords,
+# visibility, and — when occupied — the occupant id / type / current HP (the visible_facts_for_cell fact surface).
+func _inspect_facts_from(inspect_result) -> Dictionary:
+	if inspect_result == null:
+		return {}
+	if not inspect_result.succeeded:
+		return {"unavailable": true, "reason": String(inspect_result.reason)}
+	var metadata: Dictionary = inspect_result.metadata
+	var target: Dictionary = metadata.get("target_cell", {})
+	var cell: Dictionary = metadata.get("cell", {})
+	var facts: Dictionary = {
+		"unavailable": false,
+		"x": int(target.get("x", 0)),
+		"y": int(target.get("y", 0)),
+		"visibility_state": String(cell.get("visibility_state", ""))
+	}
+	if cell.has("occupant_id"):
+		facts["occupant_id"] = String(cell.get("occupant_id", ""))
+		facts["entity_type"] = String(cell.get("entity_type", ""))
+		facts["current_hp"] = int(cell.get("current_hp", 0))
+	return facts
 
 
 # Notify the shell that a session action resolved (the shell re-renders the HUD + routes on a terminal outcome). Guards
@@ -725,3 +801,209 @@ func _outline_op(rect: Rect2, color: Color, width: float) -> Dictionary:
 		"color": color,
 		"width": width
 	}
+
+
+# --- Story 13.2: the post-victory reward HUD (an ADDITIVE overlay; the resolving click routes to the shell) -------
+
+# Enter reward mode: bind the run (whose pending_reward_offer this renders) + the shell's resolution callback, reset
+# the two-step commit flow, build the overlay if needed, and render the offer. Called by the hosting shell after a
+# live VICTORY generates a reward offer.
+func show_reward_offer(run: RunState, on_reward_resolution: Callable = Callable()) -> void:
+	_run = run
+	_on_reward_resolution = on_reward_resolution
+	_passive_commit_flow = PassiveRewardCommitFlow.new()
+	_reward_active = true
+	_ensure_reward_overlay()
+	render_reward()
+
+
+# Leave reward mode: hide the overlay (the offer resolved; the shell advances to the route map).
+func hide_reward_offer() -> void:
+	_reward_active = false
+	if _reward_overlay != null:
+		_reward_overlay.visible = false
+
+
+# Render the pending offer into the overlay (a pure projection of run.pending_reward_offer via RewardHudViewModel). A
+# null/absent/resolved offer renders the empty state (the overlay hides) — never a crash. Rebuilds the clickable
+# controls on each explicit render (no per-frame work). Reused by the shell to re-render on an inventory_full reject.
+func render_reward() -> void:
+	if not _reward_active or _reward_overlay == null:
+		return
+	var offer: RewardOffer = _run.pending_reward_offer if _run != null else null
+	var projection: Dictionary = RewardHudViewModel.new().project(offer)
+	_clear_reward_box()
+	if not bool(projection.get("has_offer", false)):
+		# No pending offer -> nothing to render (the shell owns the advance).
+		_reward_overlay.visible = false
+		return
+	_reward_overlay.visible = true
+	_add_reward_label(String(projection.get("prompt", "")), true)
+	if bool(projection.get("is_passive", false)):
+		_build_passive_reward_ui(projection)
+	else:
+		_build_generic_reward_ui(projection)
+
+
+# Build the overlay lazily: a full-rect Panel (mouse-filter STOP so it captures the tap + blocks board input while the
+# reward is up) hosting a centered VBox. Added last so it draws ON TOP of the board grid.
+func _ensure_reward_overlay() -> void:
+	if _reward_overlay != null:
+		return
+	_reward_overlay = Panel.new()
+	_reward_overlay.name = "reward_overlay"
+	_reward_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_reward_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_reward_overlay)
+	var margin: MarginContainer = MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_top", 24)
+	margin.add_theme_constant_override("margin_bottom", 24)
+	_reward_overlay.add_child(margin)
+	_reward_box = VBoxContainer.new()
+	_reward_box.name = "reward_box"
+	_reward_box.add_theme_constant_override("separation", 8)
+	margin.add_child(_reward_box)
+	_reward_overlay.visible = false
+
+
+# A GENERIC single-pick offer: show the reward + a single Accept button (drives ResolveRewardCommand on the shell).
+func _build_generic_reward_ui(projection: Dictionary) -> void:
+	var choices: Array = projection.get("choices", [])
+	if choices.is_empty():
+		return
+	var choice: Dictionary = choices[0]
+	_add_reward_label("Reward: %s" % String(choice.get("label", "")), false)
+	var accept: Button = _reward_button("Accept reward")
+	var category: String = String(choice.get("category", ""))
+	var content_id: String = String(choice.get("content_id", ""))
+	accept.pressed.connect(func() -> void:
+		_emit_reward_resolution({
+			"action": "resolve_generic",
+			"category": category,
+			"content_id": content_id
+		}))
+	_reward_box.add_child(accept)
+
+
+# A PASSIVE 3-choice offer: when nothing is armed, list each passive's modal text with Consume/Destroy buttons (the
+# FIRST tap ARMS); when a choice is armed, show a Confirm (the SECOND, committing tap) + Cancel (zero-mutation back-out).
+func _build_passive_reward_ui(projection: Dictionary) -> void:
+	var flow_state: Dictionary = _passive_commit_flow.to_dictionary()
+	if String(flow_state.get("pending_choice", PassiveRewardCommitFlow.CHOICE_NONE)) != PassiveRewardCommitFlow.CHOICE_NONE:
+		_build_passive_confirm_ui(flow_state)
+		return
+	var table_id: String = String(projection.get("table_id", ""))
+	for choice_value: Variant in projection.get("choices", []):
+		var choice: Dictionary = choice_value
+		var content_id: String = String(choice.get("content_id", ""))
+		_add_reward_label(_passive_choice_text(choice), false)
+		var row: HBoxContainer = HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var consume_btn: Button = _reward_button("Consume")
+		consume_btn.pressed.connect(_on_passive_arm.bind(PassiveRewardCommitFlow.CHOICE_CONSUME, content_id, table_id))
+		var destroy_btn: Button = _reward_button("Destroy")
+		destroy_btn.pressed.connect(_on_passive_arm.bind(PassiveRewardCommitFlow.CHOICE_DESTROY, content_id, table_id))
+		row.add_child(consume_btn)
+		row.add_child(destroy_btn)
+		_reward_box.add_child(row)
+
+
+# The armed-choice confirm step (the two-step second tap). The armed-vs-unarmed state carries a NON-COLOR channel:
+# the button labels differ ("Consume"/"Destroy" -> "Confirm Consume/Destroy") and a distinct Cancel appears.
+func _build_passive_confirm_ui(flow_state: Dictionary) -> void:
+	var choice: String = String(flow_state.get("pending_choice", ""))
+	var content_id: String = String(flow_state.get("passive_content_id", ""))
+	_add_reward_label("Confirm %s of %s?" % [choice.capitalize(), content_id], false)
+	var confirm_btn: Button = _reward_button("Confirm %s" % choice.capitalize())
+	confirm_btn.pressed.connect(_on_passive_confirm)
+	_reward_box.add_child(confirm_btn)
+	var cancel_btn: Button = _reward_button("Cancel")
+	cancel_btn.pressed.connect(_on_passive_cancel)
+	_reward_box.add_child(cancel_btn)
+
+
+# First tap: ARM the Consume/Destroy choice + re-render into the confirm step (mutates NOTHING — the arm is transient
+# view state on PassiveRewardCommitFlow; no command runs until the confirming tap).
+func _on_passive_arm(choice: String, content_id: String, table_id: String) -> void:
+	if choice == PassiveRewardCommitFlow.CHOICE_CONSUME:
+		_passive_commit_flow.arm_consume(StringName(content_id), StringName(table_id))
+	else:
+		_passive_commit_flow.arm_destroy(StringName(content_id), StringName(table_id))
+	render_reward()
+
+
+# Second (confirming) tap: COMMIT the two-step -> the intent routes to the shell (EXACTLY ONE of Consume/Destroy).
+func _on_passive_confirm() -> void:
+	var intent: Dictionary = _passive_commit_flow.confirm()
+	if not bool(intent.get("committed", false)):
+		render_reward()
+		return
+	_emit_reward_resolution({
+		"action": "commit_passive",
+		"committed": true,
+		"choice": String(intent.get("choice", "")),
+		"passive_content_id": String(intent.get("passive_content_id", "")),
+		"table_id": String(intent.get("table_id", ""))
+	})
+
+
+# Cancel/back-out (AC2): un-arm with ZERO mutation (no command runs, the RunState is byte-identical) + re-render back
+# to the choice list. Never notifies the shell.
+func _on_passive_cancel() -> void:
+	_passive_commit_flow.cancel()
+	render_reward()
+
+
+# The per-choice modal text (FR47/§8): the evocative name, the flavor, the EXACT mechanical effects, the Consume text,
+# the Destroy text, and the honest-unknown downside — every field from the pinned MODAL_KEYS (text satisfies the ACs;
+# icon art is optional). The honest-unknown flag carries a NON-COLOR channel (the "[unknown downside]" text marker).
+func _passive_choice_text(choice: Dictionary) -> String:
+	var modal: Dictionary = choice.get("modal", {})
+	if not bool(modal.get("has_passive", false)):
+		return String(choice.get("label", ""))
+	var lines: Array[String] = [
+		String(modal.get("display_name", "")),
+		String(modal.get("flavor", "")),
+		"Effect: %s" % String(modal.get("exact_mechanical_effects", "")),
+		"Consume: %s" % String(modal.get("consume_text", "")),
+		"Destroy: %s" % String(modal.get("destroy_text", ""))
+	]
+	if bool(modal.get("has_unknown_consequences", false)):
+		lines.append("[unknown downside] %s" % String(modal.get("consequences_text", "")))
+	return "\n".join(lines)
+
+
+func _emit_reward_resolution(resolution: Dictionary) -> void:
+	if _on_reward_resolution.is_valid():
+		_on_reward_resolution.call(resolution)
+
+
+# A reward button honoring the >=44x44 touch target (§14.1) on every layout profile.
+func _reward_button(text: String) -> Button:
+	var button: Button = Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(44.0, 44.0)
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	return button
+
+
+func _add_reward_label(text: String, is_header: bool) -> void:
+	var label: Label = Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if is_header:
+		label.add_theme_font_size_override("font_size", 22)
+	_reward_box.add_child(label)
+
+
+# Detach + free the dynamic reward controls before a rebuild (remove_child detaches immediately so no duplicate
+# accumulates; queue_free defers deletion safely past a button's own pressed-signal emission).
+func _clear_reward_box() -> void:
+	if _reward_box == null:
+		return
+	for child: Node in _reward_box.get_children():
+		_reward_box.remove_child(child)
+		child.queue_free()

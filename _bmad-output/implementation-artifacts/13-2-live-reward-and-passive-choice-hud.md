@@ -1,6 +1,10 @@
+---
+baseline_commit: 3cb80b3
+---
+
 # Story 13.2: Live Reward and Passive-Choice HUD
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -97,15 +101,15 @@ never into `run_to_completion`/`_resolve_combat`).
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Wire the reward-offer GENERATE at the interactive-shell node-completion boundary.** (AC1)
-  - [ ] In `gameplay_shell_presenter.gd`, at the interactive-combat VICTORY boundary (`_on_interactive_action_committed`,
+- [x] **Task 1 — Wire the reward-offer GENERATE at the interactive-shell node-completion boundary.** (AC1)
+  - [x] In `gameplay_shell_presenter.gd`, at the interactive-combat VICTORY boundary (`_on_interactive_action_committed`,
     the `run.is_terminal() == false` branch that today calls `_advance_to_route_map()` at `:197`), GENERATE the reward
     offer BEFORE advancing: call the EXISTING `orchestrator.generate_reward_offer(table_id)` (single-pick) or
     `orchestrator.generate_passive_reward_offer(table_id)` (3-choice) — do NOT hand-roll a draw, do NOT call
     `RewardOfferBuilder` directly (the orchestrator method injects the run-level `streams`, stores the offer as
     `pending`, emits `reward_offered`, and advances the sequence — the single sanctioned path). Then render the reward
     HUD (Task 2) and AWAIT the resolve click instead of immediately advancing.
-  - [ ] Choose the v0 **node → table policy** (a presentation-flow decision this story owns — the "later HUD/orchestrator
+  - [x] Choose the v0 **node → table policy** (a presentation-flow decision this story owns — the "later HUD/orchestrator
     story owns the auto-wire + the board-reward-marker → offer link once it owns a resolution policy" that
     `project-context.md:191` forecasts). Recommended minimal, deterministic mapping using the THREE existing baseline
     tables (`RewardTableRepository.BASELINE_REWARD_TABLE_IDS`): `combat` → `standard_combat_reward`, `elite_combat` →
@@ -113,13 +117,13 @@ never into `run_to_completion`/`_resolve_combat`).
     desktop playtest exercises BOTH a generic reward AND a passive Consume/Destroy (e.g. elite → passive, or a fixed
     node cadence). Keep it deterministic; document the chosen policy in Completion Notes. A node yields ONE offer at a
     time (the `reward_offer_pending` guard rejects a second generate). See "The key scope decision" below.
-  - [ ] **DO NOT auto-wire the generate into `run_to_completion` / `_resolve_combat` / `auto_play_boss_fight`** (the
+  - [x] **DO NOT auto-wire the generate into `run_to_completion` / `_resolve_combat` / `auto_play_boss_fight`** (the
     hands-off auto-resolve proof paths — `project-context.md:442`). Auto-generating there would advance the run-level
     `rewards` stream mid-run with no auto-resolve policy, trip the `reward_offer_pending` guard, and perturb the
     interrupted==uninterrupted determinism the seed-regression fixtures pin. The boss victory path routes to run-end →
     outpost (no combat-node reward HUD); the boss stays auto-play (13.1 non-goal, unchanged).
-- [ ] **Task 2 — Render the pending reward offer on screen (generic offer + passive 3-choice modal).** (AC1, AC2)
-  - [ ] Render `run.pending_reward_offer` as clickable UI. For a NON-passive offer, read its `offered_entries` (each a
+- [x] **Task 2 — Render the pending reward offer on screen (generic offer + passive 3-choice modal).** (AC1, AC2)
+  - [x] Render `run.pending_reward_offer` as clickable UI. For a NON-passive offer, read its `offered_entries` (each a
     plain `{category, content_id}` dict) directly from the `RewardOffer` (there is NO dedicated generic-offer VM — the
     offer is itself the serializable read surface; do NOT invent a board-VM key). For a PASSIVE offer, project each of
     the (up to 3) entries via `PassiveRewardModalViewModel.project_offer(offer, index)` and render the pinned
@@ -127,78 +131,78 @@ never into `run_to_completion`/`_resolve_combat`).
     `has_unknown_consequences` / `consequences_text`). The board presenter already exposes the read seam
     `passive_reward_modal(index)` (`tactical_board_presenter.gd:359`) — reuse/extend it; it is currently a read-only
     projection with no render + no input.
-  - [ ] Host the reward surface as an ADDITIVE presentation surface (a reward panel/overlay). It is a SEPARATE read
+  - [x] Host the reward surface as an ADDITIVE presentation surface (a reward panel/overlay). It is a SEPARATE read
     surface, NOT a `TacticalBoardViewModel` key (exactly like the affinity read `LiveAffinityReadModel` and the G1
     `RunHudViewModel` are composed alongside the board VM, not baked into its 16-key set). Keep any render/routing
     DECISION logic in a `RefCounted` seam (Task 6); the `Control`/scene wiring is verified by construction + the compile
     guardrail (the scene-free harness rule, `project-context.md:260`).
-  - [ ] `icon` in `MODAL_KEYS` is a placeholder id STRING sentinel, not art (`project-context.md:199`). Rendering the
+  - [x] `icon` in `MODAL_KEYS` is a placeholder id STRING sentinel, not art (`project-context.md:199`). Rendering the
     text fields satisfies the ACs. IF you choose to render the 28 generated passive-glyph icons
     (`asset_sources` `icon.passive.001`–`028`, generated/approval-pending) you MUST follow the 13.1 art discipline:
     headless `--import` to generate the `.png.import` sidecars, commit them, and load defensively (guarded `load()`,
     never `preload`) so the compile guardrail stays green on a fresh checkout. Icon art is OPTIONAL polish, not required.
-  - [ ] Color-independence (NFR9 / §14.2): every reward-choice meaning (which choice is armed vs confirmed, Consume vs
+  - [x] Color-independence (NFR9 / §14.2): every reward-choice meaning (which choice is armed vs confirmed, Consume vs
     Destroy, the honest-unknown-downside flag) carries a non-color channel (label/pattern/text), never color alone.
-- [ ] **Task 3 — Resolve a generic (non-passive) offer from a click via `ResolveRewardCommand`.** (AC1)
-  - [ ] On the accept/resolve click for a non-passive offer, construct + execute the EXISTING run-domain command
+- [x] **Task 3 — Resolve a generic (non-passive) offer from a click via `ResolveRewardCommand`.** (AC1)
+  - [x] On the accept/resolve click for a non-passive offer, construct + execute the EXISTING run-domain command
     directly (the 4.3 run-command idiom — these commands have NO orchestrator convenience method, `project-context.md:191`):
     `ResolveRewardCommand.new(category, content_id, orchestrator.next_sequence_id()).execute(run)`. This is NOT a
     `TacticalCommandBridge` intent — that bridge only handles `move`/`attack`/`inspect` against a
     `TacticalActionContext`; the reward/passive commands execute against `RunState`. If you add a thin reward "bridge"
     seam, mirror `RunEndProfileBridge` (construct + execute a run command with a monotonic `sequence_id`); do NOT extend
     `TacticalCommandBridge`.
-  - [ ] Honor the command's contract: a backpack-category reward composes `PickupItemCommand` (a FULL backpack surfaces
+  - [x] Honor the command's contract: a backpack-category reward composes `PickupItemCommand` (a FULL backpack surfaces
     `inventory_full` and leaves the offer `pending` — surface it honestly, do not silently advance); gold credits the
     wallet; a passive category recorded via `ResolveRewardCommand` is outcome-only (NOT the Consume/Destroy path — see
     Task 4). Resolving draws ZERO new RNG (the offer was rolled at GENERATE). After a successful resolve, advance the flow.
-- [ ] **Task 4 — Wire the passive Consume/Destroy two-step; back-out mutates nothing.** (AC2)
-  - [ ] Instantiate a `PassiveRewardCommitFlow` in the presenter/shell (it is imported in `tactical_board_presenter.gd:28`
+- [x] **Task 4 — Wire the passive Consume/Destroy two-step; back-out mutates nothing.** (AC2)
+  - [x] Instantiate a `PassiveRewardCommitFlow` in the presenter/shell (it is imported in `tactical_board_presenter.gd:28`
     but NOT yet instantiated). The player selects one of the 3 passive choices + Consume or Destroy: the first tap ARMS
     (`arm_consume(content_id, table_id)` / `arm_destroy(content_id, table_id)`), a second confirming tap `confirm()`s and
     returns the commit-intent `{committed, choice, passive_content_id, table_id}`.
-  - [ ] Route the commit-intent to EXACTLY ONE command (`project-context.md:195/446` — a pending passive offer is resolved
+  - [x] Route the commit-intent to EXACTLY ONE command (`project-context.md:195/446` — a pending passive offer is resolved
     by exactly one of {`ResolveRewardCommand` | `ConsumePassiveCommand` | `DestroyPassiveCommand`}; never compose two):
     Consume → `ConsumePassiveCommand.new(passive_content_id, table_id, orchestrator.next_sequence_id())` (adopts into
     `run.rules_resolver`); Destroy → `DestroyPassiveCommand.new(passive_content_id, table_id, orchestrator.next_sequence_id(),
     orchestrator.streams, DestroyOutcomeTableDefinition.create_baseline_table())` — Destroy DRAWS ONE RNG on
     `STREAM_REWARDS`, so it MUST use the run-level `streams` (never a fresh `RandomNumberGenerator`); rolls the exact-
     integer 70/20/10 outcome.
-  - [ ] Cancel / dismiss / back-out (AC2): `PassiveRewardCommitFlow.cancel()` / `dismiss()` produce no intent and run no
+  - [x] Cancel / dismiss / back-out (AC2): `PassiveRewardCommitFlow.cancel()` / `dismiss()` produce no intent and run no
     command → the `RunState` is byte-identical. Prove a cancelled choice mutates nothing.
-- [ ] **Task 5 — DECIDE the carried 13-1 inspect-feedback defer (do not silently drop it).** (AC-adjacent)
-  - [ ] The 13-1 `[Review][Defer]` (inspect taps produce no on-screen feedback — `interactive_inspect(cell)` routes into
+- [x] **Task 5 — DECIDE the carried 13-1 inspect-feedback defer (do not silently drop it).** (AC-adjacent)
+  - [x] The 13-1 `[Review][Defer]` (inspect taps produce no on-screen feedback — `interactive_inspect(cell)` routes into
     `_session.inspect(cell)` but neither re-renders nor surfaces the result; the inspect region stays "Inspect: tap a
     cell") has recorded owner "Story 13.2 reward/passive-HUD story, or a later board-polish pass." Since 13.2 touches the
     same presenter HUD regions, EITHER (a) surface the `interactive_inspect` returned `CommandBridgeResult` metadata in
     the inspect region (cheap: re-render + set the inspect region text from the returned cell facts), OR (b) knowingly
     carry it forward to a later board-polish pass. If (b), leave the ledger entry open and record the conscious decision
     in Completion Notes — do NOT let it fall off the ledger.
-- [ ] **Task 6 — Tests: RefCounted seam coverage + the compile guardrail; prove the invariants byte-identical.** (AC1, AC2, AC3)
-  - [ ] Any NEW render/routing DECISION seam (e.g. a reward-offer render projection, or a resolve-routing decision:
+- [x] **Task 6 — Tests: RefCounted seam coverage + the compile guardrail; prove the invariants byte-identical.** (AC1, AC2, AC3)
+  - [x] Any NEW render/routing DECISION seam (e.g. a reward-offer render projection, or a resolve-routing decision:
     passive-Consume/Destroy vs generic-resolve) is a `RefCounted` with a pinned contract under
     `godot/scripts/ui/view_models/`, unit-tested under `godot/tests/unit/ui/` (auto-discovered — the runner recursively
     walks `res://tests/unit` + `res://tests/integration`; NO manifest edit). Do NOT write a SceneTree test for the
     presenter (`project-context.md:260`); put assertable logic in `RefCounted` seams and test THOSE.
-  - [ ] REUSE the existing green tests (do NOT duplicate them): `test_reward_offer_generate.gd`,
+  - [x] REUSE the existing green tests (do NOT duplicate them): `test_reward_offer_generate.gd`,
     `test_resolve_reward_command.gd`, `test_consume_passive_command.gd`, `test_destroy_passive_command.gd`,
     `test_passive_reward_modal_view_model.gd` (the `MODAL_KEYS` pin — must stay green), `test_passive_reward_commit_flow.gd`,
     `test_reward_offer.gd`, `test_loot_passive_build_smoke_run.gd`. Confirm `test_run_flow_scenes_load.gd` still covers the
     modified `gameplay_shell_presenter.gd` + `tactical_board_presenter.gd` (+ any new reward-surface `Control`/`.tscn`).
-  - [ ] Prove the AC3 invariants hold via the EXISTING invariant tests (reuse, don't add redundant ones): the 16-key
+  - [x] Prove the AC3 invariants hold via the EXISTING invariant tests (reuse, don't add redundant ones): the 16-key
     board VM (`test_tactical_board_view_model.gd`), `MODAL_KEYS`, `RewardOffer.DICTIONARY_KEYS` (`test_reward_offer.gd`),
     `required_streams()` == 7, no new `DomainEvent.Type` member (enum tail `oath_shards_spent`), the 23-key `RunSnapshot`
     gate (`test_run_route_position_save.gd` — the pending offer rides ONLY the full `RunState.to_dictionary()`, NOT the
     route-position snapshot), and the seed-regression fingerprints (`test_seed_regression_suite.gd` — the hands-off
     driver is untouched).
-- [ ] **Task 7 — Run the full headless suite + the false-PASS grep guard + `git diff --check`.** (AC3)
-  - [ ] Run: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`
+- [x] **Task 7 — Run the full headless suite + the false-PASS grep guard + `git diff --check`.** (AC3)
+  - [x] Run: `godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10`
     via a PowerShell `.ps1` + `-File` (NOT inline `-Command` through Bash — Git Bash expands `$LASTEXITCODE` before
     PowerShell parses it → silent parse failure; Epic-10 retro §8 P3). Expect **≥193 PASS / 0 `^FAIL`** (baseline 193 +
     any new seam tests), exit 0. Runner output is UTF-16LE — decode (`tr -d '\000'`) before grepping.
-  - [ ] Grep the RAW runner output for `SCRIPT ERROR|Parse Error|^FAIL` — no matches; exactly the 6 documented stderr
+  - [x] Grep the RAW runner output for `SCRIPT ERROR|Parse Error|^FAIL` — no matches; exactly the 6 documented stderr
     negatives (int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1) and ZERO new documented negative.
     `git diff --check` clean.
-  - [ ] Commit any NEW script file's `.gd.uid` sidecar (Godot 4.6 generates one per script; the ratified 13-1 VC
+  - [x] Commit any NEW script file's `.gd.uid` sidecar (Godot 4.6 generates one per script; the ratified 13-1 VC
     convention COMMITS `*.gd.uid`, never gitignores them — a re-import is a git-clean no-op). Do NOT add `*.gd.uid` to
     any `.gitignore`.
 
@@ -434,10 +438,61 @@ more restrictive interpretation):
 
 ### Agent Model Used
 
+Opus 4.8 (claude-opus-4-8[1m]) — auto-gds dev-story delegate.
+
 ### Debug Log References
+
+- Full headless suite (post-implementation + post-import): **195 PASS / 0 `^FAIL`**, exit 0, "Headless tests passed."
+  (baseline 193 + the 2 new seam tests). False-PASS grep (`SCRIPT ERROR|Parse Error|^FAIL`) = 0. Exactly the 6
+  documented stderr negatives (int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1); ZERO new negative.
+- AC3 invariant pins all green: `test_seed_regression_suite.gd` (fingerprints byte-identical — the hands-off driver
+  is untouched), `test_run_route_position_save.gd` (23-key gate), `test_run_flow_scenes_load.gd` (compile guardrail —
+  both modified presenters still compile), `test_tactical_board_view_model.gd` (16-key board VM),
+  `test_passive_reward_modal_view_model.gd` (MODAL_KEYS), `test_reward_offer.gd` (DICTIONARY_KEYS).
 
 ### Completion Notes List
 
+- **Implemented (dev-story, 2026-07-16):** Wired the post-victory reward + passive Consume/Destroy HUD as pure
+  presentation + flow-wiring over the pinned Epic-6/7 contracts. Added NO domain command, NO new `DomainEvent.Type`
+  (tail stays `oath_shards_spent`), NO new RNG stream (`required_streams()` == 7), NO schema/save-key change, NO new
+  autoload, NO board-VM/MODAL_KEYS/DICTIONARY_KEYS key. The reward GENERATE is wired into the INTERACTIVE shell path
+  ONLY (`gameplay_shell_presenter._on_interactive_action_committed` victory branch) — never `run_to_completion` /
+  `_resolve_combat` / `auto_play_boss_fight`, so every seed-regression fingerprint stays byte-identical.
+- **Two new RefCounted seams (headlessly tested):**
+  - `RewardHudViewModel` (`godot/scripts/ui/view_models/reward_hud_view_model.gd`) — the exact-key render projection
+    (`REWARD_KEYS`/`CHOICE_KEYS`); reuses `PassiveRewardModalViewModel.project_offer` (its pinned `MODAL_KEYS`,
+    identity-absent for a generic entry) so it adds no key; also owns the v0 node→table policy static.
+  - `RewardResolutionBridge` (`godot/scripts/ui/flow/reward_resolution_bridge.gd`) — the caller-driven run-command
+    seam that constructs + executes EXACTLY ONE of `ResolveRewardCommand` / `ConsumePassiveCommand` /
+    `DestroyPassiveCommand` against `RunState` with `orchestrator.next_sequence_id()`, mirroring `RunEndProfileBridge`'s
+    idiom (NOT a `TacticalCommandBridge` intent). Placed under `scripts/ui/flow/` alongside the other execute-capable
+    run-command bridges (`RunEndProfileBridge`/`OutpostSpendBridge`) rather than `view_models/` — the story's Task 3
+    "mirror `RunEndProfileBridge`" is the more specific instruction, and `flow/` is the established home for a seam that
+    EXECUTES commands; the pure render projection stays in `view_models/` per Task 6.
+- **[Decision — the one genuine design latitude] v0 node→table policy** (`RewardHudViewModel.table_for_node_type`): a
+  `combat` node earns a generic single-pick reward (`standard_combat_reward` → the accept-click `ResolveRewardCommand`
+  path); an `elite_combat` node earns the passive Consume/Destroy 3-choice moment (`passive_reward_choice`); every
+  other node type earns no combat-node reward HUD (its own surface owns its offer — the event-node 7.3 pair is out of
+  scope). This is deterministic and one of the story's explicitly-sanctioned defaults ("elite → passive"): a normal
+  desktop playtest that clears one combat AND one elite node exercises BOTH a generic reward AND a passive choice.
+  `elite_combat_reward` is intentionally unused in the v0 live policy (still validated + tested). **Flag for review:**
+  if a stronger reward-policy intent is read into the AC (e.g. elite should give `elite_combat_reward` and the passive
+  moment fire on a separate cadence), this is the one knob to revisit — it is isolated in a single tested seam.
+- **[Decision] Task 5 — the carried 13-1 inspect-feedback defer is PICKED UP (closed), not carried forward.** Since
+  13.2 already modifies the presenter HUD regions, `interactive_inspect` now stores the returned `CommandBridgeResult`
+  cell facts + re-renders, so an inspect tap surfaces the tapped cell (coords, visibility, occupant id/type/HP) in the
+  inspect region instead of the static "Inspect: tap a cell". Still a pure metadata-only read (no mutation, no turn
+  advance). The deferred-work ledger entry for this `[Review][Defer]` is now resolved (the OTHER 13-1 defer — the
+  on-device human playtest — remains the physical-device owner's; this story adds the reward/passive HUD that same pass
+  will exercise, UNBLOCKING but not closing the human-eyes confirmation for loop steps 6/7).
+- **[Honesty posture] AC3 human-eyes pass:** the headless run proves the flow generates → renders → resolves →
+  advances and every invariant holds byte-identical. The real legibility + click-accuracy confirmation on a physical
+  display is the on-device pass this story UNBLOCKS; it is logged against the physical-device observed-playtest owner,
+  NOT claimed here (a headless run cannot produce it).
+- **Known v0 edge (consistent with the existing domain decision):** a generic backpack-item reward resolved against a
+  FULL backpack surfaces `inventory_full` VERBATIM and leaves the offer `pending` (the shell re-renders honestly and
+  does NOT advance) — the "later replacement-choice UX owns the full-backpack disposition" residual
+  (`resolve_reward_command.gd:25`). Not reachable in an early desktop playtest (the backpack starts empty).
 - **Verified (create-story, 2026-07-16):** Ultimate context engine analysis completed — comprehensive developer guide
   created. Folds in: the Epic 13 / Story 13.2 canonical ACs; the 2026-07-13 sprint-change scope; the 10-6 gate §3.3
   loop-steps-6/7 qualifier this story discharges; the 13-1 carried inspect-feedback defer (owner: this story or a later
@@ -451,3 +506,27 @@ more restrictive interpretation):
   with the sensible default and flagged as the review decision point.
 
 ### File List
+
+**New (production seams):**
+- `godot/scripts/ui/view_models/reward_hud_view_model.gd` (+ `.uid`) — the reward-HUD render projection + v0 node→table policy
+- `godot/scripts/ui/flow/reward_resolution_bridge.gd` (+ `.uid`) — the caller-driven run-command resolution bridge
+
+**New (tests):**
+- `godot/tests/unit/ui/test_reward_hud_view_model.gd` (+ `.uid`) — REWARD_KEYS/CHOICE_KEYS pins, empty state, generic/passive projection, detection, node→table policy
+- `godot/tests/unit/ui/test_reward_resolution_bridge.gd` (+ `.uid`) — generic resolve, Consume, Destroy (stream advance + determinism), no-mutation back-out, exactly-one-command, fail-closed paths
+
+**Modified (presenter wiring — verified by construction via `test_run_flow_scenes_load.gd`):**
+- `godot/scripts/ui/presenters/gameplay_shell_presenter.gd` — the reward step at the interactive victory boundary (`_begin_reward_step` GENERATE + `_on_reward_resolution_requested` resolve/advance)
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd` — the reward overlay render + the two-step `PassiveRewardCommitFlow` wiring + the Task-5 inspect-feedback surface
+
+**Modified (tracking):**
+- `_bmad-output/implementation-artifacts/13-2-live-reward-and-passive-choice-hud.md` — this story file (frontmatter `baseline_commit`, tasks, Dev Agent Record, Status)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — `13-2` status `ready-for-dev` → `in-progress` → `review`
+
+### Change Log
+
+- 2026-07-16 — Implemented Story 13.2 (live reward + passive-choice HUD). Wired the post-victory reward GENERATE at
+  the interactive-shell boundary, rendered `run.pending_reward_offer` (generic accept + passive 3-choice Consume/Destroy
+  modal) as an additive clickable overlay, and routed clicks into the EXISTING run-domain commands via the new
+  `RewardResolutionBridge`. Picked up the carried 13-1 inspect-feedback defer (Task 5). Added no domain/command/event/
+  RNG/VM-key/autoload/save-key change. Suite 195 PASS / 0 FAIL; all AC3 invariants byte-identical. Status → review.

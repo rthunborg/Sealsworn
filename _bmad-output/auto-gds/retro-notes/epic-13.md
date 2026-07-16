@@ -8,3 +8,6 @@
 
 ## Story 13-2-live-reward-and-passive-choice-hud
 - [Phase 3 — create-story] The live flow generates zero rewards today, so 13.2's true weight is flow-wiring the reward GENERATE at the interactive-shell post-victory boundary (hands-off driver must stay byte-identical) — an easy story to under-scope as "render-only"; review should confirm the generate is wired.
+- [Phase 5 — dev-story] v0 node→table policy chosen: `combat`→`standard_combat_reward`, `elite_combat`→`passive_reward_choice`; `elite_combat_reward` table intentionally unused in the live path — the one design knob if stronger reward-policy intent lands later.
+- [Phase 5 — dev-story] `RewardResolutionBridge` placed in `scripts/ui/flow/` (with the other command-executing bridges), not the story's literal `view_models/` guidance — convention: bridges that EXECUTE commands live in `flow/`, pure render projections in `view_models/`.
+- [Phase 5 — dev-story] Reward resolve threads `orchestrator.next_sequence_id()` read-only, so its event id can coincide with a later route-advance id — harmless in v0, but a future run-level-event-store story should advance the cursor.
