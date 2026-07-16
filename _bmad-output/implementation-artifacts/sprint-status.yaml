@@ -179,7 +179,7 @@ development_status:
   # Epic-12 interactive seams + the Epic-6 reward/passive contracts; resolves the
   # 12-1 hit-test defer and the 10-6 gate 3.3 rows-6/7 "later HUD story" item;
   # unblocks the retro 7 human-playtest backlog (OSG/ASG/AG-1).
-  epic-13: in-progress
+  epic-13: done
   13-1-live-board-render-and-tap-input: done
-  13-2-live-reward-and-passive-choice-hud: review
+  13-2-live-reward-and-passive-choice-hud: done
   epic-13-retrospective: done

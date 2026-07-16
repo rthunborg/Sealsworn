@@ -4,7 +4,7 @@ baseline_commit: 3cb80b3
 
 # Story 13.2: Live Reward and Passive-Choice HUD
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
