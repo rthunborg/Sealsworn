@@ -2,6 +2,16 @@
 
 Entries moved out of `deferred-work.md` once verified resolved. Archived during epic closeouts by auto-gds (and ad-hoc when an item is confirmed done). Newest archive batch on top.
 
+## Archived during epic 13 closeout (2026-07-16)
+
+### Originally deferred from: code review of 13-1-live-board-render-and-tap-input (2026-07-14)
+
+- **RESOLVED (by Story 13-2, 2026-07-16, Task 5): [Review][Defer] (Low) — inspect taps produce no on-screen feedback.** `interactive_inspect(cell)` routed into `_session.inspect(cell)` (metadata-only) but neither re-rendered nor surfaced the returned result, so every inspect-routed tap left the inspect region reading "Inspect: tap a cell". Story 13-2's Task 5 fixed it: `interactive_inspect` now stores the returned `CommandBridgeResult` cell facts and re-renders, so the inspect region surfaces the tapped cell (coords, visibility, occupant id/type/HP) via `_inspect_base_text`; still a pure metadata-only read — no mutation, no turn advance; suite 195 PASS. Round-1 review of 13-2 independently verified the metadata keys match `TacticalCommandBridge._build_inspect_result` + `TacticalVisibilityQuery.visible_facts_for_cell` (not a dead probe).
+
+### Originally deferred from: code review of 12-1-interactive-combat-tap-loop-and-live-board-render (2026-07-07)
+
+- **RESOLVED (by Story 13-1, 2026-07-14): [Review][Defer] (Low) — gesture→cell pixel hit-testing deliberately not implemented in 12.1.** No board-geometry hit-test existed and the presenter/session tap seam operated at the already-resolved cell-intent level. Story 13-1 built the pixel→cell hit-test reusing the tested `TacticalBoardZoomState.screen_to_cell` via the new `TacticalBoardGridFit`/`TacticalBoardTapRouter` seams, routed into the existing `interactive_*` seams; suite 193 PASS at resolution. (The symmetric two-step move-confirm VM remains a presentation-flow choice, not a required VM, per the 11.1 appendix.)
+
 ## Archived during epic 10 closeout (2026-07-12)
 
 ### Originally deferred from: code review of 12-2-class-loadout-and-winnable-hands-on-fights (2026-07-07)
