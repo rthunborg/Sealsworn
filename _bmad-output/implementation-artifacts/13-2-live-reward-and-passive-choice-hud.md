@@ -633,3 +633,59 @@ AC1/AC2/AC3 verified against source, not prose:
 
 Deferrals copied to the cross-story ledger (`deferred-work.md`) under
 `## Deferred from: code review of 13-2-live-reward-and-passive-choice-hud (2026-07-16)`.
+
+**Round 2 of 3**
+
+Secondary INDEPENDENT adversarial review (alternate-model diversity pass; `gds-code-review`, 2026-07-16; branch
+`story/13-2-live-reward-and-passive-choice-hud` vs `main`). **Verdict: Approve.** Critical 0 / High 0 / Med 0 / Low 1
+(one NEW Low `[Review][Defer]`, below). 0 open `[Review][Decision]`. This round re-reviewed the WHOLE story diff fresh
+with particular attention to the post-round-1 fix — the human-ratified v0 node→table policy re-point (`elite_combat` →
+`elite_combat_reward`, and the passive 3-choice moment moved onto the guaranteed depth-0 opener combat node): the
+policy seam (`reward_hud_view_model.gd`), the presenter depth-threading (`gameplay_shell_presenter.gd`), and the
+updated seam test.
+
+Suite INDEPENDENTLY re-run on the review head: **195 PASS / 0 `^FAIL`** (exit 0; false-PASS guard
+`SCRIPT ERROR|Parse Error|^FAIL` clean — 0 matches; exactly the 6 documented stderr negatives reproduced —
+int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1, ZERO new; `git diff --check` clean). Both new seam
+tests executed + green (`PASS res://tests/unit/ui/test_reward_hud_view_model.gd`, `PASS
+res://tests/unit/ui/test_reward_resolution_bridge.gd`).
+
+Post-round-1 fix VERIFIED correct + regression-free (against source, not prose):
+- **Depth threading is correct.** `gameplay_shell_presenter._on_interactive_action_committed` captures
+  `node_depth = _active_node.depth` (+ `node_type`) BEFORE `finish_interactive_combat_node` runs `NodeExitCommand`
+  (which advances `current_node_id`), so the policy keys off the RESOLVED node's real depth, not the advanced node.
+- **The depth-0 passive trigger is genuinely deterministic + reachable.** `route_generator.gd` seats depth 0 as an
+  always-`combat` node with NO type-selector RNG (lines 33-34, 206) and `RouteState.new(ordered_nodes,
+  ordered_nodes[0].id, …)` (line 283) parks the run there, so the opener victory is the FIRST interactive fight of
+  every run and `table_for_node_type(&"combat", 0)` → `passive_reward_choice` fires on it. A fresh-run opener Consume
+  works (the run's `rules_resolver` exists at start — pinned by `test_reward_resolution_bridge`).
+- **The victory-boundary generate cannot trip the pending guard.** `finish_interactive_combat_node` emits NO offer on
+  victory (only `NodeExitCommand`), so `_begin_reward_step`'s subsequent `generate_passive_reward_offer` /
+  `generate_reward_offer` is the sole generate — the AC3 fingerprints stay byte-identical (the reward GENERATE remains
+  interactive-only; the hands-off driver + `test_seed_regression_suite` are untouched, confirmed green).
+- **The seam test pins the new mapping** (`_node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults`):
+  depth-0 combat → passive; deeper combat (1/2/5) → `standard_combat_reward`; elite (1/3/6) → `elite_combat_reward`;
+  every other type → no reward. The policy `is_passive` flag and the projection's `is_passive_offer` recompute stay
+  coherent (both baseline combat tables draw only non-passive entries; only `passive_reward_choice` yields passive).
+- **AC2 back-out mutates nothing in the LIVE flow.** `_on_passive_cancel` → `commit_flow.cancel()` + re-render, never
+  notifies the shell → no command runs. The re-entrant free of the just-pressed button is safe (`_clear_reward_box`
+  uses `remove_child` + `queue_free`, deferring deletion past the `pressed` emission — verified on both the passive-arm
+  and the generic inventory_full re-render paths).
+- **Exactly-one-command holds.** A passive offer only ever reaches `_build_passive_reward_ui` (Consume/Destroy →
+  Consume/DestroyPassiveCommand), never the generic Accept (`ResolveRewardCommand`); the bridge test pins the
+  no-double-record + the fail-closed second-resolve (`reward_offer_already_resolved`).
+
+- **[Review][Defer]** (Low) — the passive CONFIRM step (`tactical_board_presenter._build_passive_confirm_ui`,
+  `:~880`) renders the raw snake_case `passive_content_id` (e.g. "Confirm Consume of `warrior_unbreakable_guard`?")
+  instead of the evocative `display_name` the choice list showed a tap earlier, and drops the modal context (flavor /
+  exact effects / Consume+Destroy text) the pre-arm choice list carried. `PassiveRewardCommitFlow.to_dictionary()`
+  exposes only the raw id, so the confirm prompt would need to re-read the projected `display_name` (already available
+  in the `RewardHudViewModel` projection) to match. Cosmetic legibility polish only — BELOW the AC bar (the full
+  MODAL_KEYS text IS shown in the choice list before arming, and a Cancel returns to it with zero mutation); no
+  correctness / determinism / AC impact. Owner: the on-device layout / board-polish pass (the same physical-device
+  human-eyes pass this story UNBLOCKS — folds in with the Round-1 hardcoded-overlay-geometry defer).
+
+The three Round-1 `[Review][Defer]` items (generic-HUD no-skip soft-lock; hardcoded-overlay-geometry / no
+`ScrollContainer`; `_inspect_facts_from` untested presenter transform) remain valid + deferred (unchanged — each
+re-verified still accurate this round). New deferral copied to the cross-story ledger (`deferred-work.md`) under
+`## Deferred from: code review of 13-2-live-reward-and-passive-choice-hud round 2 (2026-07-16)`.

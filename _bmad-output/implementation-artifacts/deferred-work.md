@@ -8,6 +8,14 @@ Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / Hi
 
 ---
 
+## Deferred from: code review of 13-2-live-reward-and-passive-choice-hud round 2 (2026-07-16)
+
+Round 2 secondary INDEPENDENT alternate-model (diversity) review (verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 1; 0 open `[Review][Decision]`). Focused on the post-round-1 fix — the human-ratified v0 node→table policy re-point (`elite_combat` → `elite_combat_reward` + the passive 3-choice moment on the guaranteed depth-0 opener combat node). Suite INDEPENDENTLY re-run on the review head on a different model: **195 PASS / 0 `^FAIL`** (exit 0; false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` clean; the 6 documented stderr negatives reproduced exactly — int64-overflow ×2 / malformed-JSON ×3 / `invalid_node_type` ×1, ZERO new; `git diff --check` clean; both new seam tests green). The fix verified correct + regression-free against source: `node_depth` captured BEFORE `NodeExitCommand` advances; the depth-0 opener is the always-`combat`, no-type-RNG, run-parked FIRST fight; `finish_interactive_combat_node` emits no offer so the `reward_offer_pending` guard cannot trip; the seam test pins the new mapping; exactly-one-command + AC2 back-out hold; the hands-off driver + seed-regression fingerprints stay byte-identical. The three Round-1 `[Review][Defer]` items remain valid + deferred (unchanged). One NEW `[Review][Defer]`:
+
+- [ ] **[Review][Defer]** (Low, from code review of 13-2 round 2, 2026-07-16) — The passive CONFIRM step (`tactical_board_presenter._build_passive_confirm_ui`) renders the raw snake_case `passive_content_id` (e.g. "Confirm Consume of `warrior_unbreakable_guard`?") instead of the evocative `display_name` the choice list showed a tap earlier, and drops the modal context (flavor / exact effects / Consume+Destroy text). `PassiveRewardCommitFlow.to_dictionary()` exposes only the raw id, so the confirm prompt would need to re-read the projected `display_name` (already in the `RewardHudViewModel` projection) to match. Cosmetic legibility polish only — below the AC bar (the full MODAL_KEYS text is shown in the choice list before arming, and a Cancel returns to it with zero mutation); no correctness / determinism / AC impact. Owner: the on-device layout / board-polish pass (folds in with the Round-1 hardcoded-overlay-geometry defer).
+
+---
+
 ## Deferred from: code review of 13-1-live-board-render-and-tap-input (2026-07-14)
 
 Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 4; 1 open `[Review][Decision]` — the `.gd.uid` VC-convention call, recorded in the story file). Suite INDEPENDENTLY re-run on the review head: **193 PASS / 0 `^FAIL`** (exit 0; false-PASS guard clean; the 6 documented stderr negatives reproduced exactly; zero new import/texture-load error from the 26 added `.import` sidecars). Two `[Review][Defer]` carried forward:
