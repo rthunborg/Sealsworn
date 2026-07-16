@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-14T18:10:00+00:00
+last_updated: 2026-07-16T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -181,5 +181,5 @@ development_status:
   # unblocks the retro 7 human-playtest backlog (OSG/ASG/AG-1).
   epic-13: in-progress
   13-1-live-board-render-and-tap-input: done
-  13-2-live-reward-and-passive-choice-hud: backlog
+  13-2-live-reward-and-passive-choice-hud: ready-for-dev
   epic-13-retrospective: optional
