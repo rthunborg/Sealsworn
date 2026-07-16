@@ -21,6 +21,12 @@ const RouteNode = preload("res://scripts/run/route_node.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
+# Story 13.2 — the reward-HUD render projection + the v0 node->table policy, and the caller-driven run-command
+# resolution bridge (construct + execute the EXISTING reward/passive commands against RunState). The reward GENERATE
+# is wired into THIS interactive shell path ONLY — never the hands-off driver (the seed-regression fingerprints stay
+# byte-identical).
+const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
+const RewardResolutionBridge = preload("res://scripts/ui/flow/reward_resolution_bridge.gd")
 # L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
 # shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
 # anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
@@ -179,6 +185,12 @@ func _on_interactive_action_committed() -> void:
 		return
 
 	var orchestrator: RunOrchestrator = flow.orchestrator()
+	# Story 13.2 — capture the resolved node's TYPE + deterministic route DEPTH before the handle is cleared (the
+	# reward node->table policy keys off both: the guaranteed depth-0 opener combat node earns the passive
+	# Consume/Destroy 3-choice moment; a deeper combat node earns the generic standard reward; an elite node earns
+	# the richer generic elite reward).
+	var node_type: String = String(_active_node.type)
+	var node_depth: int = _active_node.depth
 	var finish = orchestrator.finish_interactive_combat_node(_active_node, _active_session)
 	var run: RunState = flow.run()
 	# Clear the live-fight handle (the fight is resolved — ephemeral, not saved).
@@ -190,11 +202,66 @@ func _on_interactive_action_committed() -> void:
 		_render_between_levels(run)
 		_route_to_dead_end(flow)
 		return
-	# A live DEFEAT ended the run (hero death) -> run-end; a live VICTORY advances forward -> route map.
+	# A live DEFEAT ended the run (hero death) -> run-end.
 	if run.is_terminal():
 		_route_to_run_end(flow)
+		return
+	# Story 13.2 — a live VICTORY earns a reward: GENERATE the offer at THIS interactive boundary, RENDER the reward
+	# HUD, and AWAIT the resolve click (the click drives the EXISTING run-domain command, then advances). When the
+	# node earns no reward (or the generate fails loud), advance straight to the route map exactly as before.
+	if _begin_reward_step(orchestrator, run, node_type, node_depth):
+		return
+	_advance_to_route_map()
+
+
+# Story 13.2 (Task 1) — GENERATE the post-victory reward offer at the interactive shell boundary via the SANCTIONED
+# orchestrator generate (single-pick or the 3-choice passive), then show the reward HUD. Returns true when an offer
+# is now pending + rendered (the resolve click advances the flow); false when the node earns no reward or the
+# generate fails loud (the caller advances normally). Wired into the INTERACTIVE path ONLY — never run_to_completion.
+func _begin_reward_step(orchestrator: RunOrchestrator, run: RunState, node_type: String, node_depth: int) -> bool:
+	var policy: Dictionary = RewardHudViewModel.table_for_node_type(StringName(node_type), node_depth)
+	if not bool(policy.get("has_reward", false)):
+		return false
+	var table_id: StringName = StringName(String(policy.get("table_id", "")))
+	var generate
+	if bool(policy.get("is_passive", false)):
+		generate = orchestrator.generate_passive_reward_offer(table_id)
 	else:
-		_advance_to_route_map()
+		generate = orchestrator.generate_reward_offer(table_id)
+	if generate.is_error():
+		# Fail loud (log) but do NOT strand — skip the reward step and advance so the run never soft-locks on a
+		# reward-generation edge (an already-pending offer / an unknown table would be a structural bug, surfaced here).
+		if has_node("/root/Diagnostics"):
+			Diagnostics.info(&"ui", &"gameplay_shell_reward_generate_failed", {
+				"error_code": String(generate.error_code),
+				"table_id": String(table_id)
+			})
+		return false
+	_board_presenter.show_reward_offer(run, _on_reward_resolution_requested)
+	return true
+
+
+# Story 13.2 (Task 3/4) — the reward-resolution callback the board presenter invokes on a RESOLVING click (a generic
+# accept, or a confirmed passive Consume/Destroy). It drives the EXISTING run-domain command through the
+# RewardResolutionBridge and, on success, hides the reward HUD + advances to the route map. On a command error (e.g.
+# a full backpack -> inventory_full) it leaves the offer PENDING, surfaces it honestly (re-render), and does NOT
+# advance (the honest full-backpack disposition — no silent advance). A cancel/back-out never reaches here (the board
+# presenter's two-step handles it internally with zero mutation).
+func _on_reward_resolution_requested(resolution: Dictionary) -> void:
+	var flow: RunFlowController = _flow()
+	if flow == null:
+		return
+	var orchestrator: RunOrchestrator = flow.orchestrator()
+	var run: RunState = flow.run()
+	var result = RewardResolutionBridge.new().resolve(run, orchestrator, resolution)
+	if result.is_error():
+		if has_node("/root/Diagnostics"):
+			Diagnostics.info(&"ui", &"gameplay_shell_reward_resolve_failed", {"error_code": String(result.error_code)})
+		# Leave the offer pending; re-render the HUD so the failure surfaces (do NOT advance as if resolved).
+		_board_presenter.render_reward()
+		return
+	_board_presenter.hide_reward_offer()
+	_advance_to_route_map()
 
 
 # Story 11.4 (AC3) — extract the DarknessFairnessQuery verdict from the live-node resolve metadata (the single authority
