@@ -329,8 +329,13 @@ func _intent_id_from(intent: Dictionary) -> StringName:
 	return StringName(str(_field(intent, &"intent_id")))
 
 
-# The optional wait reason (default `voluntary`). The command's board-apply payload validator enforces lower_snake; the
-# bridge just passes a non-empty value through (an empty/absent reason falls back to the voluntary default).
+# The optional wait reason (default `voluntary`). The bridge only guarantees a NON-EMPTY value here (an empty/absent
+# reason falls back to the voluntary default) — which is exactly what the board-apply validator enforces too
+# (board_state.gd::_validate_hero_waited_event checks non-empty `reason`, mirroring _validate_enemy_waited_event; it does
+# NOT enforce lower_snake). The lower_snake rule lives ONLY in domain_event.gd::_validate_hero_waited_payload, which runs
+# on the try_from_dictionary DESERIALIZATION path the ephemeral in-node fight never traverses — so a non-lower_snake
+# `reason` is NOT rejected at board-apply. Every caller passes a lower_snake const; do not assume defense-in-depth here
+# when extending the wait payload.
 func _wait_reason_from(intent: Dictionary) -> StringName:
 	if not _has_field(intent, &"reason"):
 		return WaitCommand.REASON_VOLUNTARY
