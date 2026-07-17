@@ -43,12 +43,12 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-16T00:00:00+00:00
+last_updated: 2026-07-17T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
 story_location: C:/Sealsworn/_bmad-output/implementation-artifacts
-scope: epics-1-12-tracked (epic-11 inserted 2026-07-04, executes before epic-10; epic-12 inserted 2026-07-07, executes between 10-3 and 10-4; story 10-8 inserted 2026-07-07 [sprint-change-proposal-2026-07-07-fr58.md], executes between 10-3 and the epic-12 block)
+scope: epics-1-14-tracked (epic-11 inserted 2026-07-04, executes before epic-10; epic-12 inserted 2026-07-07, executes between 10-3 and 10-4; story 10-8 inserted 2026-07-07 [sprint-change-proposal-2026-07-07-fr58.md], executes between 10-3 and the epic-12 block; epic-13 added 2026-07-13 [sprint-change-proposal-2026-07-13.md] as the first pre-ship backlog epic; epic-14 added 2026-07-16 [sprint-change-proposal-2026-07-16.md] as the second pre-ship backlog epic, executes after epic-13)
 source_epics_file: C:/Sealsworn/_bmad-output/planning-artifacts/epics.md
 readiness_status: READY_WITH_GATES
 
@@ -183,3 +183,27 @@ development_status:
   13-1-live-board-render-and-tap-input: done
   13-2-live-reward-and-passive-choice-hud: done
   epic-13-retrospective: done
+  # SPRINT CHANGE 2026-07-16 (sprint-change-proposal-2026-07-16.md):
+  # epic-14 added post-Epic-13 after an agent-driven desktop playtest found the MVP is not
+  # honestly finishable (F1 mid-fight soft-lock) and looks unfinished (F9-F16)
+  # (record: playtest-sessions/agent-playtest-2026-07-16.md). Two bands, finishable before
+  # pretty: Band 1 (14-1..14-7) makes the loop finishable+readable (F1-F8/F11/F12);
+  # Band 2 (14-8..14-11) makes it presentable (F13/F14/F9-F10/F15-F16). Adopts the
+  # reward-overlay-geometry + passive-confirm-display_name (->14-11), full-backpack
+  # escape-hatch (->14-7), and run-summary/F-2 (->14-5) ledger items. Additive over pinned
+  # contracts; the two domain touches (14-1 corpse/wait, 14-7 reward decline) follow the 4.3
+  # idiom; every fingerprint byte-identical EXCEPT 14-1's justified combat-replay re-pin.
+  # New epic enters as backlog (auto-gds picks up 14-1 next). Epic numbering NOT reshuffled.
+  epic-14: backlog
+  14-1-corpse-clearing-and-wait-turn: backlog
+  14-2-attack-preview-and-rejected-command-feedback: backlog
+  14-3-combat-event-log-and-hit-feedback: backlog
+  14-4-per-run-seed-variation: backlog
+  14-5-run-end-beat-and-run-summary-screen: backlog
+  14-6-live-route-map-and-node-choice: backlog
+  14-7-full-backpack-reward-escape-hatch: backlog
+  14-8-hero-select-rebuild: backlog
+  14-9-outpost-screen-cleanup: backlog
+  14-10-player-hud-and-range-highlights: backlog
+  14-11-ui-theme-and-semantic-layout: backlog
+  epic-14-retrospective: optional

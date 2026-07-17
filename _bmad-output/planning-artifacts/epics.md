@@ -518,6 +518,14 @@ A human can actually play the fight: the tactical board draws as a real tile gri
 
 **Implementation notes:** Added 2026-07-13 via sprint change proposal (see `sprint-change-proposal-2026-07-13.md`) after the first human desktop playtest found the board region renders as one text label with no input path (investigation: `desktop-playtest-black-board-investigation.md`). Resolves the 12-1 `[Review][Defer]` pixel→cell hit-test item and the 10-6 gate §3.3 rows-6/7 "later HUD story" item; unblocks the Epic-10 retro §7 human-playtest backlog (OSG-1..4, ASG-1/2, AG-1). Additive presentation only: render from `TacticalBoardViewModel` reads, submit through the existing `interactive_*` session seams and Epic-6 reward/modal contracts — no domain change, no new autoload, no new RNG draw site, hands-off driver and every pinned fingerprint byte-identical.
 
+### Epic 14: Playable & Presentable
+
+The MVP loop is genuinely **finishable and readable** (no soft-lock, visible previews, feedback for every action, a run-end summary, seed variety, a route map) and then made to **look intentional** (a rebuilt hero select, a clean outpost, a real player HUD, and a UI theme across screens).
+
+**FRs covered:** the finishability + human-facing delivery of FR1 (a completable start→choose→descend→fight→reward→choose→die/win→summary→descend-again loop), FR2/FR3 (turn-based advance incl. a pass/wait action), FR9/FR10/FR11 (visible attack preview + two-step commit), FR22/FR24/FR69 (damage/death feedback + combat log), FR26/FR27/FR29 (per-run seed variety with preserved manual-seed determinism), FR32/FR60/FR61/FR62 (run-end return + run summary + first-death/first-victory beats), FR52 (a no-soft-lock reward disposition), and the FR68 UI-flow set (hero select, tactical HUD, tile/attack preview, passive modal, run map, outpost/meta menu, run summary), under NFR9 (color-independent, audio-absent-equivalent cues). Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
+
+**Implementation notes:** Added 2026-07-16 via sprint change proposal (see `sprint-change-proposal-2026-07-16.md`) after an agent-driven desktop playtest found the built game is not honestly finishable (F1 mid-fight soft-lock) and looks unfinished (F9–F16) (record: `playtest-sessions/agent-playtest-2026-07-16.md`). **Executes after Epic 13 as the second pre-ship backlog epic**, in two bands ordered so the game becomes finishable before it becomes pretty: **Band 1 (Stories 14.1–14.7)** makes the loop finishable + readable (F1–F8, F11, F12); **Band 2 (Stories 14.8–14.11)** makes it presentable (F13, F14, F9/F10, F15/F16). Adopts four overlapping `deferred-work.md` items (reward-overlay geometry + passive-confirm `display_name` → 14.11; full-backpack escape hatch → 14.7; run-summary outcome label/F-2 → 14.5). Additive over pinned contracts: the two domain touches (14.1 corpse-clearing + `WaitCommand`; 14.7 a reward decline/skip command) follow the 4.3 command idiom (validate-before-mutate, append-only tail event, named-stream/zero-RNG, 23-key gate held); every generator/route/finale/combat seed-regression fingerprint stays byte-identical **except** Story 14.1's justified combat-replay re-pin (corpse-clearing changes movement legality — re-pinned via the dump tools in the same PR, generation/route layout fingerprints untouched). No GDD/architecture/narrative/FR-map change; no new autoload; difficulty stays a hard non-goal.
+
 ## Epic 1: Core Tactical Combat Slice
 
 Players can launch a small tactical test level, move, see line of sight and fog, use weapon-shaped attacks, resolve enemy turns, take damage, win or die, and understand why combat outcomes occurred.
@@ -2953,3 +2961,267 @@ So that I can complete the loop steps a fight earns me without a test harness.
 **When** this story lands
 **Then** collect-rewards and make-passive-choices are live-HUD-proven end to end by a human on desktop
 **And** the headless suite stays green with every pinned fingerprint byte-identical; no domain command/contract change.
+
+## Epic 14: Playable & Presentable
+
+The MVP loop is genuinely finishable and readable — no mid-fight soft-lock, a visible attack preview, a cue for every rejected action, per-run seed variety, a route the player can see and choose, and a death/victory moment plus a run summary — and then made to look intentional with a rebuilt hero select, a clean outpost, a real player HUD, and a UI theme applied across screens.
+
+> **Sequencing:** added 2026-07-16 via sprint change proposal (post-Epic-13 agent playtest; see `sprint-change-proposal-2026-07-16.md`; record `playtest-sessions/agent-playtest-2026-07-16.md`). Executes after Epic 13 as the second pre-ship backlog epic, in two bands ordered so the game becomes finishable before it becomes pretty. Additive over pinned contracts: the two domain touches (14.1, 14.7) follow the 4.3 command idiom; every generator/route/finale/combat seed-regression fingerprint stays byte-identical EXCEPT Story 14.1's justified combat-replay re-pin (re-pinned via the dump tools in the same PR; generation/route layout fingerprints untouched). No new autoload; difficulty stays a hard non-goal; assertable logic lives in scene-free `RefCounted` seams (scenes verified by construction + the compile guardrail).
+
+**Band 1 — Finishable & Readable Loop (blockers first): Stories 14.1–14.7.**
+
+### Story 14.1: Corpse-Clearing and Wait/Pass-Turn
+
+As a player,
+I want dead enemies to stop blocking my movement and a way to always pass my turn,
+So that I can never get permanently stuck mid-fight with no legal action.
+
+**Acceptance Criteria:**
+
+**Given** an enemy is reduced to 0 HP during a live combat node
+**When** the enemy dies
+**Then** the dead unit is removed from board occupancy — its cell becomes walkable and non-targetable — and the presentation renders a persistent corpse/loot-marker decal at the death cell (a pure read; no scene node owns the board state)
+**And** a subsequent move onto that cell is legal, and the win condition (zero living enemies) is unchanged.
+
+**Given** it is the player's turn and the hero has no legal move or attack (boxed in, or by choice)
+**When** the player invokes a Wait/pass-turn affordance
+**Then** a `WaitCommand` (validate-before-mutate, returns `ActionResult`, zero RNG, an append-only tail domain event) advances the turn and resolves the enemy phase (FR3), so turns can always advance
+**And** a visible Wait/End-Turn control is present in the HUD, and an invalid Wait (not the player's turn) fails closed with zero mutation.
+
+**Given** the corpse-clearing change alters combat-time movement legality
+**When** the seed-regression and winnability suites run
+**Then** all generator/route/finale LAYOUT fingerprints stay byte-identical (corpse handling is combat-time, not generation-time), and the winnability proof still holds for every approved seed
+**And** any combat-replay composite fixture that moves (the reference-driver byte-determinism / auto-resolve replays, if a pinned replay had a post-death corpse-block interaction) is re-derived and re-pinned in the SAME change via the dump/regeneration path with the justification recorded — never a silent edit; the `WaitCommand` draws zero RNG and the hands-off/reference drivers do not invoke it in the fixtures.
+
+**Given** the domain and save contracts
+**When** this story lands
+**Then** no new RNG stream or unnamed draw site is added, the 23-key `RunSnapshot` gate stays 23, the in-node fight stays ephemeral, and the new event is wired end-to-end (factory + payload validator + id maps + round-trip + malformed negatives + the exhaustive `expected_ids` pin).
+
+### Story 14.2: Attack Preview and Rejected-Command Feedback
+
+As a player,
+I want to see my armed attack (target, damage, confirm/cancel) and get a cue whenever an action is rejected,
+So that combat never feels frozen or broken.
+
+**Acceptance Criteria:**
+
+**Given** the two-step attack commit is armed (first tap previews, second commits — FR11)
+**When** the preview state is active
+**Then** the board shows a visible armed-preview state — the target cell highlighted, a target + expected-damage panel (weapon reach/line, expected damage, blockers, adjacent-ranged warnings per FR10), and explicit confirm/cancel affordances (≥44px)
+**And** the preview reads the existing attack-preview view models (no new domain query), a cancel leaves the run state unmutated, and the armed state is communicated by shape/label/text, not color alone (NFR9).
+
+**Given** any command the domain rejects (move into a wall, diagonal/illegal move, move onto a blocker, attack an empty/illegal target)
+**When** the rejection returns from the command bridge
+**Then** every rejected command surfaces a visible non-color cue — a message line/toast naming the reason (from the `CommandBridgeResult`/`ActionResult` reject reason) plus an optional cell shake — so a rejected action is never silent
+**And** the cue holds with audio off and color removed (NFR9), and the rejection mutates nothing (validate-before-mutate is unchanged).
+
+**Given** the headless suite and pinned contracts
+**When** this story lands
+**Then** the preview/cue decision logic lives in `RefCounted` seams testable without a SceneTree, the 16-key `TacticalBoardViewModel` gate holds, and no domain command/RNG/save contract changes
+**And** every pinned fingerprint stays byte-identical.
+
+### Story 14.3: Combat Event Log and Hit Feedback
+
+As a player,
+I want damage numbers, a running log, and animation for moves/hits/deaths,
+So that I can tell what happened each turn without diffing HP bars.
+
+**Acceptance Criteria:**
+
+**Given** a live combat action resolves and emits domain events (damage_applied, death, move, telegraph)
+**When** the events return from the interactive session
+**Then** an in-combat event log renders per-action lines and damage numbers sourced from the already-emitted domain events (FR22, FR69) — the explainability contract gets a live outlet, so the log is never "0 events" during a fight
+**And** the log reads the per-action `ActionResult`/`CommandBridgeResult` events (it does NOT read a presentation/combat log as source truth, and does NOT build the deferred run-level event store).
+
+**Given** a move, a hit, or a death occurs
+**When** it is presented
+**Then** a basic tween/flash animation plays (units slide rather than teleport, hits flash, a death animates the transition to the corpse decal — F8) so outcomes are legible
+**And** the animation is pure presentation mirroring the already-decided domain outcome — it draws no gameplay RNG (any cosmetic jitter uses the `cosmetic` stream only, which cannot affect outcomes) and never mutates domain/board/turn state.
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** the 7 named RNG streams and every seed-regression fingerprint stay byte-identical, the 16-key board VM gate holds, and no domain command/event/save change is made
+**And** the log/feedback projection logic lives in a `RefCounted` seam with a pinned key set.
+
+### Story 14.4: Per-Run Seed Variation
+
+As a player,
+I want each new descent to be a different room,
+So that the game has replay variety while tests stay reproducible.
+
+**Acceptance Criteria:**
+
+**Given** the player starts a normal (non-manual-seed) run
+**When** the new-run flow caller starts the run
+**Then** it selects an entropy-derived `root_seed` (a one-time non-gameplay seed source chosen before any named stream exists — the seed source, not a gameplay draw), so board/route/enemy layout varies run to run (FR26)
+**And** `RunStartCommand` and the generation pipeline are unchanged — a run remains a pure deterministic function of its given `root_seed`.
+
+**Given** a manual-seed run (FR27)
+**When** the player enters an explicit seed
+**Then** the manual-seed path bypasses the entropy source and reproduces byte-identically (FR29), and a manual-seed run still grants no meta progression (FR28, unchanged)
+**And** every seed-regression / winnability / finale test — each of which passes an explicit seed — stays byte-identical (no fingerprint moves).
+
+**Given** the determinism and save gates
+**When** this story lands
+**Then** no named RNG stream is added or reordered, no draw site changes, and the 23-key `RunSnapshot` gate stays 23
+**And** the seed-source selection lives in the flow/caller layer (not inside a command), testable without a SceneTree.
+
+### Story 14.5: Run-End Beat and Run-Summary Screen
+
+As a player,
+I want a death/victory moment and a run summary before returning to the outpost, and Descend Again to let me pick a class,
+So that the run has closure and re-descending is never a class-less default.
+
+**Acceptance Criteria:**
+
+**Given** a run ends in death or victory
+**When** the run-end flow resolves
+**Then** a death/victory beat renders the shipped narrative DTO on screen — the first-death line "Good. You remembered how to die." (`FirstDeathNarrativeBeat`, FR61) or the first-victory reveal "It did not die. It learned the way back." (`FirstVictoryRevealBeat`, FR62) — and the beat is skippable and never blocks understanding the summary or starting another descent (FR65)
+**And** the beat DTOs are read-only (the latch mutation stays in its command; a skip/dismiss is a pure no-op).
+
+**Given** a run has ended and the summary is shown between run-end and the outpost
+**When** the run-summary screen renders
+**Then** it renders the honest facts from the existing `RunSummary` (FR60) — the victory/death outcome LABEL keyed off `run.phase` (`PHASE_COMPLETED`/`PHASE_FAILED`) + the reveal beats, NOT the blank `outcome_or_cause`; nodes cleared; the seed; and the oath-shards-earned-this-run count
+**And** summary lists with no live source in v0 (passives/loot from the deferred run-level event store) are shown honestly as empty/pending rather than fabricated, and the pinned `RunSummary`/8.2 contract is unchanged.
+
+**Given** the player chooses Descend Again from the outpost
+**When** the descend affordance is invoked
+**Then** it routes through the hero-select stage so a real class (with its 18-HP kit) is chosen — never the class-less fail-open driver default (60 HP); the authoritative `RunStartCommand` class gate is unchanged
+**And** the run-end/summary/beat render logic lives in `RefCounted` render-decision seams (no SceneTree test), and no domain command/RNG/save contract changes; every pinned fingerprint byte-identical.
+
+### Story 14.6: Live Route Map and Node-Choice
+
+As a player,
+I want to see the route and choose my next node,
+So that the run has visible forward progression instead of dropping me straight into combat.
+
+**Acceptance Criteria:**
+
+**Given** a run is between nodes with eligible forward choices
+**When** the route-map stage is shown
+**Then** the live flow surfaces a route map rendered from the Epic-4 `RouteState` / `RouteMapViewModel` (current position, revealed forward neighbors, cleared nodes, the terminal boss) so the node-choice loop step has an on-screen surface (FR68)
+**And** node states are communicated by shape/label/text, not color alone (NFR9).
+
+**Given** the route map is shown and the player picks an eligible forward node
+**When** the choice is committed
+**Then** it routes through the existing route-advance command path (reveal-on-arrival stays in lockstep — the arrived node's forward neighbors reveal; no node is double-cleared; the guaranteed depth-0 opener is not skipped)
+**And** an ineligible pick (hidden/cleared/not-linked) fails closed with a visible cue and no mutation.
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** no route model / node type / `run_completed` change is made, no new RNG draw site is added, and every route/generator fingerprint stays byte-identical
+**And** the route-map projection logic lives in the pinned-key `RouteMapViewModel` (verified without a SceneTree).
+
+### Story 14.7: Full-Backpack Reward Escape Hatch
+
+As a player,
+I want to skip or decline a reward I cannot take,
+So that a full backpack can never permanently stall the run.
+
+**Acceptance Criteria:**
+
+**Given** a pending generic reward offer resolves against a FULL backpack
+**When** the domain returns `inventory_full` and leaves the offer pending (the correct fail-closed behavior)
+**Then** the reward overlay exposes a visible decline/skip affordance, and invoking it clears the pending offer WITHOUT applying it via a caller-driven run command (the 4.3 idiom: validate-before-mutate, `ActionResult`, an append-only tail domain event, zero RNG), so the run can advance — the soft-lock is broken
+**And** the fail-closed `inventory_full` domain guard is NOT weakened (a full backpack still never silently overwrites/drops a slot), and a passive offer is still resolved by exactly one command (no double-record).
+
+**Given** the decline path
+**When** it is exercised valid and invalid (no pending offer, already-resolved offer)
+**Then** valid decline flips the offer to resolved with its event; invalid decline fails closed with zero mutation
+**And** the new event is wired end-to-end (factory + payload validator + id maps + round-trip + malformed negatives + `expected_ids`).
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** the 23-key `RunSnapshot` gate stays 23, the 7 named RNG streams are unchanged, and every pinned fingerprint stays byte-identical
+**And** the richer drop/replace disposition remains a later enhancement (this story ships only the minimal no-soft-lock skip).
+
+**Band 2 — Looks Intentional (presentation): Stories 14.8–14.11.**
+
+### Story 14.8: Hero-Select Rebuild
+
+As a player,
+I want a hero-select screen with portraits, class kits, and clear selection feedback,
+So that choosing a class feels like a real decision, not five gray bars.
+
+**Acceptance Criteria:**
+
+**Given** the hero-select stage is shown
+**When** it renders
+**Then** it uses the existing approved character portraits (`godot/assets/characters/char.*.png`, already imported) and shows each playable class's kit summary (weapon/support/passives from `ClassStartSummaryViewModel`) plus a minimal title treatment — no empty-void layout
+**And** it renders from the existing pinned `HeroSelectViewModel`/`ClassStartSummaryViewModel` (no domain change), degrading gracefully if a portrait texture is unresolved.
+
+**Given** the player selects a class
+**When** the selection changes
+**Then** the screen shows a clear visible selection state (the selected class is unmistakably distinguished by border/label/text, not color alone — NFR9), and locked classes are shown as locked with their unlock cost
+**And** the authoritative selectability gate stays `HeroSelectViewModel.is_class_selectable` / `RunStartCommand` (the UI does not become authoritative).
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** any newly-imported art has its `*.png.import` sidecar committed (the 13.1 import discipline), no domain/save/RNG contract changes, and the scene is verified by construction + the compile guardrail
+**And** every pinned fingerprint stays byte-identical.
+
+### Story 14.9: Outpost Screen Cleanup
+
+As a player,
+I want the outpost to show real information cleanly,
+So that returning from a run feels finished, not like a debug dump.
+
+**Acceptance Criteria:**
+
+**Given** the outpost renders after a run
+**When** it draws its panels
+**Then** no raw `[#]`/`[!]` marker prefixes are shown to the player, the deferred named spaces render as honest labeled "coming later" affordances (the `OutpostViewModel.NAMED_SPACES` deferred markers) rather than dead "(coming soon)" text, and the tallies are real — nodes cleared, notable loot, and the oath-shards-earned-this-run count (computed via the deterministic `MetaAwardRules` read) replacing "not yet tallied"
+**And** the pinned `RunSummary` / 8.2 contract is unchanged (the earned count is a separate deterministic read, not a summary-key change).
+
+**Given** the outpost meta surfaces
+**When** they render
+**Then** the awarded oath-shard total and any spend/unlock affordances read the existing `OutpostRenderView` render-decision seam, with all state communicated by text/icon, not color alone (NFR9)
+**And** a profile-load/write recovery state renders honestly without a crash (the existing `for_recovery` modes).
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** no domain/save/RNG contract changes, the outpost render decisions stay on the pinned-key `RefCounted` seam (no SceneTree test), and every pinned fingerprint stays byte-identical.
+
+### Story 14.10: Player HUD and Range Highlights
+
+As a player,
+I want a real HUD and move/attack range highlights,
+So that I can read my state and plan a turn without decoding debug strings.
+
+**Acceptance Criteria:**
+
+**Given** a live combat node is on screen
+**When** the HUD renders
+**Then** it shows a styled player HUD — HP, gold, backpack, and turn/phase as legible elements — replacing the debug readout (no `Confirm:false Cancel:false (mode none)`, no pipe-separated stat dump), and all cue/label text uses human display names, not snake_case ids
+**And** it reads the existing `RunHudViewModel`/`TacticalBoardViewModel` (the 16-key board VM gate holds; the display names resolve from the projected view models, not raw domain ids).
+
+**Given** it is the player's turn
+**When** a unit/action is active
+**Then** the board shows move-range and attack-range highlights (reading the existing move/attack-preview queries) and a clear turn indicator, each communicated by shape/pattern/label, not color alone (NFR9); targets stay ≥44px and a slot that cannot fit reports `reachable: false` rather than overflowing
+**And** the highlights are pure reads (no domain mutation, no new query).
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** no domain command/RNG/save contract changes, the HUD/highlight projection logic lives in `RefCounted` seams with pinned key sets, and every pinned fingerprint stays byte-identical.
+
+### Story 14.11: UI Theme and Semantic Layout
+
+As a player,
+I want a consistent visual theme and layout across screens,
+So that the game looks intentional on any window size.
+
+**Acceptance Criteria:**
+
+**Given** the generated Recraft UI frame kit exists in the repo (`asset_sources/icons/ui/button_plate.svg`, `panel_frame.svg`, `modal_frame.svg`)
+**When** a UI theme is applied
+**Then** the kit is imported (with its `*.import` sidecars committed — the 13.1 discipline) and a Godot `Theme` (StyleBoxes/fonts/spacing) styles buttons, panels, and modals across screens — no default-Godot unstyled Control surfaces outside the board
+**And** the theme is presentation only (no domain/save/RNG change), degrading gracefully if a kit texture is unresolved.
+
+**Given** the screens (hero select, route map, tactical HUD, reward/passive overlay, run summary, outpost)
+**When** they lay out on varying window sizes
+**Then** they honor the semantic `TacticalLayoutProfile` region plan — the board scales to the available space (no huge dead gray zone; a resize re-renders scale sensibly), and reachable targets stay ≥44px with honest `reachable: false` when a region cannot fit (§14.1)
+**And** the reward-overlay hardcoded geometry is replaced with the semantic region plan + a scroll affordance so the passive 3-choice modal cannot push targets off a small viewport (folds the 13.2 R1 defer), and the passive-confirm step renders the evocative `display_name`, not the raw `passive_content_id` (folds the 13.2 R2 defer).
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** no domain/save/RNG contract changes, the layout/region decisions stay on the pinned `TacticalLayoutProfile` seam (verified without a SceneTree), and every pinned fingerprint stays byte-identical.
