@@ -43,6 +43,15 @@ const TacticalBoardTapRouter = preload("res://scripts/ui/view_models/tactical_bo
 # armed-vs-not and reject-vs-benign DECISIONS live in the seams and are unit-tested (no SceneTree presenter test).
 const TacticalAttackPreviewPanel = preload("res://scripts/ui/view_models/tactical_attack_preview_panel.gd")
 const TacticalRejectionFeedback = preload("res://scripts/ui/view_models/tactical_rejection_feedback.gd")
+# Story 14.3 (F6/F7/F8) — the in-combat event-log + hit-feedback layer, all presentation over the pinned VM slots.
+# CombatExplanationLog (the EXISTING scene-free event->line transform) turns the bound session's accumulated domain
+# events into the log entries render() routes into the VM's EXISTING `event_log_summary` slot (Task 1). The two new
+# scene-free RefCounted seams project that slot: TacticalCombatLogView -> the log-region lines + damage numbers;
+# TacticalCombatFeedback -> the move/hit/death/telegraph ANIMATION PLAN for the events newer than the last-animated
+# sequence. The presenter draws their output + plays bounded self-terminating tweens; the DECISIONS live in the seams.
+const CombatExplanationLog = preload("res://scripts/tactical/outcomes/combat_explanation_log.gd")
+const TacticalCombatLogView = preload("res://scripts/ui/view_models/tactical_combat_log_view.gd")
+const TacticalCombatFeedback = preload("res://scripts/ui/view_models/tactical_combat_feedback.gd")
 # Story 13.2 — the post-victory reward HUD (an ADDITIVE overlay surface, NOT a board-VM key). It renders
 # run.pending_reward_offer via the RewardHudViewModel projection (which reuses PassiveRewardModalViewModel's pinned
 # MODAL_KEYS) and drives the two-step Consume/Destroy via the already-imported PassiveRewardCommitFlow. The resolving
@@ -114,6 +123,23 @@ const CORPSE_OUTLINE_COLOR := Color(0.32, 0.28, 0.28, 0.85)
 # SHAPE/POSITION channels; the accessible cue is the armed-preview LABEL and the reject MESSAGE line, never color alone.
 const ARMED_TARGET_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const REJECT_MARKER_COLOR := Color(0.95, 0.3, 0.35, 0.9)
+# Story 14.3 (AC2/F8) — the move/hit/death/telegraph feedback ANIMATION channels. Each is drawn as a TRANSIENT,
+# self-freeing overlay node tweened by a bounded Godot Tween (NOT a per-frame _process redraw loop — the board grid's
+# one-draw-per-render perf rule stays intact once the short tween completes). Every cue is a SHAPE/POSITION/MOTION
+# channel (NFR9): a transient overlay appearing + fading (a temporal channel) and the floating damage-number TEXT, not
+# hue alone — a hit stays legible via the log line + the number, a death via the persistent corpse decal (14.1). Zero
+# RNG (fully deterministic tweens). Colors are cosmetic tints on those shape/motion channels.
+const HIT_FLASH_COLOR := Color(1.0, 0.85, 0.25, 0.55)
+const DEATH_FADE_COLOR := Color(0.55, 0.08, 0.1, 0.6)
+const TELEGRAPH_PULSE_COLOR := Color(1.0, 0.55, 0.15, 0.5)
+const SLIDE_MARKER_COLOR := Color(0.85, 0.92, 1.0, 0.55)
+const DAMAGE_NUMBER_COLOR := Color(1.0, 0.92, 0.4, 1.0)
+const SLIDE_DURATION := 0.16
+const HIT_FLASH_DURATION := 0.28
+const DAMAGE_NUMBER_DURATION := 0.6
+const DAMAGE_NUMBER_RISE := 22.0
+const DEATH_FADE_DURATION := 0.5
+const TELEGRAPH_PULSE_DURATION := 0.5
 
 # The region -> slot vocabulary (the appendix §1.2 region plan; the TacticalLayoutProfile region names).
 const REGION_NAMES: Array[String] = [
@@ -189,6 +215,11 @@ var _cancel_button: Button = null
 # a transient non-color message line in the preview region (when no attack is armed) + an optional rejected-cell
 # marker. Reset on a new fight bind; replaced on every live tap (a success/benign tap clears it — has_cue false).
 var _last_reject_cue: Dictionary = {}
+# Story 14.3 (AC2/F8) — the highest event sequence_id already animated. render() plays the move/hit/death/telegraph
+# tweens ONLY for events NEWER than this (TacticalCombatFeedback.plan), then advances it to the plan's high-water
+# mark — so each event animates EXACTLY once and an arm/inspect/cancel/rejected render (which adds no events) animates
+# nothing. Reset on a new fight bind to the session log's current max (0 when empty) so a bind never replays history.
+var _last_animated_sequence_id: int = 0
 
 func _ready() -> void:
 	_build_regions()
@@ -275,11 +306,21 @@ func render() -> void:
 		"commit_flow": commit_flow
 	}).to_dictionary()
 	var layout: Dictionary = _layout_profile().to_dictionary()
+	# Story 14.3 (Task 1 — the F6/F7 root fix): during a LIVE fight the emitted per-action domain events are sitting on
+	# the bound SESSION (_session.event_log()), but render() never sourced them — so the VM's EXISTING event_log_summary
+	# slot stayed [] and the log region printed the literal "Log: 0 events". Turn the accumulated events into log entries
+	# (CombatExplanationLog is a STATELESS event->line transform; the SOURCE of truth is the session's domain events) and
+	# route them into the EXISTING event_log_summary slot (the exact analog of the 14.2 `preview` fix — the 16 top-level
+	# keys are unchanged; only this slot's CONTENTS populate during a live fight). The non-live path keeps it empty.
+	var log_entries: Array[Dictionary] = []
+	if _session != null:
+		log_entries = CombatExplanationLog.new().build_entries(_session.event_log())
 	var vm: Dictionary = TacticalBoardViewModel.from_domain(_board, _turn_state, {
 		"commit_flow": commit_flow,
 		"preview": preview_option,
 		"layout": layout,
-		"accessibility": accessibility
+		"accessibility": accessibility,
+		"event_log_summary": log_entries
 	}).to_dictionary()
 
 	# Story 14.2 — project the ARMED-attack panel ONCE from the pinned VM slots (the board highlight + the damage
@@ -306,7 +347,10 @@ func render() -> void:
 	# The status region = the VM turn slot COMPOSED with the G1 run-context projection (the appendix §1.3 G1) + the
 	# affinity badge (the affinity id/display-name/rule visible before + during play — FR55).
 	_set_region_text("status", _status_text(vm.get("turn", {}), affinity))
-	_set_region_text("log_or_outcome", _log_text(vm.get("event_log_summary", []), vm.get("outcome", {})))
+	# Story 14.3 (F6/F7) — the log region now renders the live per-action lines (from the sourced event_log_summary)
+	# instead of "Log: 0 events". A live-fight VM `outcome` stays empty here (the run-end beat/summary is Story 14.5),
+	# so the log lines show; the terminal victory/defeat event naturally appears as the last log line.
+	_set_region_text("log_or_outcome", _log_text(vm))
 	# Story 14.1 — the Wait control is meaningful only during a live fight (a session is bound); hide it otherwise.
 	if _wait_button != null:
 		_wait_button.visible = _session != null
@@ -315,6 +359,10 @@ func render() -> void:
 		_confirm_button.visible = _session != null and is_armed
 	if _cancel_button != null:
 		_cancel_button.visible = _session != null and is_armed
+	# Story 14.3 (AC2/F8) — play the move/hit/death/telegraph feedback for the events NEWER than the last-animated
+	# sequence (the plan seam decides WHAT; the presenter plays bounded self-terminating tweens). A live session only;
+	# a render with no new events (arm / inspect / cancel / rejected tap) yields an empty plan -> no animation.
+	_play_new_combat_feedback(vm)
 
 
 # The G1 status region: hero HP + node progress + gold + inventory from the RunHudViewModel, composed with the
@@ -421,10 +469,18 @@ func _inspect_base_text(inspect: Dictionary) -> String:
 	return "Inspect: %s" % String(inspect.get("visibility_state", ""))
 
 
-func _log_text(log_summary: Array, outcome: Dictionary) -> String:
+# Story 14.3 (F6/F7) — the log region text. The `outcome`-present branch stays honest (14.3 does NOT populate the VM
+# outcome slot — the run-end summary is Story 14.5 — so this branch is dormant during a live fight). During a live
+# fight the log-view seam projects the tail of per-action lines (each carrying its damage text) from the sourced
+# event_log_summary; an empty log renders the honest "no events yet" (not the F6 "Log: 0 events" during a fight).
+func _log_text(vm: Dictionary) -> String:
+	var outcome: Dictionary = vm.get("outcome", {})
 	if not outcome.is_empty() and not String(outcome.get("state_id", "")).is_empty():
 		return "Outcome: %s" % String(outcome.get("state_id", ""))
-	return "Log: %d events" % log_summary.size()
+	var log_view: Dictionary = TacticalCombatLogView.from_board_vm(vm)
+	if not bool(log_view.get("has_entries", false)):
+		return "Log: no events yet"
+	return "\n".join(log_view.get("lines", []) as Array)
 
 
 func _set_region_text(region_name: String, text: String) -> void:
@@ -499,6 +555,9 @@ func bind_interactive_session(
 	_last_inspect = {}
 	# Story 14.2 (AC2/F3) — a new fight clears any stale rejection cue from the previous node.
 	_last_reject_cue = {}
+	# Story 14.3 (AC2/F8) — reset the animation high-water to the session log's CURRENT max (0 when empty) so a fresh
+	# bind animates only events emitted AFTER bind, never replaying the fight's already-shown history.
+	_last_animated_sequence_id = _max_event_sequence_id(session.event_log()) if session != null else 0
 	# The LIVE board + turn state (mutated-in-place by the session) drive the render — NOT a throwaway PLAYER_PLANNING
 	# stub, so the HUD's turn slot + action_availability reflect the real turn (preview/commit/inspect gate correctly).
 	if session != null:
@@ -680,6 +739,147 @@ func _build_confirm_cancel_controls() -> void:
 	row.add_child(_cancel_button)
 	_confirm_button.visible = false
 	_cancel_button.visible = false
+
+# --- Story 14.3: the in-combat move/hit/death/telegraph feedback animation (AC2/F8) ----------------------------
+
+# Play the feedback tweens for the events NEWER than _last_animated_sequence_id, then advance the high-water mark so
+# each event animates EXACTLY once. Live session only + the grid must be in the tree (a fight-ending tap can detach
+# the grid mid-flow — the 13.1 out-of-tree guard). The plan (a pure seam) decides WHAT animates; this presenter plays
+# the bounded, self-terminating tweens. A render with no new events (arm / inspect / cancel / rejected tap) yields an
+# empty plan -> no tween, and _last_animated_sequence_id is NOT advanced (nothing new to consume).
+func _play_new_combat_feedback(vm: Dictionary) -> void:
+	if _session == null or _board_grid == null or not _board_grid.is_inside_tree():
+		return
+	var plan: Dictionary = TacticalCombatFeedback.plan(
+		vm.get("event_log_summary", []) as Array,
+		_last_animated_sequence_id,
+		vm.get("occupants", []) as Array
+	)
+	if not TacticalCombatFeedback.has_feedback(plan):
+		return
+	for move_value: Variant in plan.get("moves", []) as Array:
+		if move_value is Dictionary:
+			_animate_slide((move_value as Dictionary).get("from"), (move_value as Dictionary).get("to"))
+	for hit_value: Variant in plan.get("hits", []) as Array:
+		if hit_value is Dictionary:
+			_animate_hit((hit_value as Dictionary).get("cell"), int((hit_value as Dictionary).get("amount", 0)))
+	for death_value: Variant in plan.get("deaths", []) as Array:
+		if death_value is Dictionary:
+			_animate_death((death_value as Dictionary).get("cell"))
+	for telegraph_value: Variant in plan.get("telegraphs", []) as Array:
+		if telegraph_value is Dictionary:
+			_animate_telegraph((telegraph_value as Dictionary).get("cell"))
+	_last_animated_sequence_id = int(plan.get("last_sequence_id", _last_animated_sequence_id))
+
+
+# The max event sequence_id currently on the session log (0 when empty) — the bind-time animation high-water reset so
+# a fresh bind never replays the fight's already-shown history.
+func _max_event_sequence_id(events: Array) -> int:
+	var maximum: int = 0
+	for event: Variant in events:
+		if event != null:
+			maximum = maxi(maximum, int(event.sequence_id))
+	return maximum
+
+
+# A move slide: a transient marker tweened from the origin cell to the destination cell (the MOTION channel — the unit
+# is already drawn statically at the destination; this overlay reads the "slid, not teleported" transition). Both
+# cells must resolve (a fog/edge no-resolve is a safe no-op). Deterministic (zero RNG); self-freeing.
+func _animate_slide(from_cell: Variant, to_cell: Variant) -> void:
+	if _board_grid == null:
+		return
+	var from_rect: Rect2 = _cell_rect(from_cell)
+	var to_rect: Rect2 = _cell_rect(to_cell)
+	if from_rect.size.x <= 0.0 or to_rect.size.x <= 0.0:
+		return
+	var inset: float = from_rect.size.x * 0.22
+	var marker: ColorRect = ColorRect.new()
+	marker.color = SLIDE_MARKER_COLOR
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.size = from_rect.size - Vector2(inset, inset) * 2.0
+	marker.position = from_rect.position + Vector2(inset, inset)
+	_board_grid.add_child(marker)
+	var tween: Tween = marker.create_tween()
+	tween.tween_property(marker, "position", to_rect.position + Vector2(inset, inset), SLIDE_DURATION)
+	tween.parallel().tween_property(marker, "modulate:a", 0.0, SLIDE_DURATION)
+	tween.tween_callback(marker.queue_free)
+
+
+# A hit: a cell flash (a temporal MOTION channel) + a floating damage number (TEXT). Deterministic; self-freeing.
+func _animate_hit(cell: Variant, amount: int) -> void:
+	var flash: ColorRect = _transient_cell_rect(cell, HIT_FLASH_COLOR)
+	if flash != null:
+		var tween: Tween = flash.create_tween()
+		tween.tween_property(flash, "modulate:a", 0.0, HIT_FLASH_DURATION)
+		tween.tween_callback(flash.queue_free)
+	_animate_damage_number(cell, amount)
+
+
+# A floating damage number: a transient Label that rises + fades (TEXT + MOTION channels, NFR9). A non-positive amount
+# (e.g. a fully-blocked hit) draws no number (the flash still fires). Deterministic; self-freeing.
+func _animate_damage_number(cell: Variant, amount: int) -> void:
+	if _board_grid == null or amount <= 0:
+		return
+	var rect: Rect2 = _cell_rect(cell)
+	if rect.size.x <= 0.0:
+		return
+	var label: Label = Label.new()
+	label.text = "-%d" % amount
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.modulate = DAMAGE_NUMBER_COLOR
+	label.z_index = 1
+	label.position = rect.position + Vector2(rect.size.x * 0.32, rect.size.y * 0.08)
+	_board_grid.add_child(label)
+	var start_y: float = label.position.y
+	var tween: Tween = label.create_tween()
+	tween.tween_property(label, "position:y", start_y - DAMAGE_NUMBER_RISE, DAMAGE_NUMBER_DURATION)
+	tween.parallel().tween_property(label, "modulate:a", 0.0, DAMAGE_NUMBER_DURATION)
+	tween.tween_callback(label.queue_free)
+
+
+# A death: a transient cell overlay that fades out ON TOP of the persistent corpse decal (14.1 draws the is_dead decal
+# in the SAME render), animating the transition INTO the decal. Deterministic; self-freeing. NOTE (known basic-tier
+# limit): a fight-ENDING death routes synchronously to run-end and can detach the grid before this completes — the
+# corpse decal + the 14.5 run-end beat carry that moment; the tween tolerates the node being freed (bound to it).
+func _animate_death(cell: Variant) -> void:
+	var fade: ColorRect = _transient_cell_rect(cell, DEATH_FADE_COLOR)
+	if fade == null:
+		return
+	var tween: Tween = fade.create_tween()
+	tween.tween_property(fade, "modulate:a", 0.0, DEATH_FADE_DURATION)
+	tween.tween_callback(fade.queue_free)
+
+
+# A telegraph: a transient cell overlay that fades IN then OUT on the marked cell (a MOTION channel for the Ash Seer
+# mark — a full countdown VFX is out of scope, basic tier). Deterministic; self-freeing.
+func _animate_telegraph(cell: Variant) -> void:
+	var pulse: ColorRect = _transient_cell_rect(cell, TELEGRAPH_PULSE_COLOR)
+	if pulse == null:
+		return
+	# Start invisible (full modulate assignment — avoid the sub-property no-op footgun), pulse up then down.
+	pulse.modulate = Color(1.0, 1.0, 1.0, 0.0)
+	var tween: Tween = pulse.create_tween()
+	tween.tween_property(pulse, "modulate:a", 1.0, TELEGRAPH_PULSE_DURATION * 0.4)
+	tween.tween_property(pulse, "modulate:a", 0.0, TELEGRAPH_PULSE_DURATION * 0.6)
+	tween.tween_callback(pulse.queue_free)
+
+
+# A transient cell-sized ColorRect parented to the board grid (drawn over the one-pass op list), non-interactive
+# (mouse IGNORE so it never eats a tap), at the given cell's rect. Returns null for an unresolved cell (fog / no
+# geometry) — a safe no-op, never a fabricated cell.
+func _transient_cell_rect(cell: Variant, color: Color) -> ColorRect:
+	if _board_grid == null:
+		return null
+	var rect: Rect2 = _cell_rect(cell)
+	if rect.size.x <= 0.0:
+		return null
+	var overlay: ColorRect = ColorRect.new()
+	overlay.color = color
+	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.position = rect.position
+	overlay.size = rect.size
+	_board_grid.add_child(overlay)
+	return overlay
 
 # --- Story 13.1: the live tile-grid render + tap hit-test ------------------------------------------------------
 
