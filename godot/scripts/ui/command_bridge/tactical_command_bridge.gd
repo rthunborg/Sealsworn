@@ -8,6 +8,7 @@ const MoveCommand = preload("res://scripts/core/commands/move_command.gd")
 const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalVisibilityQuery = preload("res://scripts/tactical/fog/tactical_visibility_query.gd")
+const WaitCommand = preload("res://scripts/core/commands/wait_command.gd")
 const WeaponDefinition = preload("res://scripts/content/definitions/weapon_definition.gd")
 
 func build_command(context: Variant, intent_value: Variant) -> CommandBridgeResult:
@@ -24,6 +25,8 @@ func build_command(context: Variant, intent_value: Variant) -> CommandBridgeResu
 			return _build_move_command(context, intent_id, intent)
 		&"attack":
 			return _build_attack_command(context, intent_id, intent)
+		&"wait":
+			return _build_wait_command(context, intent_id, intent)
 		&"inspect":
 			return _build_inspect_result(context, intent_id, intent)
 		_:
@@ -84,6 +87,35 @@ func _build_move_command(context: Variant, intent_id: StringName, intent: Dictio
 		command,
 		_command_metadata(&"move", validation.metadata),
 		String(validation.metadata.get("reason", "valid"))
+	)
+
+
+# Story 14.1 — build the WAIT / pass-turn command from a UI intent, keeping the Wait tap seam SYMMETRIC with move /
+# attack (all committed player actions go through the ONE command-bridge submission seam). A wait carries no target
+# cell / weapon / support to marshal — only the actor and an optional lower_snake `reason` (default `voluntary`). The
+# command's own validate (context / live actor / PLAYER_PLANNING / active actor) decides availability; a validate
+# reject surfaces as `action_unavailable`, exactly like a rejected move.
+func _build_wait_command(context: Variant, intent_id: StringName, intent: Dictionary) -> CommandBridgeResult:
+	var context_result: Dictionary = _context_or_error(context, intent_id)
+	if not bool(context_result.get("ok", false)):
+		return context_result.get("result") as CommandBridgeResult
+
+	var actor_result: Dictionary = _actor_id_or_error(intent, intent_id)
+	if not bool(actor_result.get("ok", false)):
+		return actor_result.get("result") as CommandBridgeResult
+
+	var reason: StringName = _wait_reason_from(intent)
+	var command: WaitCommand = WaitCommand.new(actor_result.get("actor_id"), reason)
+	var validation: ActionResult = command.validate(context as TacticalActionContext)
+	if validation.is_error():
+		return _action_unavailable(intent_id, validation)
+
+	return CommandBridgeResult.command_ready(
+		intent_id,
+		&"wait",
+		command,
+		{"reason": String(reason)},
+		String(reason)
 	)
 
 
@@ -295,6 +327,17 @@ func _intent_id_from(intent: Dictionary) -> StringName:
 	if not _has_field(intent, &"intent_id"):
 		return &""
 	return StringName(str(_field(intent, &"intent_id")))
+
+
+# The optional wait reason (default `voluntary`). The command's board-apply payload validator enforces lower_snake; the
+# bridge just passes a non-empty value through (an empty/absent reason falls back to the voluntary default).
+func _wait_reason_from(intent: Dictionary) -> StringName:
+	if not _has_field(intent, &"reason"):
+		return WaitCommand.REASON_VOLUNTARY
+	var value: String = String(_field(intent, &"reason")).strip_edges()
+	if value.is_empty():
+		return WaitCommand.REASON_VOLUNTARY
+	return StringName(value)
 
 
 func _cell_metadata(cell: Vector2i) -> Dictionary:

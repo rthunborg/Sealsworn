@@ -292,11 +292,13 @@ func submit_move(target_cell: Vector2i, movement_budget: int = -1) -> ActionResu
 
 
 # Submit a WAIT tap (Story 14.1, AC2): commit ONE WaitCommand for the hero — the F1 turn-advance BACKSTOP, always
-# available even when the hero has no legal move/attack (boxed in), or by choice. A committed wait advances the turn,
-# so the enemy phase runs via the SAME _resolve_after_committed_action seam (the wait result carries advances_turn:
-# true — EnemyTurnResolver.resolve_after_player_action reads it). An invalid wait (not begun / terminal / not the
-# player's turn / dead hero) FAILS CLOSED: it surfaces the command's own reason, mutates nothing, and does NOT run the
-# enemy phase. Zero RNG. Returns the ActionResult so the shell/test reads the outcome.
+# available even when the hero has no legal move/attack (boxed in), or by choice. It routes through the SAME
+# TacticalCommandBridge submission seam as submit_move / tap_attack (the "submit commands through the command bridge"
+# idiom — a `wait` intent -> _build_wait_command), so the three committed tap seams are symmetric. A committed wait
+# advances the turn, so the enemy phase runs via the SAME _resolve_after_committed_action seam (the wait result carries
+# advances_turn: true — EnemyTurnResolver.resolve_after_player_action reads it). An invalid wait (not begun / terminal /
+# not the player's turn / dead hero) FAILS CLOSED: it surfaces the bridge/command reason (action_unavailable, exactly
+# like a rejected move), mutates nothing, and does NOT run the enemy phase. Zero RNG. Returns the ActionResult.
 func submit_wait(wait_reason: StringName = WaitCommand.REASON_VOLUNTARY) -> ActionResult:
 	if not _begun:
 		return _error(&"session_not_begun")
@@ -305,10 +307,14 @@ func submit_wait(wait_reason: StringName = WaitCommand.REASON_VOLUNTARY) -> Acti
 	# A pending attack preview is cleared when the player commits a wait (the presentation-flow reset).
 	_commit_flow.clear_for_mode_switch(&"wait")
 
-	var command: WaitCommand = WaitCommand.new(HERO_ID, wait_reason)
-	var wait_result: ActionResult = command.execute(_context)
+	var intent: Dictionary = {
+		"intent_id": "wait",
+		"actor_id": String(HERO_ID),
+		"reason": String(wait_reason)
+	}
+	var wait_result: ActionResult = _command_bridge.execute_intent(_context, intent)
 	if wait_result.is_error():
-		# Fail-closed: the command's own reason surfaces; ZERO mutation, no turn advance, no enemy phase.
+		# Fail-closed: the bridge/command reason surfaces; ZERO mutation, no turn advance, no enemy phase.
 		return wait_result
 	for event: DomainEvent in wait_result.events:
 		_event_log.append(event)
