@@ -3,7 +3,7 @@ baseline_commit: b9e3ccf12d7f2bd9035047c5d3c0be2d83dedd98
 ---
 # Story 14.1: Corpse-Clearing and Wait/Pass-Turn
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
