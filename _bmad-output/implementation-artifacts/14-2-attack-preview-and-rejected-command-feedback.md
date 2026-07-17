@@ -1,6 +1,6 @@
 # Story 14.2: Attack Preview and Rejected-Command Feedback
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
