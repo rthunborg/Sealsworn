@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-17T15:12:00+00:00
+last_updated: 2026-07-17T16:20:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -196,7 +196,7 @@ development_status:
   # New epic enters as backlog (auto-gds picks up 14-1 next). Epic numbering NOT reshuffled.
   epic-14: in-progress
   14-1-corpse-clearing-and-wait-turn: done
-  14-2-attack-preview-and-rejected-command-feedback: backlog
+  14-2-attack-preview-and-rejected-command-feedback: ready-for-dev
   14-3-combat-event-log-and-hit-feedback: backlog
   14-4-per-run-seed-variation: backlog
   14-5-run-end-beat-and-run-summary-screen: backlog
