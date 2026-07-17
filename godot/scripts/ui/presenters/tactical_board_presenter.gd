@@ -37,6 +37,12 @@ const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_s
 const TacticalBoardGrid = preload("res://scripts/ui/presenters/tactical_board_grid.gd")
 const TacticalBoardGridFit = preload("res://scripts/ui/view_models/tactical_board_grid_fit.gd")
 const TacticalBoardTapRouter = preload("res://scripts/ui/view_models/tactical_board_tap_router.gd")
+# Story 14.2 — the two scene-free RefCounted seams (F2/F3): the ARMED-attack panel projection (highlight + damage
+# panel + confirm/cancel enablement, read from the pinned VM preview/commit_flow/action_availability slots) and the
+# rejection-cue projection (a non-color message for every rejected command). The presenter draws their output; the
+# armed-vs-not and reject-vs-benign DECISIONS live in the seams and are unit-tested (no SceneTree presenter test).
+const TacticalAttackPreviewPanel = preload("res://scripts/ui/view_models/tactical_attack_preview_panel.gd")
+const TacticalRejectionFeedback = preload("res://scripts/ui/view_models/tactical_rejection_feedback.gd")
 # Story 13.2 — the post-victory reward HUD (an ADDITIVE overlay surface, NOT a board-VM key). It renders
 # run.pending_reward_offer via the RewardHudViewModel projection (which reuses PassiveRewardModalViewModel's pinned
 # MODAL_KEYS) and drives the two-step Consume/Destroy via the already-imported PassiveRewardCommitFlow. The resolving
@@ -103,6 +109,11 @@ const ENEMY_FALLBACK_COLOR := Color(0.82, 0.26, 0.26, 1.0)
 const CORPSE_MODULATE := Color(0.42, 0.42, 0.48, 0.85)
 const CORPSE_FILL_COLOR := Color(0.16, 0.13, 0.14, 0.9)
 const CORPSE_OUTLINE_COLOR := Color(0.32, 0.28, 0.28, 0.85)
+# Story 14.2 (F2/F3) — the ARMED-attack target highlight (a distinct DOUBLE inset outline — the SHAPE channel is the
+# NFR9 signal, not the hue) and the optional rejected-cell nudge marker (a distinct thick outline). Both are
+# SHAPE/POSITION channels; the accessible cue is the armed-preview LABEL and the reject MESSAGE line, never color alone.
+const ARMED_TARGET_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
+const REJECT_MARKER_COLOR := Color(0.95, 0.3, 0.35, 0.9)
 
 # The region -> slot vocabulary (the appendix §1.2 region plan; the TacticalLayoutProfile region names).
 const REGION_NAMES: Array[String] = [
@@ -169,6 +180,15 @@ var _texture_cache: Dictionary = {}
 # confirm/cancel region). Routed to the live session's submit_wait so the player can ALWAYS advance the turn
 # (the F1 soft-lock backstop). Shown only while a live fight is bound; a no-op otherwise.
 var _wait_button: Button = null
+# Story 14.2 (AC1/F2) — the explicit Confirm / Cancel attack affordances (built in _build_regions, hosted in the
+# confirm/cancel region). Shown ONLY while a live attack is armed (the armed-preview panel reports is_armed);
+# hidden otherwise. Confirm re-taps the armed cell (the confirming commit); Cancel un-arms with zero mutation.
+var _confirm_button: Button = null
+var _cancel_button: Button = null
+# Story 14.2 (AC2/F3) — the last rejection cue produced by a live tap (via TacticalRejectionFeedback). Surfaced as
+# a transient non-color message line in the preview region (when no attack is armed) + an optional rejected-cell
+# marker. Reset on a new fight bind; replaced on every live tap (a success/benign tap clears it — has_cue false).
+var _last_reject_cue: Dictionary = {}
 
 func _ready() -> void:
 	_build_regions()
@@ -204,6 +224,7 @@ func _build_regions() -> void:
 			_board_grid.cell_tapped.connect(_on_board_grid_tapped)
 			panel.add_child(_board_grid)
 	_build_wait_control()
+	_build_confirm_cancel_controls()
 
 
 # Resolve the layout profile from the real viewport/safe-area (the presenter injects them; the profile is the
@@ -239,23 +260,45 @@ func bind_live_state(
 # (null) -> a zero-cell VM — an empty board, not a crash). The status region composes the VM's turn slot with the
 # G1 run-context read (NEVER scene state).
 func render() -> void:
+	# Story 14.2 (Task 1 — the F2 root fix): during a LIVE fight the armed-attack state lives in the bound SESSION's
+	# commit flow (_session.commit_flow_state()), NOT the presenter's own _commit_flow (which is always empty in a
+	# live fight). Source the live flow when a session is bound; keep the presenter's own flow for the non-live tap
+	# methods. The commit-flow state embeds the full attack preview as its `preview` sub-dict while armed
+	# (TacticalAttackCommitFlow._state_from_preview) — route it into the VM's `preview` slot so the VM's preview /
+	# commit_flow / action_availability reflect the LIVE armed attack (no new domain query; the 16 top-level keys are
+	# unchanged — only their CONTENTS populate during a live armed attack). Not armed -> the empty preview.
+	var commit_flow: Dictionary = _session.commit_flow_state() if _session != null else _commit_flow.to_dictionary()
+	var preview_option: Dictionary = commit_flow.get("preview", {}) if String(commit_flow.get("mode", "")) == "attack_preview" else {}
 	var text_scale: Dictionary = TacticalTextScale.from_value(_text_scale).to_dictionary()
 	var accessibility: Dictionary = TacticalAccessibilityModel.from_state({
 		"text_scale": _text_scale,
-		"commit_flow": _commit_flow.to_dictionary()
+		"commit_flow": commit_flow
 	}).to_dictionary()
 	var layout: Dictionary = _layout_profile().to_dictionary()
 	var vm: Dictionary = TacticalBoardViewModel.from_domain(_board, _turn_state, {
-		"commit_flow": _commit_flow.to_dictionary(),
+		"commit_flow": commit_flow,
+		"preview": preview_option,
 		"layout": layout,
 		"accessibility": accessibility
 	}).to_dictionary()
 
-	# Story 13.1 — the board region now renders a real tile grid (a pure projection of the VM) instead of the
-	# summary text label. The other five regions render exactly as before.
-	_render_board_grid(vm, layout)
-	_set_region_text("preview", _preview_text(vm.get("preview", {})))
-	_set_region_text("confirm_cancel", _confirm_cancel_text(vm.get("commit_flow", {}), vm.get("action_availability", {})))
+	# Story 14.2 — project the ARMED-attack panel ONCE from the pinned VM slots (the board highlight + the damage
+	# panel + the confirm/cancel enablement all read this projection — never a re-derived domain query).
+	var panel: Dictionary = TacticalAttackPreviewPanel.from_board_vm(vm)
+	var is_armed: bool = bool(panel.get("is_armed", false))
+
+	# Story 13.1 — the board region renders a real tile grid (a pure projection of the VM). Story 14.2 adds the
+	# armed-target highlight + the optional rejected-cell marker on top (via the panel + the last reject cue).
+	_render_board_grid(vm, layout, panel)
+	# Story 14.2 (F2) — the preview region shows the visible armed-attack panel while armed, else the honest
+	# "nothing armed" prompt + any transient rejection cue — never the raw "Preview: none" debug string.
+	_set_region_text("preview", _preview_region_text(panel))
+	# Story 14.2 (F2) — on the live path the Confirm/Cancel + Wait buttons ARE the affordance; do not surface the
+	# raw "Confirm:false Cancel:false (mode none)" debug dump (the F2/F9 symptom). The non-live path keeps it.
+	if _session != null:
+		_set_region_text("confirm_cancel", "")
+	else:
+		_set_region_text("confirm_cancel", _confirm_cancel_text(vm.get("commit_flow", {}), vm.get("action_availability", {})))
 	# Story 11.4 (AC2) — the affinity read (a SEPARATE read surface, NOT a board-VM key). Composed into the inspect +
 	# status + log regions so the affinity + its rule read BEFORE + DURING play, and the affected cells surface on inspect.
 	var affinity: Dictionary = LiveAffinityReadModel.new().project(_affinity_id, _board, _affinity_fairness)
@@ -267,6 +310,11 @@ func render() -> void:
 	# Story 14.1 — the Wait control is meaningful only during a live fight (a session is bound); hide it otherwise.
 	if _wait_button != null:
 		_wait_button.visible = _session != null
+	# Story 14.2 — the Confirm/Cancel affordances show ONLY while a live attack is armed (hidden otherwise).
+	if _confirm_button != null:
+		_confirm_button.visible = _session != null and is_armed
+	if _cancel_button != null:
+		_cancel_button.visible = _session != null and is_armed
 
 
 # The G1 status region: hero HP + node progress + gold + inventory from the RunHudViewModel, composed with the
@@ -306,10 +354,20 @@ func _affinity_badge_text(affinity: Dictionary) -> String:
 	return badge
 
 
-func _preview_text(preview: Dictionary) -> String:
-	if preview.is_empty():
-		return "Preview: none"
-	return "Preview: %s (%s)" % [String(preview.get("kind", "")), String(preview.get("reason", ""))]
+# Story 14.2 (F2/F3) — the preview region text. While an attack is ARMED it renders the visible armed-preview
+# panel (the non-color armed_label + the target / expected-damage / weapon-reach / blocker / warning lines, from
+# the panel projection). While NOT armed it renders the honest "nothing armed" prompt PLUS any transient rejection
+# cue (the F3 non-color message line — the required accessible channel). Never the raw "Preview: none" debug string.
+func _preview_region_text(panel: Dictionary) -> String:
+	if bool(panel.get("is_armed", false)):
+		var armed_lines: Array[String] = [String(panel.get("armed_label", ""))]
+		for line_value: Variant in panel.get("lines", []) as Array:
+			armed_lines.append(String(line_value))
+		return "\n".join(armed_lines)
+	var base: String = "No attack armed — tap an enemy to preview"
+	if bool(_last_reject_cue.get("has_cue", false)):
+		base += "\n! %s" % String(_last_reject_cue.get("message", ""))
+	return base
 
 
 func _confirm_cancel_text(commit_flow: Dictionary, availability: Dictionary) -> String:
@@ -439,6 +497,8 @@ func bind_interactive_session(
 	_on_action_committed = on_action_committed
 	# Story 13.2 (Task 5) — a new fight clears any stale inspect feedback from the previous node.
 	_last_inspect = {}
+	# Story 14.2 (AC2/F3) — a new fight clears any stale rejection cue from the previous node.
+	_last_reject_cue = {}
 	# The LIVE board + turn state (mutated-in-place by the session) drive the render — NOT a throwaway PLAYER_PLANNING
 	# stub, so the HUD's turn slot + action_availability reflect the real turn (preview/commit/inspect gate correctly).
 	if session != null:
@@ -457,6 +517,9 @@ func interactive_submit_move(target_cell: Vector2i, movement_budget: int = -1):
 	if _session == null:
 		return null
 	var result_value = _session.submit_move(target_cell, movement_budget)
+	# Story 14.2 (AC2/F3) — surface a non-color cue for a REJECTED move (into a wall, onto a blocker, off-board,
+	# too far, not your turn); a successful move returns no cue (clearing any stale reject message).
+	_last_reject_cue = TacticalRejectionFeedback.from_action_result(result_value, target_cell)
 	render()
 	_notify_action_committed()
 	return result_value
@@ -468,9 +531,26 @@ func interactive_tap_attack(target_cell: Vector2i, attacker_support = null, defe
 	if _session == null:
 		return null
 	var flow_result = _session.tap_attack(target_cell, attacker_support, defender_support)
+	# Story 14.2 (AC2/F3) — a REJECTED attack tap (no target / out of range / not in line / line blocked, incl. the
+	# corpse missing_target case) surfaces a non-color cue; an ARM (preview_ready — shows the armed panel), a CANCEL,
+	# and a committed attack are benign (the seam returns no cue, clearing any stale reject message).
+	_last_reject_cue = TacticalRejectionFeedback.from_flow_result(flow_result, target_cell)
 	render()
 	_notify_action_committed()
 	return flow_result
+
+
+# Story 14.2 (AC1/F2) — cancel the LIVE armed attack (zero mutation): un-arm the session's commit flow + re-render.
+# A cancel commits NOTHING, so it does NOT notify the shell (mirrors the reward two-step cancel back-out). The cancel
+# result feeds the rejection seam, which returns NO cue for a cancel — clearing any stale reject message. No-op if
+# no session is bound (the Cancel affordance is meaningful only during a live fight).
+func interactive_cancel_attack():
+	if _session == null:
+		return null
+	var result_value = _session.cancel_attack()
+	_last_reject_cue = TacticalRejectionFeedback.from_flow_result(result_value, null)
+	render()
+	return result_value
 
 
 # Route an INSPECT tap into the live session (metadata-only — no mutation, no turn advance). Returns the
@@ -525,6 +605,9 @@ func interactive_wait():
 	if _session == null:
 		return null
 	var result_value = _session.submit_wait()
+	# Story 14.2 (AC2/F3) — a rejected wait (session terminal / not your turn / dead hero) surfaces a cue; a
+	# committed wait returns no cue (clearing any stale reject message).
+	_last_reject_cue = TacticalRejectionFeedback.from_action_result(result_value, null)
 	render()
 	_notify_action_committed()
 	return result_value
@@ -553,13 +636,58 @@ func _build_wait_control() -> void:
 	_wait_button.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_wait_button.visible = false
 
+
+# Story 14.2 (AC1/F2) — the Confirm affordance: re-tap the armed cell (the tap router treats a re-tap on the armed
+# cell as the confirming commit — `_armed_attack_cell` + interactive_tap_attack). A no-op if nothing is armed.
+func _on_confirm_attack_pressed() -> void:
+	var armed_cell: Variant = _armed_attack_cell()
+	if armed_cell is Vector2i:
+		interactive_tap_attack(armed_cell)
+
+
+# Story 14.2 (AC1/F2) — the Cancel affordance: un-arm with zero mutation (interactive_cancel_attack).
+func _on_cancel_attack_pressed() -> void:
+	interactive_cancel_attack()
+
+
+# Story 14.2 (AC1/F2) — build the explicit Confirm / Cancel attack affordances in the confirm/cancel region. Each
+# carries a text label (a non-color channel, NFR9) and honors the >=44px touch target (mirrors the 14.1 Wait control
+# + the 13.2 reward buttons). Hosted in a top-anchored row (the Wait control sits bottom-anchored); shown ONLY while
+# a live attack is armed (toggled in render()).
+func _build_confirm_cancel_controls() -> void:
+	var confirm_label: Label = _region_panels.get("confirm_cancel", null)
+	var host: Node = confirm_label.get_parent() if confirm_label != null else self
+	if host == null:
+		host = self
+	var row: HBoxContainer = HBoxContainer.new()
+	row.name = "attack_commit_row"
+	row.add_theme_constant_override("separation", 8)
+	host.add_child(row)
+	row.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_confirm_button = Button.new()
+	_confirm_button.name = "confirm_attack_button"
+	_confirm_button.text = "Confirm Attack"
+	_confirm_button.custom_minimum_size = Vector2(44.0, 44.0)
+	_confirm_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_confirm_button.pressed.connect(_on_confirm_attack_pressed)
+	row.add_child(_confirm_button)
+	_cancel_button = Button.new()
+	_cancel_button.name = "cancel_attack_button"
+	_cancel_button.text = "Cancel Attack"
+	_cancel_button.custom_minimum_size = Vector2(44.0, 44.0)
+	_cancel_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_cancel_button.pressed.connect(_on_cancel_attack_pressed)
+	row.add_child(_cancel_button)
+	_confirm_button.visible = false
+	_cancel_button.visible = false
+
 # --- Story 13.1: the live tile-grid render + tap hit-test ------------------------------------------------------
 
 # Draw the board region as a real tile grid — a PURE projection of the VM (cells + occupants) + the level's
 # affinity floor variant. Builds ONE shared TacticalBoardZoomState (via the RefCounted fit seam) sized to the
 # board Panel and uses it for BOTH the tile draw and the tap hit-test. A null / empty board (the between-levels
 # zero-cell VM) draws NOTHING (the correct-by-design empty state) — never a crash, never a divide-by-zero.
-func _render_board_grid(vm: Dictionary, layout: Dictionary) -> void:
+func _render_board_grid(vm: Dictionary, layout: Dictionary, panel: Dictionary = {}) -> void:
 	_last_board_vm = vm
 	_board_geometry = null
 	_set_region_text("board", "")
@@ -590,7 +718,7 @@ func _render_board_grid(vm: Dictionary, layout: Dictionary) -> void:
 	if _board_geometry == null:
 		_board_grid.clear_ops()
 		return
-	_board_grid.set_ops(_build_board_draw_ops(vm))
+	_board_grid.set_ops(_build_board_draw_ops(vm, panel))
 
 
 # The board region rect comes from the semantic layout profile (never hardcoded geometry). The board Panel is
@@ -607,7 +735,7 @@ func _board_region_size(layout: Dictionary) -> Vector2:
 # Compose the ordered draw-op list the grid replays: fog/terrain tiles first (each with a grid line + a hazard
 # outline), then occupants (sprite + a friend/foe marker + an HP bar) on top. Draws ONLY what the VM gives —
 # hidden cells expose NO terrain (the FR7 fog contract), occupants are already filtered to visible cells.
-func _build_board_draw_ops(vm: Dictionary) -> Array:
+func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}) -> Array:
 	var ops: Array = []
 	if _board_geometry == null:
 		return ops
@@ -664,6 +792,24 @@ func _build_board_draw_ops(vm: Dictionary) -> Array:
 		# HP bar: a length/shape channel (grayscale-safe) so damage reads without color.
 		for hp_op: Dictionary in _hp_bar_ops(cell_rect, occupant):
 			ops.append(hp_op)
+
+	# Story 14.2 (AC1/F2) — the ARMED-attack target highlight: a distinct DOUBLE inset outline (a SHAPE channel,
+	# NFR9 — not hue-only) on the armed target cell. The cell comes from the panel projection (which reads the
+	# pinned VM preview.target_cell), NEVER a re-derived query. Guarded against a null / off-board / missing cell
+	# (a safe no-op — _cell_rect returns a zero-size Rect2 for an unavailable/geometry-less cell; never fabricated).
+	if bool(panel.get("is_armed", false)) and panel.get("target_cell") is Dictionary:
+		var armed_rect: Rect2 = _cell_rect(panel.get("target_cell"))
+		if armed_rect.size.x > 0.0:
+			ops.append(_outline_op(armed_rect.grow(-2.0), ARMED_TARGET_OUTLINE_COLOR, 4.0))
+			ops.append(_outline_op(armed_rect.grow(-6.0), ARMED_TARGET_OUTLINE_COLOR, 2.0))
+
+	# Story 14.2 (AC2/F3, optional additive) — the rejected-cell nudge marker on the cell the last rejected command
+	# targeted (a SHAPE/POSITION channel). ADDITIVE only — the REQUIRED accessible cue is the preview-region message
+	# line; this marker is cleared together with the cue on the next successful action. Same _cell_rect guards.
+	if bool(_last_reject_cue.get("has_cue", false)) and bool(_last_reject_cue.get("shake", false)) and _last_reject_cue.get("cell") is Dictionary:
+		var reject_rect: Rect2 = _cell_rect(_last_reject_cue.get("cell"))
+		if reject_rect.size.x > 0.0:
+			ops.append(_outline_op(reject_rect.grow(-4.0), REJECT_MARKER_COLOR, 3.0))
 
 	return ops
 
