@@ -29,13 +29,15 @@ const CUE_KEYS: Array[String] = [
 	"shake"
 ]
 
-# Flow-result reasons that are NOT rejections: a first-tap ARM, a user CANCEL, and the success reasons a committed
-# attack can carry (defense-in-depth alongside the submitted && succeeded gate).
+# Flow-result reasons that are NOT rejections: a first-tap ARM ("preview_ready") and a user CANCEL ("cancelled").
+# A committed-and-succeeded attack is already short-circuited by the submitted && command_result.succeeded gate in
+# from_flow_result BEFORE this set is consulted, so its success reason strings ("committed", the "attack" command_id)
+# are intentionally NOT listed here. Keeping the set to only the real arm/cancel reasons is a FAIL-LOUD default: any
+# reason string not explicitly benign surfaces a cue, so a future command emitting a genuine FAILURE reason is never
+# silently swallowed as benign (matching the project's fail-loud convention).
 const BENIGN_FLOW_REASONS: Array[String] = [
 	"preview_ready",
-	"cancelled",
-	"committed",
-	"attack"
+	"cancelled"
 ]
 
 const MODE_ATTACK_PREVIEW := "attack_preview"
@@ -109,7 +111,8 @@ static func from_flow_result(flow_result: TacticalAttackCommitFlowResult, cell: 
 	if flow_result.submitted and command_result != null and command_result.succeeded:
 		return _no_cue()
 	var reason_id: String = String(flow_result.reason)
-	# Benign non-commits (arm / cancel / success reasons) never show a cue.
+	# Benign non-commits (a first-tap arm / a user cancel) never show a cue. A committed-and-succeeded attack was
+	# already handled by the gate above; any other reason falls through to a fail-loud cue.
 	if BENIGN_FLOW_REASONS.has(reason_id):
 		return _no_cue()
 	# A still-armed preview (defensive; the reason would be preview_ready) is benign.

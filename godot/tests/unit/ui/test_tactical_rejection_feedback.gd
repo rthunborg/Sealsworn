@@ -9,6 +9,7 @@ extends "res://tests/unit/test_case.gd"
 #   - a successful move / wait -> has_cue: false (even carrying a success reason like "voluntary");
 #   - a first-tap ARM (preview_ready) and a user CANCEL -> has_cue: false;
 #   - a committed attack (submitted && command_result.succeeded) -> has_cue: false;
+#   - a cleared flow carrying a pruned success-reason string ("committed"/"attack") -> has_cue: true (fail-loud);
 #   - a cleared attack flow with an error reason (out_of_range) -> has_cue: true, "Out of range";
 #   - the corpse missing_target case -> a clear "No target there" message (the exact F3 defect), + dead_target;
 #   - an UNMAPPED reason -> the fail-safe default (never empty), naming the reason;
@@ -27,6 +28,7 @@ func run() -> Dictionary:
 	_successful_move_and_wait_show_no_cue()
 	_arm_and_cancel_flow_show_no_cue()
 	_committed_attack_shows_no_cue()
+	_pruned_success_reason_strings_are_now_fail_loud()
 	_cleared_error_attack_flow_shows_a_cue()
 	_corpse_and_dead_target_map_to_clear_messages()
 	_unmapped_reason_uses_the_fail_safe_default()
@@ -94,6 +96,17 @@ func _committed_attack_shows_no_cue() -> void:
 	# submitted && command_result.succeeded is a commit, not a rejection — regardless of the reason string.
 	var committed: TacticalAttackCommitFlowResult = TacticalAttackCommitFlowResult.from_flow(true, "attack", "attack", ActionResult.ok([], {}), {"mode": "none"})
 	assert_equal(TacticalRejectionFeedback.from_flow_result(committed, Vector2i(2, 1)).get("has_cue"), false, "A committed attack shows no cue.")
+
+
+func _pruned_success_reason_strings_are_now_fail_loud() -> void:
+	# Round-1 [Review][Decision]: "committed" and "attack" were PRUNED from BENIGN_FLOW_REASONS. They are the success
+	# reason / command_id a committed attack carries, already short-circuited by the submitted && succeeded gate. A
+	# CLEARED flow (not submitted, mode "none") that carries one of these as a FAILURE reason must now surface a cue
+	# (fail-loud default), never be silently swallowed as benign — guards against re-adding the dead entries.
+	var committed_fail: TacticalAttackCommitFlowResult = TacticalAttackCommitFlowResult.from_flow(false, "", "committed", null, {"mode": "none"})
+	assert_equal(TacticalRejectionFeedback.from_flow_result(committed_fail, Vector2i(4, 4)).get("has_cue"), true, "A cleared flow carrying 'committed' as a failure reason is fail-loud, not benign.")
+	var attack_fail: TacticalAttackCommitFlowResult = TacticalAttackCommitFlowResult.from_flow(false, "", "attack", null, {"mode": "none"})
+	assert_equal(TacticalRejectionFeedback.from_flow_result(attack_fail, Vector2i(4, 4)).get("has_cue"), true, "A cleared flow carrying 'attack' as a failure reason is fail-loud, not benign.")
 
 
 func _cleared_error_attack_flow_shows_a_cue() -> void:
