@@ -10,3 +10,7 @@
 
 ## Story 14-2-attack-preview-and-rejected-command-feedback
 - [Phase 5 — dev-story] The 13.1 tap router routes a tap on a corpse cell to INSPECT (dead occupant → `occupant_inspect`), not attack — so the F3 `missing_target` reject cue fires only on the confirm path or a direct attack; a fresh corpse tap reads as inspect. Router change is out of 14.2 scope; Band-1 playtest + later UI stories (14.10?) should know.
+
+## Story 14-3-combat-event-log-and-hit-feedback
+- [Phase 3 — create-story] SYSTEMIC: third Epic-14 story to hit the same defect class — `render()` builds the board VM from empty presenter-owned state instead of the bound session (14.2 `preview`, 14.3 `event_log_summary`; 14.1 was adjacent). The "live VM slot never sourced from the session" pattern deserves a systemic sweep before Band 2 — likely other pinned VM slots silently empty on the live path.
+- [Phase 3 — create-story] AC2 introduces the FIRST animation in Epic 14, colliding with the perf rule "one draw pass per render, never per-frame in `_process`." Steered to bounded self-terminating tweens / transient overlay nodes + detach-safety guards; Band-2 HUD work (14.10) should inherit that reconciliation.

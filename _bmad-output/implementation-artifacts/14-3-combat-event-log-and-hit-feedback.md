@@ -1,0 +1,202 @@
+# Story 14.3: Combat Event Log and Hit Feedback
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want damage numbers, a running log, and animation for moves/hits/deaths,
+so that I can tell what happened each turn without diffing HP bars.
+
+## Context & Why This Story Exists
+
+Epic 14 ("Playable & Presentable") is the **second pre-ship backlog epic**, added 2026-07-16 after an agent-driven desktop playtest found the built MVP is **not honestly finishable** and looks unfinished (`playtest-sessions/agent-playtest-2026-07-16.md`; `sprint-change-proposal-2026-07-16.md`). Story 14.3 is the **third story of Band 1** (finishable + readable), landing after 14.1's soft-lock fix and 14.2's visible preview / reject cue. It closes the last Band-1 combat-comprehension gap — the **dead event-log / hit-feedback layer**:
+
+- **F6/F7 — the combat feedback layer is dead.** The playtest saw `"Log: 0 events"` through **two full runs**, **no damage numbers**, no hit/miss feedback, and **no animation**. A player cannot tell what happened on a turn without manually diffing HP bars. The domain already emits everything needed (every attack emits `DAMAGE_APPLIED`, every move `ENTITY_MOVED`, the Ash Seer `TILE_MARKED`/`MARKED_TILE_DETONATED`, deaths fold into `DAMAGE_APPLIED` at `hp_after == 0`, the outcome emits `LEVEL_VICTORY_REACHED`/`LEVEL_DEFEAT_REACHED`) — the explainability contract (FR22/FR24/FR69) has **no live outlet**.
+- **F8 (death-animation half) — hits and deaths teleport.** 14.1 already made corpses *look dead* (the persistent decal for `is_dead` occupants). 14.3 adds the missing **legibility motion**: units **slide** rather than teleport, hits **flash**, and a death **animates the transition** into that corpse decal so outcomes read as they happen.
+
+**This story is PURE PRESENTATION over `scripts/ui/` — exactly the 14.2 shape.** No domain command, no domain event, no RNG stream, no save, and **no `TacticalBoardViewModel` key change**. Every data source it needs already exists and is pinned: the session already **accumulates every per-action domain event** in `InteractiveCombatSession._event_log` (player + enemy-phase + Scorched-DoT + outcome events, appended from each committed `ActionResult`), exposed via `event_log()`; the board VM **already has an `event_log_summary` top-level key** (one of the pinned 16); and `CombatExplanationLog` (a scene-free `RefCounted` seam) already turns `Array[DomainEvent]` into per-line entries with human-readable summaries + payload details. **Every pinned fingerprint stays byte-identical.**
+
+**Root cause of F6/F7 (load-bearing — read this before Task 1).** It is the SAME class of bug 14.2 fixed for the attack preview. `tactical_board_presenter.gd::render()` (line 262) builds the board VM but **passes no `event_log_summary` option at all** — so the VM's `event_log_summary` slot is permanently `[]`, and `_log_text` (line 424) prints the literal `"Log: %d events"` with `%d == 0` through the whole fight. The live event log is sitting on the bound **session** (`_session.event_log()`), and `render()` never reads it. F6/F7 is not "missing chrome" — the emitted events never reach the render. Fixing the source is Task 1 (the direct analog of 14.2's `preview` fix at render line 270–271).
+
+## Acceptance Criteria
+
+**AC1 — In-combat event log + damage numbers (F6/F7; FR22, FR69)**
+Given a live combat action resolves and emits domain events (`damage_applied`, death, move, telegraph)
+When the events return from the interactive session
+Then an in-combat event log renders **per-action lines and damage numbers** sourced from the already-emitted domain events (FR22, FR69) — the explainability contract gets a live outlet, so the log is **never `"0 events"` during a fight**
+And the log reads the per-action `ActionResult`/`CommandBridgeResult` events (it does **NOT** read a presentation/combat log as source truth, and does **NOT** build the deferred run-level event store).
+
+**AC2 — Move / hit / death animation (F8)**
+Given a move, a hit, or a death occurs
+When it is presented
+Then a basic tween/flash animation plays (units **slide** rather than teleport, hits **flash**, a death **animates the transition to the corpse decal** — F8) so outcomes are legible
+And the animation is **pure presentation mirroring the already-decided domain outcome** — it draws **no gameplay RNG** (any cosmetic jitter uses the `cosmetic` stream only, which cannot affect outcomes) and **never mutates** domain/board/turn state.
+
+**AC3 — Pinned contracts held; testable seams**
+Given the pinned contracts
+When this story lands
+Then the **7 named RNG streams** and **every seed-regression fingerprint** stay byte-identical, the **16-key board VM gate** holds, and **no domain command/event/save change** is made
+And the log/feedback projection logic lives in a `RefCounted` seam with a **pinned key set**.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1 — Source the LIVE event log into the render (AC1; the F6/F7 root fix)**
+  - [ ] In `tactical_board_presenter.gd::render()` (line 262), when a live session is bound (`_session != null`), build an `event_log_summary` option from the session's accumulated domain events and pass it to `TacticalBoardViewModel.from_domain(...)` (the options dict at line 278). Recommended: `var log_entries: Array[Dictionary] = CombatExplanationLog.new().build_entries(_session.event_log()) if _session != null else []`, then add `"event_log_summary": log_entries` to the options dict. This populates the VM's EXISTING `event_log_summary` slot — **the 16 top-level keys are unchanged; only that slot's CONTENTS populate during a live fight** (the exact analog of 14.2 routing the live `preview` into the existing `preview` slot).
+  - [ ] Add the preload `const CombatExplanationLog = preload("res://scripts/tactical/outcomes/combat_explanation_log.gd")` near the other presenter consts (line ~37). `CombatExplanationLog.build_entries(events)` is a **stateless pure transform** (events in → line dicts out, no stored state) — reusing it is NOT "reading a presentation/combat log as source truth"; the **source of truth is `_session.event_log()`** (the per-action `ActionResult` domain events the session accumulated). Do NOT invent a scene-side mutable log, and do NOT read/persist a run-level event store (that stays deferred — see Dev Notes).
+  - [ ] The non-session (non-live) path keeps `event_log_summary` empty (`[]`) — the between-levels / non-live presenter has no fight in progress. Do not fabricate entries there.
+  - [ ] Confirm (in the seam test, Task 2) that with events in the session log the VM's `event_log_summary` is non-empty and each entry carries the pinned `CombatExplanationLog` shape (`entry_id`, `sequence_id`, `event_id`, `actor_id`, `summary`, `details`).
+
+- [ ] **Task 2 — Project the log region (per-action lines + damage numbers) via a RefCounted seam (AC1, AC3)**
+  - [ ] Create the scene-free seam `godot/scripts/ui/view_models/tactical_combat_log_view.gd` (recommended `class_name TacticalCombatLogView`). A static `from_board_vm(board_vm: Dictionary, options: Dictionary = {}) -> Dictionary` that reads ONLY the pinned VM slot `event_log_summary` (+ optionally `outcome`) and returns a **pinned-key** projection, e.g.: `{ lines: Array[String], damage_numbers: Array[Dictionary], entry_count: int, has_entries: bool }`. `lines` are the per-action display lines (reuse each entry's `summary`), tail-limited to the last N (recommended `MAX_LINES = 6`–`8`, newest last) so the small `log_or_outcome` region never overflows. `damage_numbers` are extracted from `DAMAGE_APPLIED` entries (`details.target_entity_id`, `details.final_damage`/`details.amount`, `details.hp_after`, `details.max_hp`) so a "12 → 6 HP" style number is legible. It invents no new domain read, mutates nothing (duplicate before touching), draws ZERO RNG.
+  - [ ] In the presenter, replace `_log_text` (line 424) so the live path renders the projection's `lines` (joined) instead of `"Log: %d events"`. Keep the `outcome`-present branch honest but leave `outcome` OUT of scope — 14.3 does NOT populate the VM `outcome` slot (the run-end victory/death beat + summary is Story 14.5). During a live fight the VM `outcome` is empty, so the log lines show; the terminal `level_victory_reached`/`level_defeat_reached` events naturally appear as the last log line (that IS the in-combat log reflecting the outcome event — desirable, and it fixes the "hard-cut death" F5 boundary only insofar as the log names it; the beat/summary screen is 14.5).
+  - [ ] Add `godot/tests/unit/ui/test_tactical_combat_log_view.gd`: a VM with several `event_log_summary` entries (a move, a hit with damage, a death, a telegraph, a victory) projects `has_entries: true`, the expected `lines` (tail-limited, order preserved), and `damage_numbers` for the hit(s); an empty VM projects `has_entries: false` / `entry_count: 0` / no lines; the pinned key set is asserted (fail-loud if a slot appears/vanishes); zero mutation of the input dict; reads only the pinned VM key(s). Use `str(...)` (never eager `String(nullable)`) in assert messages (14.1 retro test-honesty note).
+
+- [ ] **Task 3 — Move / hit / death tween-flash animation: plan seam + scene-side tweens (AC2, AC3)**
+  - [ ] Create the scene-free plan seam `godot/scripts/ui/view_models/tactical_combat_feedback.gd` (recommended `class_name TacticalCombatFeedback`). A static `plan(event_log_summary: Array, since_sequence_id: int, occupants: Array) -> Dictionary` that reads ONLY the pinned VM `event_log_summary` slot (each entry carries `sequence_id`, `event_id`, `actor_id`, `details`) + the VM `occupants` array (for entity_id → current cell), and returns a **pinned-key** plan of what to animate for the events **newer than `since_sequence_id`**, e.g.: `{ moves: Array[Dictionary], hits: Array[Dictionary], deaths: Array[Dictionary], telegraphs: Array[Dictionary], last_sequence_id: int }` where a move is `{ actor_id, from: {x,y}, to: {x,y} }` (from `entity_moved` `details.from`/`details.to`), a hit is `{ cell: {x,y}, target_id, amount }`, a death is `{ cell: {x,y}, entity_id }`, a telegraph is `{ cell: {x,y} }`. It invents no new domain read, mutates nothing, draws ZERO RNG.
+  - [ ] **Death detection (load-bearing):** there is **no separate `entity_died` event** — a death is a `DAMAGE_APPLIED` entry whose `details.hp_after == 0` (14.1 folds corpse-clear into `_apply_damage_applied` on the 0-HP death). So the seam classifies a `damage_applied` entry as BOTH a hit AND (when `hp_after == 0`) a death. Do NOT look for a nonexistent death event.
+  - [ ] **Cell resolution for hits/deaths (load-bearing):** the `damage_applied` payload carries the victim id + HP but **NOT a cell**. Resolve the victim cell from the VM `occupants` (match `entity_id == details.target_entity_id` → its `position`). A dead victim is STILL an occupant (14.1: `is_dead: true` at its death cell), so the death cell resolves too. If the id is not found in occupants (fog / edge case), emit no animation for it (a safe no-op — never a fabricated cell).
+  - [ ] In the presenter, track `_last_animated_sequence_id: int` (a new presenter field). On `bind_interactive_session(...)` reset it to the max `sequence_id` currently in `_session.event_log()` (0 if empty) — so a fresh bind animates only events emitted AFTER bind, never replaying the fight's already-shown history (mirror how `_last_inspect`/`_last_reject_cue` are reset on bind, line 499–501). In `render()`, after building the VM, call the seam with `(vm.event_log_summary, _last_animated_sequence_id, vm.occupants)`; if the plan is non-empty, run the scene-side tweens and set `_last_animated_sequence_id = plan.last_sequence_id`. A render with no new events (an arm / inspect / cancel / rejected tap adds no events) yields an empty plan → no animation.
+  - [ ] **Scene-side animation (verified by construction — no SceneTree test):** play a **bounded, self-terminating** tween/flash for the plan — a slide of the moved occupant (tween a 0→1 factor and re-issue the board draw ops with the interpolated occupant rect, OR a transient tweened overlay sprite), a flash on each hit cell (a transient `ColorRect`/outline whose alpha tweens down), a floating damage number (a transient `Label` that tweens up + fades), and a death fade into the resting corpse decal (14.1 already draws the `is_dead` decal — the animation is the transition to it). Use a Godot `Tween` (`create_tween()` / `get_tree().create_tween()`) or transient self-freeing overlay nodes — **NOT** a per-frame `_process` redraw loop (see the perf-rule note in Dev Notes). Guard every tween callback with `is_instance_valid(...)`: a fight-ending tap synchronously routes to run-end and detaches the board grid mid-tween (the 13.1 out-of-tree mechanism) — the animation must tolerate the node being freed and must never crash.
+  - [ ] **RNG discipline:** the animation draws **ZERO gameplay RNG**. Strongly prefer a **fully deterministic** tween (no RNG at all — trivially satisfies AC2). If cosmetic jitter is genuinely wanted, it MUST use the `cosmetic` stream (`RngStreamSet.STREAM_COSMETIC`) via the run-level streams only — **never** `randi()`/`randf()`/`RandomNumberGenerator.new()` — and cosmetic draws cannot affect outcomes/rewards/progression. Recommendation: ship deterministic (zero RNG) and avoid threading streams into the presenter at all.
+  - [ ] Add `godot/tests/unit/ui/test_tactical_combat_feedback.gd`: given `event_log_summary` entries (a move `from→to`, a non-lethal hit, a lethal hit `hp_after == 0`, a telegraph) + a matching `occupants` array, and `since_sequence_id` below the batch, the plan surfaces the move (from/to), the hit (cell resolved from occupants + amount), the death (only for the `hp_after == 0` hit, cell resolved), the telegraph (marked cell), and `last_sequence_id` == the batch max; a `since_sequence_id` at/above the batch max yields an empty plan (no re-animation); a `damage_applied` whose `target_entity_id` is absent from `occupants` yields no hit/death entry (safe no-op); the pinned key set is asserted; zero mutation; reads only the pinned VM slots. `str(...)` in assert messages.
+
+- [ ] **Task 4 — Contracts held + suite green (AC3)**
+  - [ ] Confirm the **16-key `TacticalBoardViewModel` gate** holds (`test_tactical_board_view_model.gd:36` asserts the exact sorted key list; line 322 asserts `size() == 16`). `event_log_summary` is an EXISTING key — only its live CONTENTS populate; the log-view and feedback-plan seams are SEPARATE presenter-composed read surfaces (like 14.1's Wait control, 14.2's preview panel + reject cue, 11.4's affinity read, 13.2's reward overlay), **not** new board-VM keys.
+  - [ ] Confirm **no domain/RNG/save/session change**: no new command, no new `DomainEvent` (enum stays 43, `HERO_WAITED` at 42), `RngStreamSet.required_streams()` stays 7, this story draws ZERO RNG, the 23-key `RunSnapshot` gate stays 23, `SCHEMA_VERSION == 1`, the in-node fight stays ephemeral, and **`interactive_combat_session.gd` is not modified** (the session already accumulates + exposes `event_log()`; 14.3 only READS it). Scene wiring verified by construction + the `test_run_flow_scenes_load.gd` compile guardrail — **no SceneTree presenter test**.
+  - [ ] Confirm `test_run_flow_layout_invariance.gd` (line 59–60) stays green: it asserts `event_log_summary` is byte-identical across a phone→desktop profile change. It builds the VM directly with FIXED options (no live session), so both profiles still get `[]` for that slot — the invariance holds. The live population only happens inside the presenter's `render()`, which that test does not exercise.
+  - [ ] Run the FULL headless suite (mandatory command below). Grep the raw output for `SCRIPT ERROR|Parse Error|^FAIL` (the false-PASS guard): exactly the **6 documented stderr negatives** (int64-overflow ×2, malformed-JSON ×3, `invalid_node_type` ×1), ZERO new. Baseline is **198 PASS** (196 after 14.1 + 14.2's two seam tests); this story adds two seam tests → expect **200 PASS**. Confirm every generator/route/finale/combat seed-regression fingerprint is byte-identical (this story touches only `scripts/ui/` presentation — no fingerprint can move). `git diff --check` clean.
+
+## Dev Notes
+
+### The exact data flow (what already exists — DO NOT rebuild)
+
+The in-combat event log is **already fully sourced in the domain** — 14.3 only makes it **visible** and adds the motion. The chain during a live fight:
+
+1. Each committed tap (`interactive_combat_session.gd`: `submit_move` line 270, `tap_attack` line 326, `submit_wait` line 302) drives a command through `TacticalCommandBridge`, and on success **appends the result's events to `_event_log`** (line 289–290 / 351–352 / 319–320). `_resolve_after_committed_action` (line 379) then runs the enemy phase and appends its events (line 397–398), ticks the Scorched DoT (line 431–432), and `_evaluate` appends the terminal outcome event (line 456–457). So after each committed action `_event_log` holds the full ordered batch: **player event(s) → enemy-phase events → DoT events → outcome event**. It is exposed read-only via `event_log() -> Array[DomainEvent]` (line 243).
+2. `render()` re-runs (each interactive seam calls it). **Today it passes no `event_log_summary` option** → the VM slot is `[]` → `_log_text` prints `"Log: 0 events"`. Task 1 fixes that so the slot reflects the live log.
+3. `CombatExplanationLog.build_entries(events)` (`scripts/tactical/outcomes/combat_explanation_log.gd`) sorts by `sequence_id` and maps each event to `{ entry_id, sequence_id, event_id, actor_id, summary, details }` — the `summary` is a ready human-readable line (`"hero took 5 physical damage from ...", "enemy_1 moved from (2,1) to (3,1).", "Victory reached."`), and `details` is a deep copy of the event payload (the damage numbers, from/to cells, marked cell). It already special-cases the Scorched-hazard DoT line (7.5) and every baseline event type; the `_:` fallback names any unmapped event id. This is the pinned line source — the log-view seam just formats/limits it, and the feedback-plan seam reads its `details` for the animation.
+
+### The two RefCounted seams (AC3)
+
+Both are scene-free `RefCounted` view models under `godot/scripts/ui/view_models/`, mirroring the ratified 13.x/14.2 pattern (`TacticalAttackPreviewPanel`, `TacticalRejectionFeedback`, `TacticalBoardTapRouter`): a static projector, a pinned-key output dict, zero mutation, zero RNG, reads-only. The presenter is a thin `Control` that calls the seam and draws/animates its output; the DECISION (what lines, what damage numbers, what to slide/flash/fade, which events are NEW) lives in the seam and is unit-tested. Scenes are verified by construction + the compile guardrail — **no SceneTree presenter test**.
+
+- `TacticalCombatLogView.from_board_vm(vm)` → the log-region display projection (per-action lines + damage numbers, tail-limited). Reads the pinned VM `event_log_summary` slot.
+- `TacticalCombatFeedback.plan(event_log_summary, since_sequence_id, occupants)` → the animation plan for the NEW events (slides, hits, deaths, telegraphs). Reads the pinned VM `event_log_summary` + `occupants` slots. `since_sequence_id` (presenter state) is what makes each event animate exactly once.
+
+### Event → animation mapping (the F8 detail)
+
+- **Move (slide):** `entity_moved` — `details.from` / `details.to` are `{x,y}` cell dicts. Slide the actor's sprite from → to instead of teleporting.
+- **Hit (flash + damage number):** `damage_applied` — `details.target_entity_id`, `details.final_damage` (== `amount`), `details.hp_before`/`details.hp_after`/`details.max_hp`. The payload has **no cell**; resolve the victim cell from the VM `occupants` (id → `position`). Flash the cell + float the number.
+- **Death (fade to corpse decal):** a `damage_applied` with `details.hp_after == 0` (there is NO separate death event; corpse-clear fires in `_apply_damage_applied`). The victim is still an `is_dead` occupant at its death cell (14.1). Animate the fade into the corpse decal 14.1 already draws.
+- **Telegraph (pulse):** `tile_marked` — `details.marked_cell` `{x,y}` (the Ash Seer mark); `marked_tile_detonated` — `details.marked_cell` + `details.outcome`. A basic pulse on the marked cell is enough; a full telegraph-countdown VFX is out of scope.
+- **Outcome (log only):** `level_victory_reached` / `level_defeat_reached` — render the `summary` line; no per-cell animation needed (the run-end beat is 14.5).
+
+### The perf-rule tension (READ before writing the tween — AC2)
+
+The board grid (`tactical_board_grid.gd`) is a THIN `Control` that draws a **precomputed op list ONCE per `render()` via `queue_redraw()`** — its header states the project-context perf rule verbatim: *"ONE draw pass per render() via queue_redraw() — never per-frame in `_process`."* An animation inherently spans multiple frames, so reconcile it deliberately:
+
+- **DO** use a bounded, self-terminating Godot `Tween` (event-triggered, stops when the motion completes) or transient self-freeing overlay nodes (a damage-number `Label`, a flash `ColorRect`). A `Tween` is not a manual `_process` draw loop; after it finishes the board returns to the steady one-draw-per-render state.
+- **DO NOT** add a `_process`/`_physics_process` per-frame redraw loop, and do not leave a tween running in steady state.
+- **Slide options:** either (a) tween a 0→1 factor and re-issue `_build_board_draw_ops` with the interpolated occupant rect (reuses the existing draw path; redraws the small grid only during the short slide), or (b) a transient tweened overlay sprite on top of the grid. Both are acceptable; (b) keeps the op-list draw untouched.
+- **Detach safety:** a fight-ending tap synchronously navigates to run-end and frees the grid mid-tween (the 13.1 out-of-tree guard). Guard every tween step/finished callback with `is_instance_valid(...)`. It is acceptable for v0 that the FINAL enemy's death animation is cut short by the immediate route to run-end — the corpse decal + the 14.5 run-end beat carry that moment (note this as a known basic-tier limitation).
+
+### The run-level event STORE stays deferred (deferred-work.md overlap — the ONE that applies)
+
+`deferred-work.md` carries a long-standing, repeatedly re-recorded deferral for **the run-level event STORE** (origin 8.2 AC2 / 11.5 / 11.6 / 12.2): a persisted/threaded run-level event log that would populate `RunSummary`'s passives/loot/discovery lists + `outcome_or_cause`. **14.3 does NOT build it and does NOT depend on it.** The in-combat log 14.3 renders is the **ephemeral** per-fight log the session already holds (`InteractiveCombatSession._event_log`, discarded when the node fight ends) — it adds **no** `RunState`/`RunSnapshot` event-log field, keeps the 23-key gate at 23, and does not touch `RunSummary`. The two conventions from that ledger that bind 14.3 directly:
+
+- **"Do NOT read a presentation/combat log as source truth" (8.2 AC2, restated at deferred-work.md:309/779).** 14.3 honors it: the SOURCE is `session.event_log()` (the emitted domain events); `CombatExplanationLog` is only a stateless event→line transform, not a stored authority.
+- **The run-end summary keys off `phase`, not `outcome_or_cause` (11.5 review defer).** That is **Story 14.5's** concern — 14.3 does not render the run-summary screen or the run-end beat; it only shows the in-fight log (whose last line may name the terminal outcome event).
+
+No other deferred-work item overlaps 14.3 (the full-backpack escape hatch → 14.7; reward-overlay geometry + passive-confirm `display_name` → 14.11; run-summary outcome label / F-2 → 14.5; the inspect-tap feedback was RESOLVED by 13.2 and its region must not be clobbered — see below).
+
+### Epic-14 constraints inherited (retro-notes/epic-14.md + the sprint change)
+
+- **THE CORRECT PRESENTER FILE.** The live tactical board surface is **`godot/scripts/ui/presenters/tactical_board_presenter.gd`** — the scene-root script of `godot/scenes/game/tactical_board.tscn`, which `gameplay_shell_presenter.gd` instances and drives via `bind_interactive_session(...)` + `render()`. The retro-notes flag that 14.1's "Files to touch" table named the WRONG files (`gameplay_shell_presenter.gd` / `tactical_board_grid.gd` / `gameplay_shell.tscn`); the Wait control, corpse decal, 14.2 preview panel, and reject cue all correctly landed in `tactical_board_presenter.gd`. **14.3's event-log render, log-view seam wiring, and animation all belong in `tactical_board_presenter.gd`** (the log region is `log_or_outcome`; the animation hooks the `_board_grid` it owns). Do not add a parallel presenter, and do not touch `gameplay_shell_presenter.gd` for the log/animation.
+- **This story re-pins NOTHING.** 14.1 was the only Epic-14 story that may intentionally re-pin a fingerprint (its justified combat-replay re-pin). 14.3 is presentation-only over `scripts/ui/` — every generator/route/finale/combat seed-regression fingerprint is byte-identical, and no VM/RNG/save gate moves. A moved fingerprint here is a bug.
+- **A fresh corpse tap reads as INSPECT, not attack** (14.2 as-built, retro-notes): the 13.1 tap router routes a tap on a corpse cell (dead occupant) to `occupant_inspect`. Not a 14.3 constraint, but relevant to the animation: the death→corpse transition is driven by the emitted `damage_applied(hp_after==0)` event, not by a tap on the corpse.
+- **Do NOT use eager `String(nullable)` in assert messages** (14.1 retro: it crashes on a null read and silently masks the real failure — the exact bug that hid the 512 winnability regression). Use `str(...)`.
+- **Keep the false-PASS grep guard standing** (Epic-13 retro P3): grep the raw runner output for `SCRIPT ERROR|Parse Error|^FAIL`; never trust the summary PASS line alone. Exactly six documented stderr negatives are expected; ZERO new.
+- **Art-import discipline** (13.1): 14.3 adds no new art (the flash/slide/number are drawn from shapes/labels + the existing sprites/decal). If any texture IS introduced, import it and commit its `*.png.import` sidecar in the same change, load it via a guarded `load()` (never `preload`), and retain the committed `*.gd.uid` sidecars for the two new `.gd` seams (generate via `--headless --import`).
+- **Difficulty is a hard non-goal** — this story changes no enemy stat / HP / damage / reward / RNG / run-length number.
+
+### Anti-patterns to avoid (this story specifically)
+
+- **Do NOT modify `interactive_combat_session.gd` (or any domain/command/event file).** The session already accumulates + exposes the log; 14.3 only READS it. A domain edit here would be out of scope and could move a fingerprint.
+- **Do NOT add a 17th top-level `TacticalBoardViewModel` key** for the log or the animation. `event_log_summary` is an EXISTING key; the log-view + feedback-plan are SEPARATE presenter-composed surfaces. The 16-key gate must stay 16.
+- **Do NOT build or read the run-level event store**, and do NOT add a `RunState`/`RunSnapshot` event-log field. The in-combat log is ephemeral (the session's live log). The run-summary passives/loot lists + `outcome_or_cause` stay deferred.
+- **Do NOT read a presentation/combat log as source truth.** Source from `session.event_log()` (the domain events). `CombatExplanationLog` is a pure transform, held nowhere as state.
+- **Do NOT clobber the inspect region** (13.2's tapped-cell facts, `_inspect_base_text`) **or the preview region** (14.2's armed panel + the transient reject message line). The event log has its OWN region: `log_or_outcome`.
+- **Do NOT drive the animation from `_process` per-frame**, and do not leave a steady-state redraw loop running. Use a bounded, self-terminating tween / transient overlay; guard against the grid being freed mid-tween.
+- **Do NOT draw gameplay RNG** for the animation. Prefer zero RNG (deterministic). Cosmetic jitter, if any, uses the `cosmetic` stream only — never `randi()`/`randf()`/a fresh RNG.
+- **Do NOT re-animate old events.** Track `_last_animated_sequence_id` (reset on bind) so each event animates once; an arm/inspect/cancel/rejected render adds no events → no animation.
+- **Do NOT expand scope into F5/F4** (the run-end death/victory beat + run-summary screen) — that is Story 14.5. 14.3 stops at the in-fight log + the move/hit/death tween. The `outcome` VM slot stays empty here.
+
+## Project Structure Notes
+
+- Both new seams → `godot/scripts/ui/view_models/` (with `tactical_attack_preview_panel.gd`, `tactical_rejection_feedback.gd`, `tactical_board_tap_router.gd`). Presenter change → `godot/scripts/ui/presenters/tactical_board_presenter.gd`. Tests → `godot/tests/unit/ui/`. The reused transform `combat_explanation_log.gd` lives under `godot/scripts/tactical/outcomes/` (a pure `RefCounted`, scene-free).
+- Assertable decision logic (the log-line/damage-number projection, the event→animation-intent plan, the reject-vs-benign of "which events are new") stays in the scene-free `RefCounted` seams. Scene wiring (the region text, the tween/flash/slide, the transient overlay nodes) is verified by construction + `test_run_flow_scenes_load.gd` — no SceneTree presenter test.
+- No new autoload. `scripts/rules/conditions/` stays empty; `scripts/rules/operations/` stays one file. No domain/session/command/event/save file is touched.
+
+## Project Context Rules
+
+Extracted from `project-context.md` (canonical rulebook; Epic-13 as-built rollup + 14.1 + 14.2):
+
+- **Domain owns tactical truth; presentation mirrors it.** Scenes/`Control`/audio/VFX/animation own no authoritative state. The animation is pure presentation mirroring the already-decided domain outcome — it mutates no domain/board/turn state and decides no gameplay result.
+- **Command idiom (unchanged here):** 14.3 adds NO command; it only READS the events the existing commands already emitted (via the session's accumulated `event_log()`).
+- **Named RNG only:** `RngStreamSet.required_streams()` == 7 (`map, level, combat, loot, rewards, events, cosmetic`). This story draws ZERO gameplay RNG. Any cosmetic-only jitter uses the `cosmetic` stream and cannot affect outcomes/rewards/progression — never `randi()`/`randf()`/a fresh RNG.
+- **Save gates:** the 23-key `RunSnapshot` gate stays 23; `SCHEMA_VERSION == 1`; the in-node fight is ephemeral (not saved). No save change; no run-level event store built.
+- **`TacticalBoardViewModel.to_dictionary()` has an EXACT 16-key contract** pinned by `test_tactical_board_view_model.gd` (the sorted key list at :36; `size() == 16` at :322). 14.3 adds NO key — `event_log_summary` is an existing key whose live CONTENTS now populate; the log-view + feedback-plan are separate presenter-composed surfaces.
+- **Difficulty is a hard non-goal** — no knob that scales enemy stats/HP/damage/rewards/RNG/run length.
+- **Every generator/route/finale/combat seed-regression fingerprint stays byte-identical** (14.3 touches only `scripts/ui/`; no fingerprint can move).
+- **Assertable logic lives in scene-free `RefCounted` seams** (no SceneTree presenter tests — verify by construction + the compile guardrail). No new autoload. Headless suite stays green (198 PASS baseline after 14.1+14.2; false-PASS grep `SCRIPT ERROR|Parse Error|^FAIL` clean beyond the 6 documented negatives).
+- **NFR9 (accessibility):** every cue is color-independent and audio-absent-equivalent. The event log is text (an inherently non-color channel); the damage number is text; the hit flash / slide / death fade are SHAPE/POSITION/MOTION channels (never hue-only) — a hit's legibility survives with color removed via the log line + the number, and with audio off (there is no audio dependency).
+
+### Mandatory test command (must pass before this story moves to review/done)
+
+```
+godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10
+```
+
+`godot` is not on the Bash/`where` PATH; run via PowerShell (it resolves as `C:\Users\Rasmus\bin\godot.cmd`, or the standalone `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe`). Apply the false-PASS grep guard on the raw output. The runner auto-discovers `test_*.gd` under `res://tests/unit` and `res://tests/integration` only.
+
+### References
+
+- `_bmad-output/planning-artifacts/epics.md#Epic 14: Playable & Presentable` (Story 14.3 ACs, body lines 3023–3044; Epic List entry lines 521–527; Band-1 demarcation line 2971).
+- `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16.md` — F6/F7 (dead event-log/feedback: "Log: 0 events", no damage numbers, no animation) + F8 death-anim (lines 20–22); the 14.3 finding→scope map row (line 133: "In-combat event log + damage numbers rendered from the already-emitted per-action domain events + tween/flash ... animation is cosmetic (cosmetic stream only if any RNG); no gameplay RNG; fingerprints byte-identical; does not build the deferred run-level event store"); FRs FR22/FR24/FR69.
+- `playtest-sessions/agent-playtest-2026-07-16.md` — the source F6/F7/F8 defects (the two runs that showed "Log: 0 events" + no hit feedback).
+- `_bmad-output/auto-gds/retro-notes/epic-14.md` — the "live board surface is `tactical_board_presenter.gd`, not `gameplay_shell_presenter.gd`/`tactical_board_grid.gd`" precision point; the `String(nullable)`-in-assert masking risk; the corpse-tap→inspect router note.
+- `_bmad-output/implementation-artifacts/14-2-attack-preview-and-rejected-command-feedback.md` — the ratified presentation-only Epic-14 story shape; the F2 "render() sources the live slot from the bound session" fix that 14.3's Task 1 mirrors for `event_log_summary`; the RefCounted-seam + pinned-key-set pattern; the separate-read-surface region discipline (do not clobber inspect/preview).
+- `_bmad-output/implementation-artifacts/14-1-corpse-clearing-and-wait-turn.md` — corpse-clear folds into `_apply_damage_applied` on `hp_after == 0` (the death signal the animation reads); the `is_dead` corpse decal the death animation transitions into; the reset-on-bind pattern for presenter feedback state.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the run-level event STORE / `RunSummary.outcome_or_cause` deferral (origin 8.2 AC2 / 11.5 / 11.6 / 12.2): 14.3 must NOT build it, reads the ephemeral session log, adds no `RunState`/`RunSnapshot` field, and honors "do NOT read a presentation/combat log as source truth."
+- Source files (read before implementing):
+  - `godot/scripts/ui/presenters/tactical_board_presenter.gd` — `render()` (line 262; the options dict at 278–283 is where `event_log_summary` is injected — mirror the 14.2 `preview` option at 270–271/280); `_log_text` (424, to be replaced); `_set_region_text("log_or_outcome", ...)` (309); `_render_board_grid` (690) / `_build_board_draw_ops` (738; the occupant + corpse-decal draw the slide/flash/fade hook into); `bind_interactive_session` (489; reset `_last_animated_sequence_id` here beside `_last_inspect`/`_last_reject_cue` at 499–501); the `_board_grid` field (174) + its build (220–225); the consts block (37).
+  - `godot/scripts/run/interactive_combat_session.gd` — `event_log()` (243, the read source); `_event_log` accumulation (289–290, 319–320, 351–352, 397–398, 431–432, 456–457); READ-ONLY — do not modify.
+  - `godot/scripts/tactical/outcomes/combat_explanation_log.gd` — `build_entries(events)` (6) → the pinned entry shape (`_entry`, 93–102): `entry_id`/`sequence_id`/`event_id`/`actor_id`/`summary`/`details`.
+  - `godot/scripts/core/events/domain_event.gd` — event payloads: `entity_moved` (845; `from`/`to`/`movement_cost`/`movement_budget`), `damage_applied` (898; `target_entity_id`/`amount`/`hp_before`/`hp_after`/`max_hp`/`final_damage`), `tile_marked`/`marked_tile_detonated` ids (63–64), `level_victory_reached`/`level_defeat_reached` (1040/1058).
+  - `godot/scripts/ui/view_models/tactical_board_view_model.gd` — `to_dictionary()` 16 keys (33–51, incl. `event_log_summary` at 48, `occupants` at 38); `from_domain` options plumbing (`event_log_summary` via `_dictionary_array_from_options`, 80).
+  - `godot/scripts/ui/presenters/tactical_board_grid.gd` — the thin op-list draw `Control` (`set_ops`/`clear_ops`/`_draw`), the "ONE draw pass per render, never per-frame in `_process`" perf rule (header lines 10–12), and the `_gui_input` `accept_event()`-before-emit out-of-tree note (56–66).
+  - `godot/scripts/core/state/rng_stream_set.gd` — `STREAM_COSMETIC` (12) + `required_streams()` == 7.
+  - `godot/tests/unit/ui/test_tactical_board_view_model.gd` (16-key gate, :36/:322); `godot/tests/unit/ui/test_run_flow_layout_invariance.gd` (`event_log_summary` profile-invariance, :59–60); `godot/tests/unit/ui/test_tactical_attack_preview_panel.gd` + `test_tactical_rejection_feedback.gd` (the seam-test shape to mirror); `godot/tests/unit/ui/test_run_flow_scenes_load.gd` (compile guardrail).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+_TBD by dev-story_
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+### Review Findings
+
+## Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-07-17 | 0.1 | Story context created (gds-create-story). Presentation-only F6/F7 event-log + F8 hit/death animation over `scripts/ui/`; two RefCounted seams (`TacticalCombatLogView`, `TacticalCombatFeedback`) with pinned key sets; root fix = source `event_log_summary` from the bound session in `render()` (the 14.2 `preview` analog); reads the ephemeral session log, builds NO run-level event store; every fingerprint byte-identical, 16-key gate held, zero domain/RNG/save change. Status → ready-for-dev. | Claude Opus 4.8 (gds-create-story) |
