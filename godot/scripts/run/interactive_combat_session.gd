@@ -67,6 +67,7 @@ const TacticalAttackCommitFlow = preload("res://scripts/ui/view_models/tactical_
 const TacticalCommandBridge = preload("res://scripts/ui/command_bridge/tactical_command_bridge.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
+const WaitCommand = preload("res://scripts/core/commands/wait_command.gd")
 const WeaponDefinition = preload("res://scripts/content/definitions/weapon_definition.gd")
 const WeaponRepository = preload("res://scripts/content/repositories/weapon_repository.gd")
 
@@ -289,6 +290,29 @@ func submit_move(target_cell: Vector2i, movement_budget: int = -1) -> ActionResu
 		_event_log.append(event)
 	return _resolve_after_committed_action(move_result)
 
+
+# Submit a WAIT tap (Story 14.1, AC2): commit ONE WaitCommand for the hero — the F1 turn-advance BACKSTOP, always
+# available even when the hero has no legal move/attack (boxed in), or by choice. A committed wait advances the turn,
+# so the enemy phase runs via the SAME _resolve_after_committed_action seam (the wait result carries advances_turn:
+# true — EnemyTurnResolver.resolve_after_player_action reads it). An invalid wait (not begun / terminal / not the
+# player's turn / dead hero) FAILS CLOSED: it surfaces the command's own reason, mutates nothing, and does NOT run the
+# enemy phase. Zero RNG. Returns the ActionResult so the shell/test reads the outcome.
+func submit_wait(wait_reason: StringName = WaitCommand.REASON_VOLUNTARY) -> ActionResult:
+	if not _begun:
+		return _error(&"session_not_begun")
+	if is_terminal():
+		return _error(&"session_terminal")
+	# A pending attack preview is cleared when the player commits a wait (the presentation-flow reset).
+	_commit_flow.clear_for_mode_switch(&"wait")
+
+	var command: WaitCommand = WaitCommand.new(HERO_ID, wait_reason)
+	var wait_result: ActionResult = command.execute(_context)
+	if wait_result.is_error():
+		# Fail-closed: the command's own reason surfaces; ZERO mutation, no turn advance, no enemy phase.
+		return wait_result
+	for event: DomainEvent in wait_result.events:
+		_event_log.append(event)
+	return _resolve_after_committed_action(wait_result)
 
 # Submit an ATTACK tap through the TWO-STEP commit flow: the first tap ARMS attack_preview; a second tap on the SAME
 # target/weapon/actor CONFIRMS (executes through the bridge). On a CONFIRMED-and-EXECUTED attack the enemy phase runs.

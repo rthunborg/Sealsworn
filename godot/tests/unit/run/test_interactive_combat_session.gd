@@ -63,6 +63,10 @@ func run() -> Dictionary:
 	_loadout_shield_support_engages_the_shield_block_combat_roll_through_the_tap_loop()
 	_null_loadout_support_keeps_the_tap_attack_byte_identical()
 	_begin_rejects_a_malformed_loadout_support()
+	# Story 14.1 — the Wait/pass-turn backstop + corpse-walkability.
+	_wait_tap_advances_the_turn_and_runs_the_enemy_phase()
+	_corpse_cell_becomes_walkable_mid_fight()
+	_wait_is_rejected_before_begin_and_after_terminal()
 	return result()
 
 
@@ -272,6 +276,90 @@ func _begin_rejects_a_malformed_loadout_support() -> void:
 	assert_true(begin.is_error(), "A malformed loadout support must be rejected up front (fail-closed).")
 	assert_equal(begin.error_code, &"invalid_loadout_support", "A malformed support uses the stable invalid_loadout_support code.")
 
+
+# ---- Story 14.1: the Wait/pass-turn backstop + corpse-walkability -------------------------------
+
+# A wait tap commits (advances_turn) and runs the enemy phase (the turn number climbs) — the F1 backstop.
+func _wait_tap_advances_the_turn_and_runs_the_enemy_phase() -> void:
+	var generation: GenerationResult = _generate_small_combat(VICTORY_SEED)
+	var session: InteractiveCombatSession = InteractiveCombatSession.new()
+	assert_true(session.begin(generation.payload.get("board", {}), generation.payload.get("entrance", {}), RngStreamSet.new(VICTORY_SEED)).succeeded, "Setup: the session begins.")
+	var turn_before: int = session.turn_state().turn_number
+	var result_value: ActionResult = session.submit_wait()
+	assert_true(result_value.succeeded, "A wait tap commits: %s" % result_value.metadata)
+	assert_equal(result_value.metadata.get("advances_turn"), true, "A wait advances the turn (the enemy phase runs).")
+	assert_true(session.turn_state().turn_number > turn_before, "A committed wait runs the enemy phase (EnemyTurnResolver advances the turn number).")
+	assert_equal(session.turn_state().phase, session.turn_state().Phase.PLAYER_PLANNING, "After the enemy phase the turn returns to PLAYER_PLANNING.")
+	assert_true(_has_hero_waited(session.event_log()), "The wait tap appends a hero_waited event to the log.")
+
+
+# The F1 CORE: a hero boxed in by walls + a live enemy can act again once the enemy dies — the vacated corpse cell
+# becomes a legal move. A second enemy is walled off so the fight continues (this is mid-fight, not a victory).
+func _corpse_cell_becomes_walkable_mid_fight() -> void:
+	var session: InteractiveCombatSession = InteractiveCombatSession.new()
+	assert_true(session.begin(_boxed_by_corpse_snapshot(), {"x": 1, "y": 1}, RngStreamSet.new(7)).succeeded, "Setup: the boxed-corpse session begins.")
+	var corpse_cell: Vector2i = Vector2i(2, 1)
+	assert_false(session.board().can_occupy(corpse_cell, HERO_ID).succeeded, "Before the kill the live enemy blocks the hero's only non-wall neighbor (the boxed-in F1 state).")
+	# Kill the adjacent enemy (arm + commit). The enemy dies; the walled-off second enemy keeps the fight going.
+	session.tap_attack(corpse_cell)
+	session.tap_attack(corpse_cell)
+	assert_false(session.is_terminal(), "A walled-off second enemy keeps the fight going after the first kill.")
+	assert_true(session.board().can_occupy(corpse_cell, HERO_ID).succeeded, "The death cell becomes walkable after corpse-clearing (the F1 fix).")
+	assert_equal(session.board().occupant_at(corpse_cell), &"", "The corpse cell no longer holds a blocking occupant.")
+	var corpse: TacticalEntityState = session.board().get_entity(&"enemy_a")
+	assert_true(corpse != null and corpse.is_dead(), "The dead enemy STAYS on the board (a corpse, hp 0).")
+	var move_result: ActionResult = session.submit_move(corpse_cell)
+	assert_true(move_result.succeeded, "The boxed-in hero can now move onto the vacated corpse cell (a previously-illegal move is legal): %s" % move_result.metadata)
+	assert_equal(session.board().get_entity(HERO_ID).position, corpse_cell, "The hero now stands on the former corpse cell (co-located with the corpse).")
+
+
+# A wait fails closed before begin (session_not_begun) and after a terminal outcome (session_terminal) — zero mutation.
+func _wait_is_rejected_before_begin_and_after_terminal() -> void:
+	var unbegun: InteractiveCombatSession = InteractiveCombatSession.new()
+	var before_begin: ActionResult = unbegun.submit_wait()
+	assert_true(before_begin.is_error(), "A wait before begin is rejected.")
+	assert_equal(before_begin.error_code, &"session_not_begun", "A pre-begin wait uses the session_not_begun code.")
+	var duel: InteractiveCombatSession = InteractiveCombatSession.new()
+	assert_true(duel.begin(_adjacent_duel_snapshot(), {"x": 1, "y": 1}, RngStreamSet.new(1)).succeeded, "Setup: the duel begins.")
+	duel.tap_attack(Vector2i(2, 1))
+	duel.tap_attack(Vector2i(2, 1))
+	assert_true(duel.is_terminal() and duel.is_victory(), "Setup: the duel is won (a terminal outcome).")
+	var after_terminal: ActionResult = duel.submit_wait()
+	assert_true(after_terminal.is_error(), "A wait after a terminal outcome is rejected.")
+	assert_equal(after_terminal.error_code, &"session_terminal", "A post-terminal wait uses the session_terminal code.")
+
+
+# A 6x3 board where the hero (entrance 1,1) is boxed by walls + a 1-HP enemy_a at (2,1); a second enemy_b at (4,1) is
+# walled off (divider wall at (3,1)) so it cannot reach the hero and the fight continues after the first kill.
+func _boxed_by_corpse_snapshot() -> Dictionary:
+	var width: int = 6
+	var height: int = 3
+	var enemy_a: Dictionary = {"entity_id": "enemy_a", "entity_type": "enemy", "faction": "labyrinth", "position": {"x": 2, "y": 1}, "current_hp": 1, "max_hp": 1, "blocks_movement": true, "definition_id": "iron_cultist"}
+	var enemy_b: Dictionary = {"entity_id": "enemy_b", "entity_type": "enemy", "faction": "labyrinth", "position": {"x": 4, "y": 1}, "current_hp": 10, "max_hp": 10, "blocks_movement": true, "definition_id": "iron_cultist"}
+	var cells: Array[Dictionary] = []
+	for y: int in range(height):
+		for x: int in range(width):
+			var terrain: int = BoardCell.Terrain.FLOOR
+			if x == 0 or y == 0 or x == width - 1 or y == height - 1:
+				terrain = BoardCell.Terrain.WALL
+			elif x == 3 and y == 1:
+				terrain = BoardCell.Terrain.WALL
+			elif x == 1 and y == 1:
+				terrain = BoardCell.Terrain.ENTRANCE
+			var occupant: String = ""
+			if x == 2 and y == 1:
+				occupant = "enemy_a"
+			elif x == 4 and y == 1:
+				occupant = "enemy_b"
+			cells.append({"position": {"x": x, "y": y}, "terrain": terrain, "occupant_id": occupant, "explored": true, "visible": true})
+	return {"width": width, "height": height, "next_sequence_id": 1, "cells": cells, "entities": [enemy_a, enemy_b]}
+
+
+func _has_hero_waited(events: Array) -> bool:
+	for event_value: Variant in events:
+		if event_value is DomainEvent and (event_value as DomainEvent).event_type == DomainEvent.Type.HERO_WAITED:
+			return true
+	return false
 
 # ---- helpers -------------------------------------------------------------------------------------
 

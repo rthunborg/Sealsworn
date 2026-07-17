@@ -42,6 +42,9 @@ func run() -> Dictionary:
 	_malformed_cells_container_is_rejected_without_mutation()
 	_malformed_top_level_snapshot_fields_are_rejected()
 	_snapshot_occupant_consistency_is_strict()
+	_dead_blocking_entity_releases_its_cell_occupancy()
+	_hero_waited_event_validates_and_applies_as_noop()
+	_snapshot_tolerates_a_nonblocking_corpse_sharing_a_living_occupants_cell()
 	return result()
 
 
@@ -1255,3 +1258,74 @@ func _assert_invalid_board_snapshot(snapshot: Dictionary, expected_error_code: S
 	assert_true(result_value.is_error(), message)
 	assert_equal(result_value.error_code, expected_error_code, message)
 	assert_equal(source_board.to_snapshot(), before, "Rejected board imports must not mutate an existing board object.")
+
+
+# Story 14.1 (AC1/AC4) — corpse-clearing: a dead BLOCKING entity releases its cell occupancy (F1) but STAYS in
+# _entities (dead, at its position) for the victory payload + the corpse-decal read; blocks_movement flips false so
+# the occupancy invariant stays consistent and the snapshot round-trips.
+func _dead_blocking_entity_releases_its_cell_occupancy() -> void:
+	var board: BoardState = BoardFixtureFactory.attack_command_kill_board()
+	var enemy_cell: Vector2i = Vector2i(2, 1)
+	assert_equal(board.occupant_at(enemy_cell), &"enemy_1", "Setup: the living enemy occupies its cell.")
+	var damage: DomainEvent = DomainEvent.damage_applied(board.next_sequence_id(), &"hero", &"enemy_1", 3, 3, 0, 10, {})
+	var apply: ActionResult = board.apply_events([damage])
+	assert_true(apply.succeeded, "The lethal damage event applies.")
+	assert_equal(board.occupant_at(enemy_cell), &"", "A dead blocking entity clears its cell occupant_id (the F1 corpse-clear).")
+	assert_true(board.can_occupy(enemy_cell, &"hero").succeeded, "The death cell becomes occupiable (walkable) for a mover.")
+	var corpse: TacticalEntityState = board.get_entity(&"enemy_1")
+	assert_true(corpse != null, "The dead entity is NOT removed from the board.")
+	assert_true(corpse.is_dead(), "The corpse has 0 HP.")
+	assert_equal(corpse.position, enemy_cell, "The corpse stays at its death cell (for the decal + victory payload).")
+	assert_false(corpse.blocks_movement, "The corpse no longer blocks movement (the _cells/_entities occupancy invariant stays consistent).")
+	var round_trip: ActionResult = BoardState.try_from_snapshot(board.to_snapshot())
+	assert_true(round_trip.succeeded, "A board with a released corpse round-trips through the strict snapshot validator: %s" % round_trip.error_code)
+
+
+# Story 14.1 (AC2/AC4) — the hero_waited event is board-applied as a NO-OP that advances the sequence id (so a wait
+# never collides sequence ids with the following enemy-phase events), and a malformed hero_waited is rejected.
+func _hero_waited_event_validates_and_applies_as_noop() -> void:
+	var board: BoardState = BoardFixtureFactory.edge_corner_movement()
+	var sequence_before: int = board.next_sequence_id()
+	var entities_before: Variant = board.to_snapshot().get("entities")
+	var wait_event: DomainEvent = DomainEvent.hero_waited(board.next_sequence_id(), &"hero", &"no_legal_action")
+	var apply: ActionResult = board.apply_events([wait_event])
+	assert_true(apply.succeeded, "A valid hero_waited event applies.")
+	assert_equal(board.next_sequence_id(), sequence_before + 1, "hero_waited advances the board sequence id (no enemy-phase collision).")
+	assert_equal(board.to_snapshot().get("entities"), entities_before, "hero_waited is a no-op apply (no entity mutation).")
+	var empty_actor: ActionResult = board.apply_events([DomainEvent.hero_waited(board.next_sequence_id(), &"", &"voluntary")])
+	assert_true(empty_actor.is_error(), "A hero_waited with an empty actor is rejected.")
+	var unknown_actor: ActionResult = board.apply_events([DomainEvent.hero_waited(board.next_sequence_id(), &"ghost", &"voluntary")])
+	assert_true(unknown_actor.is_error(), "A hero_waited for an unknown actor is rejected.")
+
+
+# Story 14.1 — the snapshot round-trip tolerates a NON-BLOCKING corpse sharing a cell with a living occupant (a hero
+# that moved onto a vacated corpse cell), independent of entity-id storage order. A BLOCKING double-occupancy is still
+# rejected (the tolerance is non-blocking-only).
+func _snapshot_tolerates_a_nonblocking_corpse_sharing_a_living_occupants_cell() -> void:
+	var snapshot: Dictionary = {
+		"width": 3, "height": 3, "next_sequence_id": 5,
+		"cells": _floor_cells_with_occupant(3, 3, Vector2i(1, 1), "hero"),
+		"entities": [
+			{"entity_id": "hero", "entity_type": "player", "faction": "player", "position": {"x": 1, "y": 1}, "current_hp": 18, "max_hp": 18, "blocks_movement": true, "definition_id": ""},
+			{"entity_id": "zzz_corpse", "entity_type": "enemy", "faction": "enemy", "position": {"x": 1, "y": 1}, "current_hp": 0, "max_hp": 10, "blocks_movement": false, "definition_id": "iron_cultist"}
+		]
+	}
+	var result_value: ActionResult = BoardState.try_from_snapshot(snapshot)
+	assert_true(result_value.succeeded, "A non-blocking corpse may co-locate with a living occupant (the 14.1 setup tolerance): %s" % result_value.error_code)
+	var board: BoardState = result_value.metadata.get("board")
+	assert_equal(board.occupant_at(Vector2i(1, 1)), &"hero", "The living hero owns the shared cell (the corpse claims no occupancy).")
+	assert_true(board.get_entity(&"zzz_corpse").is_dead(), "The co-located corpse is present and dead.")
+	var blocking_snapshot: Dictionary = snapshot.duplicate(true)
+	(blocking_snapshot.get("entities")[1] as Dictionary)["blocks_movement"] = true
+	(blocking_snapshot.get("entities")[1] as Dictionary)["current_hp"] = 10
+	var blocked: ActionResult = BoardState.try_from_snapshot(blocking_snapshot)
+	assert_true(blocked.is_error(), "A BLOCKING entity sharing a cell is still rejected (the co-location tolerance is non-blocking-only).")
+
+
+func _floor_cells_with_occupant(w: int, h: int, occ_cell: Vector2i, occ_id: String) -> Array:
+	var cells: Array = []
+	for y: int in range(h):
+		for x: int in range(w):
+			var occ: String = occ_id if Vector2i(x, y) == occ_cell else ""
+			cells.append({"position": {"x": x, "y": y}, "terrain": 0, "occupant_id": occ, "explored": true, "visible": true})
+	return cells

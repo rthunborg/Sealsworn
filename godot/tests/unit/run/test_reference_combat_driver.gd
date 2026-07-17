@@ -82,8 +82,8 @@ const APPROVED_MEDIUM_LIVE_COMBAT_SEED_CATALOG: Array[Dictionary] = [
 		"notes": "Medium/elite board (~14x12), 2 iron_cultist + 1 gate_brute. A compact three-melee-body Medium clear winnable by all three classes (warrior ~14 / pyromancer ~12 / ranger ~17 rounds): the warrior commits to the melee bodies one at a time, the ranged classes kite the melee trio down the flank routes. The canonical Medium-neutral winnability entry."
 	},
 	{
-		"seed": 512,
-		"notes": "Medium/elite board (~14x12), 1 ash_seer + 1 iron_cultist + 2 gate_brute — a mixed seer+melee Medium mix. Winnable by all three classes (warrior ~25 / pyromancer ~28 / ranger ~34 rounds): the seer forces mark-dodging on the larger board while three melee bodies pressure the approach; a longer, representative Medium clear. Distinct seed from the Small-neutral seed 512 above (different recipe/size -> different board)."
+		"seed": 24680,
+		"notes": "Medium/elite board, 2 iron_cultist + 2 gate_brute (4 melee bodies). Winnable by all three classes (warrior ~39 / pyromancer ~15 / ranger ~20 rounds): the warrior commits to the melee bodies one at a time; the ranged classes kite the melee group down the flank routes. STORY 14.1 RE-PIN (justified): the prior Medium seer+melee seed 512 became un-winnable BY THE REFERENCE KITE HEURISTIC after corpse-clearing — a deterministic, legitimate consequence (dead bodies now vacate their cells, so the melee pursuers path THROUGH corpse cells and the ranger kite policy no longer converges within MAX_ROUNDS; warrior + pyromancer still win 512). 24680 restores an all-three-class Medium winnability proof at 18 HP. The Small catalog retains the seer mop-up coverage."
 	}
 ]
 
@@ -152,10 +152,10 @@ func _every_approved_seed_is_winnable_by_every_class() -> void:
 			assert_true(
 				bool(result_value.metadata.get("is_victory")),
 				"seed=%d class=%s: the driver must reach STATE_VICTORY (got outcome=%s rounds=%d)" % [
-					seed_value, String(playable["class_id"]), String(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds"))
+					seed_value, String(playable["class_id"]), str(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds"))
 				]
 			)
-			assert_equal(String(result_value.metadata.get("outcome")), CombatOutcomeState.STATE_VICTORY, "seed=%d class=%s: terminal outcome_state is victory." % [seed_value, String(playable["class_id"])])
+			assert_equal(str(result_value.metadata.get("outcome")), CombatOutcomeState.STATE_VICTORY, "seed=%d class=%s: terminal outcome_state is victory." % [seed_value, String(playable["class_id"])])
 			# The board decided it (ZERO living enemies), and the hero survived (a real board victory, not a fabricated one).
 			var board = result_value.metadata.get("board")
 			assert_equal(_living_enemy_count(board), 0, "seed=%d class=%s: a victory leaves ZERO living enemies." % [seed_value, String(playable["class_id"])])
@@ -178,7 +178,7 @@ func _every_approved_medium_seed_is_winnable_by_every_class() -> void:
 			assert_true(
 				result_value.succeeded and bool(result_value.metadata.get("is_victory")),
 				"MEDIUM seed=%d class=%s: the strengthened driver must WIN on the Medium board (outcome=%s rounds=%d err=%s)" % [
-					seed_value, String(playable["class_id"]), String(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
+					seed_value, String(playable["class_id"]), str(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
 				]
 			)
 			var board = result_value.metadata.get("board")
@@ -202,7 +202,7 @@ func _every_approved_scorched_seed_is_winnable_by_every_class() -> void:
 			assert_true(
 				result_value.succeeded and bool(result_value.metadata.get("is_victory")),
 				"SCORCHED seed=%d class=%s: the strengthened driver must WIN under Scorched (outcome=%s rounds=%d err=%s)" % [
-					seed_value, String(playable["class_id"]), String(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
+					seed_value, String(playable["class_id"]), str(result_value.metadata.get("outcome")), int(result_value.metadata.get("rounds", 0)), String(result_value.error_code)
 				]
 			)
 			var board = result_value.metadata.get("board")

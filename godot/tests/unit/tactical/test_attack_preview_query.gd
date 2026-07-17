@@ -4,6 +4,7 @@ const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AttackPreviewContractMatrix = preload("res://tests/fixtures/tactical/attack_preview_contract_matrix.gd")
 const AttackPreviewQuery = preload("res://scripts/tactical/targeting/attack_preview_query.gd")
 const BoardFixtureFactory = preload("res://tests/fixtures/tactical/board_fixture_factory.gd")
+const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
@@ -20,6 +21,7 @@ func run() -> Dictionary:
 	_ranged_adjacency_penalties_update_damage_and_warning_text()
 	_preview_is_pure_and_repeated_metadata_is_deterministic()
 	_story_1_9_contract_matrix_matches_preview_results()
+	_cleared_corpse_cell_is_non_targetable()
 	return result()
 
 
@@ -285,3 +287,16 @@ func _tactical_snapshot_dictionary(board: BoardState, streams: RngStreamSet) -> 
 	assert_true(result_value.succeeded, "Test helper should export a top-level tactical snapshot.")
 	var snapshot: TacticalSnapshot = result_value.metadata.get("snapshot") as TacticalSnapshot
 	return snapshot.to_dictionary()
+
+
+# Story 14.1 (AC1): a corpse-cleared cell reads as missing_target for the attack preview (targeting keys off the
+# cell's occupant_id, which corpse-clear vacates) — so a corpse is non-targetable for free.
+func _cleared_corpse_cell_is_non_targetable() -> void:
+	var board: BoardState = BoardFixtureFactory.attack_command_kill_board()
+	var weapon: WeaponDefinition = WeaponRepository.create_baseline_repository().get_weapon(&"sword")
+	var query: AttackPreviewQuery = AttackPreviewQuery.new()
+	assert_true(query.preview_target_cell(board, &"hero", Vector2i(2, 1), weapon).succeeded, "Setup: the living adjacent enemy is targetable.")
+	assert_true(board.apply_events([DomainEvent.damage_applied(board.next_sequence_id(), &"hero", &"enemy_1", 3, 3, 0, 10, {})]).succeeded, "Setup: the enemy dies (corpse-clear).")
+	var preview: ActionResult = query.preview_target_cell(board, &"hero", Vector2i(2, 1), weapon)
+	assert_true(preview.is_error(), "A corpse cell is not a legal attack target.")
+	assert_equal(preview.metadata.get("reason"), "missing_target", "A cleared corpse cell reads as missing_target (targeting keys off occupant_id).")

@@ -18,6 +18,7 @@ func run() -> Dictionary:
 	_hidden_and_memory_cells_do_not_leak_current_domain_facts()
 	_view_model_dictionary_edits_do_not_mutate_domain_state_or_cached_values()
 	_view_model_sanitizes_options_and_normalizes_availability()
+	_dead_entities_surface_as_corpse_occupants()
 	return result()
 
 
@@ -307,3 +308,38 @@ func _tactical_snapshot_dictionary(
 	assert_true(result_value.succeeded, "Test helper should export a tactical snapshot.")
 	var snapshot: TacticalSnapshot = result_value.metadata.get("snapshot") as TacticalSnapshot
 	return snapshot.to_dictionary()
+
+
+# Story 14.1 (F8): after corpse-clear a dead entity no longer OWNS its cell, but it MUST still surface in occupants
+# (with is_dead: true) so the presenter can draw a persistent corpse decal. Only the occupants CONTENTS change — the
+# 16 top-level keys hold.
+func _dead_entities_surface_as_corpse_occupants() -> void:
+	var board: BoardState = _revealed(BoardFixtureFactory.attack_command_kill_board())
+	assert_true(board.apply_events([DomainEvent.damage_applied(board.next_sequence_id(), &"hero", &"enemy_1", 3, 3, 0, 10, {})]).succeeded, "Setup: the enemy dies (corpse-clear).")
+	assert_equal(board.occupant_at(Vector2i(2, 1)), &"", "Setup: the corpse released its cell occupancy.")
+	var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, &"hero")
+	var data: Dictionary = TacticalBoardViewModel.from_domain(board, turn_state).to_dictionary()
+	assert_equal(_sorted_keys(data).size(), 16, "The board VM keeps its 16 top-level keys (only occupants CONTENTS change).")
+	var occupants: Array = data.get("occupants", [])
+	assert_equal(occupants.size(), 2, "A cleared corpse STILL surfaces in occupants (hero + dead enemy).")
+	var corpse: Dictionary = _occupant_by_id(occupants, "enemy_1")
+	assert_false(corpse.is_empty(), "The dead enemy surfaces as an occupant (the corpse-decal source).")
+	assert_equal(corpse.get("is_dead"), true, "The corpse occupant is flagged is_dead: true.")
+	assert_equal(corpse.get("current_hp"), 0, "The corpse occupant reports 0 HP.")
+	assert_equal(corpse.get("position"), _cell(2, 1), "The corpse occupant stays at its death cell.")
+	var hero: Dictionary = _occupant_by_id(occupants, "hero")
+	assert_equal(hero.get("is_dead"), false, "The living hero still surfaces as alive.")
+
+
+func _revealed(board: BoardState) -> BoardState:
+	for cell: BoardCell in board.cells():
+		cell.visible = true
+		cell.explored = true
+	return board
+
+
+func _occupant_by_id(occupants: Array, entity_id: String) -> Dictionary:
+	for occupant_value: Variant in occupants:
+		if occupant_value is Dictionary and String((occupant_value as Dictionary).get("entity_id", "")) == entity_id:
+			return occupant_value
+	return {}
