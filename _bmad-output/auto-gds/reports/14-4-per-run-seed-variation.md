@@ -32,14 +32,14 @@
 
 **Next:** `story_plan.py` would re-pick `14-4-per-run-seed-variation` (status `review`) until this pipeline completes; the epic's next fresh story remains queued behind it.
 
-## Report — 2026-07-18T12:31:00Z (final)
+## Report — 2026-07-18T17:01:00Z (final)
 
 **Story:** `14-4-per-run-seed-variation` (epic 14, story 4) — mid-epic.
 **Branch:** `story/14-4-per-run-seed-variation` (HEAD `d04c049` at report write; finalize commit follows).
 **Pipeline status:** clean completion — review loop converged in 1 iteration (Approve), the one `[Review][Decision]` human-resolved, non-draft PR stacked on the 14-3 story branch; GDS status flipped to `done`.
 **Continues:** `## Report — 2026-07-18T12:19:30Z (halted — unresolved [Review][Decision])` — the user resolved the decision as KEEP AS-IS and re-authorized the run.
 
-**Timing:** started 2026-07-18T11:18:29Z; completed 2026-07-18T12:33:00Z — elapsed ~1h 15m (≈56m AI-run, ≈19m human/idle wait); 2 sessions (resumed 1×).
+**Timing:** started 2026-07-18T11:18:29Z; completed 2026-07-18T17:01:00Z — elapsed ~5h 43m (≈56m AI-run, ≈4h 47m human/idle wait — mostly the decision halt awaiting the human call); 2 sessions (resumed 1×).
 
 **Phases run (since the halted section):** Phase 7 fix pass + convergence (agds-high — Decision dispositioned KEEP AS-IS, no code change, suite re-verified 201 PASS / 0 FAIL, `git diff --check` clean), Phase 9 finalize (orchestrator).
 **Skipped:** Phase 8 (not last in epic).

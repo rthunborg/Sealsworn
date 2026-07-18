@@ -2,11 +2,11 @@ story_key: 14-4-per-run-seed-variation
 epic_num: 14
 story_num: 4
 branch: story/14-4-per-run-seed-variation
-status: in-progress
-updated_at: "2026-07-18T12:30:00Z"
+status: done
+updated_at: "2026-07-18T17:01:00Z"
 started_at: "2026-07-18T11:18:29Z"
-completed_at: null
-active_seconds: 3259
+completed_at: "2026-07-18T17:01:00Z"
+active_seconds: 3380
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["cec87f2", "676c150", "9a12d21"]
+commits: ["cec87f2", "676c150", "9a12d21", "d04c049", "0d366c6"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/74"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
