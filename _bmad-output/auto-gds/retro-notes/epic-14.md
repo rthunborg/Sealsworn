@@ -36,3 +36,4 @@
 
 ## Story 14-7-full-backpack-reward-escape-hatch
 - [Phase 5 — dev-story] Domain-event-append stories must grep for ALL `DomainEvent.Type.size()` count pins, not just the `test_domain_event.gd` `expected_ids` pin — 14.7's Task 5 missed a second hard-coded `size()==43` pin in `test_interactive_combat_flow.gd:235` (caught by the suite, not the checklist). Type enum is now 44 (append-only).
+- [Phase 7 — code review] Reward-command-FAMILY test-hardening note: the command-level zero-RNG test is structurally vacuous (asserts on a stream set the command never receives) — `test_resolve_reward_command` has the identical shape; the meaningful zero-RNG coverage lives only at the bridge level. Worth a one-line hardening pass when the family is next touched.
