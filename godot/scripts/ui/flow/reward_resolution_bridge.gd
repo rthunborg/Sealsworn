@@ -10,10 +10,14 @@ extends RefCounted
 # TacticalCommandBridge intent (that bridge handles only move/attack/inspect against a TacticalActionContext).
 #
 # THE EXACTLY-ONE-COMMAND CONTRACT (project-context.md:195/446 — a pending offer is resolved by exactly one of
-# {ResolveRewardCommand | ConsumePassiveCommand | DestroyPassiveCommand}, never two, never a double-record):
+# {ResolveRewardCommand | DeclineRewardCommand | ConsumePassiveCommand | DestroyPassiveCommand}, never two, never a
+# double-record):
 #   - action == resolve_generic -> ResolveRewardCommand (a NON-passive single-pick offer: backpack item / gold /
 #     outcome-only passive). Draws ZERO new RNG (the offer was rolled at GENERATE). A full backpack surfaces the
 #     pickup's inventory_full VERBATIM and leaves the offer `pending` (no silent advance — the caller re-renders).
+#   - action == decline_generic -> DeclineRewardCommand (Story 14.7 — the full-backpack escape hatch): clears the
+#     pending offer WITHOUT applying it (never touches the backpack, so it can never hit inventory_full) and flips
+#     the offer `resolved` so the run advances. Draws ZERO RNG. Generic-path only (a passive offer never routes here).
 #   - action == commit_passive + choice == consume -> ConsumePassiveCommand (adopts the passive into the run's
 #     RulesResolver). Draws ZERO RNG.
 #   - action == commit_passive + choice == destroy -> DestroyPassiveCommand (rolls the 70/20/10 outcome through the
@@ -26,6 +30,7 @@ extends RefCounted
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const ConsumePassiveCommand = preload("res://scripts/core/commands/consume_passive_command.gd")
+const DeclineRewardCommand = preload("res://scripts/core/commands/decline_reward_command.gd")
 const DestroyOutcomeTableDefinition = preload("res://scripts/content/definitions/destroy_outcome_table_definition.gd")
 const DestroyPassiveCommand = preload("res://scripts/core/commands/destroy_passive_command.gd")
 const PassiveRewardCommitFlow = preload("res://scripts/ui/view_models/passive_reward_commit_flow.gd")
@@ -35,6 +40,10 @@ const RunState = preload("res://scripts/run/run_state.gd")
 
 const ACTION_RESOLVE_GENERIC := "resolve_generic"
 const ACTION_COMMIT_PASSIVE := "commit_passive"
+# Story 14.7: the generic-overlay DECLINE/skip action — clears the pending offer WITHOUT applying it (the
+# full-backpack escape hatch), executing EXACTLY ONE DeclineRewardCommand. Generic-path only (a passive offer never
+# routes here — it always resolves via Consume/Destroy), so the exactly-one-command contract is preserved.
+const ACTION_DECLINE_GENERIC := "decline_generic"
 
 # Resolve the pending offer from a click intent. `resolution` carries `action` (resolve_generic / commit_passive)
 # plus the per-action fields. Returns the executed command's ActionResult VERBATIM (so the caller reads
@@ -49,6 +58,8 @@ func resolve(run: RunState, orchestrator: RunOrchestrator, resolution: Dictionar
 	match action:
 		ACTION_RESOLVE_GENERIC:
 			return _resolve_generic(run, orchestrator, resolution)
+		ACTION_DECLINE_GENERIC:
+			return _decline_generic(run, orchestrator)
 		ACTION_COMMIT_PASSIVE:
 			return _commit_passive(run, orchestrator, resolution)
 		_:
@@ -65,6 +76,15 @@ func _resolve_generic(run: RunState, orchestrator: RunOrchestrator, resolution: 
 	var category: StringName = StringName(String(resolution.get("category", "")))
 	var content_id: StringName = StringName(String(resolution.get("content_id", "")))
 	return ResolveRewardCommand.new(category, content_id, orchestrator.next_sequence_id()).execute(run)
+
+
+# The generic (non-passive) DECLINE path (Story 14.7): construct + execute EXACTLY ONE DeclineRewardCommand against
+# RunState, threading the monotonic run-level sequence_id. The command clears the pending offer WITHOUT applying it
+# (never touches the backpack, so it can never hit inventory_full — the full-backpack escape hatch) and flips the
+# offer to `resolved` so the run can advance. Draws ZERO RNG. A decline picks NO entry, so the intent carries no
+# category/content_id.
+func _decline_generic(run: RunState, orchestrator: RunOrchestrator) -> ActionResult:
+	return DeclineRewardCommand.new(orchestrator.next_sequence_id()).execute(run)
 
 
 # The passive Consume/Destroy path: route the CONFIRMED commit-intent to EXACTLY ONE of Consume/Destroy. A

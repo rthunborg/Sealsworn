@@ -20,6 +20,7 @@ extends "res://tests/unit/test_case.gd"
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
+const PickupItemCommand = preload("res://scripts/core/commands/pickup_item_command.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
 const RewardResolutionBridge = preload("res://scripts/ui/flow/reward_resolution_bridge.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
@@ -29,6 +30,8 @@ const SEED: int = 4242
 
 func run() -> Dictionary:
 	_resolve_generic_executes_resolve_reward_command()
+	_decline_generic_executes_decline_reward_command()
+	_full_backpack_decline_through_the_bridge_succeeds()
 	_consume_executes_consume_passive_command_and_adopts_into_the_resolver()
 	_destroy_executes_destroy_passive_command_and_advances_the_rewards_stream()
 	_destroy_is_deterministic_through_the_run_streams()
@@ -85,6 +88,51 @@ func _resolve_generic_executes_resolve_reward_command() -> void:
 		if event.event_type == DomainEvent.Type.REWARD_RESOLVED:
 			saw_resolved = true
 	assert_true(saw_resolved, "The generic resolve emits a reward_resolved event.")
+
+
+# ---- Story 14.7: generic decline (the full-backpack escape hatch) --------------------------------
+
+func _decline_generic_executes_decline_reward_command() -> void:
+	var orchestrator: RunOrchestrator = _started(SEED)
+	assert_true(orchestrator.generate_reward_offer(&"standard_combat_reward").succeeded, "Setup: a generic offer should generate.")
+	var pre_streams: Dictionary = orchestrator.streams.to_snapshot()
+
+	var bridge: RewardResolutionBridge = RewardResolutionBridge.new()
+	var declined: ActionResult = bridge.resolve(orchestrator.run, orchestrator, {"action": "decline_generic"})
+	assert_true(declined.succeeded, "The generic decline should succeed: %s" % declined.metadata)
+	assert_true(orchestrator.run.pending_reward_offer.is_resolved(), "The offer must flip to resolved after a decline.")
+	# DECLINE draws ZERO new RNG (it applies nothing).
+	assert_equal(orchestrator.streams.to_snapshot(), pre_streams, "A decline must draw ZERO new RNG (streams byte-identical).")
+	# EXACTLY ONE reward_declined event; NO reward_resolved / item_gained double-record (nothing applied).
+	var declined_events: int = 0
+	for event: DomainEvent in declined.events:
+		if event.event_type == DomainEvent.Type.REWARD_DECLINED:
+			declined_events += 1
+		assert_true(event.event_type != DomainEvent.Type.REWARD_RESOLVED, "A decline must NOT also emit reward_resolved.")
+		assert_true(event.event_type != DomainEvent.Type.ITEM_GAINED, "A decline must NOT emit item_gained (nothing applied).")
+	assert_equal(declined_events, 1, "A generic decline emits exactly one reward_declined event.")
+
+	# A SECOND decline against the now-resolved offer fails closed (exactly-one-command / no double-record).
+	var second: ActionResult = bridge.resolve(orchestrator.run, orchestrator, {"action": "decline_generic"})
+	assert_true(second.is_error(), "A second decline against a resolved offer must fail closed.")
+	assert_equal(second.error_code, &"reward_offer_already_resolved", "The second decline uses the stable already-resolved code.")
+
+
+func _full_backpack_decline_through_the_bridge_succeeds() -> void:
+	# The soft-lock break, end-to-end through the bridge: with a FULL 6/6 backpack (where a backpack reward WOULD
+	# inventory_full on resolve), the decline still succeeds and advances the offer to resolved.
+	var orchestrator: RunOrchestrator = _started(SEED)
+	var fill_ids: Array[StringName] = [&"minor_healing_draught", &"warding_salve", &"ember_flask", &"health_morsel", &"focus_ember", &"padded_vest"]
+	var fill_categories: Array[StringName] = [&"consumable", &"consumable", &"consumable", &"pickup", &"pickup", &"armor"]
+	for i: int in range(fill_ids.size()):
+		assert_true(PickupItemCommand.new(fill_ids[i], fill_categories[i]).execute(orchestrator.run).succeeded, "Filling slot %d should succeed." % i)
+	assert_true(orchestrator.run.inventory.is_full(), "Setup: the backpack should be full (6/6).")
+	assert_true(orchestrator.generate_reward_offer(&"standard_combat_reward").succeeded, "Setup: a generic offer should generate.")
+
+	var declined: ActionResult = RewardResolutionBridge.new().resolve(orchestrator.run, orchestrator, {"action": "decline_generic"})
+	assert_true(declined.succeeded, "A full-backpack decline through the bridge must succeed (the soft-lock break): %s" % declined.metadata)
+	assert_true(orchestrator.run.pending_reward_offer.is_resolved(), "The full-backpack offer flips to resolved (the run can advance).")
+	assert_equal(orchestrator.run.inventory.size(), 6, "A decline adds NO slot (backpack still 6/6 — the fail-closed guard un-weakened).")
 
 
 # ---- AC2: passive Consume ------------------------------------------------------------------------

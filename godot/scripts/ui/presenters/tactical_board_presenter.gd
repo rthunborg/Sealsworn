@@ -1357,7 +1357,8 @@ func _ensure_reward_overlay() -> void:
 	_reward_overlay.visible = false
 
 
-# A GENERIC single-pick offer: show the reward + a single Accept button (drives ResolveRewardCommand on the shell).
+# A GENERIC single-pick offer: show the reward + an Accept button (drives ResolveRewardCommand) + a Decline/skip button
+# (Story 14.7 — drives DeclineRewardCommand, the full-backpack escape hatch), both resolved on the shell.
 func _build_generic_reward_ui(projection: Dictionary) -> void:
 	var choices: Array = projection.get("choices", [])
 	if choices.is_empty():
@@ -1374,6 +1375,16 @@ func _build_generic_reward_ui(projection: Dictionary) -> void:
 			"content_id": content_id
 		}))
 	_reward_box.add_child(accept)
+	# Story 14.7: the DECLINE/skip affordance — ALWAYS present on the generic overlay (the robust minimal escape: it
+	# guarantees the hatch exists whenever the full-backpack inventory_full reject can strand the run, needs no
+	# inventory-state read, and doubles as a normal "skip an unwanted reward" affordance). Routes decline_generic ->
+	# DeclineRewardCommand (clears the offer WITHOUT applying it, so the run advances). Uses the >=44px _reward_button
+	# (a text label, not color alone). GENERIC-path only — never added to the passive overlay (a passive offer is
+	# resolved by exactly one of Consume/Destroy; adding a decline there would break the exactly-one-command guard).
+	var decline: Button = _reward_button("Decline reward")
+	decline.pressed.connect(func() -> void:
+		_emit_reward_resolution({"action": "decline_generic"}))
+	_reward_box.add_child(decline)
 
 
 # A PASSIVE 3-choice offer: when nothing is armed, list each passive's modal text with Consume/Destroy buttons (the

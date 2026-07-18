@@ -229,12 +229,14 @@ func _default_run_to_completion_is_byte_identical_to_a_second_run() -> void:
 func _invariants_hold_no_new_stream_no_new_event() -> void:
 	# AC4: the 12.1 tap-loop opens NO new RNG stream (the 7 named streams are invariant) and added no DomainEvent.Type
 	# member. Story 14.1 later APPENDED exactly one event at the enum tail — HERO_WAITED (the F1 Wait/pass-turn backstop)
-	# — so the enum is now 43 with HERO_WAITED at index 42; OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (the
-	# append is tail-only, never renumbered).
-	assert_equal(RngStreamSet.required_streams().size(), 7, "The 7 named RNG streams are invariant (14.1 draws ZERO RNG — no new stream).")
-	assert_equal(int(DomainEvent.Type.size()), 43, "The DomainEvent.Type enum has 43 members (Story 14.1 appended HERO_WAITED at the tail).")
-	assert_equal(int(DomainEvent.Type.OATH_SHARDS_SPENT), 41, "OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (14.1 appended AFTER it, not renumbering).")
+	# — and Story 14.7 APPENDED one more — REWARD_DECLINED (the full-backpack escape hatch) — so the enum is now 44 with
+	# HERO_WAITED at index 42 and REWARD_DECLINED at index 43; OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (the
+	# appends are tail-only, never renumbered — and neither draws RNG, so the 7 named streams stay invariant).
+	assert_equal(RngStreamSet.required_streams().size(), 7, "The 7 named RNG streams are invariant (14.1/14.7 draw ZERO RNG — no new stream).")
+	assert_equal(int(DomainEvent.Type.size()), 44, "The DomainEvent.Type enum has 44 members (Story 14.1 appended HERO_WAITED, Story 14.7 appended REWARD_DECLINED, both at the tail).")
+	assert_equal(int(DomainEvent.Type.OATH_SHARDS_SPENT), 41, "OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (14.1/14.7 appended AFTER it, not renumbering).")
 	assert_equal(int(DomainEvent.Type.HERO_WAITED), 42, "HERO_WAITED is the 14.1 tail at index 42 (appended after OATH_SHARDS_SPENT).")
+	assert_equal(int(DomainEvent.Type.REWARD_DECLINED), 43, "REWARD_DECLINED is the 14.7 tail at index 43 (appended after HERO_WAITED).")
 
 
 # ---- Story 12.2: the class-kit loadout threads through the interactive seam -----------------------
