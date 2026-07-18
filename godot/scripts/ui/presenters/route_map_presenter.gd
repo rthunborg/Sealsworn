@@ -115,14 +115,21 @@ func _render_map() -> void:
 	# Cleared / total progress (the numerator / denominator, now behind the render-fact accessors).
 	_status_label.text = "Cleared %d / %d" % [view_model.cleared_count(), view_model.node_count()]
 
-	# "You are here" — the current position (a non-color glyph + human display label + depth).
+	# "You are here" — the current position (a non-color glyph + human display label + depth). ⭐ Story 14.6 review
+	# (AC1 — cleared-current-node marker): in the live combat flow current_node_id stays ON the node until the next
+	# advance_to, so a just-cleared combat node is STILL current when this map re-renders. Append a non-color
+	# "✓ Cleared" indicator (the ✓ reveal glyph + the "Cleared" progress wording — consistent with the cleared
+	# progress line, NFR9: glyph + text, never color alone) so the line reads "you stand here, this is done —
+	# choose the next step", not "fight this again."
 	var current: Dictionary = view_model.current_node()
 	if not current.is_empty():
 		var here_label: Label = Label.new()
-		here_label.text = "You are here: %s %s (depth %d)" % [
+		var cleared_suffix: String = "  ✓ Cleared" if bool(current.get("is_cleared", false)) else ""
+		here_label.text = "You are here: %s %s (depth %d)%s" % [
 			_type_icon(String(current.get("type", ""))),
 			_display_type(String(current.get("type", ""))),
-			int(current.get("depth", 0))
+			int(current.get("depth", 0)),
+			cleared_suffix
 		]
 		_choices_container.add_child(here_label)
 
@@ -161,7 +168,12 @@ func _node_label(node: Dictionary) -> String:
 	var icon: String = _type_icon(node_type)
 	var reveal_marker: String = _reveal_marker(String(node.get("reveal_state", "")))
 	var clue_text: String = _clue_chips(node.get("clues", []))
-	return "%s %s %s (depth %d)%s" % [icon, reveal_marker, _display_type(node_type), int(node.get("depth", 0)), clue_text]
+	# ⭐ Story 14.6 review (AC1 — boss dual-naming RELABEL): a boss-type node's pickable choice button carries the
+	# SAME descent-goal flavor name as the terminal-boss goal line (the shared BOSS_DISPLAY_NAME const — never a
+	# second hardcoded copy), so the goal line and the pickable button read as ONE entity ("The Larval Avatar"),
+	# not "The Larval Avatar" (goal) vs "Boss" (button) side-by-side at the last pre-boss tier.
+	var display_label: String = BOSS_DISPLAY_NAME if node_type == String(RouteNode.TYPE_BOSS) else _display_type(node_type)
+	return "%s %s %s (depth %d)%s" % [icon, reveal_marker, display_label, int(node.get("depth", 0)), clue_text]
 
 
 # Story 14.6 (AC1/NFR9): convert a raw snake_case node type to a human display label (elite_combat -> "Elite

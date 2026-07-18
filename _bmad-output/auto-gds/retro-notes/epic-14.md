@@ -31,3 +31,4 @@
 
 ## Story 14-6-live-route-map-and-node-choice
 - [Phase 3 — create-story] F12's "the route-map stage never surfaces" framing is imprecise: the route map shipped and is wired since 11.3 (boot→hero-select→route_map; shell returns to route_map); it was unreachable at playtest only because both runs died/soft-locked on node 1 (F1/F5) pre-14.1. 14.6 is verify/harden + render-enrichment, NOT build-from-scratch — same recurring Epic-14 AC/finding-precision class as 14.1 (wrong files) and 14.4 (two start sites).
+- [Phase 7 — code review] Boss dual-naming heuristic: when a story adds a flavor-named goal banner ("Final: The Larval Avatar"), the same node's pickable button should carry the same flavor name — small self-inflicted readability inconsistency in a readability epic; apply the heuristic in Band-2 theme work (14.10/14.11).

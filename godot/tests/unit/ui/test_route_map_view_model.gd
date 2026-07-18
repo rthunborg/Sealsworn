@@ -51,6 +51,8 @@ func run() -> Dictionary:
 	_render_fact_accessors_on_terminal_boss_leaf()
 	_render_fact_accessors_return_fresh_copies_no_live_handle_leak()
 	_render_fact_accessors_add_no_projection_key()
+	# Story 14.6 review (AC1) — the cleared-current-node render-fact the "✓ Cleared" marker on "You are here" reads.
+	_current_node_carries_is_cleared_on_a_just_cleared_current_node()
 	return result()
 
 
@@ -207,6 +209,28 @@ func _render_fact_accessors_add_no_projection_key() -> void:
 	var node_keys: Array = RouteMapViewModel.NODE_KEYS.duplicate()
 	node_keys.sort()
 	assert_equal(node_keys, EXPECTED_NODE_KEYS, "The render-fact accessors must not change NODE_KEYS.")
+
+
+# ⭐ Story 14.6 review (AC1 — cleared-current-node marker): in the live combat flow current_node_id stays ON the
+# node until the next advance_to, so a just-cleared combat node is STILL the current node when the map re-renders.
+# current_node() must carry is_cleared == true in that state — the exact render-fact the presenter's "✓ Cleared"
+# marker on the "You are here" line consumes (so it reads "you stand here, done" not "fight this again"). The
+# complement (an uncleared current node) must project is_cleared == false so the marker is correctly withheld.
+func _current_node_carries_is_cleared_on_a_just_cleared_current_node() -> void:
+	# Park ON the just-cleared depth-0 opener (the live-flow state before the next advance_to): current AND cleared.
+	var route: RouteState = RouteState.new([
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["left", "right"], []),
+		RouteNode.new("left", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], []),
+		RouteNode.new("right", RouteNode.TYPE_ELITE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], []),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 2, RouteNode.REVEAL_REVEALED, [], [])
+	], "start", ["start"])
+	var current: Dictionary = RouteMapViewModel.from_route(route).current_node()
+	assert_equal(str(current.get("id", "")), "start", "current_node() must be the parked node.")
+	assert_equal(current.get("is_current"), true, "The parked node must project is_current == true.")
+	assert_equal(current.get("is_cleared"), true, "A just-cleared current node must project is_cleared == true (the '✓ Cleared' marker render-fact).")
+	# The complement: an UNCLEARED current node ('left') projects is_cleared == false, so the marker is withheld.
+	var uncleared: Dictionary = RouteMapViewModel.from_route(_mid_descent_route()).current_node()
+	assert_equal(uncleared.get("is_cleared"), false, "An uncleared current node ('left') must project is_cleared == false (no marker).")
 
 
 # --- helpers ---------------------------------------------------------------
