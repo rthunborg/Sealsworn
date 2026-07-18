@@ -1,6 +1,6 @@
 # Story 14.3: Combat Event Log and Hit Feedback
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
