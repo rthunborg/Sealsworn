@@ -24,15 +24,15 @@ extends Control
 const OutpostSpendBridge = preload("res://scripts/ui/flow/outpost_spend_bridge.gd")
 const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
-const RunSeedSource = preload("res://scripts/ui/flow/run_seed_source.gd")
 const OutpostRenderView = preload("res://scripts/ui/view_models/outpost_render_view.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
 
-# Story 14.4 (AC1): there is NO fixed re-descend seed anymore. The one-tap "Descend Again" seed comes from the pure
-# RunSeedSource seam — in v0 GameSession.get_root_seed() is always 0 (nothing configures it live), so a re-descend
-# takes the ENTROPY branch and gets a genuinely fresh, DIFFERENT room every time (the F11 same-room fix). The old
-# fixed DEFAULT_DESCENT_SEED = 4242 is gone.
+# Story 14.5 (AC3/D3/F4): "Descend Again" no longer starts a run from the outpost. It routes THROUGH the hero-select
+# stage so the player picks a REAL class (its 18-HP kit) — never the class-less fail-open 60-HP driver default. The run
+# is started at hero_select_presenter._on_confirm_pressed via the 14.4 RunSeedSource seam, so the F11 per-run variety
+# now rides hero-select's own entropy path (one live seed source, at hero-select, for the initial descent AND the
+# re-descend). The old outpost inline start request + RunSeedSource resolution + _new_run_entropy() are removed as dead.
 
 var _render_view: OutpostRenderView = null
 var _content: VBoxContainer = null
@@ -163,12 +163,39 @@ func _render_run_summary() -> void:
 		none_label.text = "No just-ended run."
 		_content.add_child(none_label)
 		return
-	# AC4 (G3 Option A): an honest "not yet tallied" note for the Oath-Shards-earned field (the summary's field STAYS 0 /
-	# not_yet_supported; the AWARDED total is the outpost-level readout above).
-	if _render_view.summary_oath_shards_not_yet_tallied():
-		var tally_note: Label = Label.new()
-		tally_note.text = "Oath Shards earned this run: not yet tallied"
-		_content.add_child(tally_note)
+
+	# Story 14.5 (AC2, F-2/D6): render the HONEST run-end facts from the just-ended RunSummary, replacing the old
+	# "not yet tallied" placeholder. The victory/death OUTCOME LABEL is keyed off the summary's terminal `phase` (NOT the
+	# live-blank outcome_or_cause), each with a DISTINCT non-color glyph ([V]/[X], not color alone — NFR9).
+	var outcome: String = _render_view.summary_outcome_label()
+	var outcome_glyph: String = "[V]" if outcome == OutpostRenderView.SUMMARY_OUTCOME_VICTORY else "[X]"
+	var outcome_label: Label = Label.new()
+	outcome_label.text = "%s Outcome: %s" % [outcome_glyph, outcome]
+	_content.add_child(outcome_label)
+
+	# Nodes cleared (a bounded run signal — number+label).
+	var nodes_label: Label = Label.new()
+	nodes_label.text = "Nodes cleared: %d" % _render_view.summary_nodes_cleared()
+	_content.add_child(nodes_label)
+
+	# The run seed (the decimal-string int64 — useful for FR27 replay/sharing).
+	var seed_label: Label = Label.new()
+	seed_label.text = "Seed: %s" % _render_view.summary_seed()
+	_content.add_child(seed_label)
+
+	# The Oath-Shards EARNED THIS RUN — a separate deterministic MetaAwardRules render read (0 for a death / manual-seed
+	# run), replacing the old "not yet tallied" note. (The AWARDED cross-run total stays the meta readout above.)
+	var earned_label: Label = Label.new()
+	earned_label.text = "Oath Shards earned this run: %d" % _render_view.run_oath_shards_earned()
+	_content.add_child(earned_label)
+
+	# AC2: the passives-consumed/destroyed + notable-loot lists have NO live source in v0 (they derive from the DEFERRED
+	# run-level event store — the bridge builds RunSummary.build(run, []) with an empty events list). Show them HONESTLY as
+	# pending — never fabricated, never silently omitted (the visible-exception discipline). Do NOT read a presentation/
+	# combat log as source truth (8.2 AC2 forbids it); do NOT build the event store (out of scope — stays deferred).
+	var pending_label: Label = Label.new()
+	pending_label.text = "Passives spent/destroyed & notable loot: — none recorded yet —"
+	_content.add_child(pending_label)
 
 
 # AC2: a reveal beat card with the resolved line (inherently non-color text) + a Skip/Dismiss control (>=44x44, always
@@ -207,11 +234,10 @@ func _render_named_spaces() -> void:
 		_content.add_child(label)
 
 
-# AC1/FR1: the start-another-descent affordance. It routes through the OutpostViewModel.start_run_request seam (surfacing
-# the manual-seed warning if a manual seed is used), and on is_startable hands a FRESH RunFlowController.start(...) the
-# request, clears the terminal run-flow handle, seats the new controller, and navigates to route_map — a new seed -> a new
-# route -> a new run (the prior run is NOT reused, structural via RunState.new_run). A one-tap re-descend (the legacy
-# no-class start is always startable); a hero re-pick is available by returning through hero_select in a later surface.
+# AC1/FR1 + Story 14.5 (AC3/D3): the start-another-descent affordance. On press it routes through the HERO-SELECT stage
+# (clearing the terminal run-flow handle first) so the player picks a REAL class (its 18-HP kit) before the run starts —
+# the class-ful re-descend that replaces the old class-less outpost quick-start (F4). The button stays gated on
+# can_start_descent() (always true in v0), independent of the reveal beats (FR64).
 func _render_descend_affordance() -> void:
 	var descend_button: Button = Button.new()
 	descend_button.text = "Descend Again"
@@ -290,47 +316,20 @@ func _on_spend_pressed(unlock_id: String) -> void:
 
 
 func _on_descend_pressed() -> void:
-	# The outpost produces a start REQUEST then hands it to a FRESH RunFlowController.start(...) — the AUTHORITATIVE
-	# fail-closed start. Story 14.4 (AC1): the seed now comes from the pure RunSeedSource seam (the impure entropy read
-	# is the one _new_run_entropy() line) — in v0 GameSession.get_root_seed() is 0, so a one-tap re-descend takes the
-	# ENTROPY branch and gets a genuinely fresh, DIFFERENT room every time (the F11 same-room fix), NOT the old fixed
-	# 4242. Only the root_seed VALUE (now entropy, decimal-string-encoded) and is_manual_seed VALUE change; the inline
-	# request keeps its existing key shape (this presenter does NOT call OutpostViewModel.start_run_request, so the VM
-	# START_REQUEST_KEYS pin is untouched). The empty class id is UNCONDITIONALLY startable
-	# (OutpostViewModel.start_run_request's class_is_startable == true for an empty class id). The prior terminal run is
-	# NOT reused (a new controller + a new RunState.new_run via start). (A future seed-entry / hero-re-pick surface would
-	# build the request through the VM's start_run_request seam to re-gate a chosen class.)
-	var configured_seed: int = 0
-	if has_node("/root/GameSession"):
-		configured_seed = GameSession.get_root_seed()
-	var seed_decision: Dictionary = RunSeedSource.resolve(configured_seed, _new_run_entropy())
-	var request: Dictionary = {
-		"root_seed": str(int(seed_decision.get("root_seed", 0))),
-		"is_manual_seed": bool(seed_decision.get("is_manual_seed", false)),
-		"class_id": String(&""),
-		"is_startable": true
-	}
-	if not bool(request.get("is_startable", false)):
-		return
-
-	var controller: RunFlowController = RunFlowController.new()
-	var start: Dictionary = controller.start(
-		int(String(request.get("root_seed", "0")).to_int()),
-		bool(request.get("is_manual_seed", false)),
-		StringName(String(request.get("class_id", "")))
-	)
-	if not bool(start.get("started", false)):
-		if has_node("/root/Diagnostics"):
-			Diagnostics.info(&"ui", &"outpost_descend_rejected", {"error_code": String(start.get("error_code", ""))})
-		return
-
-	# Clear the terminal run-flow handle (a fresh descent starts clean) then seat the new controller (the 11.3 posture —
-	# GameSession holds the live handle across scene changes).
+	# Story 14.5 (AC3/D3/F4): route Descend Again THROUGH the hero-select stage so the player picks a REAL class (its
+	# 18-HP kit) — NEVER the class-less fail-open 60-HP driver default (LiveCombatResolver.DEFAULT_HERO_HP). The outpost
+	# no longer builds an inline start request or starts a run directly; it clears the terminal run-flow handle (a fresh
+	# descent starts clean) then navigates to hero-select. Hero-select's confirm (hero_select_presenter._on_confirm_pressed)
+	# starts the run with the SELECTED class via the 14.4 RunSeedSource seam (the authoritative RunStartCommand class gate
+	# is unchanged; the F11 per-run variety now rides hero-select's own entropy path). The prior terminal run is NOT reused
+	# — hero-select's start builds a fresh RunState.new_run. This supersedes the 14.4 outpost half: one live seed source,
+	# at hero-select, for BOTH the initial descent and the re-descend.
 	if has_node("/root/GameSession"):
 		GameSession.clear_run_flow()
-		GameSession.set_run_flow(controller)
 	if has_node("/root/SceneManager"):
-		SceneManager.go_to_stage("route_map")
+		SceneManager.go_to_stage("hero_select")
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"outpost_descend_to_hero_select", {})
 
 
 # AC3: retry the profile write on a WRITE-failure recovery. Re-drive the run-end -> profile bridge (which re-attempts the
@@ -348,15 +347,3 @@ func _flow() -> RunFlowController:
 	if not has_node("/root/GameSession"):
 		return null
 	return GameSession.run_flow() as RunFlowController
-
-
-# Story 14.4 (AC3): the ONE impure line — a one-time OS-entropy seed SOURCE for a normal (unconfigured) re-descend.
-# A LOCAL RandomNumberGenerator seeded from OS entropy, NOT a named gameplay RngStreamSet stream and NOT the global
-# randi()/randf() (the seed source is chosen BEFORE any stream exists — streams derive FROM it). randomize() reseeds
-# from a high-resolution source each call, so a rapid re-descend picks a fresh seed (a fixed 1-second-resolution
-# clock would collide and re-create the same-room bug). The PURE manual-vs-entropy decision + normalization lives in
-# RunSeedSource (unit-tested with an injected fixed entropy).
-func _new_run_entropy() -> int:
-	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
-	rng.randomize()
-	return rng.randi()

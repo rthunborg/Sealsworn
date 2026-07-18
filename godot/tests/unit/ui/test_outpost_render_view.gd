@@ -22,10 +22,15 @@ extends "res://tests/unit/test_case.gd"
 #   AC1/AC2/FR64 — the reveal beats render on their has_beat gate; the deferred named spaces carry an EXPLICIT deferred
 #     marker; the start-descent affordance is available even with both beats absent (off the critical path); an absent
 #     run summary renders "no just-ended run", not a zeroed sheet.
+#   Story 14.5 (AC2, D6/F-2) — the honest run-summary render decisions: the victory/death outcome LABEL keyed off the
+#     summary's terminal `phase` (Victory/Fallen, NOT the live-blank outcome_or_cause); nodes-cleared + seed echo the
+#     summary; the oath-shards-earned-this-run count is the deterministic MetaAwardRules read (0 for a death / manual-seed
+#     run, matching oath_shard_award_for for an eligible completion); an absent summary is fail-closed (empty label, 0).
 
 const DomainEvent = preload("res://scripts/core/events/domain_event.gd")
 const FirstDeathNarrativeBeat = preload("res://scripts/run/first_death_narrative_beat.gd")
 const FirstVictoryRevealBeat = preload("res://scripts/run/first_victory_reveal_beat.gd")
+const MetaAwardRules = preload("res://scripts/save/meta_award_rules.gd")
 const OutpostRenderView = preload("res://scripts/ui/view_models/outpost_render_view.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
@@ -52,6 +57,11 @@ func run() -> Dictionary:
 	_start_descent_is_available_with_both_beats_absent()
 	_absent_run_summary_renders_no_just_ended_run()
 	_render_view_is_a_pure_read()
+	# Story 14.5 (AC2, D6/F-2) — the honest run-summary render decisions (outcome off phase, earned count)
+	_completed_summary_renders_victory_outcome_and_earned_count()
+	_failed_summary_renders_death_outcome_and_zero_earned()
+	_manual_seed_completed_summary_earns_zero()
+	_absent_summary_has_empty_outcome_and_zero_earned()
 	# Story 11.6 — the shallow meta menu spend render decisions (AC1/FR59)
 	_spend_options_are_affordable_when_shards_suffice()
 	_spend_options_are_insufficient_when_shards_short()
@@ -237,6 +247,60 @@ func _render_view_is_a_pure_read() -> void:
 	assert_false(empty.is_recovery(), "A null VM render view is fail-closed (no recovery).")
 	assert_false(empty.shows_first_death_beat(), "A null VM render view shows no beats.")
 	assert_false(empty.can_start_descent(), "A null VM render view is fail-closed (no start affordance without a projection).")
+
+
+# ---- Story 14.5 (AC2, D6/F-2): the honest run-summary render decisions ---------------------------
+
+func _completed_summary_renders_victory_outcome_and_earned_count() -> void:
+	# AC2 (D6): a COMPLETED run reads the VICTORY outcome label keyed off `phase` (NOT the live-blank outcome_or_cause);
+	# nodes-cleared + seed echo the summary; the earned-this-run count is the SAME deterministic MetaAwardRules amount
+	# oath_shard_award_for(run) would grant (single-sourced numbers) — proving the render read matches the domain rule.
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 13579, false)
+	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), summary))
+
+	assert_equal(view.summary_outcome_label(), OutpostRenderView.SUMMARY_OUTCOME_VICTORY, "A COMPLETED run reads the victory outcome label (off phase — D6).")
+	assert_equal(view.summary_nodes_cleared(), 2, "nodes_cleared echoes the summary run_scoped (the _terminal_run cleared node-0-0 + node-1-0 = 2).")
+	assert_equal(view.summary_seed(), "13579", "The seed echoes the summary (the decimal-string int64).")
+	assert_equal(view.run_oath_shards_earned(), MetaAwardRules.oath_shard_award_for(run), "The earned-this-run count matches MetaAwardRules.oath_shard_award_for for the SAME run.")
+	assert_equal(view.run_oath_shards_earned(), clampi(MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * 2, 0, MetaAwardRules.MAX_AWARD), "The earned count is clampi(BASE + PER_NODE * nodes_cleared, 0, MAX) == 3.")
+
+
+func _failed_summary_renders_death_outcome_and_zero_earned() -> void:
+	# AC2 (D6): a FAILED run reads the DEATH outcome label; a death honestly earns 0 oath shards this run (MetaAwardRules
+	# gates a death to 0 — the currency rewards reaching an ending, not dying).
+	var run: RunState = _terminal_run(RunState.PHASE_FAILED, 24680, false)
+	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_failed(1, {"cause": "hero_death"})])
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), summary))
+
+	assert_equal(view.summary_outcome_label(), OutpostRenderView.SUMMARY_OUTCOME_DEATH, "A FAILED run reads the death outcome label (off phase — D6).")
+	assert_equal(view.run_oath_shards_earned(), 0, "A death earns 0 oath shards this run (honest — a death rewards nothing).")
+	assert_equal(view.run_oath_shards_earned(), MetaAwardRules.oath_shard_award_for(run), "The 0 earned matches MetaAwardRules for the death run.")
+
+
+func _manual_seed_completed_summary_earns_zero() -> void:
+	# AC2 / FR28: a MANUAL-seed COMPLETED run (meta_progression_eligible == false) honestly earns 0 — a manual-seed run
+	# earns no meta — even though it completed. The outcome LABEL still reads victory (the label is eligibility-independent,
+	# like the reveal beat). This is the case MetaAwardRules.oath_shard_award_for alone would NOT catch (it does not gate on
+	# eligibility — the application gate does), so the render read applies the eligibility gate itself.
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 4242, true)  # manual seed
+	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	assert_false(summary.meta_progression_eligible, "Setup: a manual-seed run is meta-ineligible (the lockstep).")
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), summary))
+
+	assert_equal(view.summary_outcome_label(), OutpostRenderView.SUMMARY_OUTCOME_VICTORY, "A manual-seed COMPLETED run still reads the victory label (eligibility-independent).")
+	assert_equal(view.run_oath_shards_earned(), 0, "A manual-seed run earns 0 meta this run (FR28 — honest, even on a completion).")
+
+
+func _absent_summary_has_empty_outcome_and_zero_earned() -> void:
+	# AC2: an absent summary (a fresh/direct-boot outpost — has_summary == false) reads an EMPTY outcome label + 0 for
+	# nodes/seed/earned (fail-closed, no crash — the presenter renders "No just-ended run." on this gate).
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile()))
+	assert_false(view.shows_run_summary(), "Setup: a fresh session has no just-ended run summary.")
+	assert_equal(view.summary_outcome_label(), "", "An absent summary reads an EMPTY outcome label (fail-closed).")
+	assert_equal(view.summary_nodes_cleared(), 0, "An absent summary reads 0 nodes cleared.")
+	assert_equal(view.summary_seed(), "", "An absent summary reads an empty seed.")
+	assert_equal(view.run_oath_shards_earned(), 0, "An absent summary earns 0 (fail-closed).")
 
 
 # ---- Story 11.6: the shallow meta menu spend render decisions (AC1/FR59) -------------------------

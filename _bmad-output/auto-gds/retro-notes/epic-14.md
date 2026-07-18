@@ -27,3 +27,4 @@
 ## Story 14-5-run-end-beat-and-run-summary-screen
 - [Phase 3 — create-story] Cross-story overlap: 14-5 AC2 and 14-9 AC1 both name the oath-shards-earned-this-run count + nodes-cleared on the same outpost-embedded summary surface. Scoped: 14-5 (Band 1) delivers the honest earned count now; 14-9 (Band 2) INHERITS it — confirm at the epic retro that 14-9 does not re-implement it.
 - [Phase 3 — create-story] 14-5 SUPERSEDES 14-4's outpost "Descend Again" seed wiring: the D3 hero-select reroute makes the outpost's `RunSeedSource`/`_new_run_entropy` dead code to remove — intentional convergence to a single live seed source at hero-select, not a 14-4 regression.
+- [Phase 5 — dev-story] Fail-closed EMPTY `RunSummary` carries `seed == "0"` (not `""`), so `summary_seed()` gates on `has_summary` to return `""` when absent — the pattern disambiguates "no just-ended run" from a genuine seed-0 run; future RunSummary render slots should copy the gate.

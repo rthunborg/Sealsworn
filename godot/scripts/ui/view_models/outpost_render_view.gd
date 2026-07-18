@@ -37,6 +37,11 @@ extends RefCounted
 const MetaSpendRules = preload("res://scripts/save/meta_spend_rules.gd")
 const ClassRepository = preload("res://scripts/content/repositories/class_repository.gd")
 const ClassDefinition = preload("res://scripts/content/definitions/class_definition.gd")
+# Story 14.5 (AC2): the deterministic Oath-Shard award CALCULATOR (the earned-this-run count is a separate render-side
+# read via its public consts, NOT a summary-key change — see run_oath_shards_earned()) + the RunState phase ids (the
+# outcome label keys off the summary's terminal phase — D6). Read-only references; no domain/save file is touched.
+const MetaAwardRules = preload("res://scripts/save/meta_award_rules.gd")
+const RunState = preload("res://scripts/run/run_state.gd")
 
 const RECOVERY_MODE_NONE := "none"
 const RECOVERY_MODE_LOAD_FAILURE := "load_failure"
@@ -62,6 +67,12 @@ const SPEND_STATE_INSUFFICIENT := "insufficient"  # not yet unlocked, and the pr
 # The insufficient-shards message (a fail-loud non-color channel — never a silent no-op; appendix §14). The presenter
 # pairs it with a distinct icon; the shortfall wording is centralized here so it is testable without a SceneTree.
 const INSUFFICIENT_SHARDS_NOTE := "Not enough Oath Shards to unlock this yet."
+
+# Story 14.5 (AC2, D6/F-2): the run-summary OUTCOME LABELS, keyed off the summary's terminal `phase` (NOT the live-blank
+# outcome_or_cause). Reuses run_end_presenter.gd:58's Victory/Fallen vocabulary so the two run-end surfaces read
+# consistently. Centralized + testable without a SceneTree; the presenter pairs each with a distinct non-color glyph.
+const SUMMARY_OUTCOME_VICTORY := "Victory"
+const SUMMARY_OUTCOME_DEATH := "Fallen"
 
 # The projection this render view reads (OutpostViewModel.to_dictionary() — the pinned DICTIONARY_KEYS). A deep copy is
 # stored so a mutation of a caller's dict never perturbs this seam's reads.
@@ -169,6 +180,60 @@ func summary_oath_shards_not_yet_tallied() -> bool:
 # "no just-ended run", not a zeroed sheet).
 func shows_run_summary() -> bool:
 	return bool((_projection.get("run_summary", {}) as Dictionary).get("has_summary", false))
+
+
+# Story 14.5 (AC2, D6/F-2): the victory/death OUTCOME LABEL keyed off the summary's terminal `phase`. A COMPLETED run
+# reads the victory label; a FAILED run reads the death label; an absent / non-terminal / unknown-phase summary reads ""
+# (fail-closed — the presenter renders "No just-ended run." on the has_summary gate before it reaches here). It does NOT
+# read outcome_or_cause (which is "" in the live flow — RunEndProfileBridge builds RunSummary.build(run, []) with an empty
+# events list, so the terminal-event-derived marker never populates; `phase` is always the honest terminal fact).
+func summary_outcome_label() -> String:
+	var phase: String = _summary_phase()
+	if phase == String(RunState.PHASE_COMPLETED):
+		return SUMMARY_OUTCOME_VICTORY
+	if phase == String(RunState.PHASE_FAILED):
+		return SUMMARY_OUTCOME_DEATH
+	return ""
+
+
+# Story 14.5 (AC2): the nodes-cleared run signal (run_summary.run_scoped.nodes_cleared — a bounded route count, NOT a
+# difficulty knob). 0 when absent (fail-closed).
+func summary_nodes_cleared() -> int:
+	var run_scoped: Dictionary = (_projection.get("run_summary", {}) as Dictionary).get("run_scoped", {})
+	return int(run_scoped.get("nodes_cleared", 0))
+
+
+# Story 14.5 (AC2): the run seed (run_summary.seed — already the decimal-string int64 the epic-wide root_seed rule uses;
+# useful for FR27 replay/sharing). "" when the summary is absent (fail-closed). The has_summary gate is deliberate: the
+# fail-closed EMPTY summary carries seed "0" (root_seed defaults to 0), which is ambiguous with a real seed-0 run — so an
+# absent summary reads "" ("no just-ended run"), while a present summary reads its real seed (even "0").
+func summary_seed() -> String:
+	var summary: Dictionary = _projection.get("run_summary", {})
+	if not bool(summary.get("has_summary", false)):
+		return ""
+	return String(summary.get("seed", ""))
+
+
+# Story 14.5 (AC2): the honest OATH-SHARDS-EARNED-THIS-RUN count — a SEPARATE deterministic render-side read (NOT a
+# summary-key change; RunSummary.profile_meta.oath_shards_earned STAYS 0/not_yet_supported). It is 0 unless the run
+# COMPLETED (phase) AND is meta-eligible (a manual-seed run earns no meta — FR28); otherwise it is the SAME capped, sparse
+# amount MetaAwardRules.oath_shard_award_for(run) would grant: clampi(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, 0,
+# MAX_AWARD). The MetaAwardRules consts are referenced so the NUMBERS are single-sourced (not hardcoded 1/1/5). A death or
+# manual-seed run honestly earns 0. Pure read; draws ZERO RNG; touches NO domain/save file.
+func run_oath_shards_earned() -> int:
+	var summary: Dictionary = _projection.get("run_summary", {})
+	var is_completed: bool = _summary_phase() == String(RunState.PHASE_COMPLETED)
+	var is_eligible: bool = bool(summary.get("meta_progression_eligible", false))
+	if not (is_completed and is_eligible):
+		return 0
+	var raw_award: int = MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * summary_nodes_cleared()
+	return clampi(raw_award, 0, MetaAwardRules.MAX_AWARD)
+
+
+# Story 14.5: the summary's terminal phase String (the projected run_summary.phase — "completed" / "failed", or "" for an
+# absent / non-terminal summary). A private helper the outcome label + the earned-count gate read.
+func _summary_phase() -> String:
+	return String((_projection.get("run_summary", {}) as Dictionary).get("phase", ""))
 
 
 # AC2: whether the first-death reveal beat renders (its own has_beat gate — an absent beat is not rendered, nothing
