@@ -2,11 +2,11 @@ story_key: 14-5-run-end-beat-and-run-summary-screen
 epic_num: 14
 story_num: 5
 branch: story/14-5-run-end-beat-and-run-summary-screen
-status: in-progress
-updated_at: "2026-07-18T18:16:30Z"
+status: done
+updated_at: "2026-07-18T18:19:00Z"
 started_at: "2026-07-18T17:02:14Z"
-completed_at: null
-active_seconds: 3580
+completed_at: "2026-07-18T18:19:00Z"
+active_seconds: 3640
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["da5d5ac", "f12298f", "13afbb1"]
+commits: ["da5d5ac", "f12298f", "13afbb1", "f1f343e", "c38e63b"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/75"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

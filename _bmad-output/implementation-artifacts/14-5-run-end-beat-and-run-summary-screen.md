@@ -1,6 +1,6 @@
 # Story 14.5: Run-End Beat and Run-Summary Screen
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
