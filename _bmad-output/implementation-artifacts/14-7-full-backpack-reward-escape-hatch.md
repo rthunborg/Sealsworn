@@ -1,0 +1,229 @@
+# Story 14.7: Full-Backpack Reward Escape Hatch
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want to skip or decline a reward I cannot take,
+so that a full backpack can never permanently stall the run.
+
+## Context & Why This Story Exists
+
+Epic 14 ("Playable & Presentable") is the **second pre-ship backlog epic**, added 2026-07-16 after an agent-driven desktop playtest found the built MVP is **not honestly finishable** and looks unfinished (`playtest-sessions/agent-playtest-2026-07-16.md`; `sprint-change-proposal-2026-07-16.md`). Story 14.7 is the **seventh and LAST story of Band 1** (finishable + readable), closing the final finishability gap: a second soft-lock class the agent playtest's code review surfaced.
+
+**The defect this story closes (deferred-work.md line 77, from the 13-2 Round-1 review, 2026-07-16):** the generic reward HUD has **no skip/drop affordance**. A **backpack-category** reward resolved against a **FULL backpack** returns `inventory_full` and — by the documented Epic-6 domain decision (`resolve_reward_command.gd:24-25`, `:138-141`) — **leaves the offer `pending`** (the correct fail-closed behavior: a full backpack never silently overwrites/drops a slot). The shell re-renders and does **not** advance (`gameplay_shell_presenter._on_reward_resolution_requested:257-262`), but the generic overlay exposes **only an "Accept reward" button** (`tactical_board_presenter._build_generic_reward_ui:1367`), so re-clicking just re-triggers the same `inventory_full` reject — **a soft-lock with no player escape**. The fail-closed domain behavior is correct; **the missing HUD escape hatch is the gap.**
+
+**The fix (design decision D5, `sprint-change-proposal-2026-07-16.md:107`):** add a **decline/skip disposition** — a caller-driven run command in the **4.3 idiom** (validate-before-mutate, returns `ActionResult`, an append-only past-tense tail domain event, **zero RNG**) that **clears the pending offer WITHOUT applying it**, so a full-backpack generic reward can be dismissed and the run can advance. This is the **minimal soft-lock fix**. It **does NOT weaken** the fail-closed `inventory_full` guard (which stays correct and untouched) — the decline simply **never touches the backpack at all**, so it can never hit `inventory_full`. The **richer drop/replace-choice UX** the ledger names as the eventual owner is **explicitly deferred** (AC3): this story ships **only the minimal no-soft-lock skip**.
+
+**14.7 is one of Epic 14's TWO domain-touching stories** (the other is 14.1 corpse-clearing + `WaitCommand`). Like 14.1, the domain add is **additive over pinned contracts**: a NEW run command + a NEW append-only tail domain event, following the 4.3 idiom verbatim. **Unlike 14.1, 14.7 re-pins NOTHING** — the new command is invoked by no generator/driver/replay fixture, so every seed-regression / route / finale / combat fingerprint stays **byte-identical**, and there is **NO save-schema change** (the offer already rides `RunState`; the decline flips only existing fields — see AC3 + the hard-stop note in Dev Notes).
+
+**Reachability caveat (why the automated test must construct the state directly).** The full-backpack soft-lock is **not reachable in an early desktop playtest**: the backpack starts empty (6 slots), and the depth-0 opener / deeper `standard_combat_reward` tables yield **gold ~⅓ of the time (always resolves)**, so filling all 6 slots AND then drawing a 7th backpack-category reward takes deep play. The **automated unit test must build the full 6/6 backpack directly** (mirror `test_resolve_reward_command._full_backpack_resolution_surfaces_inventory_full`, which already fills a 6/6 backpack). On-device human verification of the button + the real soft-lock break defers to the Band-1 observed playtest (see Epic-14 constraints).
+
+## Acceptance Criteria
+
+**AC1 — A full-backpack generic reward can be declined; the run advances; the fail-closed guard is not weakened (FR52; the 13.2 full-backpack soft-lock)**
+Given a pending **generic** reward offer resolves against a **FULL backpack**
+When the domain returns `inventory_full` and leaves the offer **pending** (the correct fail-closed behavior — unchanged)
+Then the reward overlay exposes a **visible decline/skip affordance**, and invoking it **clears the pending offer WITHOUT applying it** via a **caller-driven run command** (the 4.3 idiom: validate-before-mutate, returns `ActionResult`, an **append-only tail domain event**, **zero RNG**), so the offer flips to `resolved` and the run can advance — **the soft-lock is broken**
+And the fail-closed `inventory_full` domain guard is **NOT weakened** (a full backpack still never silently overwrites/drops a slot — the decline path **never touches the backpack**, so `ResolveRewardCommand` / `PickupItemCommand` are unchanged), and a **passive** offer is still resolved by **exactly one command** (no double-record — decline is exposed on the **generic** overlay only; the passive Consume/Destroy path is untouched).
+
+**AC2 — The decline command is validate-before-mutate; the new event is wired end-to-end (FR52; the 4.3 idiom)**
+Given the decline path
+When it is exercised **valid** (a pending unresolved offer — incl. the full-backpack case) and **invalid** (no pending offer, already-resolved offer, non-positive sequence id, non-RunState/invalid run)
+Then a **valid** decline flips the offer to `resolved` with its event; an **invalid** decline **fails closed** with **zero mutation** (a byte-identical run, **zero events**, zero RNG)
+And the new `reward_declined` event is **wired end-to-end**: factory + payload validator + `id_for_type`/`type_for_id` id maps + `to_dictionary`/`try_from_dictionary` round-trip + malformed-payload negatives + the exhaustive `expected_ids` pin (the exact end-to-end checklist 14.1's `hero_waited` followed — see Dev Notes).
+
+**AC3 — Pinned contracts held; every fingerprint byte-identical; richer disposition deferred (FR52; NFR13/NFR14/NFR15)**
+Given the pinned contracts
+When this story lands
+Then the **23-key `RunSnapshot` gate stays 23** (`SCHEMA_VERSION == 1`), the **7 named RNG streams are unchanged** (`map, level, combat, loot, rewards, events, cosmetic`), and **every** route/generator/finale/combat seed-regression fingerprint stays **byte-identical** (the decline command is invoked by no driver/generator/replay fixture — 14.7 re-pins **NOTHING**); there is **NO save-format/serialized-schema change** (the offer rides `RunState.to_dictionary()`'s existing `pending_reward_offer` key; the decline flips only the existing `RewardOffer.status`/`selected_entry` fields — no new `RewardOffer.DICTIONARY_KEYS`, `RunState`, or `RunSnapshot` key)
+And the richer **drop/replace disposition** remains a later enhancement — this story ships **only the minimal no-soft-lock skip**.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1 — `DeclineRewardCommand`: the caller-driven decline run command (AC1, AC2)**
+  - [ ] Create `godot/scripts/core/commands/decline_reward_command.gd` — `class_name DeclineRewardCommand extends "res://scripts/core/commands/game_command.gd"`. **Mirror `resolve_reward_command.gd` / `accept_cursed_reward_command.gd` VERBATIM** (the 4.3-ratified run-command idiom). Commit the generated `.gd.uid` sidecar (the 13.1 import discipline).
+  - [ ] `_init(new_sequence_id: int = 1)` → `command_id = &"decline_reward"`, store `sequence_id`. The command takes **no category/content_id** — a decline picks **no entry** (it clears the whole pending offer). The caller supplies the run-level `sequence_id` (the `RewardResolutionBridge` threads `orchestrator.next_sequence_id()`).
+  - [ ] `validate(state) -> ActionResult` (pure read; no mutation, no event, no RNG), in this order (the `ResolveRewardCommand.validate` precedent, `resolve_reward_command.gd:67-114`):
+    1. `sequence_id <= 0` → `ActionResult.error(&"invalid_event_sequence_id", {...})` **FIRST** (a success path must never emit an event its own validator rejects — `try_from_dictionary` requires `sequence_id > 0`).
+    2. `not state is RunState` → `_invalid_context()`.
+    3. `run.validate().is_error()` → `_invalid_context(run_validation)` (structurally-sound run required).
+    4. `run.pending_reward_offer == null` → `ActionResult.error(&"no_pending_reward_offer", {...})`.
+    5. `offer.is_resolved()` → `ActionResult.error(&"reward_offer_already_resolved", {"table_id": ...})` (the no-double-resolve guard — decline shares the SAME reject codes as resolve for the absent/resolved-offer cases).
+    - **No entry-selection check** (unlike `ResolveRewardCommand.validate`'s `has_offered_entry` — decline selects nothing). **No economy check** (decline credits no gold).
+  - [ ] `execute(state) -> ActionResult`: call `validate(state)` first (return on error); then — and ONLY on success — (1) flip `offer.status = RewardOffer.STATUS_RESOLVED` and set `offer.selected_entry = {}` (declined = **no selection recorded**); (2) build the `DomainEvent.reward_declined(sequence_id, {...})` event **AFTER** the mutation; (3) return `ActionResult.ok([declined_event], {..diagnostics..})`. **Draw ZERO RNG. Compose NO `PickupItemCommand`. Credit NO gold. Touch the backpack/inventory/economy NOT AT ALL** — this is exactly what makes the decline immune to `inventory_full` and what keeps the fail-closed guard untouched (AC1).
+  - [ ] Add the `_invalid_context(inner: ActionResult = null)` helper (copy `resolve_reward_command.gd:199-205` verbatim).
+
+- [ ] **Task 2 — The `reward_declined` domain event, wired end-to-end (AC2)**
+  - [ ] In `godot/scripts/core/events/domain_event.gd`, add a NEW **system** event (no actor) following the 8-point append-only checklist 14.1's `hero_waited` followed (never renumber; append at each tail):
+    1. `enum Type { ... HERO_WAITED, REWARD_DECLINED }` — append after `HERO_WAITED` (`domain_event.gd:49`).
+    2. `const EVENT_ID_REWARD_DECLINED := &"reward_declined"` — append after `EVENT_ID_HERO_WAITED` (`:97`).
+    3. Factory `static func reward_declined(sequence_id: int, payload: Dictionary = {}) -> DomainEvent` — **mirror `reward_resolved`** (`:641-651`): a SYSTEM event (actor_id `&""` — NOT in `_event_requires_actor`), `payload.duplicate(true)`, normalize `table_id` + `reason` as `String(...)`, `return ...new(Type.REWARD_DECLINED, sequence_id, &"", payload_value)`.
+    4. Payload-validator dispatch: add `Type.REWARD_DECLINED: return _validate_reward_declined_payload(payload_value)` to the `match event_type` (beside the `REWARD_RESOLVED` arm `:1215-1216` / the `HERO_WAITED` arm `:1249-1250`).
+    5. `static func _validate_reward_declined_payload(payload_value) -> ActionResult` — require **`table_id` lower_snake** (mirror `_validate_reward_resolved_payload` `:1697-1698`) AND **`reason` lower_snake** (mirror `_validate_hero_waited_payload` `:2077-2080`). Reject per-field with `_error_result(&"invalid_event_payload", {"field": ...})`.
+    6. `id_for_type`: add `Type.REWARD_DECLINED: return EVENT_ID_REWARD_DECLINED` (beside `:2439-2440`/`:2475-2476`).
+    7. `type_for_id`: add `EVENT_ID_REWARD_DECLINED: return Type.REWARD_DECLINED` (beside `:2529-2530`/`:2565-2566`).
+    8. **Do NOT** add `REWARD_DECLINED` to `_event_requires_actor` (`:2571-2583`) — it is a system event (empty actor_id, exactly like `reward_resolved`).
+  - [ ] **Payload shape (recommended minimal, honest):** `{"table_id": String(offer.table_id), "reason": "player_declined"}`. Use a lower_snake `reason` marker **distinct from the event_id** (recommend a `const DECLINE_REASON := &"player_declined"` on the command, NOT `"reward_declined"` which duplicates the event id). Category/content_id are **optional provenance** only — a decline selects no entry; if you DO record them, validate lower_snake + `REWARD_CATEGORIES` per the `reward_resolved` validator. Keep the payload minimal (the 14.3 "seams expose only what is consumed" discipline — RunSummary/diagnostics consume the event, nothing needs category/content_id here).
+
+- [ ] **Task 3 — Route the decline intent through the resolution bridge (AC1)**
+  - [ ] In `godot/scripts/ui/flow/reward_resolution_bridge.gd`, add `const ACTION_DECLINE_GENERIC := "decline_generic"` and a `_decline_generic(run, orchestrator) -> ActionResult` handler that constructs + executes **exactly one** command: `return DeclineRewardCommand.new(orchestrator.next_sequence_id()).execute(run)` (preload `DeclineRewardCommand`; mirror `_resolve_generic` `:64-67`). Add the `ACTION_DECLINE_GENERIC: return _decline_generic(run, orchestrator)` arm to the `match action` in `resolve()` (`:49-58`).
+  - [ ] This preserves the **exactly-one-command** contract (`project-context.md:195/446`): a decline runs exactly `DeclineRewardCommand`, never two, never alongside a resolve. The unsupported-action fail-closed (`unsupported_reward_resolution`) is unchanged.
+
+- [ ] **Task 4 — The visible decline/skip affordance on the generic reward overlay (AC1)**
+  - [ ] In `godot/scripts/ui/presenters/tactical_board_presenter.gd`, in `_build_generic_reward_ui` (`:1361-1376`) — the GENERIC single-pick branch ONLY — add a **"Decline reward"** (or "Skip") button via the existing `_reward_button(...)` helper (already sets `custom_minimum_size = 44×44` + `MOUSE_FILTER_STOP`, the ≥44px §14.1 touch target). Connect its `pressed` to `_emit_reward_resolution({"action": "decline_generic"})`. Add it to `_reward_box` after the Accept button.
+  - [ ] **Recommended: always present on the generic overlay** (the robust minimal escape — it guarantees the hatch exists whenever the full-backpack reject can strand, needs no inventory-state read in the presenter, and doubles as a normal "skip an unwanted reward" affordance). The AC bar is only that the affordance is present when the full-backpack reject can strand; an always-present generic decline satisfies it and is exactly the "minimal skip."
+  - [ ] **Do NOT add decline to `_build_passive_reward_ui` (`:1381-1399`)** — decline is **generic-path only** (AC1: "a passive offer is still resolved by exactly one command"). The passive overlay keeps its Consume/Destroy + two-step Confirm/Cancel untouched.
+  - [ ] **Do NOT add a projection field** to `RewardHudViewModel` for the decline button — it is a **static** presenter control (a fixed label), needs no projected data (the 14.3 "no forward-looking dead output in a seam" discipline; the 14.2 `BENIGN_FLOW_REASONS`/`damage_numbers` pruning precedent). The overlay still renders the offer from the **session-bound** `_run.pending_reward_offer` via `render_reward()` (`:1318-1333`) — the decline changes nothing about that source (the 14.3 render-from-session lesson).
+  - [ ] **No `gameplay_shell_presenter` change needed** — verify: a successful decline returns an `ok` `ActionResult`, so `_on_reward_resolution_requested` (`:250-264`) takes the success branch (`hide_reward_offer()` + `_advance_to_route_map()`) exactly as a successful resolve does. Confirm this by reading `:257-264`; only surface a change if the success path does NOT advance on an ok decline (it should).
+
+- [ ] **Task 5 — Tests: the command, the event round-trip, the bridge action; suite green (AC1, AC2, AC3)**
+  - [ ] **NEW** `godot/tests/unit/core/test_decline_reward_command.gd` (mirror `test_resolve_reward_command.gd` structure; auto-discovered under `res://tests/unit` — no registration; commit the `.gd.uid`). Cover:
+    - **valid decline**: a pending generic offer → `resolved`, exactly ONE `reward_declined` event, `selected_entry == {}`, backpack/economy **byte-identical** (nothing applied), ZERO RNG advance;
+    - **the load-bearing full-backpack case (AC1)**: build a **FULL 6/6 backpack** (mirror `test_resolve_reward_command._full_backpack_resolution_surfaces_inventory_full` `:280-295` — assert `run.inventory.is_full()`), an offer whose single entry is a backpack-category item that **would** `inventory_full` on resolve, then **decline succeeds** (offer → `resolved`, the run can advance) while the backpack stays **untouched** (the soft-lock break, with the fail-closed guard un-weakened);
+    - **invalid, fail-closed with zero mutation + zero events**: `sequence_id <= 0` rejects FIRST (`invalid_event_sequence_id`); non-RunState / structurally-invalid run → `invalid_context`; no pending offer → `no_pending_reward_offer`; a SECOND decline against a now-`resolved` offer → `reward_offer_already_resolved` (byte-identical run, zero events);
+    - **zero RNG** on both success and reject (assert the run-level streams — if constructed with streams — do not advance; mirror `test_resolve_reward_command._resolve_draws_no_rng_on_success_and_reject`).
+  - [ ] **UPDATE** `godot/tests/unit/core/test_domain_event.gd`: add `_reward_declined_serializes_and_parses_stable_payload` (round-trip via `to_dictionary`/`try_from_dictionary`; assert `event_id == "reward_declined"`, empty `actor_id` (system event), `table_id`/`reason` survive — mirror `_reward_resolved_serializes_and_parses_stable_payload` `:1930-1953`) + `_reward_declined_rejects_malformed_payloads` (missing `table_id` → field `table_id`; non-lower_snake `reason` → field `reason` — mirror `:1955-1978`) + **add `DomainEvent.Type.REWARD_DECLINED: &"reward_declined"` to the `expected_ids` map (`:3038-3069`)** — REQUIRED, or the exhaustiveness assert (`:3084` `expected_ids.size() == Type.size() - 1` and the per-member loop `:3085-3088`) FAILS. Register the two new methods in `run()` (`:48-73`).
+  - [ ] **UPDATE** `godot/tests/unit/ui/test_reward_resolution_bridge.gd`: add a `decline_generic` case — the bridge executes `DeclineRewardCommand` (offer → `resolved`, a `reward_declined` event, ZERO new RNG through the run streams), a full-backpack decline succeeds, and a second decline fails closed (`reward_offer_already_resolved`) — the exactly-one-command guarantee. Register the method in `run()`.
+  - [ ] The `tactical_board_presenter` decline button is verified **by construction + the `test_run_flow_scenes_load.gd` compile guardrail** (the ratified no-SceneTree-presenter-test stance) — no SceneTree test asserts the button renders (that is the Band-1 on-device playtest's job). All assertable logic lives in the RefCounted command/bridge/event seams above.
+  - [ ] Use `str(...)`, never eager `String(nullable)`, in assert/log messages (the 14.1 test-honesty retro — eager `String(null)` crashes and masks the real failure).
+  - [ ] Run the FULL headless suite (mandatory command below). Grep the RAW output for `SCRIPT ERROR|Parse Error|^FAIL` (the false-PASS guard): exactly the **6 documented stderr negatives** (int64-overflow ×2 — `test_domain_event.gd:146` + `test_manual_seed_loader.gd:153`, per the 14-4 attribution correction; malformed-JSON ×3; `invalid_node_type` ×1), **ZERO new**. The new `reward_declined` malformed-payload negatives return caught `ActionResult.error` (they do **not** `push_error` to stderr — like the `hero_waited` malformed-payload negatives per the 14-1 round-2 retro), so they add NO new stderr negative. Baseline is **~201-202 PASS files** (confirm the live count on the branch head before starting); the NEW `test_decline_reward_command.gd` file ticks the PASS-file count up by 1 (the extended `test_domain_event.gd`/`test_reward_resolution_bridge.gd` add methods to existing files → per-file PASS unchanged). `git diff --check` clean (orchestrator-owned per the delegate git policy).
+
+## Dev Notes
+
+### The domain change follows the 4.3 command idiom VERBATIM — the two exemplars to mirror
+
+`ResolveRewardCommand` (`godot/scripts/core/commands/resolve_reward_command.gd`) and `AcceptCursedRewardCommand` (`godot/scripts/core/commands/accept_cursed_reward_command.gd`) are the two closest reward-domain templates. Both: `extends game_command.gd`; take the live `RunState` **directly** as the `validate(state)`/`execute(state)` arg (no wrapper); the CALLER supplies the run-level `sequence_id` via the constructor; `validate()` rejects `sequence_id <= 0` **FIRST**; validate-then-mutate (on any reject → `ActionResult.error` with **zero events** + byte-identical no-mutation `RunState`); build the event **AFTER** the mutation; draw **zero RNG** (a decline/accept-of-recorded-data is deterministic — no `RandomNumberGenerator`, no `randi/randf`, no stream draw). **`DeclineRewardCommand` is the simplest of the family** — it applies nothing (no pickup, no gold, no curse), it just flips the offer status + records the decline event. Copy the shape, drop the apply step.
+
+### The `reward_declined` event is a system event — mirror `reward_resolved`, follow the `hero_waited` append discipline
+
+`reward_declined` carries **no actor** (the player-driven UI intent is a system-recorded outcome, exactly like `reward_resolved`/`item_gained`) — so `actor_id` stays `&""` and it is **NOT** added to `_event_requires_actor`. 14.1's `hero_waited` is the most recent append-only tail event and the exact 8-touch-point precedent for wiring a NEW type (enum tail → id const → factory → validator dispatch → validator func → `id_for_type` → `type_for_id` → `expected_ids` test pin), **never renumbering** the enum. Miss the `expected_ids` pin and `test_domain_event.gd:3084/3088` fails loudly (that assert exists precisely to catch a forgotten append — the 7.1/6.7 retro T3 hardening).
+
+### Validator symmetry note (the 14.1 wait-event asymmetry lesson)
+
+14.1's retro flagged that the `hero_waited` validators are asymmetric by design (board-apply enforces only non-empty `reason`; deserialization enforces lower_snake) — a latent gap that only matters if the event is ever serialized. For `reward_declined`, keep the validator **symmetric and strict**: `_validate_reward_declined_payload` enforces lower_snake on `table_id` + `reason` on the one `try_from_dictionary`/round-trip path the AC2 malformed-negative test exercises. Reward events are consumed by `RunSummary`/diagnostics and round-trip through `to_dictionary`/`try_from_dictionary`, so the strict validator is the honest choice (and it is the only validator path — no board-apply asymmetry to introduce).
+
+### NO save-schema change — and why (the hard-stop the domain-story warning names)
+
+The pending offer rides `RunState.to_dictionary()` under the **existing** `pending_reward_offer` key (`run_state.gd:296`) — it is **NOT** in the 23-key route-position `RunSnapshot` (`reward_offer.gd:22-24`: "DELIBERATELY NOT serialized into the route-position RunSnapshot ... carries NO new top-level snapshot key"). A decline flips **only existing `RewardOffer` fields**: `status` (`pending → resolved`, already a valid value) and `selected_entry` (`→ {}`, already a valid value). It adds **no** `RewardOffer.DICTIONARY_KEYS` entry (the key set stays 9, pinned by `test_reward_offer.gd`), **no** `RunState` field, **no** `RunSnapshot` key. Domain **events** are not part of the save schema (they are the returned event stream, consumed by callers, not stored in a snapshot), so adding the `reward_declined` type does not change `RunSnapshot`. **Therefore: 23-key gate stays 23, `SCHEMA_VERSION == 1`, NO migration test needed.**
+
+> **HARD-STOP (surface immediately, do not proceed silently):** if implementation reveals a genuine need to add a **serialized** key — a new `RewardOffer.DICTIONARY_KEYS` entry (e.g. a persisted "declined" flag distinct from `resolved`), a new `RunState` serialized field, or a `RunSnapshot` key — that **is** a save-format/serialized-schema change. It requires a **schema migration test** (a legacy/partial dict round-trips cleanly) **and explicit surfacing** to the orchestrator. The recommended design above adds **zero** serialized keys, so this should not arise — but if it does, STOP and flag it rather than silently bumping a gate.
+
+### Decline is generic-path only — the passive exactly-one-command contract stays intact
+
+The soft-lock is specifically the **backpack-category generic** path: `PickupItemCommand` returns `inventory_full` and `ResolveRewardCommand` surfaces it verbatim, leaving the offer `pending` (`resolve_reward_command.gd:132-141`). **Gold** always credits (never strands). A **passive** 3-choice offer always resolves (Consume adopts; Destroy rolls a 70/20/10 outcome — both succeed), so it can never soft-lock. Expose the decline button on the **generic** overlay only (`_build_generic_reward_ui`), never the passive overlay. The `DeclineRewardCommand` itself is offer-type-agnostic (it clears whatever pending offer exists), but the passive path never routes to it — so each offer still resolves via **exactly one** command (a second command hits `reward_offer_already_resolved`), and no double-record is possible (AC1). Do NOT add a passive-specific rejection to the command; do NOT build a passive decline.
+
+### The exact live files (the 14.1/14.4/14.6 "name the RIGHT surface" precision)
+
+Epic 14's recurring SM-audit-precision defect is stories naming the wrong presenter files. The verified live surfaces for 14.7 (read against source this story):
+- **Domain command (NEW):** `godot/scripts/core/commands/decline_reward_command.gd` (beside `resolve_reward_command.gd` / `accept_cursed_reward_command.gd`).
+- **Domain event:** `godot/scripts/core/events/domain_event.gd` (the 8 touch points above).
+- **Bridge:** `godot/scripts/ui/flow/reward_resolution_bridge.gd` (the caller-driven run-command seam; add the `decline_generic` action). This is the seam that threads `orchestrator.next_sequence_id()` — NOT a `TacticalCommandBridge` intent.
+- **Reward overlay control (the decline BUTTON):** `godot/scripts/ui/presenters/tactical_board_presenter.gd` → `_build_generic_reward_ui` (`:1361`) — the **live board surface** owns the overlay + its buttons + `_emit_reward_resolution` (`:1467`). This is the "live board surface is `tactical_board_presenter.gd`" from the 14.1 retro.
+- **Resolution CALLBACK + advance:** `godot/scripts/ui/presenters/gameplay_shell_presenter.gd` → `_on_reward_resolution_requested` (`:250`) owns the callback that runs the bridge + advances on success. Likely **no change** (a successful decline already routes through the ok/advance branch) — verify, don't rebuild.
+
+Both presenters are real and each owns a distinct half (overlay controls vs. resolution callback) — name each precisely.
+
+### Anti-patterns to avoid (this story specifically)
+
+- **Do NOT weaken, bypass, or "fix" the `inventory_full` guard.** It is correct (fail-closed: a full backpack never overwrites/drops a slot). The decline **sidesteps** the backpack entirely (applies nothing), so `inventory_full` never fires on the decline path. Leave `ResolveRewardCommand`/`PickupItemCommand` byte-identical.
+- **Do NOT apply the reward on decline.** No `PickupItemCommand`, no gold credit, no inventory/economy touch. Declining means the reward is forfeited — `selected_entry` stays `{}` and no `item_gained`/`economy_changed` event is emitted. (A declined reward correctly contributes **no** `notable_loot` to `RunSummary`, which single-sources notable loot from `item_gained` — see Deferred-work overlaps.)
+- **Do NOT add a decline to the passive overlay** or make the passive resolvable a second way (breaks the exactly-one-command / no-double-record guard).
+- **Do NOT add a projection key/field to `RewardHudViewModel`** — the decline button is a static presenter control (no projected data). Keep `REWARD_KEYS`/`CHOICE_KEYS` unchanged (the 14.3 no-forward-looking-dead-output discipline).
+- **Do NOT renumber the `DomainEvent.Type` enum** — append `REWARD_DECLINED` at the tail. Update all id maps + the `expected_ids` pin.
+- **Do NOT add a new RNG stream or draw site.** The decline is deterministic (zero RNG). The 7 named streams are unchanged.
+- **Do NOT re-pin any fingerprint.** No generator/driver/replay fixture invokes `DeclineRewardCommand`, so every seed-regression/route/finale/combat fingerprint stays byte-identical. 14.7 re-pins **nothing** (contrast 14.1's justified combat-replay re-pin — 14.7 has no such need).
+- **Do NOT worsen the reward-overlay geometry.** Adding one button must keep the ≥44px targets reachable; the full overlay-geometry / `ScrollContainer` fix is **14.11's** deferred item, NOT this story's (see Deferred-work overlaps). Use `_reward_button(...)` (already ≥44px) and add the button to the existing `_reward_box` VBox.
+- **Do NOT use eager `String(nullable)` in assert/log messages** (14.1 retro — crashes on a null read and masks the real failure). Use `str(...)`.
+- **Keep the false-PASS grep guard standing** — grep the RAW runner output for `SCRIPT ERROR|Parse Error|^FAIL`; never trust the summary PASS line alone. Exactly the 6 documented stderr negatives; ZERO new.
+
+## Project Structure Notes
+
+- **Files touched (production):** `godot/scripts/core/commands/decline_reward_command.gd` (**NEW** — the decline run command; commit its `.gd.uid`), `godot/scripts/core/events/domain_event.gd` (the `reward_declined` type wired end-to-end), `godot/scripts/ui/flow/reward_resolution_bridge.gd` (the `decline_generic` action), `godot/scripts/ui/presenters/tactical_board_presenter.gd` (the decline button in `_build_generic_reward_ui`). `gameplay_shell_presenter.gd` likely unchanged (verify the ok/advance path).
+- **Tests:** `godot/tests/unit/core/test_decline_reward_command.gd` (**NEW**; commit its `.gd.uid`), `godot/tests/unit/core/test_domain_event.gd` (extend — round-trip + malformed + `expected_ids`), `godot/tests/unit/ui/test_reward_resolution_bridge.gd` (extend — `decline_generic`). Runner auto-discovers `test_*.gd` under `res://tests/unit` + `res://tests/integration` (`test_runner.gd:3-6`) — no manual registration.
+- **Assertable logic lives in scene-free `RefCounted` seams** (the command, the bridge, the event) — unit-tested. The `tactical_board_presenter` decline button is verified by construction + `godot/tests/unit/ui/test_run_flow_scenes_load.gd` (the compile guardrail). No new autoload. 14.7 adds **no art**.
+- **Unchanged:** `resolve_reward_command.gd`, `pickup_item_command.gd`, `reward_offer.gd` (key set), `run_state.gd` (serialization), `run_snapshot.gd` (23-key gate, `SCHEMA_VERSION == 1`), `rng_stream_set.gd` (7 streams), `reward_hud_view_model.gd` (key sets), and every generation/route/finale/combat file.
+
+## Project Context Rules
+
+Extracted from `project-context.md` (canonical rulebook) and the architecture (`_bmad-output/game-architecture.md`):
+
+- **Gameplay actions are commands that validate before mutation and return `ActionResult` (NFR14).** `DeclineRewardCommand` is a validate-before-mutate run command returning `ActionResult`; on any reject it mutates nothing and emits no event.
+- **Successful commands emit deterministic past-tense domain events.** The decline emits the past-tense `reward_declined` system event, built after the mutation, wired end-to-end (factory + validator + id maps + round-trip).
+- **Use named RNG streams for gameplay-affecting randomness (NFR13).** The decline draws **ZERO** RNG (deterministic). The 7 named streams (`map, level, combat, loot, rewards, events, cosmetic`) are unchanged, unreordered — no new stream, no new draw site.
+- **Save versioned domain snapshots only; never serialize scene nodes (NFR15).** No save change: the offer rides the existing `RunState` `pending_reward_offer` key; the 23-key `RunSnapshot` gate stays 23, `SCHEMA_VERSION == 1`, `RewardOffer.DICTIONARY_KEYS` unchanged (see the hard-stop note if this stops being true).
+- **Domain owns truth; presentation observes + submits commands (NFR14/NFR15).** The overlay renders the session-bound offer (`_run.pending_reward_offer`) and SUBMITS the decline intent through the `RewardResolutionBridge` → `DeclineRewardCommand`; the UI owns no offer truth and mutates no domain state.
+- **Assertable logic lives in scene-free `RefCounted` seams** (no SceneTree presenter tests — verify by construction + the compile guardrail). No new autoload.
+- **Difficulty is a hard non-goal.** 14.7 changes no enemy/reward/run-length number and no reward table — it adds a disposition (decline), not a new reward outcome.
+- **Every generator/route/finale/combat seed-regression fingerprint stays byte-identical** — 14.7 re-pins **nothing** (no driver/generator/replay invokes the decline command).
+- **Color-independence (NFR9).** The decline button carries a text label ("Decline reward" / "Skip"), not color alone.
+- **Headless suite stays green** (~201-202 PASS baseline; false-PASS grep `SCRIPT ERROR|Parse Error|^FAIL` clean beyond the 6 documented negatives).
+
+### Deferred-work overlaps (reconciled against `deferred-work.md`)
+
+- **ADOPTED + RESOLVED by this story:** the **full-backpack escape-hatch** defer (`deferred-work.md` — "code review of 13-2 ... round 1", 2026-07-16; the first `[Review][Defer]` bullet: "The GENERIC reward HUD has no skip/drop affordance ... a potential soft-lock with no player escape ... Owner: the later replacement-choice / full-backpack disposition UX"). The sprint change proposal routes this item to **14.7** (`sprint-change-proposal-2026-07-16.md:34,166`; the D5 row `:107`). **On completion, check off that `deferred-work.md` bullet (or move it to `deferred-work-resolved.md`) with this story id + date** — the minimal skip disposition is exactly what it named.
+- **NOT this story's scope — belongs to 14.11 (do NOT pull in):** the **reward-overlay geometry** defer (hardcoded full-rect Panel / fixed insets / no `ScrollContainer` — `tactical_board_presenter.gd` overlay) and the **passive-confirm `display_name`** defer (raw snake_case in the confirm prompt) both route to **14.11** (`epics.md:527` implementation notes: "reward-overlay geometry + passive-confirm `display_name` → 14.11"). Adding the decline button must **not** worsen the overlay overflow those items own — use the ≥44px `_reward_button` and add to the existing VBox; the geometry/`ScrollContainer` fix stays 14.11.
+- **Adjacent but already resolved — do NOT reopen:** the `notable_loot` **double-count** decision (`deferred-work.md` — "code review of 8-2", 2026-07-01) was **resolved in 8.2**: `RunSummary` single-sources notable loot from `item_gained` (not `reward_resolved`). A `reward_declined` event is neither `item_gained` nor `reward_resolved`, so a declined reward correctly contributes **no** loot to the summary — verify by construction (the decline emits no `item_gained`), and do not touch `RunSummary`.
+- No other `deferred-work.md` item overlaps 14.7's area (reward command / reward event / reward overlay).
+
+### Epic-14 constraints inherited (`retro-notes/epic-14.md` + the sprint change)
+
+- **The two domain touches follow the 4.3 idiom (sprint change / 14.1 precedent):** `DeclineRewardCommand` is validate-before-mutate → `ActionResult`, an append-only past-tense tail event, named-stream/zero-RNG, 23-key gate held. Mirror `ResolveRewardCommand`/`AcceptCursedRewardCommand` + the `hero_waited` end-to-end event wiring.
+- **Name the RIGHT surface (14.1/14.4/14.6 audit-precision):** the decline button lives in `tactical_board_presenter._build_generic_reward_ui`; the resolution callback + advance is `gameplay_shell_presenter._on_reward_resolution_requested`. Two distinct halves — do not conflate.
+- **Render from the bound session, not empty presenter state (14.3 systemic):** `render_reward()` already reads `_run.pending_reward_offer` — the decline changes nothing about that source (do not introduce presenter-owned reward state).
+- **Seams expose only what the presenter consumes (14.3 / 14.2 pruning):** no `RewardHudViewModel` projection field for the decline button (static control); the `reward_declined` payload carries only what `RunSummary`/diagnostics consume (`table_id` + `reason`).
+- **No-SceneTree presenter test (14.1/14.3):** the button is verified by construction + the `test_run_flow_scenes_load.gd` compile guardrail; the assertable logic is in the command/bridge/event seams.
+- **`str(...)` not eager `String(nullable)` in assert messages (14.1).** The false-PASS grep guard stays standing; exactly 6 documented stderr negatives (int64-overflow ×1 `test_manual_seed_loader.gd:153` + ×1 `test_domain_event.gd:146` — the 14-4 attribution correction; malformed-JSON ×3; `invalid_node_type` ×1); the new caught-error decline negatives add **no** new stderr negative (the `hero_waited`-negative precedent).
+- **EPIC-LEVEL RISK — 14.7 is the LAST Band-1 story (14.4 retro):** four+ consecutive Band-1 stories (14.1–14.6) each deferred their user-facing verification to the still-pending on-device observed playtest. 14.7's escape hatch is **automated-green but human-unverified**: that the decline button renders, is ≥44px + tappable, and actually breaks a **real** full-backpack soft-lock (which is hard to reach naturally — needs a full 6/6 backpack). **Add to the Band-1 on-device playtest checklist**, and — as the Band-1 closer — **confirm the Band-1 observed playtest actually happens before Band 1 closes** (the epic's core promise of honest playability is otherwise unverified by any human pass).
+- **Difficulty stays a hard non-goal; 14.7 re-pins nothing; no new autoload; the scene stays verified by construction + the compile guardrail.**
+
+### Mandatory test command (must pass before this story moves to review/done)
+
+```
+godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10
+```
+
+`godot` is not on the Bash/`where` PATH; run via PowerShell (`C:\Users\Rasmus\bin\godot.cmd`, or the standalone `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe`). Apply the false-PASS grep guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output (never trust the summary PASS line alone). The runner auto-discovers `test_*.gd` under `res://tests/unit` and `res://tests/integration` only. Confirm the live baseline PASS count on the branch head first (14-6 recorded 201; the tree currently carries 202 test files); the NEW `test_decline_reward_command.gd` file ticks the PASS-file count up by 1; ZERO new stderr negatives beyond the 6 documented.
+
+### References
+
+- `_bmad-output/planning-artifacts/epics.md#Story 14.7: Full-Backpack Reward Escape Hatch` — the ACs (body lines 3115-3136); the Epic-14 list entry + FR coverage (`:525`, FR52 "a no-soft-lock reward disposition"); the Band-1 demarcation (14.1-14.7; Band 2 header precedes 14.8 at `:3138`).
+- `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16.md` — **D5** the full-backpack escape hatch (`:107`: "a caller-driven run command in the 4.3 idiom that clears the offer without applying it (append-only tail event, zero RNG) ... does not weaken the fail-closed `inventory_full` guard ... minimal soft-lock fix"; deferred alternative = the full drop/replace-choice UX); the 14.7 scope row (`:137`: "DOMAIN command (4.3 idiom); the fail-closed `inventory_full` guard is unchanged; +1 append-only event if needed; zero RNG; 23-key gate held"); the ledger-adoption line (`:166`).
+- `_bmad-output/implementation-artifacts/deferred-work.md` — the 13-2 Round-1 full-backpack escape-hatch `[Review][Defer]` this story RESOLVES (the "GENERIC reward HUD has no skip/drop affordance" bullet); the 8-2 `notable_loot` double-count decision (already resolved — single-sourced from `item_gained`); the 13-2 reward-overlay-geometry + passive-confirm-`display_name` defers (routed to 14.11 — NOT this story).
+- `_bmad-output/auto-gds/retro-notes/epic-14.md` — the 14.1 "wrong files"/4.3-idiom + `hero_waited` end-to-end-event precedent + `str(...)`-not-`String(nullable)` + wait-validator-asymmetry; the 14.3 render-from-session systemic + seams-expose-only-consumed; the 14.4 stderr-negative attribution correction + the Band-1 human-verification-deferred epic-level risk; the 14.5/14.6 presentation-only convergence.
+- `_bmad-output/implementation-artifacts/14-1-corpse-clearing-and-wait-turn.md` — the other Epic-14 domain story: the `WaitCommand` 4.3-idiom shape + the `hero_waited` append-only-tail event wired end-to-end (the direct template for `DeclineRewardCommand` + `reward_declined`).
+- Source files (read before implementing):
+  - `godot/scripts/core/commands/resolve_reward_command.gd` — the reward-resolve command to mirror: `validate` order (67-114: seq>0 first, RunState, run.validate, pending offer, already-resolved, selection); the full-backpack fail-closed (`132-141` — surface pickup's `inventory_full`, do NOT flip the offer); `_invalid_context` (199-205). The decline drops the selection + apply steps.
+  - `godot/scripts/core/commands/accept_cursed_reward_command.gd` — a second 4.3-idiom exemplar (validate-then-mutate, event-after-mutation, zero RNG; `_init`/`validate`/`execute`/`_invalid_context` shape).
+  - `godot/scripts/run/reward_offer.gd` — `STATUS_PENDING`/`STATUS_RESOLVED` (27-28), `is_pending`/`is_resolved` (103-108), `status`/`selected_entry` fields (57/62), `DICTIONARY_KEYS` (42-52, **9 keys — UNCHANGED**), the "NO new snapshot key" note (22-24).
+  - `godot/scripts/core/events/domain_event.gd` — the 8 wiring touch points: enum tail (`49`, append after `HERO_WAITED`), `EVENT_ID_*` (`97`), `reward_resolved` factory to mirror (`641-651`) + `hero_waited` factory (`1024-1037`), validator dispatch (`1215-1216`/`1249-1250`), `_validate_reward_resolved_payload` (`1693-1704`) + `_validate_hero_waited_payload` (`2077-2080`), `id_for_type` (`2439-2440`/`2475-2476`), `type_for_id` (`2529-2530`/`2565-2566`), `_event_requires_actor` (`2571-2583` — do NOT add), `REWARD_CATEGORIES` (`118-127`).
+  - `godot/scripts/ui/flow/reward_resolution_bridge.gd` — `ACTION_RESOLVE_GENERIC`/`ACTION_COMMIT_PASSIVE` (36-37), `resolve` match (43-58), `_resolve_generic` (64-67, the construct+execute+`next_sequence_id()` shape to copy for `_decline_generic`); the exactly-one-command contract (12-25).
+  - `godot/scripts/ui/presenters/tactical_board_presenter.gd` — `render_reward` (1318-1333, session-bound source), `_build_generic_reward_ui` (1361-1376, add the decline button here), `_build_passive_reward_ui` (1381-1399, do NOT touch), `_emit_reward_resolution` (1467-1470), `_reward_button` (1473-1478, ≥44px).
+  - `godot/scripts/ui/presenters/gameplay_shell_presenter.gd` — `_on_reward_resolution_requested` (250-264, the callback: error → re-render (stay); ok → `hide_reward_offer` + `_advance_to_route_map`); `_begin_reward_step` (221-241, the generate/show boundary — context).
+  - `godot/scripts/ui/view_models/reward_hud_view_model.gd` — `REWARD_KEYS`/`CHOICE_KEYS` (52-68, **UNCHANGED** — no decline projection field); `project` (84-97).
+  - `godot/scripts/run/run_state.gd` — `pending_reward_offer` field (118) + serialization (`296`, the existing `pending_reward_offer` key in `to_dictionary`); the full-run-dict-vs-23-key-RunSnapshot note (76/92/100/108-118).
+  - `godot/scripts/core/state/rng_stream_set.gd` — the 7 named streams (`6-12`, `required_streams` `23-31`) — unchanged.
+  - Tests: `godot/tests/unit/core/test_resolve_reward_command.gd` (the mirror — `_run_with_offer` helper `48-55`, the full-backpack case `280-295`, the no-RNG check); `godot/tests/unit/core/test_domain_event.gd` (`_reward_resolved_*` `1930-1978`, `_hero_waited_*` `2799-2827`, the `expected_ids` pin `3038-3088`); `godot/tests/unit/ui/test_reward_resolution_bridge.gd` (the bridge-action pattern, `_generic_resolution` helper `49-55`); `godot/tests/unit/run/test_reward_offer.gd` (the `DICTIONARY_KEYS` pin — must stay 9); `godot/tests/unit/ui/test_run_flow_scenes_load.gd` (the compile guardrail for the presenter).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Story context by Claude Opus 4.8 (gds-create-story). Implementation by Claude Opus 4.8 (gds-dev-story).
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+### Review Findings
+
+## Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-07-18 | 0.1 | Story context created (gds-create-story). The DOMAIN escape-hatch story (D5; FR52), Band-1 closer: (AC1) a caller-driven `DeclineRewardCommand` (4.3 idiom — validate-before-mutate, `ActionResult`, append-only tail event, zero RNG) that clears a pending generic offer WITHOUT applying it (never touches the backpack, so `inventory_full` never fires and the fail-closed guard stays un-weakened), plus a decline/skip button on the generic reward overlay (`tactical_board_presenter._build_generic_reward_ui`) routed through `reward_resolution_bridge` (new `decline_generic` action); (AC2) a new `reward_declined` system event wired end-to-end via the 14.1 `hero_waited` 8-touch-point append discipline (enum tail + id const + factory + validator + id maps + round-trip + malformed negatives + `expected_ids` pin); (AC3) NO save-schema change (offer rides the existing `RunState.pending_reward_offer` key; 23-key gate stays 23, `SCHEMA_VERSION 1`, `RewardOffer.DICTIONARY_KEYS` unchanged — hard-stop flagged if that stops being true), 7 named streams unchanged, every fingerprint byte-identical (14.7 re-pins nothing), richer drop/replace UX deferred. Reconciled: ADOPTS + resolves the 13-2 full-backpack escape-hatch defer; the reward-overlay-geometry + passive-confirm-`display_name` defers stay 14.11; `notable_loot` double-count already resolved (single-sourced from `item_gained`) — decline emits no loot. Decline is generic-path only (passive exactly-one-command intact). Status → ready-for-dev. | Claude Opus 4.8 (gds-create-story) |
