@@ -2,11 +2,11 @@ story_key: 14-6-live-route-map-and-node-choice
 epic_num: 14
 story_num: 6
 branch: story/14-6-live-route-map-and-node-choice
-status: in-progress
-updated_at: "2026-07-18T19:56:00Z"
+status: done
+updated_at: "2026-07-18T19:59:30Z"
 started_at: "2026-07-18T18:18:06Z"
-completed_at: null
-active_seconds: 4040
+completed_at: "2026-07-18T19:59:30Z"
+active_seconds: 4100
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["f472017", "385fbe7", "5152744", "96c16c9"]
+commits: ["f472017", "385fbe7", "5152744", "96c16c9", "4b61c8c", "03cdb07"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/76"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

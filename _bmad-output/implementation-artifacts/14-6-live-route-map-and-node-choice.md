@@ -1,6 +1,6 @@
 # Story 14.6: Live Route Map and Node-Choice
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
