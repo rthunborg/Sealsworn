@@ -1,6 +1,6 @@
 # Story 14.7: Full-Backpack Reward Escape Hatch
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
