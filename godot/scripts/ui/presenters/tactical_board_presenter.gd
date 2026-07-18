@@ -123,16 +123,19 @@ const CORPSE_OUTLINE_COLOR := Color(0.32, 0.28, 0.28, 0.85)
 # SHAPE/POSITION channels; the accessible cue is the armed-preview LABEL and the reject MESSAGE line, never color alone.
 const ARMED_TARGET_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const REJECT_MARKER_COLOR := Color(0.95, 0.3, 0.35, 0.9)
-# Story 14.3 (AC2/F8) — the move/hit/death/telegraph feedback ANIMATION channels. Each is drawn as a TRANSIENT,
+# Story 14.3 (AC2/F8) — the combat feedback ANIMATION channels. The hit/death/telegraph cues are each a TRANSIENT,
 # self-freeing overlay node tweened by a bounded Godot Tween (NOT a per-frame _process redraw loop — the board grid's
-# one-draw-per-render perf rule stays intact once the short tween completes). Every cue is a SHAPE/POSITION/MOTION
-# channel (NFR9): a transient overlay appearing + fading (a temporal channel) and the floating damage-number TEXT, not
-# hue alone — a hit stays legible via the log line + the number, a death via the persistent corpse decal (14.1). Zero
-# RNG (fully deterministic tweens). Colors are cosmetic tints on those shape/motion channels.
+# one-draw-per-render perf rule stays intact once the short tween completes). The MOVE is a REAL sprite slide (Round-1
+# review decision — the unit itself moves, not a separate marker): the moving occupant's OWN draw (sprite + friend/foe
+# marker + HP bar) is interpolated between its origin and destination cells in _build_board_draw_ops, driven by a
+# bounded grid-bound tween that advances a 0->1 factor and re-issues the op list only for the short slide. Every cue is
+# a SHAPE/POSITION/MOTION channel (NFR9): a transient overlay appearing + fading (a temporal channel), the sliding
+# sprite (a MOTION channel), and the floating damage-number TEXT, not hue alone — a hit stays legible via the log line
+# + the number, a death via the persistent corpse decal (14.1). Zero RNG (fully deterministic tweens). Colors are
+# cosmetic tints on those shape/motion channels.
 const HIT_FLASH_COLOR := Color(1.0, 0.85, 0.25, 0.55)
 const DEATH_FADE_COLOR := Color(0.55, 0.08, 0.1, 0.6)
 const TELEGRAPH_PULSE_COLOR := Color(1.0, 0.55, 0.15, 0.5)
-const SLIDE_MARKER_COLOR := Color(0.85, 0.92, 1.0, 0.55)
 const DAMAGE_NUMBER_COLOR := Color(1.0, 0.92, 0.4, 1.0)
 const SLIDE_DURATION := 0.16
 const HIT_FLASH_DURATION := 0.28
@@ -201,6 +204,9 @@ var _board_grid: TacticalBoardGrid = null
 var _board_panel: Panel = null
 var _board_geometry: TacticalBoardZoomState = null
 var _last_board_vm: Dictionary = {}
+# Story 14.3 (AC2/F8) — the panel dict (armed-attack highlight + reject marker) the grid last drew, stored so the
+# sprite-slide redraw (_refresh_board_ops) can re-issue the SAME op list with the moving occupant interpolated.
+var _last_board_panel: Dictionary = {}
 var _texture_cache: Dictionary = {}
 # Story 14.1 (AC2/F1) — the always-visible Wait / End-Turn control (built in _build_regions, hosted in the
 # confirm/cancel region). Routed to the live session's submit_wait so the player can ALWAYS advance the turn
@@ -220,6 +226,11 @@ var _last_reject_cue: Dictionary = {}
 # mark — so each event animates EXACTLY once and an arm/inspect/cancel/rejected render (which adds no events) animates
 # nothing. Reset on a new fight bind to the session log's current max (0 when empty) so a bind never replays history.
 var _last_animated_sequence_id: int = 0
+# Story 14.3 (AC2/F8) — the occupants currently MID-SLIDE, keyed by entity_id -> {from, to, factor}. While an entry is
+# present _build_board_draw_ops draws that occupant's OWN sprite/marker/HP bar at the interpolated origin->destination
+# rect (the real sprite slide) instead of snapping to its static cell; the grid-bound factor tween advances + clears it.
+# Reset on a new fight bind so a stale slide never displaces a live occupant.
+var _active_slides: Dictionary = {}
 
 func _ready() -> void:
 	_build_regions()
@@ -555,6 +566,8 @@ func bind_interactive_session(
 	_last_inspect = {}
 	# Story 14.2 (AC2/F3) — a new fight clears any stale rejection cue from the previous node.
 	_last_reject_cue = {}
+	# Story 14.3 (AC2/F8) — a new fight clears any in-flight slide state (no occupant carries over displaced).
+	_active_slides = {}
 	# Story 14.3 (AC2/F8) — reset the animation high-water to the session log's CURRENT max (0 when empty) so a fresh
 	# bind animates only events emitted AFTER bind, never replaying the fight's already-shown history.
 	_last_animated_sequence_id = _max_event_sequence_id(session.event_log()) if session != null else 0
@@ -759,7 +772,8 @@ func _play_new_combat_feedback(vm: Dictionary) -> void:
 		return
 	for move_value: Variant in plan.get("moves", []) as Array:
 		if move_value is Dictionary:
-			_animate_slide((move_value as Dictionary).get("from"), (move_value as Dictionary).get("to"))
+			var move: Dictionary = move_value
+			_animate_slide(String(move.get("actor_id", "")), move.get("from"), move.get("to"))
 	for hit_value: Variant in plan.get("hits", []) as Array:
 		if hit_value is Dictionary:
 			_animate_hit((hit_value as Dictionary).get("cell"), int((hit_value as Dictionary).get("amount", 0)))
@@ -782,27 +796,64 @@ func _max_event_sequence_id(events: Array) -> int:
 	return maximum
 
 
-# A move slide: a transient marker tweened from the origin cell to the destination cell (the MOTION channel — the unit
-# is already drawn statically at the destination; this overlay reads the "slid, not teleported" transition). Both
-# cells must resolve (a fog/edge no-resolve is a safe no-op). Deterministic (zero RNG); self-freeing.
-func _animate_slide(from_cell: Variant, to_cell: Variant) -> void:
-	if _board_grid == null:
+# A move slide (AC2/F8 — the REAL sprite slide): register the moving occupant so _build_board_draw_ops draws its OWN
+# sprite/marker/HP bar at the interpolated rect between its origin and destination cells, then drive a bounded 0->1
+# factor tween that re-issues the op list only for the short slide. Deterministic (zero RNG). The tween is bound to the
+# board grid (node-bound — auto-killed when a fight-ending detach frees the grid; no is_instance_valid guard needed).
+# Both cells must resolve + the actor must be identified (a fog/edge/blank no-resolve is a safe no-op).
+func _animate_slide(actor_id: String, from_cell: Variant, to_cell: Variant) -> void:
+	if _board_grid == null or actor_id.is_empty():
 		return
 	var from_rect: Rect2 = _cell_rect(from_cell)
 	var to_rect: Rect2 = _cell_rect(to_cell)
 	if from_rect.size.x <= 0.0 or to_rect.size.x <= 0.0:
 		return
-	var inset: float = from_rect.size.x * 0.22
-	var marker: ColorRect = ColorRect.new()
-	marker.color = SLIDE_MARKER_COLOR
-	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	marker.size = from_rect.size - Vector2(inset, inset) * 2.0
-	marker.position = from_rect.position + Vector2(inset, inset)
-	_board_grid.add_child(marker)
-	var tween: Tween = marker.create_tween()
-	tween.tween_property(marker, "position", to_rect.position + Vector2(inset, inset), SLIDE_DURATION)
-	tween.parallel().tween_property(marker, "modulate:a", 0.0, SLIDE_DURATION)
-	tween.tween_callback(marker.queue_free)
+	# Register the slide at factor 0 (the occupant snaps to its origin) + redraw, then tween the factor to 1 (it arrives
+	# at the destination). _build_board_draw_ops reads _active_slides to place the moving occupant's own draw.
+	_active_slides[actor_id] = {"from": from_cell, "to": to_cell, "factor": 0.0}
+	_refresh_board_ops()
+	var tween: Tween = _board_grid.create_tween()
+	tween.tween_method(_set_slide_factor.bind(actor_id), 0.0, 1.0, SLIDE_DURATION)
+	tween.tween_callback(_end_slide.bind(actor_id))
+
+
+# Advance a live slide's interpolation factor (the grid-bound tween's per-step callback) + re-issue the op list so the
+# moving occupant's own draw steps toward its destination. A no-op if the slide already ended (the tween was killed).
+func _set_slide_factor(factor: float, actor_id: String) -> void:
+	if not _active_slides.has(actor_id):
+		return
+	(_active_slides[actor_id] as Dictionary)["factor"] = factor
+	_refresh_board_ops()
+
+
+# End a slide: drop it from the active set + re-issue the op list so the occupant settles at its static destination cell
+# (its VM position). Called by the slide tween's terminal callback (or discarded with the tween on a grid detach).
+func _end_slide(actor_id: String) -> void:
+	_active_slides.erase(actor_id)
+	_refresh_board_ops()
+
+
+# Re-issue the board op list from the last-rendered VM + panel — the bounded per-slide redraw the story blessed for
+# option (a) (NOT a _process loop; the grid returns to one-draw-per-render once the slide ends). A no-op without
+# geometry (the empty-board state draws nothing).
+func _refresh_board_ops() -> void:
+	if _board_grid == null or _board_geometry == null:
+		return
+	_board_grid.set_ops(_build_board_draw_ops(_last_board_vm, _last_board_panel))
+
+
+# The interpolated cell rect for an active slide (from_rect -> to_rect at the slide's 0..1 factor), or a zero rect when
+# either endpoint has no geometry (fog / edge — the caller falls back to the occupant's static cell).
+func _slide_rect(slide: Variant) -> Rect2:
+	if not slide is Dictionary:
+		return Rect2()
+	var data: Dictionary = slide
+	var from_rect: Rect2 = _cell_rect(data.get("from"))
+	var to_rect: Rect2 = _cell_rect(data.get("to"))
+	if from_rect.size.x <= 0.0 or to_rect.size.x <= 0.0:
+		return Rect2()
+	var factor: float = clampf(float(data.get("factor", 0.0)), 0.0, 1.0)
+	return Rect2(from_rect.position.lerp(to_rect.position, factor), from_rect.size)
 
 
 # A hit: a cell flash (a temporal MOTION channel) + a floating damage number (TEXT). Deterministic; self-freeing.
@@ -889,6 +940,8 @@ func _transient_cell_rect(cell: Variant, color: Color) -> ColorRect:
 # zero-cell VM) draws NOTHING (the correct-by-design empty state) — never a crash, never a divide-by-zero.
 func _render_board_grid(vm: Dictionary, layout: Dictionary, panel: Dictionary = {}) -> void:
 	_last_board_vm = vm
+	# Story 14.3 (AC2/F8) — remember the panel so a mid-slide _refresh_board_ops re-issues the identical op list.
+	_last_board_panel = panel
 	_board_geometry = null
 	_set_region_text("board", "")
 	if _board_grid == null:
@@ -970,6 +1023,14 @@ func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}) -> Array:
 			continue
 		var occupant: Dictionary = occupant_value
 		var cell_rect: Rect2 = _cell_rect(occupant.get("position", {}))
+		# Story 14.3 (AC2/F8) — a MOVING occupant slides: draw its OWN sprite/marker/HP bar at the interpolated rect
+		# between its origin and destination cells (the real sprite slide) instead of snapping to its static cell. The
+		# grid-bound factor tween (0->1) advances the slide; a finished/absent slide falls through to the static rect.
+		var slide: Variant = _active_slides.get(String(occupant.get("entity_id", "")))
+		if slide != null:
+			var slide_rect: Rect2 = _slide_rect(slide)
+			if slide_rect.size.x > 0.0:
+				cell_rect = slide_rect
 		if cell_rect.size.x <= 0.0:
 			continue
 		# Story 14.1 (F8): a dead occupant (a 14.1 corpse surfaced by the board VM) draws a distinct persistent

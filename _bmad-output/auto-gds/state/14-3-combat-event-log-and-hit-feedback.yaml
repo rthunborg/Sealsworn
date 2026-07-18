@@ -3,10 +3,10 @@ epic_num: 14
 story_num: 3
 branch: story/14-3-combat-event-log-and-hit-feedback
 status: in-progress
-updated_at: "2026-07-17T19:40:00Z"
+updated_at: "2026-07-17T20:10:00Z"
 started_at: "2026-07-17T18:57:58Z"
 completed_at: null
-active_seconds: 2480
+active_seconds: 3690
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: story/14-2-attack-preview-and-rejected-command-feedback
 epic_story_count: 11
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
+code_review_iterations: 1
 code_review_loop_done: false
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["c03ff2e", "b0dcc22"]
+commits: ["c03ff2e", "b0dcc22", "bb162b7"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

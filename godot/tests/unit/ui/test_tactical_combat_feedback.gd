@@ -7,6 +7,9 @@ extends "res://tests/unit/test_case.gd"
 #   - a batch (a move from->to, a non-lethal hit, a LETHAL hit hp_after == 0, a telegraph) surfaces the move (from/to),
 #     the hits (cell resolved from occupants + amount), the DEATH only for the hp_after == 0 hit (cell resolved), the
 #     telegraph (marked cell), and last_sequence_id == the batch max;
+#   - the REAL sprite-slide inputs (Round-1 review decision): each move carries the actor_id (the join key to the VM
+#     occupant whose own sprite the presenter interpolates) + from/to endpoints, and several SIMULTANEOUS moves each
+#     surface independently (the presenter slides every moving unit's own sprite, not one shared marker);
 #   - a since_sequence_id at/above the batch max re-animates NOTHING (empty plan — each event animates once);
 #   - a damage entry whose target is ABSENT from occupants yields no hit/death (a safe no-op, never a fabricated cell);
 #   - a damage entry with NO hp_after is a hit but NOT a death (no fabricated death);
@@ -19,6 +22,7 @@ const TacticalCombatFeedback = preload("res://scripts/ui/view_models/tactical_co
 func run() -> Dictionary:
 	_plan_keys_are_exact_for_populated_and_empty()
 	_batch_surfaces_moves_hits_deaths_and_telegraphs()
+	_moves_carry_the_sprite_slide_inputs()
 	_since_at_or_above_batch_max_re_animates_nothing()
 	_damage_on_an_absent_occupant_is_a_safe_no_op()
 	_damage_without_hp_after_is_a_hit_but_not_a_death()
@@ -66,6 +70,46 @@ func _batch_surfaces_moves_hits_deaths_and_telegraphs() -> void:
 	assert_equal((telegraphs[0] as Dictionary).get("cell"), {"x": 3, "y": 3}, "The telegraph reads the marked cell. Got %s." % str((telegraphs[0] as Dictionary).get("cell")))
 
 	assert_equal(plan.get("last_sequence_id"), 4, "last_sequence_id is the batch max. Got %s." % str(plan.get("last_sequence_id")))
+
+
+# ---- the sprite-slide plan output (Round-1 review decision — the REAL sprite slide) --------------
+
+# The move plan carries EXACTLY the inputs the presenter needs to slide each unit's OWN sprite: the actor_id (the join
+# key to the VM occupant whose sprite/marker/HP bar is interpolated) + the from/to endpoints (sourced from the event
+# payload, NOT from occupants — so a move surfaces even with an empty occupants array). A batch with several
+# SIMULTANEOUS moves (a hero move + an enemy-phase move) surfaces each as an INDEPENDENT move entry, so the presenter
+# slides every moving unit's own sprite rather than one shared marker.
+func _moves_carry_the_sprite_slide_inputs() -> void:
+	var summary: Array = [
+		{
+			"sequence_id": 1,
+			"event_id": "entity_moved",
+			"actor_id": "hero",
+			"details": {"from": {"x": 0, "y": 2}, "to": {"x": 1, "y": 2}}
+		},
+		{
+			"sequence_id": 2,
+			"event_id": "entity_moved",
+			"actor_id": "enemy_iron",
+			"details": {"from": {"x": 4, "y": 2}, "to": {"x": 3, "y": 2}}
+		}
+	]
+	# Empty occupants on purpose: the move endpoints come from the event payload, so both slides still surface.
+	var plan: Dictionary = TacticalCombatFeedback.plan(summary, 0, [])
+	var moves: Array = plan.get("moves", [])
+	assert_equal(moves.size(), 2, "Each simultaneous move surfaces independently (the presenter slides each unit's own sprite). Got %s." % str(moves.size()))
+	var by_actor: Dictionary = {}
+	for move_value: Variant in moves:
+		var move: Dictionary = move_value
+		by_actor[String(move.get("actor_id", ""))] = move
+	assert_true(by_actor.has("hero"), "The hero move surfaces with its actor_id (the sprite-slide join key). Got %s." % str(by_actor.keys()))
+	assert_true(by_actor.has("enemy_iron"), "The enemy move surfaces with its own actor_id. Got %s." % str(by_actor.keys()))
+	var hero_move: Dictionary = by_actor.get("hero", {})
+	assert_equal(hero_move.get("from"), {"x": 0, "y": 2}, "The hero slide reads its origin cell (the sprite's start). Got %s." % str(hero_move.get("from")))
+	assert_equal(hero_move.get("to"), {"x": 1, "y": 2}, "The hero slide reads its destination cell (the sprite's end). Got %s." % str(hero_move.get("to")))
+	var enemy_move: Dictionary = by_actor.get("enemy_iron", {})
+	assert_equal(enemy_move.get("from"), {"x": 4, "y": 2}, "The enemy slide reads its own origin cell. Got %s." % str(enemy_move.get("from")))
+	assert_equal(enemy_move.get("to"), {"x": 3, "y": 2}, "The enemy slide reads its own destination cell. Got %s." % str(enemy_move.get("to")))
 
 
 # ---- animate-once discipline ---------------------------------------------------------------------

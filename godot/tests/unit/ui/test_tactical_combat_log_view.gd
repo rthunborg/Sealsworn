@@ -3,13 +3,16 @@ extends "res://tests/unit/test_case.gd"
 # Story 14.3 (Task 2 — the F6/F7 in-combat event log) — TacticalCombatLogView coverage. Proves the scene-free seam
 # reads ONLY the pinned VM `event_log_summary` slot and projects the log-region content:
 #   - the EXACT VIEW_KEYS set for BOTH a populated and an empty projection (a key never silently appears/vanishes);
-#   - a VM with several entries (a move, a hit, a death, a telegraph, a victory) projects has_entries: true, the
-#     expected per-action lines (order preserved), and damage_numbers for the damage entries (+ EXACT number keys);
+#   - a VM with several entries (a move, a hit, a death, a telegraph, a victory) projects has_entries: true and the
+#     expected per-action lines (order preserved) — the damage amounts read inline off each line;
 #   - an empty VM projects has_entries: false / entry_count: 0 / no lines (the honest empty state, not "0 events");
 #   - the lines are TAIL-limited to the last MAX_LINES (newest last) so the small region never overflows;
 #   - the LIVE data flow (Task 1): real DomainEvents -> CombatExplanationLog.build_entries -> the VM
 #     event_log_summary slot (carrying the pinned CombatExplanationLog entry shape) -> a non-empty log view;
 #   - zero mutation of the input VM dict; reads only the pinned slot.
+# The seam exposes NO structured `damage_numbers` slot (Round-1 review decision — the presenter never consumed it;
+# damage reaches the screen via the inline line text + the feedback plan's floating numbers), so this suite pins only
+# the lines/count/has_entries output the presenter actually renders.
 # str() (never eager String(nullable)) is used in assert messages (the 14.1 retro test-honesty note).
 
 const BoardFixtureFactory = preload("res://tests/fixtures/tactical/board_fixture_factory.gd")
@@ -22,7 +25,7 @@ const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_st
 
 func run() -> Dictionary:
 	_view_keys_are_exact_for_populated_and_empty()
-	_populated_vm_projects_lines_and_damage_numbers()
+	_populated_vm_projects_lines()
 	_empty_vm_projects_no_entries()
 	_lines_are_tail_limited_to_the_last_max_lines()
 	_live_events_flow_through_the_vm_into_the_log_view()
@@ -41,7 +44,7 @@ func _view_keys_are_exact_for_populated_and_empty() -> void:
 
 # ---- populated projection ------------------------------------------------------------------------
 
-func _populated_vm_projects_lines_and_damage_numbers() -> void:
+func _populated_vm_projects_lines() -> void:
 	var vm: Dictionary = {
 		"event_log_summary": [
 			_entry(1, "entity_moved", "hero", "hero moved from (0,2) to (1,2).", {"from": {"x": 0, "y": 2}, "to": {"x": 1, "y": 2}}),
@@ -61,19 +64,9 @@ func _populated_vm_projects_lines_and_damage_numbers() -> void:
 		"ash_seer marked hero at (3,3).",
 		"Victory reached."
 	], "The log lines are the per-action summaries in order. Got %s." % str(view.get("lines")))
-
-	var numbers: Array = view.get("damage_numbers", [])
-	assert_equal(numbers.size(), 2, "The two damage entries yield two damage numbers. Got %s." % str(numbers))
-	var first_number: Dictionary = numbers[0] if numbers.size() > 0 else {}
-	_assert_exact_keys(first_number, TacticalCombatLogView.DAMAGE_NUMBER_KEYS, "A damage number must carry EXACTLY the DAMAGE_NUMBER_KEYS set.")
-	assert_equal(first_number.get("target_entity_id"), "enemy_1", "The damage number names the victim. Got %s." % str(first_number.get("target_entity_id")))
-	assert_equal(first_number.get("amount"), 3, "The damage number reads the final damage. Got %s." % str(first_number.get("amount")))
-	assert_equal(first_number.get("hp_before"), 10, "The damage number reads hp_before. Got %s." % str(first_number.get("hp_before")))
-	assert_equal(first_number.get("hp_after"), 7, "The damage number reads hp_after. Got %s." % str(first_number.get("hp_after")))
-	assert_equal(first_number.get("max_hp"), 10, "The damage number reads max_hp. Got %s." % str(first_number.get("max_hp")))
-	assert_false(String(first_number.get("text", "")).is_empty(), "The damage number carries a legible text. Got %s." % str(first_number.get("text")))
-	# The lethal blow's number reads hp_after: 0 (the death still carries a legible number).
-	assert_equal((numbers[1] as Dictionary).get("hp_after"), 0, "The lethal damage number reads hp_after: 0. Got %s." % str((numbers[1] as Dictionary).get("hp_after")))
+	# The damage amount reads INLINE off the hit/death lines (the presenter renders these lines verbatim) — the seam
+	# exposes no separate structured damage-number slot (the Round-1 review pruned that unconsumed output).
+	assert_true(String((view.get("lines", []) as Array)[1]).contains("3 physical damage"), "The hit line carries the inline damage amount. Got %s." % str(view.get("lines")))
 
 
 # ---- empty projection ----------------------------------------------------------------------------
@@ -83,7 +76,6 @@ func _empty_vm_projects_no_entries() -> void:
 	assert_equal(view.get("has_entries"), false, "An empty VM projects has_entries: false (not the F6 '0 events').")
 	assert_equal(view.get("entry_count"), 0, "An empty VM projects entry_count: 0. Got %s." % str(view.get("entry_count")))
 	assert_equal((view.get("lines", []) as Array).size(), 0, "An empty VM projects no lines. Got %s." % str(view.get("lines")))
-	assert_equal((view.get("damage_numbers", []) as Array).size(), 0, "An empty VM projects no damage numbers.")
 	# A VM whose slot is present-but-empty is also empty (no fabricated entries).
 	assert_equal(TacticalCombatLogView.from_board_vm({"event_log_summary": []}).get("has_entries"), false, "A present-but-empty slot is still empty.")
 
@@ -125,7 +117,6 @@ func _live_events_flow_through_the_vm_into_the_log_view() -> void:
 	var view: Dictionary = TacticalCombatLogView.from_board_vm(vm)
 	assert_equal(view.get("has_entries"), true, "Sourced live events make the log non-empty (the F6/F7 fix).")
 	assert_equal((view.get("lines", []) as Array).size(), 3, "The log renders one line per sourced entry. Got %s." % str(view.get("lines")))
-	assert_equal((view.get("damage_numbers", []) as Array).size(), 1, "The damage_applied entry yields one damage number. Got %s." % str(view.get("damage_numbers")))
 
 
 # ---- purity --------------------------------------------------------------------------------------
