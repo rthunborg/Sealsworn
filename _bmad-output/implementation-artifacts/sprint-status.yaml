@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-18T17:01:00+00:00
+last_updated: 2026-07-18T18:30:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -199,7 +199,7 @@ development_status:
   14-2-attack-preview-and-rejected-command-feedback: done
   14-3-combat-event-log-and-hit-feedback: done
   14-4-per-run-seed-variation: done
-  14-5-run-end-beat-and-run-summary-screen: backlog
+  14-5-run-end-beat-and-run-summary-screen: ready-for-dev
   14-6-live-route-map-and-node-choice: backlog
   14-7-full-backpack-reward-escape-hatch: backlog
   14-8-hero-select-rebuild: backlog
