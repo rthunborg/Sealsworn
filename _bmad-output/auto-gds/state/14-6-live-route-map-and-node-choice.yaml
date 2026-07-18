@@ -3,10 +3,10 @@ epic_num: 14
 story_num: 6
 branch: story/14-6-live-route-map-and-node-choice
 status: in-progress
-updated_at: "2026-07-18T19:48:40Z"
+updated_at: "2026-07-18T19:56:00Z"
 started_at: "2026-07-18T18:18:06Z"
 completed_at: null
-active_seconds: 3025
+active_seconds: 4040
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: story/14-5-run-end-beat-and-run-summary-screen
 epic_story_count: 11
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 1
-code_review_loop_done: false
+code_review_iterations: 2
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["f472017", "385fbe7", "5152744"]
+commits: ["f472017", "385fbe7", "5152744", "96c16c9"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null

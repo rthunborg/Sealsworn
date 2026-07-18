@@ -124,10 +124,19 @@ func _render_map() -> void:
 	var current: Dictionary = view_model.current_node()
 	if not current.is_empty():
 		var here_label: Label = Label.new()
+		var current_type: String = String(current.get("type", ""))
+		# ⭐ Story 14.6 review R2 (AC1 — boss dual-naming, the THIRD render site): a boss-type CURRENT node renders
+		# the SAME descent-goal flavor name (the shared BOSS_DISPLAY_NAME const) as the pickable choice button
+		# (_node_label) and the terminal-boss goal line — extending the Round-1 RELABEL direction to this "You are
+		# here" line so all three boss render sites read as ONE entity ("The Larval Avatar"), never "Boss" here vs
+		# "The Larval Avatar" there. Reuses the existing named const (no second hardcoded copy). Unreachable in the
+		# current live flow (a boss current node routes straight to the board before this enriched render), so this
+		# is a latent-consistency guard — it keeps the three sites unified if the flow ever changes.
+		var here_display: String = BOSS_DISPLAY_NAME if current_type == String(RouteNode.TYPE_BOSS) else _display_type(current_type)
 		var cleared_suffix: String = "  ✓ Cleared" if bool(current.get("is_cleared", false)) else ""
 		here_label.text = "You are here: %s %s (depth %d)%s" % [
-			_type_icon(String(current.get("type", ""))),
-			_display_type(String(current.get("type", ""))),
+			_type_icon(current_type),
+			here_display,
 			int(current.get("depth", 0)),
 			cleared_suffix
 		]
