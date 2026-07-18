@@ -1,0 +1,199 @@
+# Story 14.6: Live Route Map and Node-Choice
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a player,
+I want to see the route and choose my next node,
+so that the run has visible forward progression instead of dropping me straight into combat.
+
+## Context & Why This Story Exists
+
+Epic 14 ("Playable & Presentable") is the **second pre-ship backlog epic**, added 2026-07-16 after an agent-driven desktop playtest found the built MVP is **not honestly finishable** and looks unfinished (`playtest-sessions/agent-playtest-2026-07-16.md`; `sprint-change-proposal-2026-07-16.md`). Story 14.6 is the **sixth story of Band 1** (finishable + readable), landing after 14.1 (soft-lock fix), 14.2 (visible preview / reject cue), 14.3 (event log + hit feedback), 14.4 (per-run seed variety), and 14.5 (run-end beat + summary + Descend→hero-select routing). It closes the last Band-1 readability gap the playtest surfaced:
+
+- **F12 — No route map ever appears.** "Hero select drops straight into combat; node position is only visible as `Node 0/12` in the debug line. The route-choice loop step has no surface in the live flow." (`agent-playtest-2026-07-16.md` line 109-111.)
+
+**This story is PRESENTATION ONLY over shipped contracts — it makes NO domain/command/event/RNG/save change.** Everything it renders already exists: the `RouteState` (4.1) / `RouteNode` (4.1) / `RouteMapViewModel` (11.3 — the pinned-key route projection), the `RouteAdvanceCommand` (4.3 — the reveal-on-arrival forward-commit), the `RunOrchestrator.advance_to` seam (11.x), the `RunFlowController.current_node_needs_board()` resolve-then-advance seam (11.3), and the `route_map.tscn` / `route_map_presenter.gd` surface (11.3). 14.6 **enriches the render** so the route map conveys real forward progression, **adds a visible cue** for a rejected pick, and **pins/verifies** the surface — it builds no new route model, no new node type, no `run_completed` change, and moves no fingerprint.
+
+**The load-bearing reconciliation (read before Task 1) — why F12 said "never surfaces" but the wiring exists.** The route-map stage is ALREADY wired into the live flow (all from Story 11.3):
+
+- `project.godot:9` boots `res://scenes/app/boot.tscn` → `boot_controller.gd:11,23` navigates to the `hero_select` stage.
+- `hero_select_presenter._on_confirm_pressed` (`hero_select_presenter.gd:127-128`) starts the run then `SceneManager.go_to_stage("route_map")`.
+- After a live victory (or a non-combat node) the gameplay shell returns to the route map (`gameplay_shell_presenter._advance_to_route_map`, `gameplay_shell_presenter.gd:170,214,284-286`).
+
+So why did the playtest see **no** route map? Because **on a fresh run the route map flashes straight through to the board and both playtest runs died/soft-locked on node 1** (F1/F5) and never reached the post-node-1 route-choice state. On entry, `route_map_presenter._render_map` (`route_map_presenter.gd:89-93`) checks `flow.current_node_needs_board()` — TRUE on the guaranteed depth-0 combat opener (unresolved, uncleared) — and **immediately** `SceneManager.go_to_stage("tactical_board")`. That is the **deliberate resolve-then-advance H1 fix** (the depth-0-opener-not-skipped invariant): the opener MUST be played on a board before the map offers the next choices, or `RouteAdvanceCommand` would silently SEAL the unplayed opener into `cleared_node_ids`. **Do NOT touch that seam** (AC2 explicitly protects "the guaranteed depth-0 opener is not skipped"; it is pinned by `test_run_flow_controller._current_node_needs_board_gates_the_depth_0_opener`, `test_run_flow_controller.gd:114-139`). The route map surfaces on the **second+** visit (after the opener is cleared, when there ARE eligible forward choices) — which is now **reachable** because **14.1 fixed the F1 soft-lock** that trapped the playtest on node 1. **14.6 is that "make the now-reachable route map actually convey the route + node-choice" story — a verify/harden + render-enrichment, NOT a rebuild.**
+
+**What is ALREADY done (do NOT rebuild it).** The `RouteMapViewModel` (11.3) projects the full route (current/cleared nodes, the reveal-gated `eligible_choice_ids()`, and per-node `type`/`depth`/`reveal_state`/`outgoing_link_ids`/`clues` + derived `is_current`/`is_cleared`/`is_eligible`) — pinned by `test_route_map_view_model.gd`. `route_map_presenter._on_choice_picked` (`route_map_presenter.gd:145-173`) already submits the pick through `RunOrchestrator.advance_to` (→ `RouteAdvanceCommand`), navigates to the board for a combat/elite/boss node, and resolves a non-combat node in place then re-renders. **The real gaps are:** (AC1) the render shows ONLY the eligible-choice buttons + a bare `"Cleared X / Y"` label — it does NOT convey **current position** or the **terminal boss**, so the "route map" reads as a choice list rather than visible forward progression; and (AC2) a rejected pick is **silent** (`advance.is_error()` only calls `Diagnostics.info` and returns — `route_map_presenter.gd:151-157`), the exact F3-class "every rejected command is silent" defect this epic is closing.
+
+## Acceptance Criteria
+
+**AC1 — The live route map surfaces the route + node-choice on screen (F12; FR68, NFR9)**
+Given a run is between nodes **with eligible forward choices** (the post-opener state — the depth-0 opener still routes straight to the board, the resolve-then-advance invariant; see Dev Notes)
+When the route-map stage is shown
+Then the live flow surfaces a route map rendered from the Epic-4 `RouteState` / `RouteMapViewModel` conveying **current position** (the `is_current` node — "you are here"), the **revealed forward neighbors** (the reveal-gated `eligible_choice_ids()` as the pickable next-node choices), the **cleared nodes** (the cleared count / progress), and the **terminal boss** (the `type == "boss"` node — the visible descent goal) so the node-choice loop step has an on-screen surface (FR68)
+And every node state is communicated by **shape/label/text** (a type glyph, a reveal marker, a human display label — not raw snake_case), **never color alone** (NFR9). The render reads the **session-bound** route (`flow.run().route` via `RouteMapViewModel.from_route(...)`) — never empty presenter-owned state (the 14.3 systemic lesson).
+
+**AC2 — Picking a node routes through the existing advance command, reveal-on-arrival intact; a rejected pick is visibly refused (F12/F3; FR68, NFR9)**
+Given the route map is shown and the player picks an **eligible** forward node
+When the choice is committed
+Then it routes through the **existing** route-advance command path (`RunOrchestrator.advance_to` → `RouteAdvanceCommand`) — **reveal-on-arrival stays in lockstep**: the LEFT node is sealed into `cleared_node_ids` + `REVEAL_CLEARED` (idempotent), the arrived node's direct forward neighbors flip `HIDDEN → REVEALED`, **no node is double-cleared**, and the **guaranteed depth-0 opener is not skipped** (the `current_node_needs_board()` resolve-then-advance seam is preserved unchanged) — then the flow navigates to the board for a combat/elite/boss node or resolves a non-combat node in place and re-renders
+And an **ineligible** pick (hidden / cleared / not-linked — `RouteAdvanceCommand` returns `ineligible_route_choice`, or any `advance_to` error) **fails closed with a VISIBLE on-screen cue** (a non-color message line — the F3 "no silent rejections" close) and **zero mutation** (the route/run is byte-identical; the domain guard already enforces no-mutation-on-reject — 14.6 only surfaces it).
+
+**AC3 — Presentation only; projection stays in the pinned-key view model; every fingerprint byte-identical (FR68, NFR13/NFR14/NFR15)**
+Given the pinned contracts
+When this story lands
+Then **no route model / node type / `run_completed` change** is made, **no new RNG draw site** is added, and every route/generator/finale/combat seed-regression fingerprint stays **byte-identical** (14.6 touches only `scripts/ui/` — no `scripts/run|generation|rules|core|save/` file, so no fingerprint can move); the 23-key `RunSnapshot` gate stays 23, `SCHEMA_VERSION == 1`, the 7 named RNG streams are unchanged, no new event/enum value, no new autoload
+And the **route-map projection logic lives in the pinned-key `RouteMapViewModel`** (its `DICTIONARY_KEYS` / `NODE_KEYS` key sets are **unchanged**; any new render-fact accessors are pure computed reads over the existing projection, consumed by the presenter, verified **without a SceneTree**); the presenter stays thin glue verified by construction + the `test_run_flow_scenes_load.gd` compile guardrail.
+
+## Tasks / Subtasks
+
+- [ ] **Task 1 — Pure render-fact accessors on the pinned `RouteMapViewModel` (AC1, AC3)**
+  - [ ] Extend `godot/scripts/ui/view_models/route_map_view_model.gd` (the pinned RefCounted route projection — the 11.3 G2 seam) with pure read accessors the presenter consumes to render the fuller route. Recommended set (surface ONLY what `_render_map` renders — the 14.3 "seams expose only what the presenter consumes, no forward-looking dead output"):
+    - `current_node() -> Dictionary` — the projected node with `is_current == true` (the "you are here" node), or `{}` when none / no route. A fresh copy (no live-handle leak).
+    - `boss_node() -> Dictionary` — the projected node with `type == "boss"` (the terminal descent goal), or `{}` when absent. A fresh copy.
+    - `cleared_count() -> int` / `node_count() -> int` — the progress numerator/denominator the presenter renders as "Cleared X / Y" (already computed inline today; move the counts behind accessors so the render facts are unit-tested).
+  - [ ] Keep the pinned `DICTIONARY_KEYS` (5) and `NODE_KEYS` (9) **UNCHANGED** — these are **computed accessors**, NOT new projection keys (exactly the 14.5 pattern: 14.5 added computed accessors to `OutpostRenderView` with its key set untouched). `from_route(...)` / `to_dictionary()` are byte-identical; the null-route fail-closed projection is unchanged (the accessors return `{}` / 0 on the empty projection — never a crash).
+  - [ ] These accessors are pure reads over the ALREADY-projected `_nodes` (which already carry `type`, `is_current`, `is_cleared`, `is_eligible`, `depth`, `reveal_state`) — **no new route read, no `RouteState` change**. Use `str(...)` (never eager `String(nullable)`) in any log/assert text (14.1 retro).
+  - [ ] If you prefer a dedicated seam over extending the VM, a `RouteMapRenderView extends RefCounted` (built from the projection dict) is acceptable — but extending `RouteMapViewModel` is recommended (one seam, one test file; the accessors belong beside the projection they read). A NEW `.gd` file requires its `.gd.uid` sidecar committed (the 13.1 discipline); methods on the existing VM add no new file.
+
+- [ ] **Task 2 — Enrich the route-map render to convey forward progression (AC1)**
+  - [ ] Rewrite `route_map_presenter._render_map()` (`route_map_presenter.gd:61-113`) — the FINAL render section ONLY (after the boss-terminus / terminal / `current_node_needs_board()` early-returns, which are UNCHANGED and load-bearing — see Dev Notes). Hold the VM object (not just its dict) so the new accessors are callable: `var vm := RouteMapViewModel.from_route(run.route)`. Render, each a `Label`/`Button` with a non-color channel (glyph + human display label):
+    - a **current-position** line from `vm.current_node()` — e.g. `"You are here: [glyph] <display type> (depth N)"`;
+    - the **cleared progress** from `vm.cleared_count()` / `vm.node_count()` — e.g. `"Cleared %d / %d"` (keep the existing wording if you like);
+    - the **forward-choice buttons** — one per `eligible_choice_ids()` entry (the existing loop, `route_map_presenter.gd:105-112`), each ≥44px (`TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET`), labeled with the type glyph + reveal marker + **human display label** + depth + clue chips;
+    - a **terminal-boss** line from `vm.boss_node()` — e.g. `"Final: [☠] The Larval Avatar"` (the visible descent goal), shown whenever the projection carries a boss node.
+  - [ ] Convert the raw node-type string to a **human display label** (e.g. `elite_combat` → `"Elite Combat"`, `combat` → `"Combat"`) — the epic-wide "human display text, not raw snake_case" readability posture (14.5 Task 2). Keep the existing non-color `_type_icon` glyph + `_reveal_marker` (◆/✓/◇) channels (NFR9). A small pure `_display_type(node_type)` helper in the presenter is fine (it is display-only glue verified by construction), OR co-locate a `display_type_label(...)` on the VM if you want it unit-tested; the presenter mapping matches the existing `_type_icon`/`_reveal_marker` precedent.
+  - [ ] Do NOT render choices when `current_node_needs_board()` is true — that early-return branch navigates to the board (the opener plays first); the enrichment lives strictly in the eligible-choices render path. Preserve the boss-terminus (`boss_encounter_pending()` → board) and terminal (`is_terminal()` → run-end) early-returns.
+
+- [ ] **Task 3 — Visible reject cue on an ineligible/failed pick (AC2)**
+  - [ ] In `route_map_presenter._on_choice_picked` (`route_map_presenter.gd:145-173`), when `advance_to(choice_id).is_error()` (`route_map_presenter.gd:151-157`), set a **visible on-screen cue** (e.g. `_status_label.text = "That path is not open."`) IN ADDITION to the existing `Diagnostics.info` line — the F3 "every rejected command is silent" close. Keep the early `return` (no navigation, no mutation). Optionally include a human reason from the error (`ineligible_route_choice` / `no_current_node` / `wrong_run_phase`) — but map to human text, never surface the raw snake_case code as the primary message (NFR9 readability).
+  - [ ] Apply the same visible-cue treatment to the non-combat `resolve_current_node_live()` error branch (`route_map_presenter.gd:168-172`) — today Diagnostics-only. That path is a placeholder round-trip that should not fail, but the epic posture is fail-loud-VISIBLE, never a silent stall.
+  - [ ] Do NOT weaken or bypass `RouteAdvanceCommand`'s validation — the domain guard already returns `ineligible_route_choice` with zero mutation on a hidden/cleared/not-linked/wrong-phase pick; 14.6 only makes the refusal visible. The buttons are built from `eligible_choice_ids()` so a normal click is always eligible — this cue is the defensive readability guarantee for a stale/raced pick (never a silent dead click).
+
+- [ ] **Task 4 — Render-fact test + determinism/save gates held + suite green (AC1, AC2, AC3)**
+  - [ ] Extend `godot/tests/unit/ui/test_route_map_view_model.gd` (the existing route-projection unit test — the scene-free harness has NO SceneTree; presenters are verified by construction + the compile guardrail) with cases pinning the new AC1 render-fact accessors on the diamond fixture (`_diamond_route`: start → {left, right} → boss) and the fail-closed empty projection:
+    - a real route parked mid-descent → `current_node()` is the `is_current` node; `boss_node()` is the `type == "boss"` node; `cleared_count()` / `node_count()` echo the route;
+    - the null / terminal-leaf route → `current_node()` / `boss_node()` are `{}` (or the boss leaf, as applicable) and `cleared_count()` is honest, **no crash** (the fail-closed posture);
+    - re-assert the pinned `DICTIONARY_KEYS` / `NODE_KEYS` are **UNCHANGED** (the accessors added no projection key), and the no-live-handle copy discipline still holds.
+  - [ ] Use `str(...)` (never eager `String(nullable)`) in assert messages (14.1 retro test-honesty note).
+  - [ ] Confirm **no domain/RNG/save change**: the ONLY production files touched are `route_map_view_model.gd` + `route_map_presenter.gd` (+ the test). `RouteState` / `RouteNode` / `RouteAdvanceCommand` / `RunOrchestrator` / `RunFlowController` (incl. `current_node_needs_board()`) / `run_snapshot.gd` (23-key gate, `SCHEMA_VERSION == 1`) / `RngStreamSet` (7 streams) / `DomainEvent` (no new enum value) and every generation/route/finale/combat file are **untouched**. No new autoload; no new event; no new draw site; **14.6 re-pins NOTHING**. The `test_run_flow_controller._current_node_needs_board_gates_the_depth_0_opener` pin stays GREEN (the depth-0-opener invariant is preserved).
+  - [ ] Run the FULL headless suite (mandatory command below). Grep the raw output for `SCRIPT ERROR|Parse Error|^FAIL` (the false-PASS guard): exactly the **6 documented stderr negatives** (int64-overflow ×2 — `test_manual_seed_loader.gd:153` + `test_domain_event.gd:146`, per the 14-4 retro attribution correction; malformed-JSON ×3; `invalid_node_type` ×1), **ZERO new**. Baseline is **201 PASS** (post-14.5). Adding discrete VM render-fact test methods ticks the PASS count up (expect **≥201 PASS**). `git diff --check` clean (owned by the orchestrator per the delegate git policy).
+
+## Dev Notes
+
+### The route-map surface is `route_map.tscn` / `route_map_presenter.gd` / `route_map_view_model.gd` — the exact files (14.1 "wrong files to touch" precision)
+
+The live route-map RENDER surface is `route_map_presenter.gd` (the scene-root script of `res://scenes/ui/route_map.tscn`, mapped by `RunFlowRouter._STAGE_SCENES["route_map"]`, `run_flow_router.gd:47`) + its projection `route_map_view_model.gd`. The **flow-nav** into it lives in three OTHER files that 14.6 does NOT need to change (they already navigate to `route_map`): `boot_controller.gd` (→ hero_select), `hero_select_presenter.gd:127-128` (→ route_map after start), and `gameplay_shell_presenter.gd:284-286` (`_advance_to_route_map` after a live victory / non-combat resolve). **Touch `route_map_presenter.gd` + `route_map_view_model.gd` (+ the test) ONLY.** (This is the 14.1-retro SM precision point applied to 14.6: name the RIGHT surface, not the gameplay shell.)
+
+### The resolve-then-advance / depth-0-opener invariant — DO NOT TOUCH (AC2)
+
+`route_map_presenter._render_map` early-returns in a specific order that MUST be preserved (`route_map_presenter.gd:71-93`):
+1. `flow.orchestrator().boss_encounter_pending()` → `go_to_stage("tactical_board")` (the boss fight — a DISTINCT case, not in `current_node_needs_board`).
+2. `run.is_terminal()` → `_route_to_run_end(flow)`.
+3. `flow.current_node_needs_board()` → `go_to_stage("tactical_board")` — **the H1 fix**: the run is parked on an UNRESOLVED live combat/elite node (the guaranteed depth-0 opener on a fresh run, or any current combat node not yet cleared) that MUST be played on a board BEFORE the map offers choices. Offering `eligible_choice_ids()` here would let `RouteAdvanceCommand` silently SEAL the unplayed node into `cleared_node_ids`. This is the "**the guaranteed depth-0 opener is not skipped**" invariant (AC2), pinned by `test_run_flow_controller._current_node_needs_board_gates_the_depth_0_opener` (`test_run_flow_controller.gd:114-139`). **14.6 changes NOTHING above this line** — the enrichment is strictly the render section AFTER these early-returns. `current_node_needs_board()` lives in `RunFlowController` (`run_flow_controller.gd:84-95`, `LIVE_BOARD_NODE_TYPES == combat/elite`; boss is the distinct `boss_encounter_pending()` case) and is NOT touched.
+
+### Why the map "never surfaced" at playtest but the wiring exists (F12 reconciliation)
+
+The route-map stage has been in the flow since 11.3 (`boot → hero_select → route_map → board → back to route_map`). At playtest the map "never appeared" because (a) on a fresh run the map flashes through to the board on the depth-0 opener (the resolve-then-advance seam above — correct), and (b) BOTH playtest runs died / soft-locked on node 1 (F1/F5) and never cleared the opener, so the post-node-1 route-choice map was never reached. **14.1 fixed the F1 soft-lock**, so the map is now reachable. 14.6's job is to make it CONVEY the route (AC1) and refuse bad picks visibly (AC2) — the wiring + projection + advance command are already correct. This mirrors 14.5's AC1 posture (verify/harden a shipped surface, not a rebuild) applied to the route map.
+
+### The choice pick already routes through the advance command (verify, don't rebuild)
+
+`route_map_presenter._on_choice_picked` (`route_map_presenter.gd:145-173`) already: submits `orchestrator.advance_to(choice_id)` (which wraps `RouteAdvanceCommand.new(chosen_id, _next_sequence_id).execute(run)` and advances the sequence id — `run_orchestrator.gd:278-285`); on a live-board node type (`combat`/`elite_combat`/`boss`) navigates to `tactical_board`; on a non-combat node calls `resolve_current_node_live()` then `_render_map()` (re-render in place). `RouteAdvanceCommand` (`route_advance_command.gd`) owns reveal-on-arrival (seal-left-node idempotently + reveal arrived node's HIDDEN neighbors → REVEALED + emit ONE `route_advanced` event), draws ZERO RNG, and is byte-identical no-mutation on every reject (`ineligible_route_choice` with the precise reason in metadata). **14.6 adds NO new command call and NO new node type** — it adds the visible reject cue (Task 3) and the render enrichment (Task 2) around the existing, correct pick path.
+
+### The projection stays in the pinned-key `RouteMapViewModel` (AC3)
+
+`RouteMapViewModel.from_route(route)` already projects the SELECTION-legal `eligible_choice_ids()` (the reveal-gated forward filter `RouteAdvanceCommand` validates against — NOT the looser `available_choice_ids()` which surfaces hidden links), plus per-node `type`/`depth`/`reveal_state`/`outgoing_link_ids`/`clues` + derived `is_current`/`is_cleared`/`is_eligible`. Everything AC1 needs (current position via `is_current`, revealed neighbors via `eligible_choice_ids`, cleared nodes via `cleared_node_ids`, the boss via `type == "boss"`) is ALREADY projected — the render-fact accessors (Task 1) are pure reads, the `DICTIONARY_KEYS`/`NODE_KEYS` key sets stay UNCHANGED, and the presenter consumes them (no forward-looking dead output — the 14.3 discipline). The projection is unit-tested (`test_route_map_view_model.gd`); the presenter is verified by construction + the compile guardrail. This is exactly AC3's "the route-map projection logic lives in the pinned-key `RouteMapViewModel` (verified without a SceneTree)."
+
+### Anti-patterns to avoid (this story specifically)
+
+- **Do NOT change `RouteState`, `RouteNode`, `RouteAdvanceCommand`, `RunOrchestrator`, `RunFlowController`, or any domain/command/event/RNG/save file.** 14.6 is presentation only. The 23-key `RunSnapshot` gate stays 23; `SCHEMA_VERSION == 1`; the 7 named streams unchanged; `RouteMapViewModel.DICTIONARY_KEYS`/`NODE_KEYS` UNCHANGED (the render-fact accessors are computed reads, not new projection keys).
+- **Do NOT touch the resolve-then-advance / `current_node_needs_board()` seam or the `_render_map` early-returns** (boss-terminus / terminal / needs-board). The depth-0 opener MUST still route straight to the board (AC2's "not skipped"; the pinned test stays green). Do NOT try to show the map BEFORE the opener fight — AC1 is scoped to "between nodes WITH eligible forward choices."
+- **Do NOT add a new node type, a new route event, or a new RNG draw.** The pick routes through the EXISTING `advance_to` / `RouteAdvanceCommand`; the reveal-on-arrival is already correct.
+- **Do NOT leave a rejected pick silent** — that is the F3 defect this epic closes. Surface a visible non-color cue (Task 3).
+- **Do NOT read empty presenter-owned state** — render from the session-bound route (`flow.run().route`), the 14.3 "render() from the bound session, not empty state" systemic lesson.
+- **Do NOT surface raw snake_case node types to the player** (`elite_combat`) — map to a human display label (the epic-wide readability posture). Keep the non-color glyph + reveal-marker channels (NFR9).
+- **Do NOT use eager `String(nullable)` in assert/log messages** (14.1 retro — it crashes on a null read and masks the real failure). Use `str(...)`.
+- **Keep the false-PASS grep guard standing** — grep the raw runner output for `SCRIPT ERROR|Parse Error|^FAIL`; never trust the summary PASS line alone. Exactly the 6 documented stderr negatives; ZERO new.
+- **Do NOT build a pixel-art graph visualization** — a readable structured surface (current position + progress + choice buttons + the boss goal, with glyphs/markers/labels) is the Band-1 "readable" bar. A fancy node-graph layout is Band-2/theme territory (not this story).
+
+## Project Structure Notes
+
+- **Files touched (production):** `godot/scripts/ui/view_models/route_map_view_model.gd` (new pure render-fact accessors — current node / boss node / cleared+node counts; pinned key sets UNCHANGED) and `godot/scripts/ui/presenters/route_map_presenter.gd` (the enriched `_render_map` render section + the visible reject cue in `_on_choice_picked`).
+- **Test:** extend `godot/tests/unit/ui/test_route_map_view_model.gd` (the existing route-projection unit test). No new SceneTree test — the route-map scene stays verified by construction + `godot/tests/unit/ui/test_run_flow_scenes_load.gd` (which already loads `route_map.tscn` at line 40 and compiles `route_map_presenter.gd` at line 22).
+- **Assertable render facts live in the scene-free `RefCounted` `RouteMapViewModel` seam** (unit-tested); the presenter is thin glue verified by construction. No new autoload. No new `.gd` global class is required (methods on the existing `RouteMapViewModel`) → no new `.gd.uid` sidecar unless you add a new seam file (then generate + commit its `.gd.uid`, the 13.1 discipline). 14.6 adds **no art**.
+- `scripts/run/`, `scripts/generation/route/`, `scripts/rules/`, `scripts/core/`, `scripts/save/` are all **unchanged**. No domain/command/event/save/RNG/generation/route/finale file is touched.
+
+## Project Context Rules
+
+Extracted from `project-context.md` (canonical rulebook) and the architecture (`_bmad-output/game-architecture.md`):
+
+- **Domain owns truth; presentation observes + submits commands (NFR14/NFR15).** The route-map render is a pure read over the session-bound `RouteState` (via `RouteMapViewModel.from_route(flow.run().route)`); the node-choice SUBMITS through the existing `RunOrchestrator.advance_to` → `RouteAdvanceCommand` path. The UI owns no route truth and mutates no domain state (the command owns the advance).
+- **Save truth = versioned domain snapshots (NFR15).** No save change: the 23-key `RunSnapshot` gate stays 23; `SCHEMA_VERSION == 1`; `ProfileSnapshot` unchanged; the render-fact accessors are deterministic reads, not persisted/summary fields.
+- **Named RNG only; deterministic under seed (NFR13).** 14.6 draws ZERO RNG (the render is a pure projection read; `RouteAdvanceCommand` already draws zero RNG). The 7 named streams (`map, level, combat, loot, rewards, events, cosmetic`) are unchanged, unreordered.
+- **Assertable logic lives in scene-free `RefCounted` seams** (no SceneTree presenter tests — verify by construction + the compile guardrail). No new autoload.
+- **Difficulty is a hard non-goal.** 14.6 changes no enemy/reward/run-length number, no route shape, no node type. It only renders the already-generated route.
+- **Every generator/route/finale/combat seed-regression fingerprint stays byte-identical** (14.6 touches only `scripts/ui/`; no fingerprint can move — including the 14.1-re-pinned combat replay at seed 24680). **14.6 re-pins NOTHING.**
+- **Color-independence (NFR9).** The current-position line, cleared progress, choice buttons, boss goal, and the reject cue all carry a text/glyph/marker channel, not color alone.
+- **Headless suite stays green** (201 PASS baseline post-14.5; false-PASS grep `SCRIPT ERROR|Parse Error|^FAIL` clean beyond the 6 documented negatives).
+
+### Deferred-work overlaps (checked — none directly overlap 14.6)
+
+A scan of `deferred-work.md` for route / route-map / node-choice items found **only historical, out-of-scope deferrals**: the Epic-4 route-command fold-ins (`RouteAdvanceCommand` `sequence_id > 0` gating / `invalid_context` inner-code — all CLOSED or next-touch patches on `route_advance_command.gd`, not presentation) and the Epic-6 inventory save-shape deferrals (`RunSnapshot.inventory`/`equipment` — unrelated). The 11.3 dev residual (deferred-work "dev of 11-3") records the `RouteMapViewModel` + `route_map_presenter` as **SHIPPED (verified by construction)** — it is the state 14.6 builds on, not a deferral to resolve. **No deferred-work item is adopted or reopened by 14.6.** (The full-backpack escape hatch — deferred-work; 13.2 — is Story **14.7**, NOT 14.6; do not pull it in.)
+
+### Epic-14 constraints inherited (retro-notes/epic-14.md + the sprint change)
+
+- **EXACT files (14.1 "wrong files" precision):** the route-map surface is `route_map_presenter.gd` + `route_map_view_model.gd` + `route_map.tscn` — NOT the gameplay shell (which only NAVIGATES to `route_map`). Name/touch the right surface.
+- **Render from the bound session, not empty presenter state (14.3 systemic):** the map reads `flow.run().route` via `RouteMapViewModel.from_route(...)` — the live route, never a zeroed projection.
+- **Seams expose only what the presenter consumes (14.3):** the new render-fact accessors surface only the current-position / boss / progress facts the presenter renders — no forward-looking dead output. (Mirrors the 14.5 `OutpostRenderView` computed-accessor pattern; the pinned key set is unchanged.)
+- **`str(...)` not eager `String(nullable)` in assert messages (14.1).** The false-PASS grep guard stays standing; exactly 6 documented stderr negatives (int64-overflow ×1 in `test_manual_seed_loader.gd:153` + ×1 in `test_domain_event.gd:146` — the 14-4 retro attribution correction; malformed-JSON ×3; `invalid_node_type` ×1).
+- **The 14.5 D3 reroute context:** the outpost "Descend Again" now routes through hero-select (14.5), so the route map is reached from hero-select for BOTH the initial descent AND a re-descend — the single live entry into the route map is `hero_select_presenter` (→ route_map) + the gameplay shell's `_advance_to_route_map` return. 14.6 does not change this nav.
+- **EPIC-LEVEL RISK (14.4 retro):** Band-1 stories defer their user-facing verification to the pending on-device playtest — 14.6's route-map READABILITY (current position + progress + choices + boss goal legible, non-color) and the node-choice FLOW (pick → board → clear → back to map → pick again → reach the boss) are **automated-green but human-unverified**; add them to the Band-1 on-device playtest checklist (confirm the route map surfaces after the opener, the current node + boss goal + choices read clearly, picking advances the run, and a rejected pick shows a visible cue).
+- **Difficulty stays a hard non-goal; 14.6 re-pins nothing; no new autoload; the scene stays verified by construction + the compile guardrail.**
+
+### Mandatory test command (must pass before this story moves to review/done)
+
+```
+godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_runner.tscn --quit-after 10
+```
+
+`godot` is not on the Bash/`where` PATH; run via PowerShell (`C:\Users\Rasmus\bin\godot.cmd`, or the standalone `C:/Users/Rasmus/Godot_v4.6.3-stable_win64.exe/Godot_v4.6.3-stable_win64_console.exe`). Apply the false-PASS grep guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output (never trust the summary PASS line alone). The runner auto-discovers `test_*.gd` under `res://tests/unit` and `res://tests/integration` only. Baseline **201 PASS** (post-14.5); expect **≥201 PASS**, ZERO new stderr negatives beyond the 6 documented.
+
+### References
+
+- `_bmad-output/planning-artifacts/epics.md#Epic 14: Playable & Presentable` — Story 14.6 ACs (body lines 3092-3113); Epic List entry (521-527); Band-1 demarcation (3138 header "Band 2" precedes 14.8, so 14.1-14.7 are Band 1); FR68 (158).
+- `_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16.md` — F12 the live route map (lines 82, 133-136 the 14.6 scope row: "Render the Epic-4 route + the node-choice step live in the flow (the route-map stage exists in `RunFlowRouter` but never surfaces) ... Presentation over `RouteState`/`RouteMapViewModel` + the existing route-advance commands; reveal-on-arrival intact; no domain change; fingerprints byte-identical"). **No D1-D6 design decision governs 14.6** (D1/D2→14.1, D3/D6→14.5, D4→14.4, D5→14.7).
+- `playtest-sessions/agent-playtest-2026-07-16.md` — **F12** "No route map ever appears" (lines 109-111); the F1 soft-lock / F5 hard-cut death that trapped both runs on node 1 (lines 65-86) — the reason the post-node-1 map was never reached.
+- `_bmad-output/auto-gds/retro-notes/epic-14.md` — the 14.1 "wrong files to touch" SM precision; the `str(...)`-not-`String(nullable)` note; the 14.3 render-from-session systemic + seams-expose-only-consumed; the 14.4 stderr-negative attribution correction + the Band-1 human-verification-deferred epic-level risk; the 14.5 Descend→hero-select convergence.
+- `_bmad-output/implementation-artifacts/14-5-run-end-beat-and-run-summary-screen.md` — the ratified Epic-14 presentation-only story shape, the computed-accessor-on-a-pinned-seam pattern (key set unchanged), the RefCounted-seam + verify-by-construction posture, the false-PASS grep discipline, and the 201 PASS baseline.
+- Source files (read before implementing):
+  - `godot/scripts/ui/presenters/route_map_presenter.gd` — `_render_map` (61-113: the boss/terminal/needs-board early-returns 71-93 are UNCHANGED; the eligible-choices render 95-112 is the enrichment target); `_node_label`/`_type_icon`/`_reveal_marker` (116-143, the non-color channels); `_on_choice_picked` (145-173, the pick path + the SILENT reject at 151-157 to make visible); `_route_to_run_end` (176-179); `_flow` (182-185).
+  - `godot/scripts/ui/view_models/route_map_view_model.gd` — `DICTIONARY_KEYS` (35-41, 5 keys, UNCHANGED) / `NODE_KEYS` (44-54, 9 keys, UNCHANGED); `from_route` (63-94, projects `eligible_choice_ids()` + per-node fields incl. `is_current`/`is_cleared`/`is_eligible`); `to_dictionary` (100-110); where the new render-fact accessors land.
+  - `godot/scripts/run/route_state.gd` — `eligible_choice_ids()` (85-104, the reveal-gated selection filter) vs `available_choice_ids()` (63-76, surfaces hidden links — NOT used by the map); `is_eligible_choice()` (109-110); `cleared_node_ids` / `current_node_id`.
+  - `godot/scripts/run/route_node.gd` — `TYPE_*` (23-30, incl. `TYPE_BOSS := &"boss"`), `REVEAL_*` (17-19), `CLUE_*` (35-40); the `type`/`depth`/`reveal_state`/`outgoing_link_ids`/`clues` fields.
+  - `godot/scripts/core/commands/route_advance_command.gd` — `validate`/`execute` (51-159): reveal-on-arrival (seal-left idempotent 118-123, advance 125-127, reveal HIDDEN→REVEALED 133-141, ONE `route_advanced` event 143-150), `ineligible_route_choice` (89-95) + `_ineligibility_reason` (178-191, `is_current_node`/`unknown_node`/`cleared_node`/`not_linked`/`hidden_node`), zero RNG.
+  - `godot/scripts/run/run_orchestrator.gd` — `advance_to` (278-285, wraps `RouteAdvanceCommand` + advances the sequence id); `resolve_current_node_live` (930-...); `boss_encounter_pending` (918-919).
+  - `godot/scripts/ui/flow/run_flow_controller.gd` — `current_node_needs_board` (84-95, the resolve-then-advance depth-0-opener seam; `LIVE_BOARD_NODE_TYPES == combat/elite`, boss is distinct) — DO NOT TOUCH.
+  - `godot/scripts/ui/flow/run_flow_router.gd` — `STAGES` (32-39) + `_STAGE_SCENES` (44-53, `route_map → route_map.tscn`); the nav vocabulary.
+  - Flow-nav (context — NOT touched by 14.6): `godot/scripts/ui/presenters/hero_select_presenter.gd:127-128` (→ route_map); `godot/scripts/ui/presenters/gameplay_shell_presenter.gd:170,214,284-286` (`_advance_to_route_map`); `godot/scripts/ui/presenters/boot_controller.gd:11,23` (→ hero_select); `godot/scripts/autoloads/scene_manager.gd:21-27` (`go_to_stage`).
+  - Tests: `godot/tests/unit/ui/test_route_map_view_model.gd` (extend — the projection pattern); `godot/tests/unit/run/test_run_flow_controller.gd:114-139` (`_current_node_needs_board_gates_the_depth_0_opener` — the depth-0 invariant pin, keep GREEN); `godot/tests/unit/ui/test_run_flow_scenes_load.gd:22,40` (the compile guardrail — loads `route_map.tscn` + compiles `route_map_presenter.gd`).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Story context by Claude Opus 4.8 (gds-create-story). Implementation by Claude Opus 4.8 (gds-dev-story).
+
+### Debug Log References
+
+### Completion Notes List
+
+### File List
+
+## Change Log
+
+| Date | Version | Description | Author |
+|---|---|---|---|
+| 2026-07-18 | 0.1 | Story context created (gds-create-story). Presentation ONLY over shipped contracts (F12 — the live route map): (AC1) enrich `route_map_presenter._render_map` to convey the route from the pinned `RouteMapViewModel` — current position (`is_current`), revealed forward-neighbor choices (`eligible_choice_ids()`), cleared progress, and the terminal boss (`type == "boss"`), all non-color (glyph/marker/human-display-label — NFR9); (AC2) route the pick through the EXISTING `RunOrchestrator.advance_to`→`RouteAdvanceCommand` (reveal-on-arrival + no-double-clear + the depth-0-opener-not-skipped `current_node_needs_board()` seam all preserved) and surface a VISIBLE cue on a rejected pick (the F3 silent-rejection close); (AC3) NO domain/command/event/RNG/save change — the projection stays in the pinned-key `RouteMapViewModel` (`DICTIONARY_KEYS`/`NODE_KEYS` unchanged; new accessors are computed reads), 23-key `RunSnapshot`/`SCHEMA_VERSION 1`/7 streams unchanged, every fingerprint byte-identical, 14.6 re-pins nothing. Reconciliation flagged: the route-map wiring shipped in 11.3 (boot→hero_select→route_map); it "never surfaced" at playtest because both runs died/soft-locked on node 1 (F1/F5) and never reached the post-opener map — now reachable after 14.1. No deferred-work item overlaps 14.6. Status → ready-for-dev. | Claude Opus 4.8 (gds-create-story) |
