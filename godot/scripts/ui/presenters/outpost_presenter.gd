@@ -24,14 +24,15 @@ extends Control
 const OutpostSpendBridge = preload("res://scripts/ui/flow/outpost_spend_bridge.gd")
 const RunEndProfileBridge = preload("res://scripts/ui/flow/run_end_profile_bridge.gd")
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
+const RunSeedSource = preload("res://scripts/ui/flow/run_seed_source.gd")
 const OutpostRenderView = preload("res://scripts/ui/view_models/outpost_render_view.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
 
-# The default seed for a one-tap re-descend when the outpost offers no explicit seed-entry surface (the FR1 loop-closure
-# affordance; a manual-seed entry is a later concern). The legacy no-class start (an empty class id) is always startable,
-# so a one-tap re-descend closes the loop; the fresh run picks a new route from this seed (NOT the prior run's route).
-const DEFAULT_DESCENT_SEED: int = 4242
+# Story 14.4 (AC1): there is NO fixed re-descend seed anymore. The one-tap "Descend Again" seed comes from the pure
+# RunSeedSource seam — in v0 GameSession.get_root_seed() is always 0 (nothing configures it live), so a re-descend
+# takes the ENTROPY branch and gets a genuinely fresh, DIFFERENT room every time (the F11 same-room fix). The old
+# fixed DEFAULT_DESCENT_SEED = 4242 is gone.
 
 var _render_view: OutpostRenderView = null
 var _content: VBoxContainer = null
@@ -289,16 +290,23 @@ func _on_spend_pressed(unlock_id: String) -> void:
 
 
 func _on_descend_pressed() -> void:
-	# The outpost produces a start REQUEST (the AC1 seam) then hands it to a FRESH RunFlowController.start(...) — the
-	# AUTHORITATIVE fail-closed start. A one-tap re-descend uses the default seed + the legacy no-class start. The empty
-	# class id is UNCONDITIONALLY startable (OutpostViewModel.start_run_request's class_is_startable == true for an empty
-	# class id), so the request is built inline in the pinned START_REQUEST_KEYS shape — no throwaway OutpostViewModel /
-	# HeroSelectViewModel construction is needed for a fixed empty-class request. The prior terminal run is NOT reused (a
-	# new controller + a new RunState.new_run via start). (A future seed-entry / hero-re-pick surface would build the
-	# request through the VM's start_run_request seam to re-gate a chosen class.)
+	# The outpost produces a start REQUEST then hands it to a FRESH RunFlowController.start(...) — the AUTHORITATIVE
+	# fail-closed start. Story 14.4 (AC1): the seed now comes from the pure RunSeedSource seam (the impure entropy read
+	# is the one _new_run_entropy() line) — in v0 GameSession.get_root_seed() is 0, so a one-tap re-descend takes the
+	# ENTROPY branch and gets a genuinely fresh, DIFFERENT room every time (the F11 same-room fix), NOT the old fixed
+	# 4242. Only the root_seed VALUE (now entropy, decimal-string-encoded) and is_manual_seed VALUE change; the inline
+	# request keeps its existing key shape (this presenter does NOT call OutpostViewModel.start_run_request, so the VM
+	# START_REQUEST_KEYS pin is untouched). The empty class id is UNCONDITIONALLY startable
+	# (OutpostViewModel.start_run_request's class_is_startable == true for an empty class id). The prior terminal run is
+	# NOT reused (a new controller + a new RunState.new_run via start). (A future seed-entry / hero-re-pick surface would
+	# build the request through the VM's start_run_request seam to re-gate a chosen class.)
+	var configured_seed: int = 0
+	if has_node("/root/GameSession"):
+		configured_seed = GameSession.get_root_seed()
+	var seed_decision: Dictionary = RunSeedSource.resolve(configured_seed, _new_run_entropy())
 	var request: Dictionary = {
-		"root_seed": str(DEFAULT_DESCENT_SEED),
-		"is_manual_seed": false,
+		"root_seed": str(int(seed_decision.get("root_seed", 0))),
+		"is_manual_seed": bool(seed_decision.get("is_manual_seed", false)),
 		"class_id": String(&""),
 		"is_startable": true
 	}
@@ -340,3 +348,15 @@ func _flow() -> RunFlowController:
 	if not has_node("/root/GameSession"):
 		return null
 	return GameSession.run_flow() as RunFlowController
+
+
+# Story 14.4 (AC3): the ONE impure line — a one-time OS-entropy seed SOURCE for a normal (unconfigured) re-descend.
+# A LOCAL RandomNumberGenerator seeded from OS entropy, NOT a named gameplay RngStreamSet stream and NOT the global
+# randi()/randf() (the seed source is chosen BEFORE any stream exists — streams derive FROM it). randomize() reseeds
+# from a high-resolution source each call, so a rapid re-descend picks a fresh seed (a fixed 1-second-resolution
+# clock would collide and re-create the same-room bug). The PURE manual-vs-entropy decision + normalization lives in
+# RunSeedSource (unit-tested with an injected fixed entropy).
+func _new_run_entropy() -> int:
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.randomize()
+	return rng.randi()
