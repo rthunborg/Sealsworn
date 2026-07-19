@@ -74,6 +74,13 @@ const INSUFFICIENT_SHARDS_NOTE := "Not enough Oath Shards to unlock this yet."
 const SUMMARY_OUTCOME_VICTORY := "Victory"
 const SUMMARY_OUTCOME_DEATH := "Fallen"
 
+# Story 14.9 (AC1, F14): the honest "coming later" affordance label for a DEFERRED named space, replacing the old raw
+# "[#] Name  (coming soon)" debug string. A non-color TEXT channel (project-context §14 / NFR9 — the deferral reads by
+# label, never by color alone). The presenter maps a named-space marker's is_deferred == true to this label; a
+# non-deferred space (none exist in v0) renders no "coming later" affordance. Centralized + testable without a SceneTree
+# (mirrors MANUAL_SEED_WARNING_LINE / INSUFFICIENT_SHARDS_NOTE).
+const NAMED_SPACE_DEFERRED_LABEL := "Coming later"
+
 # The projection this render view reads (OutpostViewModel.to_dictionary() — the pinned DICTIONARY_KEYS). A deep copy is
 # stored so a mutation of a caller's dict never perturbs this seam's reads.
 var _projection: Dictionary = {}
@@ -228,6 +235,19 @@ func run_oath_shards_earned() -> int:
 		return 0
 	var raw_award: int = MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * summary_nodes_cleared()
 	return clampi(raw_award, 0, MetaAwardRules.MAX_AWARD)
+
+
+# Story 14.9 (AC1, F14): the NOTABLE-LOOT list the run-summary row renders — a pure read of the REAL 8.2 field
+# run_summary.run_scoped.notable_loot (each entry {item_id, category, source}, already single-sourced/deduped from
+# item_gained by 8.2). [] when the summary is absent (fail-closed) OR when no loot events were aggregated — the v0 live
+# flow builds RunSummary.build(run, []) with an EMPTY events list, so this is legitimately empty and the presenter
+# renders it honestly ("— none —"), NEVER fabricated, NEVER a placeholder. Surfaces ONLY what _render_run_summary draws
+# (the 14.3 seams-expose-only-consumed posture). Returns a FRESH deep copy (the no-live-handle discipline — a caller's
+# mutation never perturbs this seam's projection). Draws ZERO RNG; mutates nothing.
+func summary_notable_loot() -> Array:
+	var run_scoped: Dictionary = (_projection.get("run_summary", {}) as Dictionary).get("run_scoped", {})
+	var loot: Array = run_scoped.get("notable_loot", [])
+	return loot.duplicate(true)
 
 
 # Story 14.5: the summary's terminal phase String (the projected run_summary.phase — "completed" / "failed", or "" for an
