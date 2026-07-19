@@ -3,10 +3,10 @@ epic_num: 14
 story_num: 11
 branch: story/14-11-ui-theme-and-semantic-layout
 status: in-progress
-updated_at: "2026-07-19T17:26:00Z"
+updated_at: "2026-07-19T17:37:20Z"
 started_at: "2026-07-19T16:29:53Z"
 completed_at: null
-active_seconds: 3240
+active_seconds: 3880
 is_first_in_epic: false
 is_last_in_epic: true
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: story/14-10-player-hud-and-range-highlights
 epic_story_count: 11
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 1
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["1f42a3d", "8f5b421"]
+commits: ["1f42a3d", "8f5b421", "1145170"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
