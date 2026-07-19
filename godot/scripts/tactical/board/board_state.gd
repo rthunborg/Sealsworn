@@ -361,6 +361,8 @@ func _apply_validated_event(event: DomainEvent) -> void:
 			pass
 		DomainEvent.Type.ENEMY_WAITED:
 			pass
+		DomainEvent.Type.HERO_WAITED:
+			pass
 		DomainEvent.Type.LEVEL_VICTORY_REACHED:
 			pass
 		DomainEvent.Type.LEVEL_DEFEAT_REACHED:
@@ -424,6 +426,10 @@ func _validate_event(event: DomainEvent) -> ActionResult:
 			var wait_validation: ActionResult = _validate_enemy_waited_event(event)
 			if wait_validation.is_error():
 				return wait_validation
+		DomainEvent.Type.HERO_WAITED:
+			var hero_wait_validation: ActionResult = _validate_hero_waited_event(event)
+			if hero_wait_validation.is_error():
+				return hero_wait_validation
 		DomainEvent.Type.LEVEL_VICTORY_REACHED:
 			var victory_validation: ActionResult = _validate_level_victory_reached_event(event)
 			if victory_validation.is_error():
@@ -471,8 +477,21 @@ func _apply_visibility_updated(event: DomainEvent) -> void:
 func _apply_damage_applied(event: DomainEvent) -> void:
 	var target_entity_id: StringName = StringName(str(event.payload.get("target_entity_id", "")))
 	var entity: TacticalEntityState = _entities.get(target_entity_id) as TacticalEntityState
-	if entity != null:
-		entity.current_hp = int(event.payload.get("hp_after", entity.current_hp))
+	if entity == null:
+		return
+	entity.current_hp = int(event.payload.get("hp_after", entity.current_hp))
+	# Story 14.1 (F1/F8): when a BLOCKING entity dies, RELEASE its board occupancy so its death cell becomes
+	# walkable and non-targetable (F1 soft-lock fix; targeting reads cell occupant_id, so a cleared corpse is
+	# non-targetable for free). The corpse STAYS in _entities (hp 0, at its position) so the level_victory_reached
+	# defeated_enemy_ids payload + the corpse-decal read still see it. Clearing blocks_movement keeps the
+	# _cells/_entities occupancy invariant consistent (a non-blocking corpse claims no cell), so the snapshot
+	# round-trip AND the enemy-phase simulation copy stay valid — folding the corpse-clear into this existing
+	# DAMAGE_APPLIED handler covers every death-by-damage path (hero attack, enemy attack, hazard/Scorched tick).
+	if entity.is_dead() and entity.blocks_movement:
+		var death_cell: BoardCell = get_cell(entity.position)
+		if death_cell != null and death_cell.occupant_id == entity.entity_id:
+			death_cell.occupant_id = &""
+		entity.blocks_movement = false
 
 
 func _apply_entity_knocked_back(event: DomainEvent) -> void:
@@ -903,6 +922,22 @@ func _validate_enemy_waited_event(event: DomainEvent) -> ActionResult:
 	return ActionResult.ok()
 
 
+# Story 14.1: the board-level hero-wait validator (mirrors _validate_enemy_waited_event). The hero IS the actor
+# (a non-empty actor_id present in _entities is required) and the payload carries a non-empty `reason`. The apply
+# is a no-op (a wait mutates no board state); board-applying it advances _next_sequence_id so the wait event's
+# sequence id never collides with the first enemy-phase event.
+func _validate_hero_waited_event(event: DomainEvent) -> ActionResult:
+	if event.actor_id == &"":
+		return _invalid_wait_event(&"invalid_actor")
+	if not _entities.has(event.actor_id):
+		return _invalid_wait_event(&"invalid_actor", {
+			"actor_id": String(event.actor_id)
+		})
+	if not _has_nonempty_string_payload(event.payload, &"reason"):
+		return _invalid_wait_event(&"invalid_payload", {"field": "reason"})
+	return ActionResult.ok()
+
+
 func _validate_level_victory_reached_event(event: DomainEvent) -> ActionResult:
 	if event.actor_id != &"":
 		return _invalid_outcome_event(&"invalid_actor", {
@@ -1027,7 +1062,15 @@ func _validate_entity_for_setup(entity: TacticalEntityState) -> ActionResult:
 			"entity_id": String(entity.entity_id)
 		})
 
-	return _validate_cell_for_occupancy(entity.position, entity.entity_id)
+	var occupancy: ActionResult = _validate_cell_for_occupancy(entity.position, entity.entity_id)
+	# Story 14.1: a NON-BLOCKING entity (a 14.1 corpse whose occupancy was released on death) claims no cell
+	# occupancy (_store_entity_for_setup reserves a cell only for blocks_movement entities), so it may legally
+	# share a cell with the living occupant that moved onto it. Tolerate ONLY the cell_occupied rejection for a
+	# non-blocking entity (still reject out-of-bounds / wall terrain). This keeps the snapshot round-trip valid
+	# when a hero stands on a corpse cell, independent of entity-id storage order.
+	if occupancy.is_error() and occupancy.error_code == &"cell_occupied" and not entity.blocks_movement:
+		return ActionResult.ok()
+	return occupancy
 
 
 func _store_entity_for_setup(entity: TacticalEntityState) -> void:

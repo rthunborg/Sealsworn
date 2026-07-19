@@ -14,12 +14,14 @@ const TacticalCommandBridge = preload("res://scripts/ui/command_bridge/tactical_
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalSnapshot = preload("res://scripts/save/snapshots/tactical_snapshot.gd")
 const TacticalTurnState = preload("res://scripts/tactical/turns/tactical_turn_state.gd")
+const WaitCommand = preload("res://scripts/core/commands/wait_command.gd")
 const WeaponDefinition = preload("res://scripts/content/definitions/weapon_definition.gd")
 const WeaponRepository = preload("res://scripts/content/repositories/weapon_repository.gd")
 
 func run() -> Dictionary:
 	_move_intent_builds_command_without_mutation_then_executes()
 	_attack_intent_builds_command_without_mutation_then_executes()
+	_wait_intent_builds_command_without_mutation_then_executes()
 	_inspect_intent_returns_selection_metadata_without_command_or_mutation()
 	_execute_intent_handles_inspect_without_command_or_mutation()
 	_invalid_intents_return_stable_disabled_results_without_mutation()
@@ -93,6 +95,48 @@ func _attack_intent_builds_command_without_mutation_then_executes() -> void:
 	assert_true(execute_result.succeeded, "Executing returned AttackCommand should succeed through the command path.")
 	assert_equal(execute_result.events.size(), 2, "Sword attack should emit attack and damage events.")
 	assert_equal(board.get_entity(&"enemy_1").current_hp, 6, "Explicit command execution should mutate target HP.")
+
+
+# Story 14.1 — a `wait` intent builds a WaitCommand through the SAME bridge seam as move/attack (the symmetry the code
+# review asked for). The build is a pure conversion (no mutation, no RNG); executing the returned command advances the
+# turn + emits a single hero_waited event. A wait for a non-active actor is disabled as `action_unavailable` (the
+# command's own validate reject surfaced through the bridge, exactly like a rejected move).
+func _wait_intent_builds_command_without_mutation_then_executes() -> void:
+	var board: BoardState = _visible_board(BoardFixtureFactory.edge_corner_movement())
+	var streams: RngStreamSet = RngStreamSet.new(103)
+	var turn_state: TacticalTurnState = TacticalTurnState.new(1, TacticalTurnState.Phase.PLAYER_PLANNING, &"hero")
+	var context: TacticalActionContext = TacticalActionContext.new(board, turn_state, streams, [])
+	var event_log: Array[DomainEvent] = []
+	var before: Dictionary = _tactical_snapshot_dictionary(board, streams, turn_state, context.pending_telegraphs, event_log)
+
+	var result_value: CommandBridgeResult = TacticalCommandBridge.new().build_command(context, {
+		"intent_id": "wait",
+		"actor_id": "hero"
+	})
+
+	assert_true(result_value.succeeded, "Valid wait intent should convert.")
+	assert_false(result_value.disabled, "Valid wait intent should not be disabled.")
+	assert_equal(result_value.error_code, &"", "Valid wait conversion should not set an error.")
+	assert_equal(result_value.intent_id, &"wait", "Result should preserve intent id.")
+	assert_equal(result_value.command_id, &"wait", "Result should identify the WaitCommand.")
+	assert_true(result_value.command is WaitCommand, "Wait intent should create WaitCommand.")
+	assert_equal(_tactical_snapshot_dictionary(board, streams, turn_state, context.pending_telegraphs, event_log), before, "Wait conversion must not mutate domain state or consume RNG.")
+
+	var execute_result: ActionResult = result_value.command.execute(context)
+
+	assert_true(execute_result.succeeded, "Executing returned WaitCommand should succeed through the command path.")
+	assert_equal(execute_result.metadata.get("advances_turn"), true, "A committed wait advances the turn.")
+	assert_equal(execute_result.events.size(), 1, "WaitCommand should emit exactly one hero_waited event on execution.")
+	assert_equal(execute_result.events[0].event_type, DomainEvent.Type.HERO_WAITED, "The committed wait event is hero_waited.")
+
+	# A wait for a non-active actor (here a nonexistent actor) is a validate reject surfaced as action_unavailable.
+	var wrong_actor: CommandBridgeResult = TacticalCommandBridge.new().build_command(context, {
+		"intent_id": "wait",
+		"actor_id": "phantom"
+	})
+	assert_false(wrong_actor.succeeded, "A wait for a non-active actor should be disabled.")
+	assert_equal(wrong_actor.error_code, &"action_unavailable", "A rejected wait surfaces action_unavailable (mirrors a rejected move).")
+	assert_equal(wrong_actor.command, null, "A disabled wait returns no executable command.")
 
 
 func _inspect_intent_returns_selection_metadata_without_command_or_mutation() -> void:

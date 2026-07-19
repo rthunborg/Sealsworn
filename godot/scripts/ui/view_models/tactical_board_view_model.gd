@@ -110,7 +110,12 @@ static func _build_occupant_views(board: BoardState) -> Array[Dictionary]:
 			continue
 		if not board_cell.visible:
 			continue
-		if board_cell.occupant_id != entity.entity_id:
+		# Story 14.1 (F8): include a LIVING occupant that OWNS its cell, OR a DEAD entity at its own position. A
+		# 14.1 corpse had its cell occupancy released on death (occupant_id cleared / re-owned by a hero that
+		# moved onto it), so it no longer owns its cell — but it MUST stay readable so the presenter can draw a
+		# persistent corpse/loot-marker decal (the occupant view already carries is_dead/current_hp). A corpse on
+		# a hidden cell still respects fog (the visible guard above).
+		if board_cell.occupant_id != entity.entity_id and not entity.is_dead():
 			continue
 		var occupant_view: TacticalOccupantView = TacticalOccupantView.from_entity(entity)
 		result.append(occupant_view.to_dictionary())

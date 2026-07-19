@@ -227,12 +227,14 @@ func _default_run_to_completion_is_byte_identical_to_a_second_run() -> void:
 
 
 func _invariants_hold_no_new_stream_no_new_event() -> void:
-	# AC4: the tap-loop opens NO new RNG stream (the 7 named streams are invariant) and adds NO DomainEvent.Type member
-	# (the enum tail is OATH_SHARDS_SPENT — the Epic-11 tail; the tap-loop reuses the existing move/attack/damage/outcome/
-	# run-end events).
-	assert_equal(RngStreamSet.required_streams().size(), 7, "The 7 named RNG streams are invariant (no new stream for the tap-loop).")
-	assert_equal(int(DomainEvent.Type.size()), 42, "The DomainEvent.Type enum has 42 members (unchanged — the tap-loop adds no event).")
-	assert_equal(int(DomainEvent.Type.OATH_SHARDS_SPENT), 41, "The enum tail is OATH_SHARDS_SPENT at index 41 (the Epic-11 tail is unchanged).")
+	# AC4: the 12.1 tap-loop opens NO new RNG stream (the 7 named streams are invariant) and added no DomainEvent.Type
+	# member. Story 14.1 later APPENDED exactly one event at the enum tail — HERO_WAITED (the F1 Wait/pass-turn backstop)
+	# — so the enum is now 43 with HERO_WAITED at index 42; OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (the
+	# append is tail-only, never renumbered).
+	assert_equal(RngStreamSet.required_streams().size(), 7, "The 7 named RNG streams are invariant (14.1 draws ZERO RNG — no new stream).")
+	assert_equal(int(DomainEvent.Type.size()), 43, "The DomainEvent.Type enum has 43 members (Story 14.1 appended HERO_WAITED at the tail).")
+	assert_equal(int(DomainEvent.Type.OATH_SHARDS_SPENT), 41, "OATH_SHARDS_SPENT stays the Epic-11 tail at index 41 (14.1 appended AFTER it, not renumbering).")
+	assert_equal(int(DomainEvent.Type.HERO_WAITED), 42, "HERO_WAITED is the 14.1 tail at index 42 (appended after OATH_SHARDS_SPENT).")
 
 
 # ---- Story 12.2: the class-kit loadout threads through the interactive seam -----------------------

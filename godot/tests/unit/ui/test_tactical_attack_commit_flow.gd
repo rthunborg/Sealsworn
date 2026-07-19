@@ -179,7 +179,10 @@ func _different_tile_clears_preview_without_command_or_mutation() -> void:
 
 func _invalidated_pending_targets_clear_without_command() -> void:
 	for scenario: Dictionary in [
-		{"id": "dead_target", "reason": "dead_target"},
+		# Story 14.1: killing the target via damage now CORPSE-CLEARS its cell (occupancy released), so the re-preview
+		# reads missing_target (the AttackPreviewQuery dead_target guard is a belt-and-suspenders that no longer fires on
+		# a cleared corpse — a corpse is non-targetable for free).
+		{"id": "dead_target", "reason": "missing_target"},
 		{"id": "hidden_target", "reason": "not_visible"},
 		{"id": "friendly_target", "reason": "friendly_target"},
 		{"id": "out_of_range", "reason": "out_of_range"},

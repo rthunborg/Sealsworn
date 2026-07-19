@@ -14,6 +14,7 @@ func run() -> Dictionary:
 	_active_combat_returns_no_outcome_without_mutation()
 	_invalid_context_and_state_do_not_mutate()
 	_rebuilt_outcome_state_prevents_duplicate_events()
+	_victory_holds_after_corpse_clear_releases_enemy_cells()
 	return result()
 
 
@@ -149,3 +150,19 @@ func _wait_payload() -> Dictionary:
 		"reasons": ["blocked"],
 		"explanation": "enemy_iron waited: blocked."
 	}
+
+
+# Story 14.1 (AC1): the win condition (zero LIVING enemies) is UNCHANGED by corpse-clear. After the last enemy dies
+# via the real damage path (corpse-clear vacates its cell + flips blocks_movement false), the evaluator still emits
+# victory, and the defeated_enemy_ids payload still lists the corpse (which stays in _entities).
+func _victory_holds_after_corpse_clear_releases_enemy_cells() -> void:
+	var board: BoardState = BoardFixtureFactory.attack_command_kill_board()
+	assert_true(board.apply_events([DomainEvent.damage_applied(board.next_sequence_id(), &"hero", &"enemy_1", 3, 3, 0, 10, {})]).succeeded, "Setup: the last enemy dies (corpse-clear).")
+	assert_equal(board.occupant_at(Vector2i(2, 1)), &"", "Setup: the corpse released its cell occupancy.")
+	var state: CombatOutcomeState = CombatOutcomeState.new()
+	var result_value: ActionResult = CombatOutcomeEvaluator.new(&"hero").evaluate(board, state, [])
+	assert_true(result_value.succeeded, "Victory evaluation succeeds after corpse-clear.")
+	assert_equal(result_value.events.size(), 1, "A single victory event is emitted.")
+	assert_equal(result_value.events[0].event_type, DomainEvent.Type.LEVEL_VICTORY_REACHED, "The win condition still fires with a corpse on the board.")
+	assert_equal(result_value.events[0].payload.get("defeated_enemy_ids"), ["enemy_1"], "The corpse is still counted in the defeated_enemy_ids payload (it stays in _entities).")
+	assert_equal(state.state_id, CombatOutcomeState.STATE_VICTORY, "The outcome state is victory.")

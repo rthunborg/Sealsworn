@@ -45,7 +45,8 @@ enum Type {
 	BOSS_PHASE_CHANGED,
 	FIRST_VICTORY_RECORDED,
 	BOSS_DEFEATED,
-	OATH_SHARDS_SPENT
+	OATH_SHARDS_SPENT,
+	HERO_WAITED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -90,6 +91,10 @@ const EVENT_ID_BOSS_PHASE_CHANGED := &"boss_phase_changed"
 const EVENT_ID_FIRST_VICTORY_RECORDED := &"first_victory_recorded"
 const EVENT_ID_BOSS_DEFEATED := &"boss_defeated"
 const EVENT_ID_OATH_SHARDS_SPENT := &"oath_shards_spent"
+# Story 14.1: the hero-wait/pass-turn tactical event appended at the enum tail (never renumbered) — the
+# append-only past-tense record of a WaitCommand (the F1 turn-advance backstop). Mirrors enemy_waited (an
+# actor-bearing tactical wait); the hero IS the actor, so a non-empty actor_id is required.
+const EVENT_ID_HERO_WAITED := &"hero_waited"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -1013,6 +1018,25 @@ static func enemy_waited(
 	)
 
 
+# Story 14.1 (AC2/AC4): the hero-wait/pass-turn event — the append-only tail record of a committed WaitCommand.
+# Mirrors enemy_waited (the closest existing actor-bearing tactical wait). The payload carries a lower_snake
+# `reason` (voluntary / no_legal_action); the hero is the actor (a non-empty actor_id is required). Zero RNG.
+static func hero_waited(
+	sequence_id: int,
+	actor_id: StringName,
+	reason: StringName,
+	wait_payload: Dictionary = {}
+) -> DomainEvent:
+	var payload_value: Dictionary = wait_payload.duplicate(true)
+	payload_value["reason"] = String(reason)
+	return load("res://scripts/core/events/domain_event.gd").new(
+		Type.HERO_WAITED,
+		sequence_id,
+		actor_id,
+		payload_value
+	)
+
+
 static func level_victory_reached(
 	sequence_id: int,
 	living_player_count: int,
@@ -1222,6 +1246,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_marked_tile_detonated_payload(payload_value)
 		Type.ENEMY_WAITED:
 			return _validate_enemy_waited_payload(payload_value)
+		Type.HERO_WAITED:
+			return _validate_hero_waited_payload(payload_value)
 		Type.LEVEL_VICTORY_REACHED:
 			return _validate_level_victory_reached_payload(payload_value)
 		Type.LEVEL_DEFEAT_REACHED:
@@ -2045,6 +2071,15 @@ static func _validate_enemy_waited_payload(payload_value: Dictionary) -> ActionR
 	return _ok_result()
 
 
+# Story 14.1: the hero-wait payload validator — minimal (the player-wait record is simpler than the enemy's
+# AI-decision payload). Requires a lower_snake `reason`; extra fields are tolerated (mirroring the other events'
+# permissive-extra posture).
+static func _validate_hero_waited_payload(payload_value: Dictionary) -> ActionResult:
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
+	return _ok_result()
+
+
 static func _validate_level_victory_reached_payload(payload_value: Dictionary) -> ActionResult:
 	if not _has_lower_snake_payload(payload_value, &"outcome") or String(payload_value.get("outcome")) != "victory":
 		return _error_result(&"invalid_event_payload", {"field": "outcome"})
@@ -2437,6 +2472,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_BOSS_DEFEATED
 		Type.OATH_SHARDS_SPENT:
 			return EVENT_ID_OATH_SHARDS_SPENT
+		Type.HERO_WAITED:
+			return EVENT_ID_HERO_WAITED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2525,6 +2562,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.BOSS_DEFEATED
 		EVENT_ID_OATH_SHARDS_SPENT:
 			return Type.OATH_SHARDS_SPENT
+		EVENT_ID_HERO_WAITED:
+			return Type.HERO_WAITED
 		_:
 			return Type.UNKNOWN
 
@@ -2540,6 +2579,7 @@ static func _event_requires_actor(event_type_value: int) -> bool:
 		or event_type_value == Type.TILE_MARKED
 		or event_type_value == Type.MARKED_TILE_DETONATED
 		or event_type_value == Type.ENEMY_WAITED
+		or event_type_value == Type.HERO_WAITED
 	)
 
 

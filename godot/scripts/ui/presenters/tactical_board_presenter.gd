@@ -96,6 +96,13 @@ const TERRAIN_FALLBACK_COLORS := {
 }
 const HERO_FALLBACK_COLOR := Color(0.2, 0.55, 0.9, 1.0)
 const ENEMY_FALLBACK_COLOR := Color(0.82, 0.26, 0.26, 1.0)
+# Story 14.1 (F8) — the persistent corpse/loot-marker decal channel. A dead occupant renders a DESATURATED,
+# FLATTENED "remains" footprint (a short + wide rect hugging the cell floor) with a dark marker outline and NO HP
+# bar and NO bright friend/foe border — a SHAPE/POSITION non-color channel (NFR9) so a corpse never reads as a
+# live unit (the F8 defect: "corpses look alive").
+const CORPSE_MODULATE := Color(0.42, 0.42, 0.48, 0.85)
+const CORPSE_FILL_COLOR := Color(0.16, 0.13, 0.14, 0.9)
+const CORPSE_OUTLINE_COLOR := Color(0.32, 0.28, 0.28, 0.85)
 
 # The region -> slot vocabulary (the appendix §1.2 region plan; the TacticalLayoutProfile region names).
 const REGION_NAMES: Array[String] = [
@@ -158,6 +165,10 @@ var _board_panel: Panel = null
 var _board_geometry: TacticalBoardZoomState = null
 var _last_board_vm: Dictionary = {}
 var _texture_cache: Dictionary = {}
+# Story 14.1 (AC2/F1) — the always-visible Wait / End-Turn control (built in _build_regions, hosted in the
+# confirm/cancel region). Routed to the live session's submit_wait so the player can ALWAYS advance the turn
+# (the F1 soft-lock backstop). Shown only while a live fight is bound; a no-op otherwise.
+var _wait_button: Button = null
 
 func _ready() -> void:
 	_build_regions()
@@ -192,6 +203,7 @@ func _build_regions() -> void:
 			_board_grid.size = panel.size
 			_board_grid.cell_tapped.connect(_on_board_grid_tapped)
 			panel.add_child(_board_grid)
+	_build_wait_control()
 
 
 # Resolve the layout profile from the real viewport/safe-area (the presenter injects them; the profile is the
@@ -252,6 +264,9 @@ func render() -> void:
 	# affinity badge (the affinity id/display-name/rule visible before + during play — FR55).
 	_set_region_text("status", _status_text(vm.get("turn", {}), affinity))
 	_set_region_text("log_or_outcome", _log_text(vm.get("event_log_summary", []), vm.get("outcome", {})))
+	# Story 14.1 — the Wait control is meaningful only during a live fight (a session is bound); hide it otherwise.
+	if _wait_button != null:
+		_wait_button.visible = _session != null
 
 
 # The G1 status region: hero HP + node progress + gold + inventory from the RunHudViewModel, composed with the
@@ -503,6 +518,41 @@ func _notify_action_committed() -> void:
 		_on_action_committed.call()
 
 
+# Story 14.1 (AC2) — route a WAIT tap into the live session (the always-available pass / End-Turn — the F1
+# turn-advance backstop). The session commits a WaitCommand and runs the enemy phase; re-render + notify the shell
+# (terminal check + route). A no-op when no session is bound (the control is meaningful only during a live fight).
+func interactive_wait():
+	if _session == null:
+		return null
+	var result_value = _session.submit_wait()
+	render()
+	_notify_action_committed()
+	return result_value
+
+
+# The Wait / End-Turn button handler (routes to the live session's wait seam).
+func _on_wait_pressed() -> void:
+	interactive_wait()
+
+
+# Story 14.1 (AC2/F1) — build the always-present Wait / End-Turn control in the confirm/cancel region. Carries a
+# text label (a non-color channel, NFR9) and honors the >=44px touch target. Hidden until a live fight binds a
+# session (toggled in render()).
+func _build_wait_control() -> void:
+	var confirm_label: Label = _region_panels.get("confirm_cancel", null)
+	var host: Node = confirm_label.get_parent() if confirm_label != null else self
+	if host == null:
+		host = self
+	_wait_button = Button.new()
+	_wait_button.name = "wait_button"
+	_wait_button.text = "Wait / End Turn"
+	_wait_button.custom_minimum_size = Vector2(44.0, 44.0)
+	_wait_button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_wait_button.pressed.connect(_on_wait_pressed)
+	host.add_child(_wait_button)
+	_wait_button.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_wait_button.visible = false
+
 # --- Story 13.1: the live tile-grid render + tap hit-test ------------------------------------------------------
 
 # Draw the board region as a real tile grid — a PURE projection of the VM (cells + occupants) + the level's
@@ -593,6 +643,12 @@ func _build_board_draw_ops(vm: Dictionary) -> Array:
 		var occupant: Dictionary = occupant_value
 		var cell_rect: Rect2 = _cell_rect(occupant.get("position", {}))
 		if cell_rect.size.x <= 0.0:
+			continue
+		# Story 14.1 (F8): a dead occupant (a 14.1 corpse surfaced by the board VM) draws a distinct persistent
+		# corpse/loot-marker decal instead of a live sprite + HP bar, so it never reads as alive.
+		if bool(occupant.get("is_dead", false)):
+			for corpse_op: Dictionary in _corpse_decal_ops(cell_rect, occupant):
+				ops.append(corpse_op)
 			continue
 		var is_hero: bool = String(occupant.get("entity_type", "")) == "player"
 		var sprite: Texture2D = _hero_texture() if is_hero else _enemy_texture(String(occupant.get("definition_id", "")))
@@ -710,6 +766,31 @@ func _hp_bar_ops(cell_rect: Rect2, occupant: Dictionary) -> Array:
 		_fill_op(background, HP_BAR_BG_COLOR),
 		_fill_op(fill, HP_BAR_FILL_COLOR)
 	]
+
+
+# Story 14.1 (F8) — the corpse/loot-marker decal for a DEAD occupant. It draws the fallen unit as a DESATURATED,
+# FLATTENED footprint (short + wide, hugging the cell floor — a distinct SHAPE vs. the tall living portrait) plus a
+# dark marker outline, and deliberately NO HP bar and NO bright friend/foe border. The shape + desaturation are the
+# non-color channel (NFR9) so a corpse never reads as a live unit. Uses the enemy art (grayed) when available, else a
+# flat fill.
+func _corpse_decal_ops(cell_rect: Rect2, occupant: Dictionary) -> Array:
+	var ops: Array = []
+	var footprint: Rect2 = Rect2(
+		cell_rect.position.x + cell_rect.size.x * 0.12,
+		cell_rect.position.y + cell_rect.size.y * 0.52,
+		cell_rect.size.x * 0.76,
+		cell_rect.size.y * 0.36
+	)
+	if footprint.size.x <= 0.0 or footprint.size.y <= 0.0:
+		return ops
+	var sprite: Texture2D = _enemy_texture(String(occupant.get("definition_id", "")))
+	if sprite != null:
+		ops.append(_texture_op(footprint, sprite, CORPSE_MODULATE))
+	else:
+		ops.append(_fill_op(footprint, CORPSE_FILL_COLOR))
+	# The loot-marker channel: a dark outline around the fallen footprint (distinct from the live hero/enemy borders).
+	ops.append(_outline_op(footprint, CORPSE_OUTLINE_COLOR, 2.0))
+	return ops
 
 
 func _terrain_texture(terrain: int) -> Texture2D:

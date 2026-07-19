@@ -70,6 +70,7 @@ func run() -> Dictionary:
 	_attack_events_serialize_and_parse_stable_payloads()
 	_enemy_turn_events_serialize_and_parse_stable_payloads()
 	_outcome_events_serialize_and_parse_stable_payloads()
+	_hero_waited_serializes_and_parses_stable_payload()
 	_try_from_dictionary_rejects_malformed_entity_moved_payloads()
 	_try_from_dictionary_rejects_malformed_visibility_payloads()
 	_try_from_dictionary_rejects_malformed_attack_payloads()
@@ -2795,6 +2796,47 @@ func _enemy_turn_events_serialize_and_parse_stable_payloads() -> void:
 	assert_equal(waited.to_dictionary().get("payload", {}).get("reason"), "blocked", "Wait events should serialize the stable wait reason.")
 
 
+func _hero_waited_serializes_and_parses_stable_payload() -> void:
+	# Story 14.1 (AC4): hero_waited round-trips through to_dictionary/try_from_dictionary; the payload carries a
+	# lower_snake reason; the hero IS the actor (an empty actor_id is rejected — hero_waited is in
+	# _event_requires_actor); a missing / non-lower-snake reason is rejected with the stable code.
+	var waited: DomainEvent = DomainEvent.hero_waited(5, &"hero", &"no_legal_action")
+	_assert_round_trips(waited, DomainEvent.Type.HERO_WAITED, "hero_waited")
+	assert_equal(waited.to_dictionary().get("actor_id"), "hero", "hero_waited carries the hero actor id.")
+	assert_equal(waited.to_dictionary().get("payload", {}).get("reason"), "no_legal_action", "hero_waited serializes the wait reason.")
+
+	var voluntary: DomainEvent = DomainEvent.hero_waited(9, &"hero", &"voluntary")
+	_assert_round_trips(voluntary, DomainEvent.Type.HERO_WAITED, "hero_waited")
+
+	var empty_actor: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "hero_waited",
+		"sequence_id": 1,
+		"actor_id": "",
+		"payload": {"reason": "voluntary"}
+	})
+	assert_true(empty_actor.is_error(), "hero_waited requires a non-empty actor id (the hero IS the actor).")
+	assert_equal(empty_actor.error_code, &"invalid_event_actor_id", "An empty hero_waited actor id uses the stable code.")
+
+	var missing_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "hero_waited",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {}
+	})
+	assert_true(missing_reason.is_error(), "hero_waited requires a reason.")
+	assert_equal(missing_reason.error_code, &"invalid_event_payload", "A missing hero_waited reason uses the stable code.")
+	assert_equal(missing_reason.metadata.get("field"), "reason", "The hero_waited diagnostics name the missing reason field.")
+
+	var bad_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "hero_waited",
+		"sequence_id": 1,
+		"actor_id": "hero",
+		"payload": {"reason": "Voluntary"}
+	})
+	assert_true(bad_reason.is_error(), "hero_waited rejects a non-lower-snake reason.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "The hero_waited diagnostics name the bad reason field.")
+
+
 func _outcome_events_serialize_and_parse_stable_payloads() -> void:
 	var victory: DomainEvent = DomainEvent.level_victory_reached(
 		18,
@@ -3021,7 +3063,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.BOSS_DEFEATED: &"boss_defeated",
 		# Story 11.6: the oath_shards_spent SYSTEM event appended at the enum end (never renumbered) — the meta-SPEND
 		# record (the oath_shards_awarded counterpart at the OPPOSITE sign; before - amount == after).
-		DomainEvent.Type.OATH_SHARDS_SPENT: &"oath_shards_spent"
+		DomainEvent.Type.OATH_SHARDS_SPENT: &"oath_shards_spent",
+		# Story 14.1: the hero_waited tactical event appended at the enum end (never renumbered) — the F1
+		# turn-advance / pass-turn record (the enemy_waited counterpart for the player).
+		DomainEvent.Type.HERO_WAITED: &"hero_waited"
 	}
 
 	for event_type: int in expected_ids.keys():
