@@ -37,3 +37,8 @@
 ## Story 14-7-full-backpack-reward-escape-hatch
 - [Phase 5 — dev-story] Domain-event-append stories must grep for ALL `DomainEvent.Type.size()` count pins, not just the `test_domain_event.gd` `expected_ids` pin — 14.7's Task 5 missed a second hard-coded `size()==43` pin in `test_interactive_combat_flow.gd:235` (caught by the suite, not the checklist). Type enum is now 44 (append-only).
 - [Phase 7 — code review] Reward-command-FAMILY test-hardening note: the command-level zero-RNG test is structurally vacuous (asserts on a stream set the command never receives) — `test_resolve_reward_command` has the identical shape; the meaningful zero-RNG coverage lives only at the bridge level. Worth a one-line hardening pass when the family is next touched.
+
+## Story 14-8-hero-select-rebuild
+- [Phase 3 — create-story] "D4 routes to 14-8" was a planning misread: D4 is the SHIPPED 14.4 per-run seed-source decision, not a hero-select manual-seed ENTRY widget — no Epic-14 story adds a seed-entry field. Confirm at retro so 14.9/14.10 planning doesn't re-inject it.
+- [Phase 3 — create-story] Profile-threading deliberately left as a work-around in the hero-select rebuild: threading the profile WITHOUT the Necromancer/Shadeblade class-kit content would make a spend-unlocked class read selectable while RunStartCommand's kit gate rejects it — a new mis-enabled-start hazard. The fix stays bundled with the class-kit CONTENT story.
+- [Phase 5 — dev-story] The `--scene` headless test run does NOT emit `.gd.uid` sidecars for new `.gd` files — run `--headless --import` separately to generate them; the 13.1 uid-commit discipline recurs for every presentation-seam story that adds a `.gd`.
