@@ -1479,3 +1479,48 @@ documented stderr negatives, ZERO new). One item carried forward:
   291-295) — re-confirmed by the 14-9 review that it remains unaddressed and non-blocking. Consider caching/injecting the
   baseline repository or short-circuiting `has_affordable_unlock()` when that seam is next edited for behavior. Originating
   finding: 11-6 review (2026-07-06); re-confirmed: 14-9 review (2026-07-19).
+
+---
+
+## Deferred from: code review of 14-10-player-hud-and-range-highlights (2026-07-19)
+
+Round 1 primary review (`gds-code-review`, Opus 4.8, full depth; verdict **Approve**; Critical 0 / High 0 / Med 0 / Low 3;
+**0 open `[Review][Decision]`**). Diffed three-dot against the stacked base `story/14-9-outpost-screen-cleanup` (merge-base ==
+the 14-9 finalize tip `e6d1a70`; deliberately NOT against `main`). Presentation-only over `scripts/ui/` — the changed set is
+EXACTLY the story's File List: MODIFIED `tactical_board_presenter.gd` + NEW `tactical_hud_view.gd` + NEW
+`tactical_range_highlight_view.gd` + their two unit tests (+ 4 `.gd.uid`). Verified: the 16-key `TacticalBoardViewModel` and
+11-key `RunHudViewModel` gates hold (both byte-untouched; the HUD/highlights are SEPARATE read surfaces, no new board-VM key);
+highlights REUSE `TacticalMovementQuery`/`AttackPreviewQuery` (no new query) with a budget of 3 that matches the live move
+(`MoveCommand.BASELINE_MOVEMENT_BUDGET`/`LiveCombatResolver.HERO_MOVE_BUDGET`/command-bridge default all `3`); player_planning-
+gated + fail-closed + pure (pre/post `to_snapshot()` compare); computed once per `render()`, cached in `_last_highlights`,
+drawn in the single `_build_board_draw_ops` pass with NO `_process` recompute (the 14.3 rule); NFR9 shapes (move ring / attack
+corner ticks + legend) and word turn label; corpse excluded from attack highlights; F9 leaks swept (pipe-dump, `Turn
+player_planning`, inspect `Cues:`); NO domain/RNG/save/scene/schema file touched (23-key `RunSnapshot` / `SCHEMA_VERSION == 1`
+/ 7 named streams byte-untouched); reward overlay untouched. Suite INDEPENDENTLY re-run on the review head: **205 PASS / 0
+FAIL** ("Headless tests passed.", exit 0; false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0; both new seam tests + the
+`test_run_flow_scenes_load.gd` compile guardrail GREEN; all four new `.gd.uid` sidecars present). Three `[Review][Defer]`, all
+Low / non-blocking:
+
+- [ ] **[Review][Defer]** (Low, from code review of 14-10, 2026-07-19) — `TacticalHudView` exposes `turn_is_player` and
+  `has_hud`, but the presenter consumes NEITHER: `_populate_hud`/`_compact_hud_text` render the `turn_label` WORD and never
+  branch on `turn_is_player`, and `_render_hud` always populates the HUD box without reading `has_hud` (a runless render shows
+  a zeroed HUD rather than hiding it — not reachable in a live combat node, where `_run` is always bound). A tension with the
+  14.3 "seams expose only what the presenter consumes" rule that the SAME change cited to correctly DROP `actor_cell` from the
+  range seam. Spec-compliant (Task 1 pins these 12 keys); `has_hud` defensibly mirrors `RunHudViewModel.has_run` as the fail-
+  closed gate, so NO change is required now. Owner: 14.11 — consume `turn_is_player` (and optionally `has_hud` to hide the HUD
+  on a runless render) when the turn indicator is themed, or trim then.
+- [ ] **[Review][Defer]** (Low, from code review of 14-10, 2026-07-19) — Fixed-pixel HUD cosmetics hardcoded in
+  `_build_hud_controls`/`_add_hud_label`: the turn-label font size `22`, the HP-bar height `10.0`, and the VBox `separation`
+  `2`. These are element-internal font/spacing values (NOT region geometry — the region placement IS honored via
+  `TacticalLayoutProfile` control-slot reachability), and the story's own 14.10↔14.11 boundary assigns "a Godot Theme
+  (StyleBoxes/fonts/spacing) across ALL screens (including this HUD)" to 14.11, so they are expected to fold into that theme.
+  (The highlight/tick draw factors scale with cell size and the two `*_COLOR` consts follow the existing in-file pattern —
+  both fine as-is.) Owner: 14.11 — replace the fixed font/spacing values with the shared Theme.
+- [ ] **[Review][Defer]** (Low, from code review of 14-10, 2026-07-19) — Band-1/2 on-device human verification of the HUD +
+  highlights is still pending: on-screen HUD legibility (HP/gold/bag/turn as legible non-debug elements, no
+  `player_planning`/snake_case in any player label), move-range vs attack-range distinguishability WITHOUT color on a physical
+  display, turn-indicator clarity, and the small-viewport no-overflow / non-reachable-slot compact-fallback path. All are
+  automated-green via the two seam unit tests + the `test_run_flow_scenes_load.gd` compile guardrail; by the ratified verify-
+  by-construction posture there is NO SceneTree presenter test, so the reachability/degrade branch and the real on-screen
+  render are human-unverified. Re-confirms and extends the story's own documented defer and the standing 14-5/14-9 Band-1/2
+  defers. Owner: the pending physical-device observed-playtest pass, before Band 2 closes.
