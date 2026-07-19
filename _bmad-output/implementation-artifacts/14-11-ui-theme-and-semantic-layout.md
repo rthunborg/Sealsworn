@@ -1,6 +1,6 @@
 # Story 14.11: UI Theme and Semantic Layout
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
