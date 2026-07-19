@@ -138,6 +138,9 @@ const REJECT_MARKER_COLOR := Color(0.95, 0.3, 0.35, 0.9)
 # them apart. Both are additive draw-only overlays on already-hit-testable cells (they add NO new tap target).
 const MOVE_HIGHLIGHT_COLOR := Color(0.35, 0.78, 0.96, 0.55)
 const ATTACK_HIGHLIGHT_COLOR := Color(0.98, 0.45, 0.38, 0.7)
+# Story 14.11 (Task 1/2) — the HP-bar min height fallback when the Theme's HudHpBar `bar_height` constant is
+# unresolved (graceful degradation — never a zero-height bar). The shipped value lives in the Theme (folded 14.10).
+const HUD_HP_BAR_FALLBACK_HEIGHT := 10
 # Story 14.3 (AC2/F8) — the combat feedback ANIMATION channels. The hit/death/telegraph cues are each a TRANSIENT,
 # self-freeing overlay node tweened by a bounded Godot Tween (NOT a per-frame _process redraw loop — the board grid's
 # one-draw-per-render perf rule stays intact once the short tween completes). The MOVE is a REAL sprite slide (Round-1
@@ -175,6 +178,9 @@ var _commit_flow: TacticalAttackCommitFlow = TacticalAttackCommitFlow.new()
 var _command_bridge: TacticalCommandBridge = TacticalCommandBridge.new()
 # The region -> control panel map (built from the semantic layout profile).
 var _region_panels: Dictionary = {}
+# Story 14.11 (Task 3/F15) — coalesce a burst of viewport size_changed events (a live window drag) into ONE
+# deferred resize pass (never a _process poll — the 14.3 one-draw-per-render rule).
+var _resize_pending: bool = false
 
 # The live rendering inputs (set by the shell presenter that hosts this board): the live BoardState, its turn
 # state, the live RunState (for the G1 HUD), and the current text scale.
@@ -203,6 +209,9 @@ var _on_action_committed: Callable = Callable()
 # never calls it (the two-step un-arms internally, zero mutation). `_reward_active` gates rendering.
 var _passive_commit_flow: PassiveRewardCommitFlow = PassiveRewardCommitFlow.new()
 var _reward_overlay: Panel = null
+# Story 14.11 (Task 4) — the centered MODAL panel inside the full-rect scrim (sized from the semantic content
+# area, skinned with the distinct modal_frame Theme StyleBox). The scrim blocks board input; the modal scrolls.
+var _reward_modal_panel: Panel = null
 var _reward_box: VBoxContainer = null
 var _on_reward_resolution: Callable = Callable()
 var _reward_active: bool = false
@@ -270,6 +279,56 @@ var _last_highlights: Dictionary = {}
 func _ready() -> void:
 	_build_regions()
 	render()
+	# Story 14.11 (Task 3/F15) — event-driven resize -> a SINGLE re-layout + re-render so the board re-fits the
+	# window (no huge dead gray zone). NEVER a _process/_physics_process poll (the 14.3 one-draw-per-render rule);
+	# the viewport size_changed fires per resize and _apply_resize coalesces a burst (a drag) into one deferred
+	# pass, each driving the same render path a turn takes (re-fitting the grid through TacticalBoardGridFit).
+	var viewport: Viewport = get_viewport()
+	if viewport != null:
+		viewport.size_changed.connect(_on_viewport_resized)
+
+
+# Story 14.11 (Task 3/F15) — the event-driven resize response. Coalesce a burst of size_changed events into ONE
+# deferred re-layout + render (a live window drag can fire many); each pass re-flows the semantic region panels
+# and re-fits the board. A no-op poll is never installed — this fires only on a real resize event.
+func _on_viewport_resized() -> void:
+	if _resize_pending:
+		return
+	_resize_pending = true
+	call_deferred("_apply_resize")
+
+
+# Re-flow the semantic region panels to the (freshly re-read) layout profile, then drive one render() so the
+# board re-fits its resized panel through the existing TacticalBoardGridFit seam — and re-position the reward
+# overlay if it is up. One render per resize event; no per-frame work.
+func _apply_resize() -> void:
+	_resize_pending = false
+	if not is_inside_tree():
+		return
+	_relayout_regions()
+	render()
+	if _reward_active:
+		render_reward()
+
+
+# Reposition + resize every semantic region panel to the current layout profile. The panels are placed once at
+# build; on a window resize they must re-flow (the anchored root Control auto-fills, but its fixed-rect region
+# children do not — that STALE-panel gap is the F15 "dead gray zone / doesn't re-scale"). Geometry rides the
+# TacticalLayoutProfile seam (re-read fresh from the new viewport), never ad-hoc presenter math. The board grid
+# is re-fitted by render()/_render_board_grid from the resized board panel; anchored controls re-flow with them.
+func _relayout_regions() -> void:
+	var profile: Dictionary = _layout_profile().to_dictionary()
+	var regions: Dictionary = profile.get("regions", {})
+	for region_name: String in REGION_NAMES:
+		var label: Label = _region_panels.get(region_name, null)
+		if label == null:
+			continue
+		var panel: Node = label.get_parent()
+		if not panel is Panel:
+			continue
+		var rect: Dictionary = regions.get(region_name, {})
+		(panel as Panel).position = Vector2(float(rect.get("x", 0.0)), float(rect.get("y", 0.0)))
+		(panel as Panel).size = Vector2(float(rect.get("width", 0.0)), float(rect.get("height", 0.0)))
 
 
 # Build the semantic region panels from the injected viewport (never hardcoded geometry). Each region is a Panel
@@ -441,6 +500,14 @@ func _range_highlights(vm: Dictionary) -> Dictionary:
 # TacticalHudView seam (composing the shipped RunHudViewModel + the board VM turn slot — no new board-VM key).
 func _render_hud(vm: Dictionary, affinity: Dictionary, highlights: Dictionary, layout: Dictionary) -> void:
 	var hud: Dictionary = TacticalHudView.project(_run, _board, vm.get("turn", {}))
+	# Story 14.11 (Task 5) — consume `has_hud`: a RUNLESS render (no bound run — the between-fights empty board)
+	# carries no HUD facts, so HIDE the HUD box + clear the status text rather than drawing a zeroed HUD. In a
+	# live combat node _run is always bound (has_hud true), so this only gates the runless/empty-board render.
+	if not bool(hud.get("has_hud", false)):
+		if _hud_box != null:
+			_hud_box.visible = false
+		_set_region_text("status", "")
+		return
 	if _hud_box == null or not _status_slot_reachable(layout):
 		if _hud_box != null:
 			_hud_box.visible = false
@@ -464,7 +531,11 @@ func _status_slot_reachable(layout: Dictionary) -> bool:
 # legend lines hide when empty / when no highlights are active.
 func _populate_hud(hud: Dictionary, affinity: Dictionary, highlights: Dictionary) -> void:
 	if _hud_turn_label != null:
+		# Story 14.11 (Task 5) — consume `turn_is_player`: the turn indicator switches to the themed ACTIVE
+		# variation (a themed emphasis) on the player's turn, while ALWAYS carrying the turn WORD ("Your Turn" /
+		# "Enemy Turn" — the NFR9 non-color channel; the emphasis is additive, never the sole signal).
 		_hud_turn_label.text = String(hud.get("turn_label", ""))
+		_hud_turn_label.theme_type_variation = &"HudTurnLabelActive" if bool(hud.get("turn_is_player", false)) else &"HudTurnLabel"
 	if _hud_hp_label != null:
 		_hud_hp_label.text = _hp_text(hud)
 	if _hud_hp_bar != null:
@@ -895,37 +966,52 @@ func _build_hud_controls() -> void:
 	_hud_box = VBoxContainer.new()
 	_hud_box.name = "hud_box"
 	_hud_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_hud_box.add_theme_constant_override("separation", 2)
+	# Story 14.11 (Task 1/2) — the HUD VBox separation folds into the Theme (HudBox variation), not a hardcoded
+	# per-widget override (deferred-work.md:1512).
+	_hud_box.theme_type_variation = &"HudBox"
 	host.add_child(_hud_box)
 	_hud_box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	# The prominent turn indicator (a larger font — the F10 "no turn indicator" fix), then the discrete stat lines.
-	_hud_turn_label = _add_hud_label(22)
-	_hud_hp_label = _add_hud_label(0)
+	# The prominent turn indicator: its font (folded 14.10 `22`) + the active-turn emphasis now come from the
+	# Theme (HudTurnLabel / HudTurnLabelActive variations; the active one is set per-render from turn_is_player).
+	_hud_turn_label = _add_hud_label(&"HudTurnLabel")
+	_hud_hp_label = _add_hud_label(&"")
 	_hud_hp_bar = ProgressBar.new()
 	_hud_hp_bar.name = "hud_hp_bar"
+	_hud_hp_bar.theme_type_variation = &"HudHpBar"
 	_hud_hp_bar.show_percentage = false
 	_hud_hp_bar.min_value = 0.0
 	_hud_hp_bar.max_value = 1.0
-	_hud_hp_bar.custom_minimum_size = Vector2(0.0, 10.0)
 	_hud_hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_box.add_child(_hud_hp_bar)
-	_hud_gold_label = _add_hud_label(0)
-	_hud_bag_label = _add_hud_label(0)
-	_hud_node_label = _add_hud_label(0)
-	_hud_class_label = _add_hud_label(0)
-	_hud_affinity_label = _add_hud_label(0)
-	_hud_legend_label = _add_hud_label(0)
+	# Story 14.11 (Task 1/2) — the HP-bar height folds into the Theme (HudHpBar `bar_height` constant), read after
+	# the bar is in-tree (so the Theme chain resolves) with a safe fallback — not a hardcoded 10.0.
+	_hud_hp_bar.custom_minimum_size = Vector2(0.0, float(_hud_bar_height()))
+	_hud_gold_label = _add_hud_label(&"")
+	_hud_bag_label = _add_hud_label(&"")
+	_hud_node_label = _add_hud_label(&"")
+	_hud_class_label = _add_hud_label(&"")
+	_hud_affinity_label = _add_hud_label(&"")
+	_hud_legend_label = _add_hud_label(&"")
 	_hud_box.visible = false
 
 
-# A HUD Label child (mouse-IGNORE so it never eats a board tap; an optional larger font for the turn indicator).
-func _add_hud_label(font_size: int) -> Label:
+# A HUD Label child (mouse-IGNORE so it never eats a board tap; an optional Theme type variation for the
+# prominent turn indicator — the font size now lives in the Theme, not a per-widget override).
+func _add_hud_label(type_variation: StringName) -> Label:
 	var label: Label = Label.new()
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if font_size > 0:
-		label.add_theme_font_size_override("font_size", font_size)
+	if type_variation != &"":
+		label.theme_type_variation = type_variation
 	_hud_box.add_child(label)
 	return label
+
+
+# Story 14.11 (Task 1/2) — the HP-bar min height from the Theme (HudHpBar `bar_height` constant), with a safe
+# fallback when the Theme is absent/unresolved (graceful degradation — never a zero-height bar).
+func _hud_bar_height() -> int:
+	if _hud_hp_bar != null and _hud_hp_bar.has_theme_constant("bar_height", "HudHpBar"):
+		return _hud_hp_bar.get_theme_constant("bar_height", "HudHpBar")
+	return HUD_HP_BAR_FALLBACK_HEIGHT
 
 # --- Story 14.3: the in-combat move/hit/death/telegraph feedback animation (AC2/F8) ----------------------------
 
@@ -1552,6 +1638,9 @@ func render_reward() -> void:
 		_reward_overlay.visible = false
 		return
 	_reward_overlay.visible = true
+	# Story 14.11 (Task 4) — re-center/size the modal from the (freshly re-read) content area so it tracks the
+	# viewport + any resize; then rebuild the scrolling content.
+	_position_reward_modal()
 	_add_reward_label(String(projection.get("prompt", "")), true)
 	if bool(projection.get("is_passive", false)):
 		_build_passive_reward_ui(projection)
@@ -1559,8 +1648,12 @@ func render_reward() -> void:
 		_build_generic_reward_ui(projection)
 
 
-# Build the overlay lazily: a full-rect Panel (mouse-filter STOP so it captures the tap + blocks board input while the
-# reward is up) hosting a centered VBox. Added last so it draws ON TOP of the board grid.
+# Story 14.11 (Task 4 — folds the 13.2 R1 defer, deferred-work.md:97) — build the overlay lazily as a full-rect
+# SCRIM (mouse-filter STOP so it captures the tap + blocks board input while the reward is up) hosting a centered
+# MODAL panel sized from the semantic TacticalLayoutProfile content area (never fixed pixels), skinned with the
+# distinct modal_frame Theme StyleBox (RewardOverlay variation), and wrapping the reward VBox in a ScrollContainer
+# so a tall passive 3-choice modal SCROLLS rather than pushing the >=44px targets off a small viewport. Added last
+# so it draws ON TOP of the board grid.
 func _ensure_reward_overlay() -> void:
 	if _reward_overlay != null:
 		return
@@ -1569,18 +1662,53 @@ func _ensure_reward_overlay() -> void:
 	_reward_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_reward_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_reward_overlay)
+	_reward_modal_panel = Panel.new()
+	_reward_modal_panel.name = "reward_modal_panel"
+	_reward_modal_panel.theme_type_variation = &"RewardOverlay"
+	_reward_modal_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_reward_overlay.add_child(_reward_modal_panel)
 	var margin: MarginContainer = MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 24)
-	margin.add_theme_constant_override("margin_right", 24)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
-	_reward_overlay.add_child(margin)
+	var inset: int = int(TacticalLayoutProfile.COMFORTABLE_SPACING)
+	margin.add_theme_constant_override("margin_left", inset)
+	margin.add_theme_constant_override("margin_right", inset)
+	margin.add_theme_constant_override("margin_top", inset)
+	margin.add_theme_constant_override("margin_bottom", inset)
+	_reward_modal_panel.add_child(margin)
+	var scroll: ScrollContainer = ScrollContainer.new()
+	scroll.name = "reward_scroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
 	_reward_box = VBoxContainer.new()
 	_reward_box.name = "reward_box"
-	_reward_box.add_theme_constant_override("separation", 8)
-	margin.add_child(_reward_box)
+	# Story 14.11 (Task 1/2) — the reward box separation folds into the Theme (RewardBox variation).
+	_reward_box.theme_type_variation = &"RewardBox"
+	_reward_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_reward_box)
 	_reward_overlay.visible = false
+	_position_reward_modal()
+
+
+# Story 14.11 (Task 4) — position + size the reward modal panel from the layout profile content area (centered,
+# capped so a large desktop keeps a readable dialog rather than a full-bleed panel). Re-read fresh so a resize
+# re-centers it. A degenerate/fallback viewport (no content area) falls back to the full scrim rect (never a
+# zero-size modal). Geometry rides the TacticalLayoutProfile seam, never ad-hoc math.
+func _position_reward_modal() -> void:
+	if _reward_modal_panel == null or _reward_overlay == null:
+		return
+	var content: Dictionary = _layout_profile().to_dictionary().get("content_area", {})
+	var cx: float = float(content.get("x", 0.0))
+	var cy: float = float(content.get("y", 0.0))
+	var cw: float = float(content.get("width", 0.0))
+	var ch: float = float(content.get("height", 0.0))
+	if cw <= 0.0 or ch <= 0.0:
+		_reward_modal_panel.position = Vector2.ZERO
+		_reward_modal_panel.size = _reward_overlay.size
+		return
+	var modal_w: float = minf(cw, maxf(cw * 0.9, 320.0))
+	var modal_h: float = minf(ch, maxf(ch * 0.85, 240.0))
+	_reward_modal_panel.position = Vector2(cx + (cw - modal_w) * 0.5, cy + (ch - modal_h) * 0.5)
+	_reward_modal_panel.size = Vector2(modal_w, modal_h)
 
 
 # A GENERIC single-pick offer: show the reward + an Accept button (drives ResolveRewardCommand) + a Decline/skip button
@@ -1618,7 +1746,7 @@ func _build_generic_reward_ui(projection: Dictionary) -> void:
 func _build_passive_reward_ui(projection: Dictionary) -> void:
 	var flow_state: Dictionary = _passive_commit_flow.to_dictionary()
 	if String(flow_state.get("pending_choice", PassiveRewardCommitFlow.CHOICE_NONE)) != PassiveRewardCommitFlow.CHOICE_NONE:
-		_build_passive_confirm_ui(flow_state)
+		_build_passive_confirm_ui(flow_state, projection)
 		return
 	var table_id: String = String(projection.get("table_id", ""))
 	for choice_value: Variant in projection.get("choices", []):
@@ -1638,10 +1766,14 @@ func _build_passive_reward_ui(projection: Dictionary) -> void:
 
 # The armed-choice confirm step (the two-step second tap). The armed-vs-unarmed state carries a NON-COLOR channel:
 # the button labels differ ("Consume"/"Destroy" -> "Confirm Consume/Destroy") and a distinct Cancel appears.
-func _build_passive_confirm_ui(flow_state: Dictionary) -> void:
+func _build_passive_confirm_ui(flow_state: Dictionary, projection: Dictionary) -> void:
 	var choice: String = String(flow_state.get("pending_choice", ""))
 	var content_id: String = String(flow_state.get("passive_content_id", ""))
-	_add_reward_label("Confirm %s of %s?" % [choice.capitalize(), content_id], false)
+	# Story 14.11 (Task 4 — folds the 13.2 R2 defer, deferred-work.md:106) — render the evocative display_name
+	# (resolved on the RewardHudViewModel seam), never the raw snake_case passive_content_id; fail-closed to the
+	# id if absent. The prompt now reads "Confirm Consume of <Evocative Name>?", matching the choice list.
+	var display_name: String = RewardHudViewModel.display_name_for(projection, content_id)
+	_add_reward_label("Confirm %s of %s?" % [choice.capitalize(), display_name], false)
 	var confirm_btn: Button = _reward_button("Confirm %s" % choice.capitalize())
 	confirm_btn.pressed.connect(_on_passive_confirm)
 	_reward_box.add_child(confirm_btn)
@@ -1719,8 +1851,10 @@ func _add_reward_label(text: String, is_header: bool) -> void:
 	var label: Label = Label.new()
 	label.text = text
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Story 14.11 (Task 1/2) — the reward header font folds into the Theme (RewardHeader variation), not a
+	# hardcoded font-size override.
 	if is_header:
-		label.add_theme_font_size_override("font_size", 22)
+		label.theme_type_variation = &"RewardHeader"
 	_reward_box.add_child(label)
 
 

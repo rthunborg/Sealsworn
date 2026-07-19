@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-19T16:31:00+00:00
+last_updated: 2026-07-19T18:12:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -194,7 +194,7 @@ development_status:
   # contracts; the two domain touches (14-1 corpse/wait, 14-7 reward decline) follow the 4.3
   # idiom; every fingerprint byte-identical EXCEPT 14-1's justified combat-replay re-pin.
   # New epic enters as backlog (auto-gds picks up 14-1 next). Epic numbering NOT reshuffled.
-  epic-14: in-progress
+  epic-14: done
   14-1-corpse-clearing-and-wait-turn: done
   14-2-attack-preview-and-rejected-command-feedback: done
   14-3-combat-event-log-and-hit-feedback: done
@@ -205,5 +205,5 @@ development_status:
   14-8-hero-select-rebuild: done
   14-9-outpost-screen-cleanup: done
   14-10-player-hud-and-range-highlights: done
-  14-11-ui-theme-and-semantic-layout: backlog
-  epic-14-retrospective: optional
+  14-11-ui-theme-and-semantic-layout: done
+  epic-14-retrospective: done
