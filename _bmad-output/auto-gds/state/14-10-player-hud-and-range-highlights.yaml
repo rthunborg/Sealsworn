@@ -2,11 +2,11 @@ story_key: 14-10-player-hud-and-range-highlights
 epic_num: 14
 story_num: 10
 branch: story/14-10-player-hud-and-range-highlights
-status: in-progress
-updated_at: "2026-07-19T16:28:10Z"
+status: done
+updated_at: "2026-07-19T16:31:30Z"
 started_at: "2026-07-19T15:31:52Z"
-completed_at: null
-active_seconds: 3190
+completed_at: "2026-07-19T16:31:30Z"
+active_seconds: 3250
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["7bbaa97", "36c0bfe", "7b7f6a4"]
+commits: ["7bbaa97", "36c0bfe", "7b7f6a4", "169ed60", "9e60e61"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/80"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

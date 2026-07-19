@@ -1,6 +1,6 @@
 # Story 14.10: Player HUD and Range Highlights
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
