@@ -3,10 +3,10 @@ epic_num: 14
 story_num: 8
 branch: story/14-8-hero-select-rebuild
 status: in-progress
-updated_at: "2026-07-19T13:00:00Z"
+updated_at: "2026-07-19T13:12:10Z"
 started_at: "2026-07-19T12:22:16Z"
 completed_at: null
-active_seconds: 2150
+active_seconds: 2845
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -23,14 +23,14 @@ git_mode: remote
 base_branch: story/14-7-full-backpack-reward-escape-hatch
 epic_story_count: 11
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 1
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["3e080ab", "f651649"]
+commits: ["3e080ab", "f651649", "c6060fe"]
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
