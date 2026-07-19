@@ -14,11 +14,13 @@ extends Control
 
 const HeroSelectViewModel = preload("res://scripts/ui/view_models/hero_select_view_model.gd")
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
+const RunSeedSource = preload("res://scripts/ui/flow/run_seed_source.gd")
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
 
-# The default run seed when the launch flow configured none (a deterministic fallback; a manual-seed entry is a
-# later concern). Kept as a named const so a later seed-entry surface can supply one.
-const DEFAULT_RUN_SEED: int = 4242
+# Story 14.4 (AC1): there is NO fixed run seed anymore. The default new-run seed comes from the pure RunSeedSource
+# seam — a launch-configured explicit seed (manual: byte-deterministic, no meta) or, when unconfigured, a one-time
+# OS-entropy seed (a NEW different room every boot — the F11 same-room fix). The old fixed DEFAULT_RUN_SEED = 4242
+# is gone.
 
 var _view_model: HeroSelectViewModel = null
 var _selected_class_id: StringName = &""
@@ -97,9 +99,21 @@ func _on_class_selected(class_id: StringName) -> void:
 func _on_confirm_pressed() -> void:
 	if _selected_class_id == &"":
 		return
-	var seed_value: int = _resolve_seed()
+	# Story 14.4 (AC1/AC2): resolve the run seed through the pure RunSeedSource seam — a launch-configured explicit
+	# seed (manual: byte-deterministic, no meta) or, when unconfigured, a one-time OS-entropy seed (a NEW different
+	# room every boot — the F11 fix). The seam decides (root_seed, is_manual_seed); the impure entropy read is the
+	# one _new_run_entropy() line below. is_manual_seed is now THREADED from the seam (was hardcoded false — a latent
+	# FR28 gap where a configured explicit seed would still have been meta-eligible).
+	var configured_seed: int = 0
+	if has_node("/root/GameSession"):
+		configured_seed = GameSession.get_root_seed()
+	var seed_decision: Dictionary = RunSeedSource.resolve(configured_seed, _new_run_entropy())
 	var controller: RunFlowController = RunFlowController.new()
-	var start: Dictionary = controller.start(seed_value, false, _selected_class_id)
+	var start: Dictionary = controller.start(
+		int(seed_decision.get("root_seed", 0)),
+		bool(seed_decision.get("is_manual_seed", false)),
+		_selected_class_id
+	)
 	if not bool(start.get("started", false)):
 		if has_node("/root/Diagnostics"):
 			Diagnostics.info(&"ui", &"hero_select_start_rejected", {
@@ -114,10 +128,13 @@ func _on_confirm_pressed() -> void:
 		SceneManager.go_to_stage("route_map")
 
 
-# Resolve the run seed: the launch-configured GameSession seed if set, else the deterministic default.
-func _resolve_seed() -> int:
-	if has_node("/root/GameSession"):
-		var configured: int = GameSession.get_root_seed()
-		if configured != 0:
-			return configured
-	return DEFAULT_RUN_SEED
+# Story 14.4 (AC3): the ONE impure line — a one-time OS-entropy seed SOURCE for a normal (unconfigured) run. It is
+# a LOCAL RandomNumberGenerator seeded from OS entropy, NOT a named gameplay RngStreamSet stream and NOT the global
+# randi()/randf() (the seed source is chosen BEFORE any stream exists — streams derive FROM it, so drawing from one
+# would be circular). randomize() reseeds from a high-resolution source each call, so a rapid re-boot picks a fresh
+# seed (a fixed 1-second-resolution clock would collide and re-create the same-room bug). The PURE manual-vs-entropy
+# decision + normalization lives in RunSeedSource (unit-tested with an injected fixed entropy).
+func _new_run_entropy() -> int:
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.randomize()
+	return rng.randi()
