@@ -1463,3 +1463,19 @@ _Two further Low items deferred from the 2-7 review (run-level vs embedded tacti
 - Board snapshot cell parsing still coerces malformed cell fields and lacks a `cells` container type guard. `BoardState.try_from_snapshot()` assigns `cells` directly to a typed `Array`, while `BoardCell.from_dictionary()` coerces missing or malformed position, terrain, visibility, and explored values before validation can reject the corrupt snapshot.
 - Board entity snapshot restore has unresolved occupant-schema migration and consistency behavior. Cell-only occupant snapshots from the earlier board format now fail without a schema migration, while snapshots with entities but missing matching cell occupants can be accepted and restored into a different shape.
 - Mutable `get_cell()` access can bypass new entity occupancy invariants. External callers can mutate the stored `BoardCell.occupant_id` directly and desynchronize `_cells` from `_entities`; deciding whether to return read-only copies or add setup-only mutators belongs with the board snapshot/domain API cleanup.
+
+## Deferred from: code review of 14-9-outpost-screen-cleanup (2026-07-19)
+
+Round 1 primary review (verdict: Approve; Critical 0 / High 0 / Med 0 / Low 2). Presentation-only marker sweep + honest
+"Coming later" named-space rows + split-out notable-loot honest tally, over the pinned `OutpostViewModel`/`OutpostRenderView`
+seam. Suite independently re-run green (203 PASS, false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0, exactly the 6
+documented stderr negatives, ZERO new). One item carried forward:
+
+- **[Review][Defer] `OutpostRenderView.class_unlock_options()` still rebuilds a baseline `ClassRepository` on every call
+  (and `has_affordable_unlock()` calls it just to check a boolean).** This sits directly in 14.9's AC2 spend/unlock render
+  area, and 14.9 correctly left it deferred (per the story: non-blocking, not required by any AC; the marker sweep changed
+  only `label.text`/`note.text` strings, not the `class_unlock_options()` seam region). No functional impact, off the hot
+  loop, ZERO RNG. This is the SAME pre-existing item first logged under "code review of 11-6" (deferred-work.md lines
+  291-295) — re-confirmed by the 14-9 review that it remains unaddressed and non-blocking. Consider caching/injecting the
+  baseline repository or short-circuiting `has_affordable_unlock()` when that seam is next edited for behavior. Originating
+  finding: 11-6 review (2026-07-06); re-confirmed: 14-9 review (2026-07-19).

@@ -62,6 +62,8 @@ func run() -> Dictionary:
 	_failed_summary_renders_death_outcome_and_zero_earned()
 	_manual_seed_completed_summary_earns_zero()
 	_absent_summary_has_empty_outcome_and_zero_earned()
+	# Story 14.9 (AC1, F14) — the notable-loot honest tally read (real field, empty in v0, fail-closed)
+	_notable_loot_reads_the_real_summary_field()
 	# Story 11.6 — the shallow meta menu spend render decisions (AC1/FR59)
 	_spend_options_are_affordable_when_shards_suffice()
 	_spend_options_are_insufficient_when_shards_short()
@@ -211,6 +213,11 @@ func _deferred_named_spaces_carry_an_explicit_marker() -> void:
 		assert_equal(String(marker.get("status")), "deferred", "Every v0 named space is deferred.")
 		assert_true(bool(marker.get("is_deferred")), "The deferred marker is EXPLICIT (a boolean the presenter maps to a coming-soon icon/label).")
 		assert_false(String(marker.get("display_name")).is_empty(), "Each named space carries its display name.")
+	# Story 14.9 (AC1, F14): the presenter maps is_deferred == true to the seam's NAMED_SPACE_DEFERRED_LABEL "Coming later"
+	# affordance (replacing the raw "[#] Name  (coming soon)" debug string) — a non-color TEXT channel (NFR9). Pin the const
+	# so the decision is centralized + testable without a SceneTree.
+	assert_false(OutpostRenderView.NAMED_SPACE_DEFERRED_LABEL.is_empty(), "The deferred-space 'Coming later' affordance label is a non-empty non-color text channel.")
+	assert_equal(OutpostRenderView.NAMED_SPACE_DEFERRED_LABEL, "Coming later", "The deferred-space affordance label reads 'Coming later'.")
 
 
 func _start_descent_is_available_with_both_beats_absent() -> void:
@@ -301,6 +308,44 @@ func _absent_summary_has_empty_outcome_and_zero_earned() -> void:
 	assert_equal(view.summary_nodes_cleared(), 0, "An absent summary reads 0 nodes cleared.")
 	assert_equal(view.summary_seed(), "", "An absent summary reads an empty seed.")
 	assert_equal(view.run_oath_shards_earned(), 0, "An absent summary earns 0 (fail-closed).")
+
+
+# ---- Story 14.9 (AC1, F14): the notable-loot honest tally read -----------------------------------
+
+func _notable_loot_reads_the_real_summary_field() -> void:
+	# Story 14.9 (AC1, F14): summary_notable_loot() is a pure read of the REAL run_scoped.notable_loot field — honestly
+	# EMPTY in the v0 live flow (the run-end bridge builds RunSummary.build(run, []) with an empty events list), [] for an
+	# absent summary (fail-closed), and the aggregated item_gained entries when loot events ARE supplied (proving the read
+	# is the real 8.2 field, NOT a fabricated placeholder). This is the seam decision the presenter's "Notable loot:" row
+	# renders; the marker sweep + the row split are verified by construction + the compile guardrail.
+
+	# Honest-empty: a completed summary built with NO loot events -> an empty notable-loot list (the v0 live-flow shape).
+	var no_loot_run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 111, false)
+	var no_loot_summary: RunSummary = RunSummary.build(no_loot_run, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	var no_loot_view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), no_loot_summary))
+	assert_true(no_loot_view.shows_run_summary(), "Setup: the no-loot summary is present.")
+	assert_true(no_loot_view.summary_notable_loot().is_empty(), "A summary with no loot events reads an honestly-EMPTY notable-loot list (the v0 live flow).")
+
+	# Fail-closed: an absent summary (a fresh session) reads an empty notable-loot list without a crash.
+	var absent_view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile()))
+	assert_false(absent_view.shows_run_summary(), "Setup: a fresh session has no just-ended run summary.")
+	assert_true(absent_view.summary_notable_loot().is_empty(), "An absent summary reads an empty notable-loot list (fail-closed).")
+
+	# Real read: a summary built WITH an item_gained event surfaces the aggregated notable-loot entry (the REAL 8.2 field,
+	# not a placeholder) — the gained item id rides through run_scoped.notable_loot.
+	var loot_run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 222, false)
+	var loot_summary: RunSummary = RunSummary.build(loot_run, [
+		DomainEvent.run_completed(1, {"outcome": "victory"}),
+		DomainEvent.item_gained(2, {"item_id": "minor_healing_draught", "category": "consumable", "backpack_size_after": 1, "slot_index": 0})
+	])
+	var loot_view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), loot_summary))
+	var loot: Array = loot_view.summary_notable_loot()
+	assert_equal(loot.size(), 1, "A summary with one item_gained aggregates exactly one notable-loot entry (the real field).")
+	assert_equal(String((loot[0] as Dictionary).get("item_id", "")), "minor_healing_draught", "The notable-loot entry carries the gained item id (the real 8.2 field, not a placeholder).")
+
+	# The read is a FRESH copy (the no-live-handle discipline): mutating the returned list never perturbs the seam.
+	loot.clear()
+	assert_equal(loot_view.summary_notable_loot().size(), 1, "summary_notable_loot() returns a fresh copy — a caller's mutation does not perturb the seam's projection.")
 
 
 # ---- Story 11.6: the shallow meta menu spend render decisions (AC1/FR59) -------------------------

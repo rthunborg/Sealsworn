@@ -128,10 +128,13 @@ func _render_outpost() -> void:
 # 0-shard fallback) reads differently from "save failed — retry" (write failure — real totals behind the banner). The
 # WRITE-failure mode carries a retry affordance (>=44x44) that re-attempts the profile write.
 func _render_recovery_banner() -> void:
+	# Story 14.9 (AC1/AC2, F14): a clean labeled banner — NO raw "[!]"/"[?]" ASCII glyph. A mode-distinct WORD cue plus the
+	# already-distinct recovery_note() text carry the state (the non-color channel — NFR9; the two modes still read
+	# differently by both cue and note). The write-failure mode retains its retry affordance below.
 	var mode: String = _render_view.recovery_mode()
-	var icon: String = "[!]" if mode == OutpostRenderView.RECOVERY_MODE_WRITE_FAILURE else "[?]"
+	var cue: String = "Could not save:" if mode == OutpostRenderView.RECOVERY_MODE_WRITE_FAILURE else "Could not load:"
 	var banner: Label = Label.new()
-	banner.text = "%s %s" % [icon, _render_view.recovery_note()]
+	banner.text = "%s %s" % [cue, _render_view.recovery_note()]
 	_content.add_child(banner)
 
 	if _render_view.has_retry_affordance():
@@ -143,8 +146,10 @@ func _render_recovery_banner() -> void:
 
 
 func _render_meta_readout() -> void:
-	# AC4 (G3 Option A): the AWARDED total is the PROFILE's (OutpostRenderView.awarded_oath_shards -> profile.oath_shards);
-	# the summary's oath_shards_earned STAYS 0/not_yet_supported (shown as an honest "not yet tallied" note in the summary).
+	# AC4 (G3 Option A): the AWARDED cross-run total is the PROFILE's (OutpostRenderView.awarded_oath_shards ->
+	# profile.oath_shards). The run summary renders the oath-shards-EARNED-THIS-RUN count separately (14.5's real
+	# MetaAwardRules read — see _render_run_summary); the summary's own oath_shards_earned KEY stays 0/not_yet_supported as
+	# a live contract pin (14.5 replaced the old "not yet tallied" note with the real earned count — it is no longer shown).
 	var meta: Label = Label.new()
 	meta.text = "Oath Shards: %d" % _render_view.awarded_oath_shards()
 	_content.add_child(meta)
@@ -152,8 +157,9 @@ func _render_meta_readout() -> void:
 
 func _render_warning_banner(line: String) -> void:
 	var banner: Label = Label.new()
-	# A labeled banner (text + a warning icon, not a color tint).
-	banner.text = "[!] %s" % line
+	# Story 14.9 (AC1, F14): a labeled banner — the manual-seed line text carries the state (the non-color channel; a
+	# leading "Note:" WORD cue, NOT a raw "[!]" glyph, and never a color tint).
+	banner.text = "Note: %s" % line
 	_content.add_child(banner)
 
 
@@ -166,11 +172,11 @@ func _render_run_summary() -> void:
 
 	# Story 14.5 (AC2, F-2/D6): render the HONEST run-end facts from the just-ended RunSummary, replacing the old
 	# "not yet tallied" placeholder. The victory/death OUTCOME LABEL is keyed off the summary's terminal `phase` (NOT the
-	# live-blank outcome_or_cause), each with a DISTINCT non-color glyph ([V]/[X], not color alone — NFR9).
+	# live-blank outcome_or_cause). Story 14.9 (AC1, F14): the raw "[V]"/"[X]" ASCII glyph is REMOVED — the "Outcome:
+	# Victory"/"Outcome: Fallen" word label already carries the state (the non-color channel — NFR9).
 	var outcome: String = _render_view.summary_outcome_label()
-	var outcome_glyph: String = "[V]" if outcome == OutpostRenderView.SUMMARY_OUTCOME_VICTORY else "[X]"
 	var outcome_label: Label = Label.new()
-	outcome_label.text = "%s Outcome: %s" % [outcome_glyph, outcome]
+	outcome_label.text = "Outcome: %s" % outcome
 	_content.add_child(outcome_label)
 
 	# Nodes cleared (a bounded run signal — number+label).
@@ -189,13 +195,35 @@ func _render_run_summary() -> void:
 	earned_label.text = "Oath Shards earned this run: %d" % _render_view.run_oath_shards_earned()
 	_content.add_child(earned_label)
 
-	# AC2: the passives-consumed/destroyed + notable-loot lists have NO live source in v0 (they derive from the DEFERRED
-	# run-level event store — the bridge builds RunSummary.build(run, []) with an empty events list). Show them HONESTLY as
-	# pending — never fabricated, never silently omitted (the visible-exception discipline). Do NOT read a presentation/
-	# combat log as source truth (8.2 AC2 forbids it); do NOT build the event store (out of scope — stays deferred).
+	# Story 14.9 (AC1, F14): NOTABLE LOOT as its OWN honest row, reading the REAL summary field run_scoped.notable_loot
+	# (via the seam). In v0 the live bridge builds RunSummary.build(run, []) with an empty events list, so notable_loot is
+	# legitimately EMPTY — render it honestly ("— none —"), never fabricated, never a placeholder; the gained item ids show
+	# when present. Do NOT read a presentation/combat log as source truth (8.2 AC2 forbids it); do NOT build the deferred
+	# run-level event store (out of scope — it stays deferred).
+	var loot_label: Label = Label.new()
+	loot_label.text = "Notable loot: %s" % _notable_loot_summary(_render_view.summary_notable_loot())
+	_content.add_child(loot_label)
+
+	# AC2: the passives-consumed/destroyed lists share the SAME deferred run-level event store (empty in v0 — the bridge
+	# passes an empty events list). Shown HONESTLY as pending — never fabricated, never silently omitted (the visible-
+	# exception discipline). This stays deferred until the run-level event store lands (out of scope for 14.9).
 	var pending_label: Label = Label.new()
-	pending_label.text = "Passives spent/destroyed & notable loot: — none recorded yet —"
+	pending_label.text = "Passives spent/destroyed: — none recorded yet —"
 	_content.add_child(pending_label)
+
+
+# Story 14.9 (AC1, F14): a human-readable summary of the notable-loot entries (the gained item ids, joined) — the honest
+# "— none —" when the list is legitimately empty (the v0 live flow passes an empty events list). Each entry is a
+# {item_id, category, source} dict from run_summary.run_scoped.notable_loot; the item id is the legible name. NEVER
+# fabricates an entry (a pure read of the real field).
+func _notable_loot_summary(loot_entries: Array) -> String:
+	if loot_entries.is_empty():
+		return "— none —"
+	var names: PackedStringArray = PackedStringArray()
+	for entry_value: Variant in loot_entries:
+		var entry: Dictionary = entry_value
+		names.append(String(entry.get("item_id", "")))
+	return ", ".join(names)
 
 
 # AC2: a reveal beat card with the resolved line (inherently non-color text) + a Skip/Dismiss control (>=44x44, always
@@ -225,12 +253,19 @@ func _render_reveal_beat(heading: String, line: String) -> void:
 
 
 func _render_named_spaces() -> void:
+	# Story 14.9 (AC1, F14): each of the four deferred named spaces renders as an honest labeled row — the display name +
+	# a "Coming later" affordance (the seam's NAMED_SPACE_DEFERRED_LABEL) — NOT the raw "[#] Name  (coming soon)" debug
+	# string. The deferral reads by TEXT (the non-color channel — NFR9 / the visible-exception discipline, never silently
+	# omitted). A non-deferred space (none exist in v0) renders no "coming later" affordance. The overview tiles stay the
+	# 11.6 deferred registry; the realized surfaces (spend menu, Descend button) are separate sections (unchanged).
 	for marker_value: Variant in _render_view.named_space_markers():
 		var marker: Dictionary = marker_value
+		var display_name: String = String(marker.get("display_name", ""))
 		var label: Label = Label.new()
-		# An icon/label tile with an EXPLICIT deferred marker (the visible-exception discipline — never silently omitted).
-		var deferred_marker: String = "  (coming soon)" if bool(marker.get("is_deferred", false)) else ""
-		label.text = "[#] %s%s" % [String(marker.get("display_name", "")), deferred_marker]
+		if bool(marker.get("is_deferred", false)):
+			label.text = "%s — %s" % [display_name, OutpostRenderView.NAMED_SPACE_DEFERRED_LABEL]
+		else:
+			label.text = display_name
 		_content.add_child(label)
 
 
@@ -273,11 +308,12 @@ func _render_spend_menu() -> void:
 		row.add_theme_constant_override("separation", int(TacticalLayoutProfile.COMFORTABLE_SPACING))
 
 		var label: Label = Label.new()
-		# A non-color channel: the state reads by text/icon, the cost by number+label.
+		# Story 14.9 (AC1, F14): a non-color TEXT channel — the state reads by word ("Unlocked" / "Cost: N Oath Shards"),
+		# the cost by number+label; NO raw "[x]"/"[#]" ASCII glyph.
 		if state == OutpostRenderView.SPEND_STATE_APPLIED:
-			label.text = "[x] %s — Unlocked" % display_name
+			label.text = "%s — Unlocked" % display_name
 		else:
-			label.text = "[#] %s — Cost: %d Oath Shards" % [display_name, cost]
+			label.text = "%s — Cost: %d Oath Shards" % [display_name, cost]
 		row.add_child(label)
 
 		if state == OutpostRenderView.SPEND_STATE_AFFORDABLE:
@@ -288,9 +324,10 @@ func _render_spend_menu() -> void:
 			spend_button.pressed.connect(_on_spend_pressed.bind(unlock_id))
 			row.add_child(spend_button)
 		elif state == OutpostRenderView.SPEND_STATE_INSUFFICIENT:
-			# Fail-loud: an unaffordable unlock shows the insufficient note (never a silent no-op).
+			# Fail-loud: an unaffordable unlock shows the insufficient note (never a silent no-op). Story 14.9 (AC1, F14):
+			# NO raw "[!]" glyph — the note text itself is the non-color channel (NFR9).
 			var note: Label = Label.new()
-			note.text = "[!] %s" % OutpostRenderView.INSUFFICIENT_SHARDS_NOTE
+			note.text = OutpostRenderView.INSUFFICIENT_SHARDS_NOTE
 			row.add_child(note)
 
 		_content.add_child(row)
