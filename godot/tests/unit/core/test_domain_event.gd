@@ -47,6 +47,8 @@ func run() -> Dictionary:
 	_reward_offered_rejects_malformed_payloads()
 	_reward_resolved_serializes_and_parses_stable_payload()
 	_reward_resolved_rejects_malformed_payloads()
+	_reward_declined_serializes_and_parses_stable_payload()
+	_reward_declined_rejects_malformed_payloads()
 	_passive_consumed_serializes_and_parses_stable_payload()
 	_passive_consumed_rejects_malformed_payloads()
 	_passive_destroyed_serializes_and_parses_stable_payload()
@@ -1978,6 +1980,44 @@ func _reward_resolved_rejects_malformed_payloads() -> void:
 	assert_equal(bad_content.metadata.get("field"), "content_id", "reward_resolved should reject a non-lower_snake content_id.")
 
 
+func _reward_declined_serializes_and_parses_stable_payload() -> void:
+	# Story 14.7 (AC2): a reward_declined SYSTEM event (no actor) — the full-backpack escape-hatch record. table_id is
+	# a lower_snake content id; reason is a lower_snake disposition marker (player_declined, DISTINCT from the event id).
+	var event: DomainEvent = DomainEvent.reward_declined(8, {
+		"table_id": "standard_combat_reward",
+		"reason": "player_declined"
+	})
+	var serialized: Dictionary = event.to_dictionary()
+	assert_equal(serialized.get("event_id"), "reward_declined", "reward_declined should serialize a stable string id.")
+	assert_equal(serialized.get("actor_id"), "", "reward_declined is a system event with an empty actor id.")
+
+	var parse_result: ActionResult = DomainEvent.try_from_dictionary(JSON.parse_string(JSON.stringify(serialized)))
+	assert_true(parse_result.succeeded, "reward_declined should parse with an empty actor id: %s" % parse_result.metadata)
+	var restored: DomainEvent = parse_result.metadata.get("event") as DomainEvent
+	assert_equal(restored.event_type, DomainEvent.Type.REWARD_DECLINED, "reward_declined should parse back to REWARD_DECLINED.")
+	assert_equal(restored.payload.get("table_id"), "standard_combat_reward", "The table_id must survive a JSON round-trip.")
+	assert_equal(restored.payload.get("reason"), "player_declined", "The reason must survive a JSON round-trip.")
+
+
+func _reward_declined_rejects_malformed_payloads() -> void:
+	# A missing table_id is rejected (a caught ActionResult.error — no push_error to stderr, the hero_waited-negative
+	# precedent, so this adds NO new stderr negative to the false-PASS grep).
+	var missing_table: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_declined", "sequence_id": 1, "actor_id": "",
+		"payload": {"reason": "player_declined"}
+	})
+	assert_true(missing_table.is_error(), "reward_declined missing table_id should be rejected.")
+	assert_equal(missing_table.metadata.get("field"), "table_id", "reward_declined should name the table_id field.")
+
+	# A non-lower_snake reason is rejected.
+	var bad_reason: ActionResult = DomainEvent.try_from_dictionary({
+		"event_id": "reward_declined", "sequence_id": 1, "actor_id": "",
+		"payload": {"table_id": "standard_combat_reward", "reason": "Player_Declined"}
+	})
+	assert_true(bad_reason.is_error(), "reward_declined with a non-lower_snake reason should be rejected.")
+	assert_equal(bad_reason.metadata.get("field"), "reason", "reward_declined should reject a non-lower_snake reason.")
+
+
 func _passive_consumed_serializes_and_parses_stable_payload() -> void:
 	# Story 6.5 (AC1): a passive_consumed SYSTEM event (no actor) — the consume-specific resolution record emitted
 	# by ConsumePassiveCommand AFTER the passive is registered + the offer flips to `resolved`. passive_id + table_id
@@ -3066,7 +3106,10 @@ func _event_identifiers_are_stable_machine_ids() -> void:
 		DomainEvent.Type.OATH_SHARDS_SPENT: &"oath_shards_spent",
 		# Story 14.1: the hero_waited tactical event appended at the enum end (never renumbered) — the F1
 		# turn-advance / pass-turn record (the enemy_waited counterpart for the player).
-		DomainEvent.Type.HERO_WAITED: &"hero_waited"
+		DomainEvent.Type.HERO_WAITED: &"hero_waited",
+		# Story 14.7: the reward_declined SYSTEM event appended at the enum end (never renumbered) — the
+		# full-backpack escape-hatch record (a DeclineRewardCommand clears the offer WITHOUT applying it).
+		DomainEvent.Type.REWARD_DECLINED: &"reward_declined"
 	}
 
 	for event_type: int in expected_ids.keys():

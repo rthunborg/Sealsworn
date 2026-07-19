@@ -46,7 +46,8 @@ enum Type {
 	FIRST_VICTORY_RECORDED,
 	BOSS_DEFEATED,
 	OATH_SHARDS_SPENT,
-	HERO_WAITED
+	HERO_WAITED,
+	REWARD_DECLINED
 }
 
 const EVENT_ID_UNKNOWN := &"unknown"
@@ -95,6 +96,11 @@ const EVENT_ID_OATH_SHARDS_SPENT := &"oath_shards_spent"
 # append-only past-tense record of a WaitCommand (the F1 turn-advance backstop). Mirrors enemy_waited (an
 # actor-bearing tactical wait); the hero IS the actor, so a non-empty actor_id is required.
 const EVENT_ID_HERO_WAITED := &"hero_waited"
+# Story 14.7: the reward-DECLINE event appended at the enum tail (never renumbered) — the append-only past-tense
+# record of a DeclineRewardCommand (the full-backpack escape hatch). A SYSTEM event (no actor, mirrors
+# reward_resolved): the player-driven decline is a system-recorded outcome, so actor_id stays empty (it is NOT in
+# _event_requires_actor).
+const EVENT_ID_REWARD_DECLINED := &"reward_declined"
 
 # The allowlisted item categories the item_gained payload may carry (lower_snake). Mirrors
 # InventoryState.BACKPACK_CATEGORIES (the Story-6.1 loot categories). Kept LOCAL to domain_event.gd (a static
@@ -649,6 +655,20 @@ static func reward_resolved(sequence_id: int, payload: Dictionary = {}) -> Domai
 	payload_value["category"] = String(payload.get("category", ""))
 	payload_value["content_id"] = String(payload.get("content_id", ""))
 	return load("res://scripts/core/events/domain_event.gd").new(Type.REWARD_RESOLVED, sequence_id, &"", payload_value)
+
+
+static func reward_declined(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
+	# System event (no actor, Story 14.7): the reward-DECLINED record emitted by DeclineRewardCommand AFTER the
+	# pending offer is flipped to `resolved` WITHOUT applying it (the full-backpack escape hatch — the decline never
+	# touches the backpack, so it never hits inventory_full). NOT an entity action, so it is NOT in
+	# _event_requires_actor (actor_id stays empty, exactly like reward_resolved). table_id is a Story-6.1 CONTENT id
+	# -> lower_snake; reason is a lower_snake disposition marker (player_declined, DISTINCT from the event id). A
+	# decline selects NO entry, so there is NO category/content_id here (unlike reward_resolved). Normalize/duplicate
+	# the payload defensively (mirroring reward_resolved). The command draws ZERO RNG — decline is deterministic.
+	var payload_value: Dictionary = payload.duplicate(true)
+	payload_value["table_id"] = String(payload.get("table_id", ""))
+	payload_value["reason"] = String(payload.get("reason", ""))
+	return load("res://scripts/core/events/domain_event.gd").new(Type.REWARD_DECLINED, sequence_id, &"", payload_value)
 
 
 static func passive_consumed(sequence_id: int, payload: Dictionary = {}) -> DomainEvent:
@@ -1214,6 +1234,8 @@ static func _validate_payload_for_event(event_type_value: int, payload_value: Di
 			return _validate_reward_offered_payload(payload_value)
 		Type.REWARD_RESOLVED:
 			return _validate_reward_resolved_payload(payload_value)
+		Type.REWARD_DECLINED:
+			return _validate_reward_declined_payload(payload_value)
 		Type.PASSIVE_CONSUMED:
 			return _validate_passive_consumed_payload(payload_value)
 		Type.PASSIVE_DESTROYED:
@@ -1701,6 +1723,20 @@ static func _validate_reward_resolved_payload(payload_value: Dictionary) -> Acti
 		return _error_result(&"invalid_event_payload", {"field": "category"})
 	if not _has_lower_snake_payload(payload_value, &"content_id"):
 		return _error_result(&"invalid_event_payload", {"field": "content_id"})
+	return _ok_result()
+
+
+static func _validate_reward_declined_payload(payload_value: Dictionary) -> ActionResult:
+	# A reward-DECLINED record (Story 14.7). table_id is a Story-6.1 content id -> lower_snake; reason is a lower_snake
+	# disposition marker (player_declined). A decline selects NO entry, so there is NO category/content_id to validate
+	# (unlike reward_resolved). A malformed field is rejected per-field. Kept SYMMETRIC + STRICT: this is the one
+	# try_from_dictionary/round-trip path, so the deserialization validator enforces lower_snake on BOTH fields (the
+	# 14.1 wait-validator-asymmetry lesson — reward events round-trip through to_dictionary/try_from_dictionary and
+	# are consumed by RunSummary/diagnostics, so strict is the honest choice; no board-apply asymmetry to introduce).
+	if not _has_lower_snake_payload(payload_value, &"table_id"):
+		return _error_result(&"invalid_event_payload", {"field": "table_id"})
+	if not _has_lower_snake_payload(payload_value, &"reason"):
+		return _error_result(&"invalid_event_payload", {"field": "reason"})
 	return _ok_result()
 
 
@@ -2474,6 +2510,8 @@ static func id_for_type(type_value: int) -> StringName:
 			return EVENT_ID_OATH_SHARDS_SPENT
 		Type.HERO_WAITED:
 			return EVENT_ID_HERO_WAITED
+		Type.REWARD_DECLINED:
+			return EVENT_ID_REWARD_DECLINED
 		_:
 			return EVENT_ID_UNKNOWN
 
@@ -2564,6 +2602,8 @@ static func type_for_id(event_id: StringName) -> int:
 			return Type.OATH_SHARDS_SPENT
 		EVENT_ID_HERO_WAITED:
 			return Type.HERO_WAITED
+		EVENT_ID_REWARD_DECLINED:
+			return Type.REWARD_DECLINED
 		_:
 			return Type.UNKNOWN
 
