@@ -7,3 +7,6 @@
 - [Phase 7 — code review] Ranger kite heuristic is genuinely fragile with `ash_seer` under corpse-clear: only 8/34 driven Medium seer+melee seeds converged for all three classes (~24%). 512's non-convergence was no fluke — future Medium seer-catalog seeds must be found by search, not picked arbitrarily.
 - [Phase 7 — code review] Wait-event validators are asymmetric by design: board-apply (`_validate_*_waited_event`) enforces only non-empty `reason`; deserialization (`_validate_*_waited_payload`) enforces lower_snake. Latent gap that only matters if a wait event is ever serialized (in-node fights are ephemeral today).
 - [Phase 7 — code review] Story's "Files to touch" table named the wrong presenter files (`gameplay_shell_presenter.gd`/`tactical_board_grid.gd`); the live board surface is `tactical_board_presenter.gd` (scene-root script of `tactical_board.tscn`). SM story-audit precision point for later Epic 14 UI stories.
+
+## Story 14-2-attack-preview-and-rejected-command-feedback
+- [Phase 5 — dev-story] The 13.1 tap router routes a tap on a corpse cell to INSPECT (dead occupant → `occupant_inspect`), not attack — so the F3 `missing_target` reject cue fires only on the confirm path or a direct attack; a fresh corpse tap reads as inspect. Router change is out of 14.2 scope; Band-1 playtest + later UI stories (14.10?) should know.

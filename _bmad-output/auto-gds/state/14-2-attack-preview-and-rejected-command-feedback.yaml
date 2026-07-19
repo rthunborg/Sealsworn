@@ -1,0 +1,51 @@
+story_key: 14-2-attack-preview-and-rejected-command-feedback
+epic_num: 14
+story_num: 2
+branch: story/14-2-attack-preview-and-rejected-command-feedback
+status: done
+updated_at: "2026-07-17T18:56:00Z"
+started_at: "2026-07-17T15:16:45Z"
+completed_at: "2026-07-17T18:56:00Z"
+active_seconds: 4550
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform:
+  - unity
+  - unreal
+  - godot
+  - other
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: story/14-1-corpse-clearing-and-wait-turn
+epic_story_count: 11
+completed_phases: [0, 1, 3, 5, 7, 9]
+code_review_iterations: 2
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["24f2637", "4864349", "f0b61cb", "6787a39", "aca6330", "cab5694"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/72"
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work:
+  - "Band-1 on-device playtest of 14-2 surfaces (armed highlight, damage panel, Confirm/Cancel sharing confirm_cancel region with 14-1 Wait button, message line, marker) — deferred-work.md"
+  - "Preview panel shows raw target_entity_id; display-name mapping owned by Story 14.10 F9 debug-HUD cleanup — deferred-work.md"
+blockers: []
+overrides:
+  stacked_on: story/14-1-corpse-clearing-and-wait-turn
+  note: "user-directed stack — PR #71 (14-1) unmerged; branch base, review diff base, and PR base are the 14-1 story branch"
+constraints: []
