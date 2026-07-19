@@ -257,3 +257,60 @@ Story context by Claude Opus 4.8 (gds-create-story). Implementation by Claude Op
 ### Change Log
 
 - 2026-07-19 — Implemented Story 14.9 (Outpost Screen Cleanup): stripped raw ASCII debug markers, honest "Coming later" named-space affordances, split-out notable-loot honest tally, stale-comment fix. Presentation-only; suite green (203 PASS, 0 new stderr negatives). Status → review.
+
+### Review Findings
+
+**Round 1 of 3**
+
+**Code review — 2026-07-19 (Round 1 of 3, gds-code-review; base branch `story/14-8-hero-select-rebuild`)**
+
+**Verdict: Approve.** Critical 0 / High 0 / Med 0 / Low 2. Presentation-only story executed exactly as scoped. The full
+headless suite was independently re-run green: **203 PASS files** (baseline held — assertions added to the existing
+`test_outpost_render_view.gd`, no new file), the false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = **0 matches**, and
+exactly the **6 documented stderr negatives** (int64-overflow ×2 `test_manual_seed_loader.gd:153` + `test_domain_event.gd:146`,
+malformed-JSON ×3, `invalid_node_type` ×1) with **ZERO new**. `test_outpost_render_view.gd` PASS. Diff touches only
+`outpost_presenter.gd` + `outpost_render_view.gd` (+ the test); git status clean.
+
+**Verification (all six scrutiny checks confirmed):**
+- **14.5-inherited summary work is byte-identical except the in-scope outcome-glyph strip.** `summary_nodes_cleared` /
+  `summary_seed` / `run_oath_shards_earned` seam methods and their presenter render lines (`outpost_presenter.gd:182-196`)
+  are unchanged in the diff; only the `[V]`/`[X]` outcome glyph was removed (the "Outcome: Victory/Fallen" word label is
+  kept). `summary_outcome_label` and `MetaAwardRules` untouched. The earned count is NOT re-derived.
+- **The Descend button is byte-identical (pure navigation since 14.5).** `_on_descend_pressed` (`outpost_presenter.gd:355-369`)
+  and `_render_descend_affordance` (276-282) are not in the diff.
+- **The marker sweep is complete.** Zero rendered `[#]`/`[!]`/`[?]`/`[V]`/`[X]`/`[x]`/`(coming soon)` remain in any
+  `Label.text`/`Button.text` (grep-confirmed; the only remaining occurrences are historical code comments).
+- **Every replacement keeps a non-color channel (NFR9).** Mode-distinct "Could not save:"/"Could not load:" cue + the
+  already-distinct `recovery_note()`; a "Note:" cue on the manual-seed line; the "Outcome: …" word; "<name> — Coming later";
+  "Unlocked"/"Cost: N Oath Shards"/the insufficient note. No state relies on color alone.
+- **`summary_notable_loot()` is pure / fresh-copy / fail-closed.** Pure read of `run_scoped.notable_loot` (same
+  `(_projection.get("run_summary", {}) as Dictionary)` pattern already shipped/tested in `summary_nodes_cleared`), returns
+  `loot.duplicate(true)` (fresh deep copy), `[]` when the summary/run_scoped is absent; draws no RNG, mutates nothing. The
+  real-field read is proven end-to-end by the new test (an `item_gained` event rides through the `OutpostViewModel`
+  projection to a single deduped entry; the live bridge builds `RunSummary.build(run, [])` — `run_end_profile_bridge.gd:179`
+  — so the row is legitimately empty in v0, never fabricated).
+- **No domain/RNG/save/scene/schema file touched.** Only `scripts/ui/` presenter + seam changed; no `.tscn`, `.import`, or
+  `.gd.uid`; `RunSummary`/`RunSnapshot`/`ProfileSnapshot`/`RngStreamSet`/`DomainEvent`/`OutpostViewModel` byte-identical.
+  14.9 re-pins nothing.
+
+**Findings:**
+- [x] **[Review][Decision] LOW — label-centralization asymmetry (ratify keep-as-is or centralize later).** The deferred-space
+  affordance label is centralized as a seam const (`OutpostRenderView.NAMED_SPACE_DEFERRED_LABEL := "Coming later"`, testable
+  without a SceneTree), but the empty-notable-loot display string `"— none —"` is a presenter literal inside
+  `_notable_loot_summary()` (`outpost_presenter.gd:219-226`), so only the underlying `Array` decision is unit-asserted, not
+  the empty-state string. This is consistent with the existing presenter literal `"Passives spent/destroyed: — none recorded
+  yet —"` and matches the ratified "presenter is thin glue verified by construction" posture, so it is acceptable as-is; a
+  human may optionally centralize the empty-loot label into the seam for symmetry/testability in a future polish pass.
+  Non-blocking; no AC requires it.
+  **Resolution (human decision, 2026-07-19) — RATIFY KEEP-AS-IS.** The empty-notable-loot display string `"— none —"` stays
+  a presenter literal inside `_notable_loot_summary()` (`outpost_presenter.gd:219-226`) exactly as implemented; it is NOT
+  centralized into the `OutpostRenderView` seam. The human ratifies the thin-glue-presenter posture — the empty-state display
+  copy is presentation text, not an assertable render decision, and stays consistent with the sibling passives-pending
+  presenter literal. The underlying `summary_notable_loot() -> Array` seam accessor remains the unit-tested contract. This
+  requires no production-code change; the resolution is documentation-only. Finding resolved.
+- [ ] **[Review][Defer] LOW — `class_unlock_options()` rebuilds a baseline `ClassRepository` per call** (and
+  `has_affordable_unlock()` calls it just to check a boolean; `outpost_render_view.gd:313-337`). This sits in 14.9's AC2
+  spend/unlock area and was correctly left deferred (the marker sweep changed only `label.text`/`note.text`, not this seam
+  region; non-blocking, not required by any AC). Same pre-existing item first logged under "code review of 11-6"
+  (deferred-work.md lines 291-295); re-confirmed here that it remains unaddressed and non-blocking. Copied to
+  deferred-work.md under "Deferred from: code review of 14-9-outpost-screen-cleanup (2026-07-19)".
