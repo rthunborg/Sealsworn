@@ -21,7 +21,8 @@ const TacticalAttackCommitFlow = preload("res://scripts/ui/view_models/tactical_
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
 const TacticalTextScale = preload("res://scripts/ui/view_models/tactical_text_scale.gd")
 const TacticalAccessibilityModel = preload("res://scripts/ui/view_models/tactical_accessibility_model.gd")
-const RunHudViewModel = preload("res://scripts/ui/view_models/run_hud_view_model.gd")
+# Story 14.10 — the in-run HUD run-context projection (HP/gold/bag/nodes/class) is now composed INSIDE TacticalHudView
+# (the styled-HUD seam), so the presenter no longer references RunHudViewModel directly; the seam owns that read.
 const LiveAffinityReadModel = preload("res://scripts/ui/view_models/live_affinity_read_model.gd")
 const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const PassiveRewardModalViewModel = preload("res://scripts/ui/view_models/passive_reward_modal_view_model.gd")
@@ -58,6 +59,13 @@ const TacticalCombatFeedback = preload("res://scripts/ui/view_models/tactical_co
 # click routes back to the hosting shell (which owns the RewardResolutionBridge + the orchestrator).
 const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+# Story 14.10 (F9/F10) — the two scene-free RefCounted seams: the styled PLAYER-HUD render-decision projection
+# (HP/gold/bag/nodes + a HUMAN turn label + the class display name, composed over the shipped RunHudViewModel +
+# the board VM `turn` slot — no new board-VM key) and the MOVE-RANGE + ATTACK-RANGE highlight projection (reusing
+# the EXISTING movement/attack-preview queries — no new query). The presenter draws their output; the display-name
+# + range-legality DECISIONS live in the seams and are unit-tested (no SceneTree presenter test).
+const TacticalHudView = preload("res://scripts/ui/view_models/tactical_hud_view.gd")
+const TacticalRangeHighlightView = preload("res://scripts/ui/view_models/tactical_range_highlight_view.gd")
 
 # The approved board art (godot/assets/, all `approved` in the manifest). Loaded DEFENSIVELY at runtime (never
 # preload) so the presenter SCRIPT compiles even where the machine-local import cache (.godot/, gitignored) is
@@ -123,6 +131,13 @@ const CORPSE_OUTLINE_COLOR := Color(0.32, 0.28, 0.28, 0.85)
 # SHAPE/POSITION channels; the accessible cue is the armed-preview LABEL and the reject MESSAGE line, never color alone.
 const ARMED_TARGET_OUTLINE_COLOR := Color(1.0, 1.0, 1.0, 0.95)
 const REJECT_MARKER_COLOR := Color(0.95, 0.3, 0.35, 0.9)
+# Story 14.10 (AC2/F10/NFR9) — the MOVE-range + ATTACK-range highlight channels. Each carries a DISTINCT SHAPE (the
+# non-color signal, NFR9), not hue alone: move-range is a single thin inset outline (a hollow ring on a reachable
+# empty cell); attack-range is four L-shaped CORNER TICKS framing an in-range enemy (distinct from both the move
+# ring and the 14.2 armed-target double outline). A HUD legend names the two shapes so a colorblind player can tell
+# them apart. Both are additive draw-only overlays on already-hit-testable cells (they add NO new tap target).
+const MOVE_HIGHLIGHT_COLOR := Color(0.35, 0.78, 0.96, 0.55)
+const ATTACK_HIGHLIGHT_COLOR := Color(0.98, 0.45, 0.38, 0.7)
 # Story 14.3 (AC2/F8) — the combat feedback ANIMATION channels. The hit/death/telegraph cues are each a TRANSIENT,
 # self-freeing overlay node tweened by a bounded Godot Tween (NOT a per-frame _process redraw loop — the board grid's
 # one-draw-per-render perf rule stays intact once the short tween completes). The MOVE is a REAL sprite slide (Round-1
@@ -232,6 +247,26 @@ var _last_animated_sequence_id: int = 0
 # Reset on a new fight bind so a stale slide never displaces a live occupant.
 var _active_slides: Dictionary = {}
 
+# Story 14.10 (AC1/F9) — the styled player-HUD elements built into the `status` region (the 14.1/14.2 discrete-control
+# build pattern), populated from TacticalHudView each render(). The turn indicator is prominent (larger font); every
+# element is a text/shape channel (NFR9). The HP bar is a length/shape channel beside the "HP N/M" text. Shown only
+# when the `status` control slot is reachable (>=44px, inside content); a non-reachable slot degrades to the compact
+# single-line fallback in the base status label (never an overflow).
+var _hud_box: VBoxContainer = null
+var _hud_turn_label: Label = null
+var _hud_hp_label: Label = null
+var _hud_hp_bar: ProgressBar = null
+var _hud_gold_label: Label = null
+var _hud_bag_label: Label = null
+var _hud_node_label: Label = null
+var _hud_class_label: Label = null
+var _hud_affinity_label: Label = null
+var _hud_legend_label: Label = null
+# Story 14.10 (AC2/F10) — the move/attack range-highlight cell sets computed ONCE per render() (TacticalRangeHighlightView,
+# turn-gated). Cached so a mid-slide _refresh_board_ops re-issues the SAME op list with the identical highlights (never a
+# per-frame recompute — the inherited 14.3 one-draw-per-render rule). Empty {} when no live fight / not the player's turn.
+var _last_highlights: Dictionary = {}
+
 func _ready() -> void:
 	_build_regions()
 	render()
@@ -267,6 +302,7 @@ func _build_regions() -> void:
 			panel.add_child(_board_grid)
 	_build_wait_control()
 	_build_confirm_cancel_controls()
+	_build_hud_controls()
 
 
 # Resolve the layout profile from the real viewport/safe-area (the presenter injects them; the profile is the
@@ -339,9 +375,15 @@ func render() -> void:
 	var panel: Dictionary = TacticalAttackPreviewPanel.from_board_vm(vm)
 	var is_armed: bool = bool(panel.get("is_armed", false))
 
+	# Story 14.10 (AC2/F10) — compute the move/attack range highlights ONCE per render (turn-gated, reusing the
+	# EXISTING movement/attack-preview queries; empty when no live fight / not the player's turn). Sourced from the
+	# LIVE bound session's board/turn/actor/weapon (the 14.3 render-from-session systemic), NOT empty presenter state.
+	var highlights: Dictionary = _range_highlights(vm)
+
 	# Story 13.1 — the board region renders a real tile grid (a pure projection of the VM). Story 14.2 adds the
-	# armed-target highlight + the optional rejected-cell marker on top (via the panel + the last reject cue).
-	_render_board_grid(vm, layout, panel)
+	# armed-target highlight + the optional rejected-cell marker on top (via the panel + the last reject cue). Story
+	# 14.10 adds the move/attack range-highlight overlays (drawn in the SAME single op-list pass — no _process loop).
+	_render_board_grid(vm, layout, panel, highlights)
 	# Story 14.2 (F2) — the preview region shows the visible armed-attack panel while armed, else the honest
 	# "nothing armed" prompt + any transient rejection cue — never the raw "Preview: none" debug string.
 	_set_region_text("preview", _preview_region_text(panel))
@@ -355,9 +397,11 @@ func render() -> void:
 	# status + log regions so the affinity + its rule read BEFORE + DURING play, and the affected cells surface on inspect.
 	var affinity: Dictionary = LiveAffinityReadModel.new().project(_affinity_id, _board, _affinity_fairness)
 	_set_region_text("inspect", _inspect_text(vm.get("inspect", {}), affinity))
-	# The status region = the VM turn slot COMPOSED with the G1 run-context projection (the appendix §1.3 G1) + the
-	# affinity badge (the affinity id/display-name/rule visible before + during play — FR55).
-	_set_region_text("status", _status_text(vm.get("turn", {}), affinity))
+	# Story 14.10 (AC1/F9) — the status region is now the STYLED PLAYER HUD (discrete HP/gold/bag/node elements + a
+	# prominent HUMAN turn indicator + the class name + the affinity badge), replacing the F9 pipe-dump / the raw
+	# `Turn player_planning` snake_case. The HUD reads the TacticalHudView seam (composing RunHudViewModel + the VM
+	# turn slot); a non-reachable status slot degrades to a compact single-line fallback (never an overflow).
+	_render_hud(vm, affinity, highlights, layout)
 	# Story 14.3 (F6/F7) — the log region now renders the live per-action lines (from the sourced event_log_summary)
 	# instead of "Log: 0 events". A live-fight VM `outcome` stays empty here (the run-end beat/summary is Story 14.5),
 	# so the log lines show; the terminal victory/defeat event naturally appears as the last log line.
@@ -376,22 +420,101 @@ func render() -> void:
 	_play_new_combat_feedback(vm)
 
 
-# The G1 status region: hero HP + node progress + gold + inventory from the RunHudViewModel, composed with the
-# tactical turn + the affinity badge (Story 11.4 — the affinity id/display-name visible before + during play, FR55).
-# The projection reads the live board (hero HP source of truth during a level) + the run.
-func _status_text(turn: Dictionary, affinity: Dictionary) -> String:
-	var hud: Dictionary = RunHudViewModel.from_run(_run, _board).to_dictionary()
-	var hp_text: String = "HP %d/%d" % [int(hud.get("hero_current_hp", 0)), int(hud.get("hero_max_hp", 0))] if bool(hud.get("has_hero_hp", false)) else "HP --"
-	return "%s | Node %d/%d | Gold %d | Bag %d/%d | Turn %s | %s" % [
-		hp_text,
-		int(hud.get("cleared_node_count", 0)),
-		int(hud.get("total_node_count", 0)),
+# Story 14.10 (AC2/F10) — compose the move/attack range highlights from the LIVE session (board/turn/actor/weapon).
+# A pure read via the turn-gated TacticalRangeHighlightView seam (reusing the existing movement/attack-preview
+# queries). Returns {} when no live fight is bound (the empty highlight set — no overlay ops).
+func _range_highlights(vm: Dictionary) -> Dictionary:
+	if _session == null:
+		return {}
+	return TacticalRangeHighlightView.project(
+		_session.board(),
+		InteractiveCombatSession.HERO_ID,
+		_session.hero_weapon(),
+		vm.get("turn", {})
+	)
+
+
+# Story 14.10 (AC1/F9) — render the styled player HUD into the `status` region. When the status control slot is
+# REACHABLE (>=44px, inside content — the TacticalLayoutProfile contract) the discrete HUD elements show and the
+# base status label is cleared; otherwise the HUD degrades to a compact single-line fallback in the base label so it
+# NEVER overflows the region. Both paths use display names only (no snake_case leak). The HUD data comes from the
+# TacticalHudView seam (composing the shipped RunHudViewModel + the board VM turn slot — no new board-VM key).
+func _render_hud(vm: Dictionary, affinity: Dictionary, highlights: Dictionary, layout: Dictionary) -> void:
+	var hud: Dictionary = TacticalHudView.project(_run, _board, vm.get("turn", {}))
+	if _hud_box == null or not _status_slot_reachable(layout):
+		if _hud_box != null:
+			_hud_box.visible = false
+		_set_region_text("status", _compact_hud_text(hud, affinity))
+		return
+	_hud_box.visible = true
+	_set_region_text("status", "")
+	_populate_hud(hud, affinity, highlights)
+
+
+# Whether the `status` control slot is reachable (>=44px and inside content) per the layout profile. A fallback /
+# degenerate viewport reports the slot non-reachable (0-size regions) -> the HUD degrades to the compact fallback.
+func _status_slot_reachable(layout: Dictionary) -> bool:
+	var slots: Dictionary = layout.get("control_slots", {})
+	var status_slot: Dictionary = slots.get("status", {})
+	return bool(status_slot.get("reachable", false))
+
+
+# Populate the discrete HUD Controls from the HUD projection (each a non-color text/shape channel, NFR9). The turn
+# indicator reads the human turn label; the HP bar is a length/shape channel beside the "HP N/M" text; the class +
+# legend lines hide when empty / when no highlights are active.
+func _populate_hud(hud: Dictionary, affinity: Dictionary, highlights: Dictionary) -> void:
+	if _hud_turn_label != null:
+		_hud_turn_label.text = String(hud.get("turn_label", ""))
+	if _hud_hp_label != null:
+		_hud_hp_label.text = _hp_text(hud)
+	if _hud_hp_bar != null:
+		var hp_max: int = int(hud.get("hp_max", 0))
+		var show_bar: bool = bool(hud.get("has_hp", false)) and hp_max > 0
+		_hud_hp_bar.visible = show_bar
+		if show_bar:
+			_hud_hp_bar.max_value = float(hp_max)
+			_hud_hp_bar.value = float(clampi(int(hud.get("hp_current", 0)), 0, hp_max))
+	if _hud_gold_label != null:
+		_hud_gold_label.text = "Gold %d" % int(hud.get("gold", 0))
+	if _hud_bag_label != null:
+		_hud_bag_label.text = "Bag %d/%d" % [int(hud.get("bag_count", 0)), int(hud.get("bag_capacity", 0))]
+	if _hud_node_label != null:
+		_hud_node_label.text = "Node %d/%d" % [int(hud.get("nodes_cleared", 0)), int(hud.get("nodes_total", 0))]
+	if _hud_class_label != null:
+		var class_display: String = String(hud.get("class_display_name", ""))
+		_hud_class_label.visible = not class_display.is_empty()
+		_hud_class_label.text = "Class: %s" % class_display
+	if _hud_affinity_label != null:
+		_hud_affinity_label.text = _affinity_badge_text(affinity)
+	if _hud_legend_label != null:
+		var show_legend: bool = bool(highlights.get("has_highlights", false)) and _has_any_highlight_cell(highlights)
+		_hud_legend_label.visible = show_legend
+		_hud_legend_label.text = "Move: outline   Attack: corner ticks"
+
+
+# The compact single-line HUD fallback (a non-reachable status slot) — display names only, no snake_case leak.
+func _compact_hud_text(hud: Dictionary, affinity: Dictionary) -> String:
+	return "%s  %s  Gold %d  Bag %d/%d  Node %d/%d  %s" % [
+		String(hud.get("turn_label", "")),
+		_hp_text(hud),
 		int(hud.get("gold", 0)),
-		int(hud.get("inventory_count", 0)),
-		int(hud.get("inventory_capacity", 0)),
-		String(turn.get("phase", "")),
+		int(hud.get("bag_count", 0)),
+		int(hud.get("bag_capacity", 0)),
+		int(hud.get("nodes_cleared", 0)),
+		int(hud.get("nodes_total", 0)),
 		_affinity_badge_text(affinity)
 	]
+
+
+# The HP text channel ("HP N/M", or "HP --" with no HP source) shared by the discrete + compact HUD paths.
+func _hp_text(hud: Dictionary) -> String:
+	if not bool(hud.get("has_hp", false)):
+		return "HP --"
+	return "HP %d/%d" % [int(hud.get("hp_current", 0)), int(hud.get("hp_max", 0))]
+
+
+func _has_any_highlight_cell(highlights: Dictionary) -> bool:
+	return not (highlights.get("move_cells", []) as Array).is_empty() or not (highlights.get("attack_cells", []) as Array).is_empty()
 
 
 # Story 11.4 (AC2) — the affinity BADGE: the affinity display-name + its rule count, visible before + during play. A
@@ -440,8 +563,9 @@ func _confirm_cancel_text(commit_flow: Dictionary, availability: Dictionary) -> 
 
 
 # The inspect region: the tapped cell's visibility state + (Story 11.4, AC2/FR12/FR58) the affinity danger read — the
-# affinity-affected-cell counts + the non-color cue ids surfaced through the EXISTING affinity preview / Darkness cue
-# surfaces (the scene MAPS the cue_ids to visuals; it invents no new reason/cue). A neutral read appends nothing.
+# affinity-affected-cell COUNTS (hazard / conductive / pathing). Story 14.10 (F9) DROPPED the raw snake_case cue-id
+# list from this player-facing label (a debug affordance; the scene maps cue ids to visuals elsewhere). A neutral
+# read appends nothing.
 func _inspect_text(inspect: Dictionary, affinity: Dictionary) -> String:
 	var base: String = _inspect_base_text(inspect)
 	if not bool(affinity.get("has_affinity", false)):
@@ -450,9 +574,11 @@ func _inspect_text(inspect: Dictionary, affinity: Dictionary) -> String:
 	var hazard: int = (preview.get("hazard_cells", []) as Array).size()
 	var conductive: int = (preview.get("conductive_danger_cells", []) as Array).size()
 	var pathing: int = (preview.get("pathing_pressure_cells", []) as Array).size()
-	var cue_ids: Array = affinity.get("cue_ids", [])
-	return "%s | Danger: %d hazard / %d conductive / %d pathing | Cues: %s" % [
-		base, hazard, conductive, pathing, ", ".join(PackedStringArray(cue_ids))
+	# Story 14.10 (F9) — the affinity DANGER COUNTS are meaningful player info; the raw snake_case `Cues:` id list
+	# (a debug affordance) is DROPPED from the player-facing inspect label (the scene maps cue ids to visuals
+	# elsewhere; a player never reads a snake_case cue id here).
+	return "%s | Danger: %d hazard / %d conductive / %d pathing" % [
+		base, hazard, conductive, pathing
 	]
 
 
@@ -753,6 +879,54 @@ func _build_confirm_cancel_controls() -> void:
 	_confirm_button.visible = false
 	_cancel_button.visible = false
 
+
+# Story 14.10 (AC1/F9) — build the styled player-HUD elements into the `status` region panel (the 14.1/14.2
+# discrete-control build pattern). A vertical stack of Labels (turn indicator prominent) + an HP ProgressBar (a
+# length/shape channel). The host panel clips its contents so a HUD that outgrows a short status band degrades
+# (clips) rather than overflowing onto neighbouring regions (the non-reachable slot falls back to a compact line).
+# Every element is mouse-IGNORE so it never eats a board tap. Hidden until render() shows it on a reachable slot.
+func _build_hud_controls() -> void:
+	var status_label: Label = _region_panels.get("status", null)
+	var host: Node = status_label.get_parent() if status_label != null else self
+	if host == null:
+		host = self
+	if host is Panel:
+		(host as Panel).clip_contents = true
+	_hud_box = VBoxContainer.new()
+	_hud_box.name = "hud_box"
+	_hud_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_box.add_theme_constant_override("separation", 2)
+	host.add_child(_hud_box)
+	_hud_box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# The prominent turn indicator (a larger font — the F10 "no turn indicator" fix), then the discrete stat lines.
+	_hud_turn_label = _add_hud_label(22)
+	_hud_hp_label = _add_hud_label(0)
+	_hud_hp_bar = ProgressBar.new()
+	_hud_hp_bar.name = "hud_hp_bar"
+	_hud_hp_bar.show_percentage = false
+	_hud_hp_bar.min_value = 0.0
+	_hud_hp_bar.max_value = 1.0
+	_hud_hp_bar.custom_minimum_size = Vector2(0.0, 10.0)
+	_hud_hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_box.add_child(_hud_hp_bar)
+	_hud_gold_label = _add_hud_label(0)
+	_hud_bag_label = _add_hud_label(0)
+	_hud_node_label = _add_hud_label(0)
+	_hud_class_label = _add_hud_label(0)
+	_hud_affinity_label = _add_hud_label(0)
+	_hud_legend_label = _add_hud_label(0)
+	_hud_box.visible = false
+
+
+# A HUD Label child (mouse-IGNORE so it never eats a board tap; an optional larger font for the turn indicator).
+func _add_hud_label(font_size: int) -> Label:
+	var label: Label = Label.new()
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if font_size > 0:
+		label.add_theme_font_size_override("font_size", font_size)
+	_hud_box.add_child(label)
+	return label
+
 # --- Story 14.3: the in-combat move/hit/death/telegraph feedback animation (AC2/F8) ----------------------------
 
 # Play the feedback tweens for the events NEWER than _last_animated_sequence_id, then advance the high-water mark so
@@ -839,7 +1013,7 @@ func _end_slide(actor_id: String) -> void:
 func _refresh_board_ops() -> void:
 	if _board_grid == null or _board_geometry == null:
 		return
-	_board_grid.set_ops(_build_board_draw_ops(_last_board_vm, _last_board_panel))
+	_board_grid.set_ops(_build_board_draw_ops(_last_board_vm, _last_board_panel, _last_highlights))
 
 
 # The interpolated cell rect for an active slide (from_rect -> to_rect at the slide's 0..1 factor), or a zero rect when
@@ -938,10 +1112,13 @@ func _transient_cell_rect(cell: Variant, color: Color) -> ColorRect:
 # affinity floor variant. Builds ONE shared TacticalBoardZoomState (via the RefCounted fit seam) sized to the
 # board Panel and uses it for BOTH the tile draw and the tap hit-test. A null / empty board (the between-levels
 # zero-cell VM) draws NOTHING (the correct-by-design empty state) — never a crash, never a divide-by-zero.
-func _render_board_grid(vm: Dictionary, layout: Dictionary, panel: Dictionary = {}) -> void:
+func _render_board_grid(vm: Dictionary, layout: Dictionary, panel: Dictionary = {}, highlights: Dictionary = {}) -> void:
 	_last_board_vm = vm
 	# Story 14.3 (AC2/F8) — remember the panel so a mid-slide _refresh_board_ops re-issues the identical op list.
 	_last_board_panel = panel
+	# Story 14.10 (AC2/F10) — remember the range highlights so the mid-slide redraw re-issues the SAME overlay set
+	# (never a per-frame recompute — the highlights are computed once per render()).
+	_last_highlights = highlights
 	_board_geometry = null
 	_set_region_text("board", "")
 	if _board_grid == null:
@@ -971,7 +1148,7 @@ func _render_board_grid(vm: Dictionary, layout: Dictionary, panel: Dictionary = 
 	if _board_geometry == null:
 		_board_grid.clear_ops()
 		return
-	_board_grid.set_ops(_build_board_draw_ops(vm, panel))
+	_board_grid.set_ops(_build_board_draw_ops(vm, panel, highlights))
 
 
 # The board region rect comes from the semantic layout profile (never hardcoded geometry). The board Panel is
@@ -988,7 +1165,7 @@ func _board_region_size(layout: Dictionary) -> Vector2:
 # Compose the ordered draw-op list the grid replays: fog/terrain tiles first (each with a grid line + a hazard
 # outline), then occupants (sprite + a friend/foe marker + an HP bar) on top. Draws ONLY what the VM gives —
 # hidden cells expose NO terrain (the FR7 fog contract), occupants are already filtered to visible cells.
-func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}) -> Array:
+func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}, highlights: Dictionary = {}) -> Array:
 	var ops: Array = []
 	if _board_geometry == null:
 		return ops
@@ -1053,6 +1230,14 @@ func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}) -> Array:
 		# HP bar: a length/shape channel (grayscale-safe) so damage reads without color.
 		for hp_op: Dictionary in _hp_bar_ops(cell_rect, occupant):
 			ops.append(hp_op)
+
+	# Story 14.10 (AC2/F10/NFR9) — the move-range + attack-range highlights (drawn ON TOP of tiles + occupants so an
+	# attack tick frames the enemy sprite; the armed-target outline below still draws last for emphasis). Each cell
+	# set is a distinct SHAPE channel (move = inset ring, attack = corner ticks), never hue alone. The cells come from
+	# the pre-computed TacticalRangeHighlightView read (once per render); a fog/edge/off-board cell is a safe no-op
+	# (_cell_rect returns a zero-size rect). An empty / absent highlights dict appends nothing.
+	for highlight_op: Dictionary in _range_highlight_ops(highlights):
+		ops.append(highlight_op)
 
 	# Story 14.2 (AC1/F2) — the ARMED-attack target highlight: a distinct DOUBLE inset outline (a SHAPE channel,
 	# NFR9 — not hue-only) on the armed target cell. The cell comes from the panel projection (which reads the
@@ -1172,6 +1357,47 @@ func _hp_bar_ops(cell_rect: Rect2, occupant: Dictionary) -> Array:
 	return [
 		_fill_op(background, HP_BAR_BG_COLOR),
 		_fill_op(fill, HP_BAR_FILL_COLOR)
+	]
+
+
+# Story 14.10 (AC2/F10/NFR9) — the additive draw ops for the move/attack range highlights. Move-range cells get a
+# single thin inset outline (a hollow ring); attack-range cells get four L-shaped corner ticks (a distinct shape,
+# not hue alone). Each cell resolves through _cell_rect (a zero-size rect for a fog/edge/off-board cell -> skipped,
+# never fabricated). An empty / absent highlights dict yields no ops.
+func _range_highlight_ops(highlights: Dictionary) -> Array:
+	var ops: Array = []
+	for move_cell_value: Variant in highlights.get("move_cells", []) as Array:
+		var move_rect: Rect2 = _cell_rect(move_cell_value)
+		if move_rect.size.x <= 0.0:
+			continue
+		ops.append(_outline_op(move_rect.grow(-3.0), MOVE_HIGHLIGHT_COLOR, 2.0))
+	for attack_cell_value: Variant in highlights.get("attack_cells", []) as Array:
+		var attack_rect: Rect2 = _cell_rect(attack_cell_value)
+		if attack_rect.size.x <= 0.0:
+			continue
+		for tick_op: Dictionary in _corner_tick_ops(attack_rect, ATTACK_HIGHLIGHT_COLOR):
+			ops.append(tick_op)
+	return ops
+
+
+# Four L-shaped corner ticks framing a cell (the attack-range SHAPE channel — distinct from the move ring + the 14.2
+# armed double outline). Each corner is two small filled rects (a horizontal + a vertical arm).
+func _corner_tick_ops(rect: Rect2, color: Color) -> Array:
+	var tick: float = clampf(rect.size.x * 0.24, 3.0, 14.0)
+	var thick: float = clampf(rect.size.x * 0.08, 2.0, 5.0)
+	var left: float = rect.position.x
+	var top: float = rect.position.y
+	var right: float = rect.position.x + rect.size.x
+	var bottom: float = rect.position.y + rect.size.y
+	return [
+		_fill_op(Rect2(left, top, tick, thick), color),
+		_fill_op(Rect2(left, top, thick, tick), color),
+		_fill_op(Rect2(right - tick, top, tick, thick), color),
+		_fill_op(Rect2(right - thick, top, thick, tick), color),
+		_fill_op(Rect2(left, bottom - thick, tick, thick), color),
+		_fill_op(Rect2(left, bottom - tick, thick, tick), color),
+		_fill_op(Rect2(right - tick, bottom - thick, tick, thick), color),
+		_fill_op(Rect2(right - thick, bottom - tick, thick, tick), color)
 	]
 
 

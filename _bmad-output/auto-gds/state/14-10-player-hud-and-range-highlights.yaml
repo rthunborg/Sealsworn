@@ -1,0 +1,50 @@
+story_key: 14-10-player-hud-and-range-highlights
+epic_num: 14
+story_num: 10
+branch: story/14-10-player-hud-and-range-highlights
+status: done
+updated_at: "2026-07-19T16:31:30Z"
+started_at: "2026-07-19T15:31:52Z"
+completed_at: "2026-07-19T16:31:30Z"
+active_seconds: 3250
+is_first_in_epic: false
+is_last_in_epic: false
+needs_project_context_bootstrap: false
+project_name: Sealsworn
+primary_platform:
+  - unity
+  - unreal
+  - godot
+  - other
+game_dev_experience: intermediate
+communication_language: English
+document_output_language: English
+git_mode: remote
+base_branch: story/14-9-outpost-screen-cleanup
+epic_story_count: 11
+completed_phases: [0, 1, 3, 5]
+code_review_iterations: 1
+code_review_loop_done: true
+external_review_iterations: 0
+convergence_unverified: false
+testing:
+  enabled: false
+  ran: []
+commits: ["7bbaa97", "36c0bfe", "7b7f6a4", "169ed60", "9e60e61"]
+deferred_work_archived: 0
+planning_drift: []
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/80"
+ci_run_url: null
+ci_status: none
+pr_merged: false
+merge_method: null
+merge_commit: null
+branch_deleted: false
+open_questions: []
+deferred_work: []
+blockers: []
+overrides:
+  stacked_on: story/14-9-outpost-screen-cleanup
+  note: "user-directed stack chain — 14-10 on 14-9 on 14-8 ... on 14-1 (PRs #79/#78/#77/#76/#75/#74/#73/#72/#71 unmerged); branch/review/PR base is the 14-9 story branch; merge prompt skipped (PRs left open per session directive)"
+constraints:
+  - "Band-2 HUD story: inherit 14-3's ratified animation reconciliation (bounded self-terminating tweens / transient overlays + detach-safety; one draw pass per render, never per-frame _process) and the 14-3 node-bound-tween slide pattern; perf budgets from 10-1 apply"
