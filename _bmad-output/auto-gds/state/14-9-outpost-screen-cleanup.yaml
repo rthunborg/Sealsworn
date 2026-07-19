@@ -2,11 +2,11 @@ story_key: 14-9-outpost-screen-cleanup
 epic_num: 14
 story_num: 9
 branch: story/14-9-outpost-screen-cleanup
-status: in-progress
-updated_at: "2026-07-19T15:29:00Z"
+status: done
+updated_at: "2026-07-19T15:32:30Z"
 started_at: "2026-07-19T13:14:07Z"
-completed_at: null
-active_seconds: 3050
+completed_at: "2026-07-19T15:32:30Z"
+active_seconds: 3110
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["ac54a0c", "5c2bf1c", "5d12523"]
+commits: ["ac54a0c", "5c2bf1c", "5d12523", "d410d25", "38b3ab7"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/79"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null

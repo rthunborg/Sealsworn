@@ -4,7 +4,7 @@ baseline_commit: 5c2bf1c51fbc013d19a362fd3db5d9f206307edc
 
 # Story 14.9: Outpost Screen Cleanup
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
