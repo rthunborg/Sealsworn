@@ -45,6 +45,14 @@ func run() -> Dictionary:
 	_exact_key_sets_pinned()
 	_terminal_route_projects_no_eligible_choices()
 	_projection_is_a_pure_copy_no_live_handle_leak()
+	# Story 14.6 (AC1/AC3) — the render-fact accessors (current position / terminal boss / progress counts).
+	_render_fact_accessors_project_current_boss_and_counts()
+	_render_fact_accessors_fail_closed_on_null_route()
+	_render_fact_accessors_on_terminal_boss_leaf()
+	_render_fact_accessors_return_fresh_copies_no_live_handle_leak()
+	_render_fact_accessors_add_no_projection_key()
+	# Story 14.6 review (AC1) — the cleared-current-node render-fact the "✓ Cleared" marker on "You are here" reads.
+	_current_node_carries_is_cleared_on_a_just_cleared_current_node()
 	return result()
 
 
@@ -144,6 +152,87 @@ func _projection_is_a_pure_copy_no_live_handle_leak() -> void:
 	assert_false(String(route.nodes()[0].type) == "MUTATED", "The projection must not mutate the source route.")
 
 
+# Story 14.6 (AC1): the render-fact accessors surface the current position, the terminal boss, and the
+# cleared/total progress counts the presenter renders — pure computed reads over the already-projected nodes.
+func _render_fact_accessors_project_current_boss_and_counts() -> void:
+	var view_model: RouteMapViewModel = RouteMapViewModel.from_route(_mid_descent_route())
+
+	var current: Dictionary = view_model.current_node()
+	assert_equal(str(current.get("id", "")), "left", "current_node() must return the is_current node.")
+	assert_equal(current.get("is_current"), true, "current_node() must carry is_current == true.")
+
+	var boss: Dictionary = view_model.boss_node()
+	assert_equal(str(boss.get("id", "")), "boss", "boss_node() must return the type == boss node.")
+	assert_equal(str(boss.get("type", "")), "boss", "boss_node() must carry type == boss.")
+
+	assert_equal(view_model.cleared_count(), 1, "cleared_count() must echo the route's cleared count.")
+	assert_equal(view_model.node_count(), 4, "node_count() must echo the route's total node count.")
+
+
+# Story 14.6 (AC1 fail-closed): a null route yields empty current/boss dicts and honest zero counts — no crash.
+func _render_fact_accessors_fail_closed_on_null_route() -> void:
+	var view_model: RouteMapViewModel = RouteMapViewModel.from_route(null)
+	assert_true(view_model.current_node().is_empty(), "A null route must project an empty current_node().")
+	assert_true(view_model.boss_node().is_empty(), "A null route must project an empty boss_node().")
+	assert_equal(view_model.cleared_count(), 0, "A null route must project cleared_count() == 0.")
+	assert_equal(view_model.node_count(), 0, "A null route must project node_count() == 0.")
+
+
+# Story 14.6 (AC1): a run parked ON the terminal boss reads the boss as BOTH the current node and the boss goal
+# (the accessors read the projection honestly at the descent's end — no crash).
+func _render_fact_accessors_on_terminal_boss_leaf() -> void:
+	var route: RouteState = _diamond_route()
+	route.current_node_id = "boss"
+	var view_model: RouteMapViewModel = RouteMapViewModel.from_route(route)
+	assert_equal(str(view_model.current_node().get("id", "")), "boss", "current_node() must be the boss when parked on it.")
+	assert_equal(str(view_model.boss_node().get("id", "")), "boss", "boss_node() must still resolve the boss node.")
+
+
+# Story 14.6 (AC3): the render-fact accessors return FRESH copies — mutating a returned dict never perturbs a
+# fresh read (the no-live-handle discipline extends to the new accessors).
+func _render_fact_accessors_return_fresh_copies_no_live_handle_leak() -> void:
+	var view_model: RouteMapViewModel = RouteMapViewModel.from_route(_mid_descent_route())
+	var current: Dictionary = view_model.current_node()
+	current["type"] = "MUTATED"
+	var boss: Dictionary = view_model.boss_node()
+	boss["type"] = "MUTATED"
+	assert_false(str(view_model.current_node().get("type", "")) == "MUTATED", "Mutating a returned current_node() must not perturb a fresh read.")
+	assert_false(str(view_model.boss_node().get("type", "")) == "MUTATED", "Mutating a returned boss_node() must not perturb a fresh read.")
+
+
+# Story 14.6 (AC3): the render-fact accessors added NO projection key — the pinned key-set constants are
+# byte-identical (the accessors are computed reads, not new keys). Belt-and-suspenders over _exact_key_sets_pinned.
+func _render_fact_accessors_add_no_projection_key() -> void:
+	var top_keys: Array = RouteMapViewModel.DICTIONARY_KEYS.duplicate()
+	top_keys.sort()
+	assert_equal(top_keys, EXPECTED_KEYS, "The render-fact accessors must not change DICTIONARY_KEYS.")
+	var node_keys: Array = RouteMapViewModel.NODE_KEYS.duplicate()
+	node_keys.sort()
+	assert_equal(node_keys, EXPECTED_NODE_KEYS, "The render-fact accessors must not change NODE_KEYS.")
+
+
+# ⭐ Story 14.6 review (AC1 — cleared-current-node marker): in the live combat flow current_node_id stays ON the
+# node until the next advance_to, so a just-cleared combat node is STILL the current node when the map re-renders.
+# current_node() must carry is_cleared == true in that state — the exact render-fact the presenter's "✓ Cleared"
+# marker on the "You are here" line consumes (so it reads "you stand here, done" not "fight this again"). The
+# complement (an uncleared current node) must project is_cleared == false so the marker is correctly withheld.
+func _current_node_carries_is_cleared_on_a_just_cleared_current_node() -> void:
+	# Park ON the just-cleared depth-0 opener (the live-flow state before the next advance_to): current AND cleared.
+	var route: RouteState = RouteState.new([
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["left", "right"], []),
+		RouteNode.new("left", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], []),
+		RouteNode.new("right", RouteNode.TYPE_ELITE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], []),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 2, RouteNode.REVEAL_REVEALED, [], [])
+	], "start", ["start"])
+	var current: Dictionary = RouteMapViewModel.from_route(route).current_node()
+	assert_equal(str(current.get("id", "")), "start", "current_node() must be the parked node.")
+	assert_equal(current.get("is_current"), true, "The parked node must project is_current == true.")
+	assert_equal(current.get("is_cleared"), true, "A just-cleared current node must project is_cleared == true (the '✓ Cleared' marker render-fact).")
+	# The complement: an UNCLEARED current node ('left') projects is_cleared == false, so the marker is withheld.
+	var uncleared: Dictionary = RouteMapViewModel.from_route(_mid_descent_route()).current_node()
+	assert_equal(uncleared.get("is_cleared"), false, "An uncleared current node ('left') must project is_cleared == false (no marker).")
+
+
 # --- helpers ---------------------------------------------------------------
 
 # start -> {left, right}; left -> boss; right -> boss; boss is the terminal leaf.
@@ -155,6 +244,18 @@ func _diamond_route() -> RouteState:
 		RouteNode.new("boss", RouteNode.TYPE_BOSS, 2, RouteNode.REVEAL_REVEALED, [], [])
 	]
 	return RouteState.new(nodes, "start", [])
+
+
+# The diamond route parked mid-descent: the opener ("start") cleared, parked on "left" (the is_current node),
+# with the terminal boss still ahead — the post-opener state the enriched map renders (Story 14.6).
+func _mid_descent_route() -> RouteState:
+	var nodes: Array[RouteNode] = [
+		RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_CLEARED, ["left", "right"], []),
+		RouteNode.new("left", RouteNode.TYPE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], [RouteNode.CLUE_SAFER_COMBAT]),
+		RouteNode.new("right", RouteNode.TYPE_ELITE_COMBAT, 1, RouteNode.REVEAL_REVEALED, ["boss"], [RouteNode.CLUE_ELITE_PRESSURE]),
+		RouteNode.new("boss", RouteNode.TYPE_BOSS, 2, RouteNode.REVEAL_REVEALED, [], [])
+	]
+	return RouteState.new(nodes, "left", ["start"])
 
 
 func _nodes_by_id(data: Dictionary) -> Dictionary:

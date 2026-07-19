@@ -108,3 +108,37 @@ func to_dictionary() -> Dictionary:
 		"eligible_choice_ids": eligible_choice_ids.duplicate(),
 		"nodes": node_copies
 	}
+
+
+# ⭐ Story 14.6 (AC1) — pure RENDER-FACT accessors the route-map presenter reads to render the fuller route
+# (current position + terminal boss goal + cleared/total progress). These are COMPUTED READS over the
+# ALREADY-projected _nodes — NOT new projection keys: DICTIONARY_KEYS / NODE_KEYS stay UNCHANGED (the 14.5
+# computed-accessor-on-a-pinned-seam pattern). Each returns a FRESH copy so a caller's mutation never perturbs
+# this DTO or the route it read (the no-live-handle discipline extends to these accessors). No new route read,
+# no RouteState change, no RNG, no event. Fail-closed: the empty projection returns {} / 0 (never a crash).
+
+# The "you are here" node (the projected node with is_current == true), or {} when none / no route. A fresh copy.
+func current_node() -> Dictionary:
+	for node: Dictionary in _nodes:
+		if bool(node.get("is_current", false)):
+			return node.duplicate(true)
+	return {}
+
+
+# The terminal descent goal (the projected node with type == "boss"), or {} when absent. A fresh copy.
+func boss_node() -> Dictionary:
+	var boss_type: String = String(RouteNode.TYPE_BOSS)
+	for node: Dictionary in _nodes:
+		if str(node.get("type", "")) == boss_type:
+			return node.duplicate(true)
+	return {}
+
+
+# The cleared-node count (the "Cleared X" numerator the presenter renders). 0 on the empty projection.
+func cleared_count() -> int:
+	return cleared_node_ids.size()
+
+
+# The total node count (the "/ Y" denominator). 0 on the empty projection.
+func node_count() -> int:
+	return _nodes.size()
