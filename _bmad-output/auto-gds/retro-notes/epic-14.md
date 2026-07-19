@@ -45,3 +45,7 @@
 
 ## Story 14-10-player-hud-and-range-highlights
 - [Phase 7 — code review] Recurring Band-2 tension: SM-pinned seam key sets carry fields the presenter doesn't consume (14-10 `turn_is_player`/`has_hud`; cf. 14-8 unreferenced `KIT_KEYS`, 14-5 dead-output outpost accessors) — the ratified "seams expose only what the presenter consumes" rule and the exact-key-set spec routinely pull opposite directions in presentation-only stories. Reconcile the convention at the epic retro; 14-11 may consume or trim the 14-10 spares.
+
+## Story 14-11-ui-theme-and-semantic-layout
+- [Phase 3 — create-story] Theme "across screens" must be per-scene-root `theme` assignment (all 6 screen roots are `Control`), NOT `project.godot` `gui/theme/custom` — project settings are fenced out of scope, so the obvious global-default-theme path is disallowed. Non-obvious constraint shaping the whole story.
+- [Phase 3 — create-story] Latent gap surfaced: `tactical_board_presenter.gd` has no resize handler (no `NOTIFICATION_RESIZED`/`size_changed`), so a mid-fight window resize leaves a stale grid until the next action — the concrete mechanism behind AC2's F15 "resize re-renders" clause; must be event-driven (14-3 one-draw-per-render rule), never `_process`.
