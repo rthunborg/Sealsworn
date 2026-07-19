@@ -1,5 +1,5 @@
 # generated: 2026-06-04T14:23:04+02:00
-# last_updated: 2026-07-18T00:00:00+00:00
+# last_updated: 2026-07-19T00:00:00+00:00
 # project: Sealsworn
 # project_key: NOKEY
 # tracking_system: file-system
@@ -202,7 +202,7 @@ development_status:
   14-5-run-end-beat-and-run-summary-screen: done
   14-6-live-route-map-and-node-choice: done
   14-7-full-backpack-reward-escape-hatch: done
-  14-8-hero-select-rebuild: ready-for-dev
+  14-8-hero-select-rebuild: review
   14-9-outpost-screen-cleanup: backlog
   14-10-player-hud-and-range-highlights: backlog
   14-11-ui-theme-and-semantic-layout: backlog
