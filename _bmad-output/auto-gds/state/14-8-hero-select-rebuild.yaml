@@ -2,11 +2,11 @@ story_key: 14-8-hero-select-rebuild
 epic_num: 14
 story_num: 8
 branch: story/14-8-hero-select-rebuild
-status: in-progress
-updated_at: "2026-07-19T13:12:10Z"
+status: done
+updated_at: "2026-07-19T13:15:30Z"
 started_at: "2026-07-19T12:22:16Z"
-completed_at: null
-active_seconds: 2845
+completed_at: "2026-07-19T13:15:30Z"
+active_seconds: 2905
 is_first_in_epic: false
 is_last_in_epic: false
 needs_project_context_bootstrap: false
@@ -30,12 +30,12 @@ convergence_unverified: false
 testing:
   enabled: false
   ran: []
-commits: ["3e080ab", "f651649", "c6060fe"]
+commits: ["3e080ab", "f651649", "c6060fe", "38307ab", "c8330f5"]
 deferred_work_archived: 0
 planning_drift: []
-pr_url: null
+pr_url: "https://github.com/rthunborg/Sealsworn/pull/78"
 ci_run_url: null
-ci_status: unknown
+ci_status: none
 pr_merged: false
 merge_method: null
 merge_commit: null
