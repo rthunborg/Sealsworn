@@ -93,20 +93,22 @@ Totals (v0): **visual ~92** (5 classes ×2 views, 3 enemies, 1 boss, 4 affinitie
 | icon.currency.echo | Echo | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
 | icon.currency.seal_fragment | Seal Fragment | asset_sources/icons/currency/ | godot/assets/icons/currency/ | generated | ☐ |
 
-## UI frames (Recraft + Godot 9-slice) — Epic 2 / 5 / 8
+## UI frames (Recraft + Godot 9-slice) — Epic 2 / 5 / 8 / 14
 | ID | Asset | Source dir | Runtime path | Status | Approved |
 |---|---|---|---|---|---|
-| ui.hero_select | Hero select | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.tactical_hud | Tactical HUD | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.preview | Tile/attack preview | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.passive_modal | Passive modal | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.run_map | Run map | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.outpost | Outpost / meta menu | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
-| ui.run_summary | Run summary | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
+| ui.frame_kit | Recraft frame kit (button/panel/modal plates) | asset_sources/icons/ui/ | godot/assets/ui/{button_plate,panel_frame,modal_frame}.svg | built | ☐ |
+| ui.theme | Shared Godot `Theme` (Story 14.11) | (assembled in-engine from ui.frame_kit) | godot/assets/ui/sealsworn_theme.tres | built | ☐ |
+| ui.hero_select | Hero select | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.tactical_hud | Tactical HUD | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.preview | Tile/attack preview | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.passive_modal | Passive modal | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.run_map | Run map | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.outpost | Outpost / meta menu | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
+| ui.run_summary | Run summary | asset_sources/ui/ | godot/assets/ui/ | built | ☐ |
 | ui.settings | Settings | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
 | ui.save_resume | Save / resume | asset_sources/ui/ | godot/assets/ui/ | planned | ☐ |
 
-> **Frame kit generated:** `icons/ui/{button_plate,panel_frame,modal_frame}.svg` (Recraft). The 9 `ui.*` screens are assembled in Godot (9-slice / StyleBox) from this kit, so those rows stay `planned` until built in-engine.
+> **Frame kit generated + assembled (Story 14.11):** `asset_sources/icons/ui/{button_plate,panel_frame,modal_frame}.svg` (Recraft) were imported into `godot/assets/ui/` (with committed `*.svg.import` sidecars → `CompressedTexture2D`) and assembled into the shared Godot `Theme` `godot/assets/ui/sealsworn_theme.tres` (nine-slice `StyleBoxTexture` button/panel/modal skins + folded HUD/reward fonts/spacing), applied per scene-root across the six themed screens (hero select, route map, run end, outpost, tactical board, gameplay shell). Status `built`; the `Approved` ☐ awaits the deferred on-device human visual pass (the Band-2 close gate). `ui.settings` / `ui.save_resume` stay `planned` (not in the 14.11 scene set). Regenerate the theme via `tools/build_sealsworn_theme.gd`.
 
 ## Overlays & banners (Recraft) — Epic 2 / 1
 | ID | Asset | Source dir | Runtime path | Status | Approved |

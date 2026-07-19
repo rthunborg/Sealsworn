@@ -26,6 +26,7 @@ func run() -> Dictionary:
 	_passive_offer_projects_three_passive_choices_with_modals()
 	_is_passive_offer_detection()
 	_node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults()
+	_display_name_for_resolves_passive_and_fails_closed()
 	return result()
 
 
@@ -172,3 +173,25 @@ func _node_table_policy_maps_opener_combat_deep_combat_elite_and_defaults() -> v
 		for any_depth: int in [0, 3]:
 			var policy: Dictionary = RewardHudViewModel.table_for_node_type(other, any_depth)
 			assert_equal(policy.get("has_reward"), false, "Node type %s earns NO combat-node reward HUD (depth %d)." % [String(other), any_depth])
+
+
+# ---- Story 14.11: the passive-confirm display-name resolver --------------------------------------
+
+# display_name_for(projection, content_id) resolves an ARMED passive content_id to the evocative display name the
+# choice list showed (so the passive-CONFIRM step never renders the raw snake_case id — folds the 13.2 R2 defer),
+# and FAILS CLOSED to the raw id when the id is absent from the projection. Mirrors the reward-overlay flow:
+# project the offer, then resolve the armed id.
+func _display_name_for_resolves_passive_and_fails_closed() -> void:
+	var projection: Dictionary = RewardHudViewModel.new().project(_passive_offer())
+	for choice_value: Variant in projection.get("choices", []) as Array:
+		var choice: Dictionary = choice_value
+		var content_id: String = String(choice.get("content_id"))
+		var resolved: String = RewardHudViewModel.display_name_for(projection, content_id)
+		assert_equal(resolved, String(choice.get("label")), "The armed passive id resolves to its projected display name (the choice label).")
+		assert_false(resolved.strip_edges().is_empty(), "The resolved display name is non-empty.")
+		assert_true(resolved != content_id, "The resolved name is the evocative display name, NOT the raw snake_case id.")
+	# Fail-closed: an id absent from the projection returns the raw id unchanged (never a crash / empty string).
+	assert_equal(RewardHudViewModel.display_name_for(projection, "not_an_offered_id"), "not_an_offered_id", "An absent id fails closed to the raw id.")
+	# Fail-closed on the empty (no-offer) projection too.
+	var empty_projection: Dictionary = RewardHudViewModel.new().project(null)
+	assert_equal(RewardHudViewModel.display_name_for(empty_projection, "warrior_unbreakable_guard"), "warrior_unbreakable_guard", "An empty projection fails closed to the raw id.")

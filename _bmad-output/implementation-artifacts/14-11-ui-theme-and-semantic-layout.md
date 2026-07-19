@@ -1,6 +1,6 @@
 # Story 14.11: UI Theme and Semantic Layout
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -68,41 +68,41 @@ And **14.11 re-pins NOTHING** and touches **no `project.godot` project setting, 
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Import the Recraft frame kit + build the `Theme` resource (AC1, AC3)**
-  - [ ] Copy `asset_sources/icons/ui/{button_plate,panel_frame,modal_frame}.svg` into **`godot/assets/ui/`** (the manifest's declared runtime path). Run **`godot --headless --import`** (separately from the test run) to generate the three `*.svg.import` sidecars; **commit the sidecars** (the 13.1 discipline). Verify the SVGs import as `CompressedTexture2D` (the `icon_placeholder.svg.import` precedent). Consider an SVG import `scale` only if memory matters — nine-patch scaling handles UI sizing regardless.
-  - [ ] Create a `Theme` resource (recommended `godot/assets/ui/sealsworn_theme.tres`). Populate:
+- [x] **Task 1 — Import the Recraft frame kit + build the `Theme` resource (AC1, AC3)**
+  - [x] Copy `asset_sources/icons/ui/{button_plate,panel_frame,modal_frame}.svg` into **`godot/assets/ui/`** (the manifest's declared runtime path). Run **`godot --headless --import`** (separately from the test run) to generate the three `*.svg.import` sidecars; **commit the sidecars** (the 13.1 discipline). Verify the SVGs import as `CompressedTexture2D` (the `icon_placeholder.svg.import` precedent). Consider an SVG import `scale` only if memory matters — nine-patch scaling handles UI sizing regardless.
+  - [x] Create a `Theme` resource (recommended `godot/assets/ui/sealsworn_theme.tres`). Populate:
     - **`Button`** StyleBoxes from `button_plate.svg` (a `StyleBoxTexture` with nine-patch `texture_margin_*` so the plate stretches without corner distortion) for `normal`/`hover`/`pressed`/`disabled`, honoring ≥44px content.
     - **`Panel` / `PanelContainer`** from `panel_frame.svg` (nine-patch `StyleBoxTexture`).
     - A distinct **modal** StyleBox from `modal_frame.svg` for the reward/passive overlay Panel.
     - **Fonts / font sizes** as theme defaults + named type sizes — **fold in the 14.10 turn-label font `22`, the reward header font `22`**, and set a `default_font_size` so no screen shows raw default Godot text sizing.
     - **Constants/spacing** — fold the HUD VBox `separation`, the reward box separation, and comparable spacing into theme constants.
-  - [ ] **Graceful degradation:** the Theme + every scene must still `load()` if a kit texture is unresolved (a `StyleBoxTexture` with a null texture draws nothing — no crash). Do NOT let a missing texture hard-break the theme resource; keep the scenes green under the compile guardrail.
-  - [ ] Update `asset_sources/asset-manifest.md` `ui.*` rows (99-109) from `planned ☐` to built + record the `godot/assets/ui/` runtime export path (the AGENTS.md asset-provenance/approval discipline).
+  - [x] **Graceful degradation:** the Theme + every scene must still `load()` if a kit texture is unresolved (a `StyleBoxTexture` with a null texture draws nothing — no crash). Do NOT let a missing texture hard-break the theme resource; keep the scenes green under the compile guardrail.
+  - [x] Update `asset_sources/asset-manifest.md` `ui.*` rows (99-109) from `planned ☐` to built + record the `godot/assets/ui/` runtime export path (the AGENTS.md asset-provenance/approval discipline).
 
-- [ ] **Task 2 — Apply the Theme across every screen (AC1, AC3)**
-  - [ ] Assign the Theme to each screen scene root's `theme` property (a `.tscn` edit): `hero_select.tscn`, `route_map.tscn`, `run_end.tscn`, `outpost.tscn`, `tactical_board.tscn`, `gameplay_shell.tscn` (the six `Control` roots). The theme propagates to descendants — no per-widget re-theming needed for the common controls.
-  - [ ] Sweep the earmarked hardcoded per-widget cosmetics that the Theme now owns — the **14.10 HUD cosmetics** (`_build_hud_controls`/`_add_hud_label`: turn font `22`, HP-bar height `10.0`, VBox `separation` `2`) and the **reward header font `22`** (`_add_reward_label`) — replacing them with theme-driven sizing (`deferred-work.md:1512`). Leave semantic, meaning-bearing overrides that encode state (e.g. a selection-border `StyleBoxFlat`, a turn-indicator emphasis) where they still read best, but no surface should look like raw default Godot.
-  - [ ] Do **NOT** set `project.godot` `gui/theme/custom` (out-of-bounds project setting). Do **NOT** touch input maps or save formats.
+- [x] **Task 2 — Apply the Theme across every screen (AC1, AC3)**
+  - [x] Assign the Theme to each screen scene root's `theme` property (a `.tscn` edit): `hero_select.tscn`, `route_map.tscn`, `run_end.tscn`, `outpost.tscn`, `tactical_board.tscn`, `gameplay_shell.tscn` (the six `Control` roots). The theme propagates to descendants — no per-widget re-theming needed for the common controls.
+  - [x] Sweep the earmarked hardcoded per-widget cosmetics that the Theme now owns — the **14.10 HUD cosmetics** (`_build_hud_controls`/`_add_hud_label`: turn font `22`, HP-bar height `10.0`, VBox `separation` `2`) and the **reward header font `22`** (`_add_reward_label`) — replacing them with theme-driven sizing (`deferred-work.md:1512`). Leave semantic, meaning-bearing overrides that encode state (e.g. a selection-border `StyleBoxFlat`, a turn-indicator emphasis) where they still read best, but no surface should look like raw default Godot.
+  - [x] Do **NOT** set `project.godot` `gui/theme/custom` (out-of-bounds project setting). Do **NOT** touch input maps or save formats.
 
-- [ ] **Task 3 — Board scales to the window + a resize re-renders (AC2, AC3, the 14.3 inheritance)**
-  - [ ] Add an **event-driven** resize→re-render so the board re-fits when the window changes: connect the viewport `size_changed` (or the root `Control`'s `resized`) to a single `render()`/board-refit call. **NEVER a `_process`/`_physics_process` poll** (the 14.3 "one draw pass per render, never per-frame" rule this epic ratified). Coalesce with `call_deferred` if a drag fires many events; each event drives one existing render pass (the same path a turn takes), re-fitting the grid through `TacticalBoardGridFit`.
-  - [ ] Verify the board **fills its region sensibly** (no huge dead gray zone). The fit/region decision is the seam's job: if a large-window dead-margin reads poorly, the lever is `TacticalBoardGridFit`/`TacticalLayoutProfile` (seam-tested), NOT ad-hoc presenter geometry. Keep the ≥44px control slots + honest `reachable: false` degrade intact.
+- [x] **Task 3 — Board scales to the window + a resize re-renders (AC2, AC3, the 14.3 inheritance)**
+  - [x] Add an **event-driven** resize→re-render so the board re-fits when the window changes: connect the viewport `size_changed` (or the root `Control`'s `resized`) to a single `render()`/board-refit call. **NEVER a `_process`/`_physics_process` poll** (the 14.3 "one draw pass per render, never per-frame" rule this epic ratified). Coalesce with `call_deferred` if a drag fires many events; each event drives one existing render pass (the same path a turn takes), re-fitting the grid through `TacticalBoardGridFit`.
+  - [x] Verify the board **fills its region sensibly** (no huge dead gray zone). The fit/region decision is the seam's job: if a large-window dead-margin reads poorly, the lever is `TacticalBoardGridFit`/`TacticalLayoutProfile` (seam-tested), NOT ad-hoc presenter geometry. Keep the ≥44px control slots + honest `reachable: false` degrade intact.
 
-- [ ] **Task 4 — Reward overlay: semantic geometry + `ScrollContainer` + passive-confirm `display_name` (AC2, AC3 — folds 13.2 R1 + R2)**
-  - [ ] Replace `_ensure_reward_overlay()`'s hardcoded geometry (full-rect Panel + fixed 24px `MarginContainer` + plain `VBoxContainer`) with **semantic-region sizing** (size/position from the `TacticalLayoutProfile` content area, not fixed pixels) and wrap the reward `VBoxContainer` in a **`ScrollContainer`** so the passive 3-choice modal (≈6 lines × 3 choices + per-choice Consume/Destroy rows) **scrolls** rather than pushing the ≥44px buttons off the bottom on a small viewport (`deferred-work.md:97`). The overlay Panel takes the `modal_frame` theme StyleBox. Keep the mouse-filter STOP capture (the overlay blocks board input while up) and the `_clear_reward_box` rebuild discipline.
-  - [ ] Fix the passive-confirm to render the **`display_name`**: thread the `RewardHudViewModel` projection into `_build_passive_confirm_ui` and resolve the armed `passive_content_id` → its projected `display_name` (each passive choice already exposes `modal.display_name` / `label`). Put the lookup in a **pure, testable helper on the `RewardHudViewModel` seam** (e.g. `display_name_for(projection, content_id) -> String`, fail-closed to the raw id if absent) — not untested presenter math (`deferred-work.md:106`). The confirm prompt reads "Confirm Consume of **<Evocative Name>**?", matching the choice list.
+- [x] **Task 4 — Reward overlay: semantic geometry + `ScrollContainer` + passive-confirm `display_name` (AC2, AC3 — folds 13.2 R1 + R2)**
+  - [x] Replace `_ensure_reward_overlay()`'s hardcoded geometry (full-rect Panel + fixed 24px `MarginContainer` + plain `VBoxContainer`) with **semantic-region sizing** (size/position from the `TacticalLayoutProfile` content area, not fixed pixels) and wrap the reward `VBoxContainer` in a **`ScrollContainer`** so the passive 3-choice modal (≈6 lines × 3 choices + per-choice Consume/Destroy rows) **scrolls** rather than pushing the ≥44px buttons off the bottom on a small viewport (`deferred-work.md:97`). The overlay Panel takes the `modal_frame` theme StyleBox. Keep the mouse-filter STOP capture (the overlay blocks board input while up) and the `_clear_reward_box` rebuild discipline.
+  - [x] Fix the passive-confirm to render the **`display_name`**: thread the `RewardHudViewModel` projection into `_build_passive_confirm_ui` and resolve the armed `passive_content_id` → its projected `display_name` (each passive choice already exposes `modal.display_name` / `label`). Put the lookup in a **pure, testable helper on the `RewardHudViewModel` seam** (e.g. `display_name_for(projection, content_id) -> String`, fail-closed to the raw id if absent) — not untested presenter math (`deferred-work.md:106`). The confirm prompt reads "Confirm Consume of **<Evocative Name>**?", matching the choice list.
 
-- [ ] **Task 5 — Consume-or-trim the 14.10 seam spares + unify the route-map display name (AC2, AC3 — folds the 14.10 defers + the 14.6 heuristic)**
-  - [ ] Resolve the 14.10 `turn_is_player`/`has_hud` defer (`deferred-work.md:1504`): **consume** `turn_is_player` as the themed turn-indicator emphasis (e.g. a themed highlight when it is the player's turn) and optionally `has_hud` to hide the HUD box on a runless render — **OR trim** the unused key(s) from `TacticalHudView.VIEW_KEYS` + its test (honoring the 14.3 "expose only what the presenter consumes" rule). If you trim, the 12-key gate becomes the trimmed count in BOTH the seam and `test_tactical_hud_view.gd` — this is the ONE sanctioned key-set change and it is a deliberate trim, not a drift.
-  - [ ] Apply the 14.6 single-helper heuristic (§14-6): extract one `_display_name(node_type)` helper in `route_map_presenter.gd` (`return BOSS_DISPLAY_NAME if node_type == RouteNode.TYPE_BOSS else _display_type(node_type)`) and call it at BOTH duplicated sites (line 135 "You are here" + line 184 `_node_label`). Behavior-preserving (both sites already produce identical output) — low-risk consolidation that keeps future name sites consistent. Existing `test_route_map_view_model.gd` stays green.
+- [x] **Task 5 — Consume-or-trim the 14.10 seam spares + unify the route-map display name (AC2, AC3 — folds the 14.10 defers + the 14.6 heuristic)**
+  - [x] Resolve the 14.10 `turn_is_player`/`has_hud` defer (`deferred-work.md:1504`): **consume** `turn_is_player` as the themed turn-indicator emphasis (e.g. a themed highlight when it is the player's turn) and optionally `has_hud` to hide the HUD box on a runless render — **OR trim** the unused key(s) from `TacticalHudView.VIEW_KEYS` + its test (honoring the 14.3 "expose only what the presenter consumes" rule). If you trim, the 12-key gate becomes the trimmed count in BOTH the seam and `test_tactical_hud_view.gd` — this is the ONE sanctioned key-set change and it is a deliberate trim, not a drift.
+  - [x] Apply the 14.6 single-helper heuristic (§14-6): extract one `_display_name(node_type)` helper in `route_map_presenter.gd` (`return BOSS_DISPLAY_NAME if node_type == RouteNode.TYPE_BOSS else _display_type(node_type)`) and call it at BOTH duplicated sites (line 135 "You are here" + line 184 `_node_label`). Behavior-preserving (both sites already produce identical output) — low-risk consolidation that keeps future name sites consistent. Existing `test_route_map_view_model.gd` stays green.
 
-- [ ] **Task 6 — Seam tests + gates held + suite green (AC1, AC2, AC3)**
-  - [ ] Add a scene-free unit test for the passive-confirm display-name resolver (mirror the `RewardHudViewModel` test style): armed `content_id` → its projected `display_name`; fail-closed to the raw id when the id is absent from the projection; no live handle leaked.
-  - [ ] If any NEW region/reachability decision was added for the reward overlay or the board scaling, unit-test it in the `RefCounted` seam (`TacticalLayoutProfile`/`TacticalBoardGridFit`). If the overlay just reuses the existing `content_area` + a `ScrollContainer` (no new pure decision), no new layout-seam test is needed.
-  - [ ] The Theme resource + the scene `theme` wiring are verified **by construction** + the `test_run_flow_scenes_load.gd` compile guardrail (it loads all six presenter scripts + all nine scenes — a broken theme reference or scene edit fails it). Do NOT add a SceneTree presenter test.
-  - [ ] **`.gd.uid` + `.svg.import` discipline:** run `godot --headless --import` separately; commit the `*.svg.import` sidecars (3 frames) and any new `*.gd.uid` sidecars (new seam helper/tests). The `--scene` test run does not emit sidecars (§14-8).
-  - [ ] Confirm **no domain/RNG/save/project-setting change**: `project.godot` (no `gui/theme/custom`, no input map), `RunSnapshot` (23-key / `SCHEMA_VERSION == 1`), `RngStreamSet` (7 streams), `DomainEvent`, `TacticalBoardViewModel` (16 keys), `RunHudViewModel` (11 keys), the queries — all byte-untouched. No new autoload, event, or RNG draw site.
-  - [ ] Run the FULL headless suite (mandatory command below). Baseline **205 PASS files** (post-14.10); expect **≥205** (a new resolver test file pushes ≥206; a key-trim removes none). False-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output = the exactly-6 documented stderr negatives, ZERO new, none referencing a 14.11 file. `git diff --check` clean.
+- [x] **Task 6 — Seam tests + gates held + suite green (AC1, AC2, AC3)**
+  - [x] Add a scene-free unit test for the passive-confirm display-name resolver (mirror the `RewardHudViewModel` test style): armed `content_id` → its projected `display_name`; fail-closed to the raw id when the id is absent from the projection; no live handle leaked.
+  - [x] If any NEW region/reachability decision was added for the reward overlay or the board scaling, unit-test it in the `RefCounted` seam (`TacticalLayoutProfile`/`TacticalBoardGridFit`). If the overlay just reuses the existing `content_area` + a `ScrollContainer` (no new pure decision), no new layout-seam test is needed.
+  - [x] The Theme resource + the scene `theme` wiring are verified **by construction** + the `test_run_flow_scenes_load.gd` compile guardrail (it loads all six presenter scripts + all nine scenes — a broken theme reference or scene edit fails it). Do NOT add a SceneTree presenter test.
+  - [x] **`.gd.uid` + `.svg.import` discipline:** run `godot --headless --import` separately; commit the `*.svg.import` sidecars (3 frames) and any new `*.gd.uid` sidecars (new seam helper/tests). The `--scene` test run does not emit sidecars (§14-8).
+  - [x] Confirm **no domain/RNG/save/project-setting change**: `project.godot` (no `gui/theme/custom`, no input map), `RunSnapshot` (23-key / `SCHEMA_VERSION == 1`), `RngStreamSet` (7 streams), `DomainEvent`, `TacticalBoardViewModel` (16 keys), `RunHudViewModel` (11 keys), the queries — all byte-untouched. No new autoload, event, or RNG draw site.
+  - [x] Run the FULL headless suite (mandatory command below). Baseline **205 PASS files** (post-14.10); expect **≥205** (a new resolver test file pushes ≥206; a key-trim removes none). False-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output = the exactly-6 documented stderr negatives, ZERO new, none referencing a 14.11 file. `git diff --check` clean.
 
 ## Dev Notes
 
@@ -222,10 +222,50 @@ godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_run
 
 ### Agent Model Used
 
-Story context by Claude Opus 4.8 (gds-create-story).
+Story context by Claude Opus 4.8 (gds-create-story). Implementation by Claude Opus 4.8 (gds-dev-story).
 
 ### Debug Log References
 
+- Baseline suite (pre-change): **205 PASS**, exit 0, false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0, the 6 documented stderr `ERROR:` negatives present unchanged (int64-overflow ×2, `invalid_node_type` ×1, malformed-JSON ×3).
+- `godot --headless --import` (separate run) generated the 3 `*.svg.import` sidecars (`importer="texture"` → `CompressedTexture2D`) + the tool `build_sealsworn_theme.gd.uid`.
+- Theme generated via `godot --headless --script res://tools/build_sealsworn_theme.gd` → `godot/assets/ui/sealsworn_theme.tres` (guaranteed-valid; the repo's first `.tres`).
+- Theme-wiring checkpoint (after the 6 `.tscn` edits, before code edits): **205 PASS**, guard 0, `test_run_flow_scenes_load.gd` green (it loads all six themed scenes + the theme + kit textures).
+- Final suite (all changes): **205 PASS**, exit 0, guard 0; the 6 documented negatives unchanged, ZERO new, none referencing a 14.11 file; `git diff --check` clean. Kept 205 files (the resolver test extends the existing `test_reward_hud_view_model.gd` rather than adding a file — still ≥205).
+
 ### Completion Notes List
 
+- **AC1 (Theme built + applied, F16/FR68/NFR9):** Imported the Recraft kit into `godot/assets/ui/` and assembled `sealsworn_theme.tres` — nine-slice `StyleBoxTexture` skins for `Button` (all 5 states) + `Panel`/`PanelContainer` (border frames, `draw_center=false`, so the existing dark app bg + light font stay readable — the plates carry a white bg) + a distinct opaque `RewardOverlay` modal frame from the dark `modal_frame`. Applied **per scene-root** on all six `Control` roots via the `.tscn` `theme` property (NOT `project.godot` `gui/theme/custom`). Folded the 14.10/13.2 fixed-pixel cosmetics into the Theme: turn font `22` → `HudTurnLabel`/`HudTurnLabelActive`; reward header `22` → `RewardHeader`; HUD `separation 2` → `HudBox`; reward `separation 8` → `RewardBox`; HP-bar height `10` → `HudHpBar` `bar_height` constant; `default_font_size=16`. Graceful degradation: a null kit texture yields a null-texture StyleBox (draws nothing, no crash); the HP-bar height read has a safe fallback const.
+- **AC2 (semantic layout, F15/FR68/NFR9):** Task 3 adds an EVENT-DRIVEN resize→re-render (`get_viewport().size_changed` → coalesced `call_deferred` → `_relayout_regions()` + `render()` + reward re-position) — never a `_process` poll — so the board re-fits its resized region through the existing `TacticalBoardGridFit` (closing the F15 stale-panel gap). Reward overlay rebuilt as a full-rect scrim + a content_area-sized centered modal + a `ScrollContainer` (folds 13.2 R1). Passive-confirm now renders the evocative `display_name` via the new `RewardHudViewModel.display_name_for` resolver (folds 13.2 R2). Consumed `turn_is_player` (themed active-turn variation, word retained) + `has_hud` (hide the HUD on a runless render). Route-map name unified through the single `_display_name(node_type)` helper (folds the 14.6 heuristic).
+- **AC3 (pinned posture, re-pins nothing):** No domain/command/event/RNG/save/project-setting file touched — only `scripts/ui/`, `scenes/`, `assets/ui/`, `tools/`, docs. The 12-key `TacticalHudView` gate stays 12 (consumed, not trimmed). No new board-VM key, autoload, event, or RNG draw. `RewardHudViewModel` `REWARD_KEYS`/`CHOICE_KEYS` unchanged (the resolver is a read helper). Every generator/route/finale/combat fingerprint byte-untouched. `project.godot` unmodified.
+- **Layout-seam tests:** No NEW region/reachability decision was added — the reward overlay reuses the existing `content_area` + a `ScrollContainer` and the board re-fit reuses `TacticalBoardGridFit` — so per the story no new layout-seam test is needed. The Theme + scene wiring are verified by construction + the `test_run_flow_scenes_load.gd` compile guardrail (no SceneTree presenter test).
+- **Deferred:** `_inspect_facts_from` untested transform (13.2 R1, `deferred-work.md:98`) intentionally LEFT DEFERRED (out of 14.11 scope). The standing Band-1/2 on-device human visual pass is now DUE (Band-2 close gate) — the themed screens are automated-green but human-unverified; the manifest `ui.*` `Approved` ☐ awaits it.
+- **Deviations:** (1) The resolver test extends the existing `test_reward_hud_view_model.gd` rather than adding a new file (still ≥205; the seam's test belongs with the seam). (2) A one-shot generator tool `tools/build_sealsworn_theme.gd` is kept (repo `tools/` precedent) for guaranteed-valid theme assembly + regeneration provenance; it is not auto-discovered by the runner. (3) Did not add a `baseline_commit` frontmatter (delegate does not run git; the orchestrator owns pipeline/baseline). (4) Nine-patch texture margins (button 20 / panel 24 / modal 96, in 2048² space) are reasonable defaults — visual fidelity is tunable in the deferred on-device pass, not gated by the verify-by-construction suite.
+
 ### File List
+
+**New (art + resource + tool):**
+- `godot/assets/ui/button_plate.svg` (+ `.svg.import`)
+- `godot/assets/ui/panel_frame.svg` (+ `.svg.import`)
+- `godot/assets/ui/modal_frame.svg` (+ `.svg.import`)
+- `godot/assets/ui/sealsworn_theme.tres`
+- `godot/tools/build_sealsworn_theme.gd` (+ `.gd.uid`)
+
+**Modified (scenes — theme assignment on the root Control):**
+- `godot/scenes/ui/hero_select.tscn`
+- `godot/scenes/ui/route_map.tscn`
+- `godot/scenes/ui/run_end.tscn`
+- `godot/scenes/ui/outpost.tscn`
+- `godot/scenes/game/tactical_board.tscn`
+- `godot/scenes/game/gameplay_shell.tscn`
+
+**Modified (presenters + seam + test + docs):**
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd` (resize→re-render; reward overlay geometry + ScrollContainer + modal stylebox + passive-confirm display_name; fold HUD/reward cosmetics into the Theme; consume `turn_is_player`/`has_hud`)
+- `godot/scripts/ui/view_models/reward_hud_view_model.gd` (new pure `display_name_for` resolver)
+- `godot/scripts/ui/presenters/route_map_presenter.gd` (single `_display_name(node_type)` helper at both boss-vs-type sites)
+- `godot/tests/unit/ui/test_reward_hud_view_model.gd` (resolver test)
+- `asset_sources/asset-manifest.md` (`ui.*` rows → built + frame-kit/theme rows)
+- `_bmad-output/implementation-artifacts/deferred-work.md` (4 items marked RESOLVED by 14.11)
+
+### Change Log
+
+- 2026-07-19 — Implemented Story 14.11 (UI Theme + semantic layout). Built + applied the shared Godot `Theme` from the Recraft frame kit across the six screen roots; added event-driven board resize re-render; reworked the reward overlay to content-area geometry + `ScrollContainer` + modal frame + evocative passive-confirm name; consumed the 14.10 `turn_is_player`/`has_hud` seam spares; unified the route-map display name. Folded 4 deferred items (13.2 R1/R2, 14.10 spares/cosmetics). No domain/RNG/save/project-setting change; suite 205 PASS. Status → review.

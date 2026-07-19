@@ -132,7 +132,7 @@ func _render_map() -> void:
 		# "The Larval Avatar" there. Reuses the existing named const (no second hardcoded copy). Unreachable in the
 		# current live flow (a boss current node routes straight to the board before this enriched render), so this
 		# is a latent-consistency guard — it keeps the three sites unified if the flow ever changes.
-		var here_display: String = BOSS_DISPLAY_NAME if current_type == String(RouteNode.TYPE_BOSS) else _display_type(current_type)
+		var here_display: String = _display_name(current_type)
 		var cleared_suffix: String = "  ✓ Cleared" if bool(current.get("is_cleared", false)) else ""
 		here_label.text = "You are here: %s %s (depth %d)%s" % [
 			_type_icon(current_type),
@@ -181,8 +181,16 @@ func _node_label(node: Dictionary) -> String:
 	# SAME descent-goal flavor name as the terminal-boss goal line (the shared BOSS_DISPLAY_NAME const — never a
 	# second hardcoded copy), so the goal line and the pickable button read as ONE entity ("The Larval Avatar"),
 	# not "The Larval Avatar" (goal) vs "Boss" (button) side-by-side at the last pre-boss tier.
-	var display_label: String = BOSS_DISPLAY_NAME if node_type == String(RouteNode.TYPE_BOSS) else _display_type(node_type)
+	var display_label: String = _display_name(node_type)
 	return "%s %s %s (depth %d)%s" % [icon, reveal_marker, display_label, int(node.get("depth", 0)), clue_text]
+
+
+# Story 14.11 (Task 5 — the 14.6 single-helper heuristic, retro §14-6) — the ONE boss-vs-type display-name
+# resolver: a boss node reads the shared descent-goal flavor name (BOSS_DISPLAY_NAME); every other type reads
+# its human display label (_display_type). Behavior-preserving consolidation of the two previously-duplicated
+# sites (the "You are here" line + this _node_label) so no future name site drifts. NEVER returns raw snake_case.
+func _display_name(node_type: String) -> String:
+	return BOSS_DISPLAY_NAME if node_type == String(RouteNode.TYPE_BOSS) else _display_type(node_type)
 
 
 # Story 14.6 (AC1/NFR9): convert a raw snake_case node type to a human display label (elite_combat -> "Elite

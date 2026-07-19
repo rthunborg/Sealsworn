@@ -113,6 +113,29 @@ static func is_passive_offer(offer: RewardOffer) -> bool:
 	return true
 
 
+# Story 14.11 (Task 4 — folds the 13.2 R2 defer, deferred-work.md:106) — resolve an armed passive `content_id`
+# to its projected, player-facing display name (the evocative name the choice list already showed) so the
+# passive-CONFIRM step renders "Confirm Consume of <Evocative Name>?", never the raw snake_case id. A PURE lookup
+# over project()'s choices; FAIL-CLOSED to the raw id when the id is absent from the projection (defensive, never
+# a crash). Prefers the modal display_name, then the choice label (which IS the display name for a passive choice).
+static func display_name_for(projection: Dictionary, content_id: String) -> String:
+	for choice_value: Variant in projection.get("choices", []) as Array:
+		if not choice_value is Dictionary:
+			continue
+		var choice: Dictionary = choice_value
+		if String(choice.get("content_id", "")) != content_id:
+			continue
+		var modal: Dictionary = choice.get("modal", {})
+		var display_name: String = String(modal.get("display_name", ""))
+		if not display_name.is_empty():
+			return display_name
+		var label: String = String(choice.get("label", ""))
+		if not label.is_empty():
+			return label
+		return content_id
+	return content_id
+
+
 # The v0 node -> reward-table policy (the presentation-flow decision this story owns). Returns {has_reward,
 # table_id, is_passive}, keyed off the node TYPE + its deterministic route DEPTH. Deterministic; other node
 # types (shop/event/secret/boss/...) earn NO combat-node reward HUD here (their own offer surfaces are out of

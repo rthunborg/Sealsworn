@@ -1,0 +1,104 @@
+[gd_resource type="Theme" format=3]
+
+[ext_resource type="Texture2D" path="res://assets/ui/button_plate.svg" id="1_4m8qt"]
+[ext_resource type="Texture2D" path="res://assets/ui/panel_frame.svg" id="2_ynqq7"]
+[ext_resource type="Texture2D" path="res://assets/ui/modal_frame.svg" id="3_4vvi6"]
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_j3ipq"]
+texture = ExtResource("1_4m8qt")
+texture_margin_left = 20.0
+texture_margin_top = 20.0
+texture_margin_right = 20.0
+texture_margin_bottom = 20.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_dm3gn"]
+texture = ExtResource("1_4m8qt")
+texture_margin_left = 20.0
+texture_margin_top = 20.0
+texture_margin_right = 20.0
+texture_margin_bottom = 20.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_5tpxd"]
+texture = ExtResource("1_4m8qt")
+texture_margin_left = 20.0
+texture_margin_top = 20.0
+texture_margin_right = 20.0
+texture_margin_bottom = 20.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_8ilhq"]
+texture = ExtResource("1_4m8qt")
+texture_margin_left = 20.0
+texture_margin_top = 20.0
+texture_margin_right = 20.0
+texture_margin_bottom = 20.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_ehtpv"]
+texture = ExtResource("1_4m8qt")
+texture_margin_left = 20.0
+texture_margin_top = 20.0
+texture_margin_right = 20.0
+texture_margin_bottom = 20.0
+draw_center = false
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_1b5jw"]
+content_margin_left = 6.0
+content_margin_top = 2.0
+content_margin_right = 6.0
+content_margin_bottom = 2.0
+bg_color = Color(0.16, 0.34, 0.5, 0.55)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_6dhso"]
+texture = ExtResource("2_ynqq7")
+texture_margin_left = 24.0
+texture_margin_top = 24.0
+texture_margin_right = 24.0
+texture_margin_bottom = 24.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_0li53"]
+texture = ExtResource("2_ynqq7")
+texture_margin_left = 24.0
+texture_margin_top = 24.0
+texture_margin_right = 24.0
+texture_margin_bottom = 24.0
+draw_center = false
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_vb0bx"]
+texture = ExtResource("3_4vvi6")
+texture_margin_left = 96.0
+texture_margin_top = 96.0
+texture_margin_right = 96.0
+texture_margin_bottom = 96.0
+
+[resource]
+default_font_size = 16
+Button/styles/disabled = SubResource("StyleBoxTexture_j3ipq")
+Button/styles/focus = SubResource("StyleBoxTexture_dm3gn")
+Button/styles/hover = SubResource("StyleBoxTexture_5tpxd")
+Button/styles/normal = SubResource("StyleBoxTexture_8ilhq")
+Button/styles/pressed = SubResource("StyleBoxTexture_ehtpv")
+HudBox/base_type = &"VBoxContainer"
+HudBox/constants/separation = 2
+HudHpBar/base_type = &"ProgressBar"
+HudHpBar/constants/bar_height = 10
+HudTurnLabel/base_type = &"Label"
+HudTurnLabel/font_sizes/font_size = 22
+HudTurnLabelActive/base_type = &"Label"
+HudTurnLabelActive/font_sizes/font_size = 22
+HudTurnLabelActive/styles/normal = SubResource("StyleBoxFlat_1b5jw")
+Panel/styles/panel = SubResource("StyleBoxTexture_6dhso")
+PanelContainer/styles/panel = SubResource("StyleBoxTexture_0li53")
+RewardBox/base_type = &"VBoxContainer"
+RewardBox/constants/separation = 8
+RewardHeader/base_type = &"Label"
+RewardHeader/font_sizes/font_size = 22
+RewardOverlay/base_type = &"Panel"
+RewardOverlay/styles/panel = SubResource("StyleBoxTexture_vb0bx")
