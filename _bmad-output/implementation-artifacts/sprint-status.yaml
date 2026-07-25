@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-19T18:12:00+00:00
+last_updated: 2026-07-24T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -207,3 +207,37 @@ development_status:
   14-10-player-hud-and-range-highlights: done
   14-11-ui-theme-and-semantic-layout: done
   epic-14-retrospective: done
+
+  # ==== SPRINT CHANGE 2026-07-24 (sprint-change-proposal-2026-07-24.md) ====
+  # Trigger A: the post-Epic-14 agent playtest (playtest-sessions/agent-playtest-2026-07-20.md,
+  # build a78653c) — loop completable end-to-end for the first time, all five 2026-07-16 Blockers
+  # fixed/addressed, but 20 new findings. Trigger B: a directed dungeon-scale vision (multi-room
+  # floors, Large size class, enemy sight-aggro). Two additive epics, sequenced: Epic 15 ships the
+  # readability + correctness fixes FIRST (unblocks the OSG-1 human playtests); Epic 16 follows as
+  # the generation/scale capability. Epic numbering NOT reshuffled; no existing epic re-scoped.
+  # Epic 15 moves NO fingerprint. Epic 16 re-pins generation/combat fingerprints ONLY in 16-1
+  # (dimensions) and 16-2 (algorithm), each justified + re-pinned in-PR with winnability re-proven.
+  # Epic 16 additionally requires a GDD + generation-architecture pass BEFORE 16-1 (see proposal §5).
+  # Band 1 = 15-1 (readability hotfix, lands first and alone); Band 2 = 15-2..15-7 (correctness);
+  # Band 3 = 15-8..15-12 (presentation/feel, incl. movement animation in 15-8).
+  epic-15: backlog
+  15-1-hud-and-log-layout-clip-fix: backlog
+  15-2-attack-preview-damage-correctness: backlog
+  15-3-threat-telegraphs: backlog
+  15-4-quit-pause-resume: backlog
+  15-5-event-node-and-run-summary-wiring: backlog
+  15-6-reward-modal-fix: backlog
+  15-7-mis-tap-safety: backlog
+  15-8-combat-feel-and-movement-animation: backlog
+  15-9-transitions-and-death-moment: backlog
+  15-10-theme-and-layout-polish: backlog
+  15-11-player-facing-copy-pass: backlog
+  15-12-weapon-kit-display: backlog
+  epic-15-retrospective: optional
+  epic-16: backlog
+  16-1-board-scale-up-and-large-class: backlog
+  16-2-room-corridor-generation: backlog
+  16-3-enemy-aggro-sight-activation: backlog
+  16-4-camera-default-zoom-and-grid-fit: backlog
+  16-5-mobile-performance-pass: backlog
+  epic-16-retrospective: optional
