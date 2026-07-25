@@ -1,6 +1,9 @@
+---
+baseline_commit: 1e70f83908098fe69b46f9c28cac98ca1981e5e4
+---
 # Story 15.1: HUD and Log Layout Clip Fix
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -69,28 +72,28 @@ And **15.1 re-pins NOTHING** and touches **no `project.godot` project setting, n
 
 ## Tasks / Subtasks
 
-- [ ] **Task 1 — Reproduce + confirm the shared root cause (AC1, AC2)**
-  - [ ] Read `godot/assets/ui/sealsworn_theme.tres`, `tools/build_sealsworn_theme.gd`, and the presenter's `_build_regions`/`_relayout_regions`/`_build_hud_controls`/`_render_hud`/`_log_text` before changing anything. Confirm the region-plan starvation (status = one ~7% band for 9 HUD elements; `log_or_outcome` empty on phone profiles / ~44px on tablet) against `TacticalLayoutProfile._build_stacked_layout`/`_build_side_rail_layout`.
-  - [ ] Identify which profile each tested size resolves to (574/774/984 wide, portrait + landscape) via `_profile_id_for`, and confirm the horizontal "negative-x" symptom's actual source (panel_frame nine-patch border on a short band + `clip_contents`; the compact-fallback long line; or a container anchor). Do not fix yet — pin the cause first (the 14-1 retro P4 "grep the live surface before scoping" habit).
+- [x] **Task 1 — Reproduce + confirm the shared root cause (AC1, AC2)**
+  - [x] Read `godot/assets/ui/sealsworn_theme.tres`, `tools/build_sealsworn_theme.gd`, and the presenter's `_build_regions`/`_relayout_regions`/`_build_hud_controls`/`_render_hud`/`_log_text` before changing anything. Confirm the region-plan starvation (status = one ~7% band for 9 HUD elements; `log_or_outcome` empty on phone profiles / ~44px on tablet) against `TacticalLayoutProfile._build_stacked_layout`/`_build_side_rail_layout`.
+  - [x] Identify which profile each tested size resolves to (574/774/984 wide, portrait + landscape) via `_profile_id_for`, and confirm the horizontal "negative-x" symptom's actual source (panel_frame nine-patch border on a short band + `clip_contents`; the compact-fallback long line; or a container anchor). Do not fix yet — pin the cause first (the 14-1 retro P4 "grep the live surface before scoping" habit).
 
-- [ ] **Task 2 — Give the HUD and log adequate, reachable space on the `TacticalLayoutProfile` seam (AC1, AC2, AC3)**
-  - [ ] On `TacticalLayoutProfile`, re-shape the region plan so the `status` (HUD) region and the `log_or_outcome` region both get reachable, content-sufficient space on **every** profile a live fight uses (phone_portrait, phone_landscape, tablet, desktop) — including a **non-empty `log_or_outcome` region on the phone profiles** (it is `_empty_rect()` today). Keep the change value-only and scene-free (the seam never reaches into DisplayServer/Window/Viewport).
-  - [ ] Preserve the two invariants the test enforces: the **board stays the largest region** and **every region stays inside the content area** (≥44px reachable control slots, honest `reachable: false` only for a genuinely degenerate viewport). Because the board must stay largest, prefer a **bounded region + a scroll/tail render** over unbounded band growth (mirror 14-11's reward-overlay `ScrollContainer` approach for the tall HUD if needed).
-  - [ ] If you introduce a new pure geometry decision (e.g. a modal/scroll rect helper), keep it a **tested method on the seam** — the same pattern the 14-11 review recommended for `_position_reward_modal` (lift presenter geometry into a `TacticalLayoutProfile.*` method, do not leave it as untested presenter math). Do NOT touch the reward modal itself (that is 15.6).
+- [x] **Task 2 — Give the HUD and log adequate, reachable space on the `TacticalLayoutProfile` seam (AC1, AC2, AC3)**
+  - [x] On `TacticalLayoutProfile`, re-shape the region plan so the `status` (HUD) region and the `log_or_outcome` region both get reachable, content-sufficient space on **every** profile a live fight uses (phone_portrait, phone_landscape, tablet, desktop) — including a **non-empty `log_or_outcome` region on the phone profiles** (it is `_empty_rect()` today). Keep the change value-only and scene-free (the seam never reaches into DisplayServer/Window/Viewport).
+  - [x] Preserve the two invariants the test enforces: the **board stays the largest region** and **every region stays inside the content area** (≥44px reachable control slots, honest `reachable: false` only for a genuinely degenerate viewport). Because the board must stay largest, prefer a **bounded region + a scroll/tail render** over unbounded band growth (mirror 14-11's reward-overlay `ScrollContainer` approach for the tall HUD if needed).
+  - [x] If you introduce a new pure geometry decision (e.g. a modal/scroll rect helper), keep it a **tested method on the seam** — the same pattern the 14-11 review recommended for `_position_reward_modal` (lift presenter geometry into a `TacticalLayoutProfile.*` method, do not leave it as untested presenter math). Do NOT touch the reward modal itself (that is 15.6).
 
-- [ ] **Task 3 — Render the HUD to fit its region so no label clips (AC1, NFR9)**
-  - [ ] In `tactical_board_presenter.gd`, make the full HUD render on-canvas and legible within the (now adequate) status region — fit/wrap/scroll the `_hud_box` so no element overflows off-canvas or off the left edge, at every tested size and after a mid-fight resize. Keep the NFR9 non-color channels intact (word turn label, "HP N/M" text beside the bar length, gold/bag/node text, the legend shape names) — theming/shape are additive over text, never a replacement.
-  - [ ] Verify the themed `panel_frame` border does not swallow a short band (if it does, the seam's larger band or a reduced frame on the small control bands is the lever — coordinate with the theme, do not hand-offset labels). Keep every HUD element mouse-IGNORE (it must never eat a board tap). Route all rendering through the existing `render()` path; do not add a `_process` poll.
+- [x] **Task 3 — Render the HUD to fit its region so no label clips (AC1, NFR9)**
+  - [x] In `tactical_board_presenter.gd`, make the full HUD render on-canvas and legible within the (now adequate) status region — fit/wrap/scroll the `_hud_box` so no element overflows off-canvas or off the left edge, at every tested size and after a mid-fight resize. Keep the NFR9 non-color channels intact (word turn label, "HP N/M" text beside the bar length, gold/bag/node text, the legend shape names) — theming/shape are additive over text, never a replacement.
+  - [x] Verify the themed `panel_frame` border does not swallow a short band (if it does, the seam's larger band or a reduced frame on the small control bands is the lever — coordinate with the theme, do not hand-offset labels). Keep every HUD element mouse-IGNORE (it must never eat a board tap). Route all rendering through the existing `render()` path; do not add a `_process` poll.
 
-- [ ] **Task 4 — Log shows the live tail, unclipped, at 2.0x (AC2, NFR9)**
-  - [ ] Render the log so the **newest** of the (already tail-limited) `TacticalCombatLogView` lines are the visible ones and none clips — e.g. a bottom-anchored / bottom-scrolled tail, and/or fit the projected line count to the region height (the `max_lines` option on `from_board_vm` exists for a caller with a known region height). Confirm readability at the 2.0x `TacticalTextScale` clamp.
-  - [ ] Keep `TacticalCombatLogView` a pure read (do not add a board-VM key; the log is a separate read surface). If the newest-visible decision needs a pure helper, put it on the log-view seam with a test, not as untested presenter math.
+- [x] **Task 4 — Log shows the live tail, unclipped, at 2.0x (AC2, NFR9)**
+  - [x] Render the log so the **newest** of the (already tail-limited) `TacticalCombatLogView` lines are the visible ones and none clips — e.g. a bottom-anchored / bottom-scrolled tail, and/or fit the projected line count to the region height (the `max_lines` option on `from_board_vm` exists for a caller with a known region height). Confirm readability at the 2.0x `TacticalTextScale` clamp.
+  - [x] Keep `TacticalCombatLogView` a pure read (do not add a board-VM key; the log is a separate read surface). If the newest-visible decision needs a pure helper, put it on the log-view seam with a test, not as untested presenter math.
 
-- [ ] **Task 5 — Update the pinned layout test + gates held + suite green (AC1, AC2, AC3)**
-  - [ ] Update `godot/tests/unit/ui/test_tactical_layout_profiles.gd`'s region/reachability expectations to match the new region plan (deliberate in-change update, justified by the fix): assert the `log_or_outcome` region is reachable/non-empty on the profiles where the fight surfaces it; assert the HUD/status region holds its content; keep `_board_is_largest_region`, "every region inside content", and the exact `to_dictionary()` key set green. If you add a pure seam helper, unit-test it (exact-key/fail-closed style).
-  - [ ] Confirm **no domain/RNG/save/scene-schema/project-setting change**: `TacticalBoardViewModel` (16 keys, incl. the `layout` slot — key set unchanged), `RunHudViewModel` (11 keys), `TacticalHudView` (12 keys), `RunSnapshot` (23-key / `SCHEMA_VERSION == 1`), `RngStreamSet` (7 streams), `DomainEvent`, `project.godot` — all byte-untouched. No new autoload, event, or RNG draw site; every generator/route/finale/combat fingerprint byte-identical.
-  - [ ] **`.gd.uid` discipline:** if you add any `.gd` (a new seam helper/test), run `godot --headless --import` **separately** to emit the `*.gd.uid` sidecar and commit it (the `--scene` test run does not emit it).
-  - [ ] Run the FULL headless suite (mandatory command below). Baseline **205 PASS files** (Epic-14 close); expect **≥205** (a new helper test pushes ≥206; extending the existing layout test adds none). False-PASS grep guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output = exactly the 6 documented stderr negatives, ZERO new, none referencing a 15.1 file. `git diff --check` clean.
+- [x] **Task 5 — Update the pinned layout test + gates held + suite green (AC1, AC2, AC3)**
+  - [x] Update `godot/tests/unit/ui/test_tactical_layout_profiles.gd`'s region/reachability expectations to match the new region plan (deliberate in-change update, justified by the fix): assert the `log_or_outcome` region is reachable/non-empty on the profiles where the fight surfaces it; assert the HUD/status region holds its content; keep `_board_is_largest_region`, "every region inside content", and the exact `to_dictionary()` key set green. If you add a pure seam helper, unit-test it (exact-key/fail-closed style).
+  - [x] Confirm **no domain/RNG/save/scene-schema/project-setting change**: `TacticalBoardViewModel` (16 keys, incl. the `layout` slot — key set unchanged), `RunHudViewModel` (11 keys), `TacticalHudView` (12 keys), `RunSnapshot` (23-key / `SCHEMA_VERSION == 1`), `RngStreamSet` (7 streams), `DomainEvent`, `project.godot` — all byte-untouched. No new autoload, event, or RNG draw site; every generator/route/finale/combat fingerprint byte-identical.
+  - [x] **`.gd.uid` discipline:** if you add any `.gd` (a new seam helper/test), run `godot --headless --import` **separately** to emit the `*.gd.uid` sidecar and commit it (the `--scene` test run does not emit it).
+  - [x] Run the FULL headless suite (mandatory command below). Baseline **205 PASS files** (Epic-14 close); expect **≥205** (a new helper test pushes ≥206; extending the existing layout test adds none). False-PASS grep guard `SCRIPT ERROR|Parse Error|^FAIL` on the RAW output = exactly the 6 documented stderr negatives, ZERO new, none referencing a 15.1 file. `git diff --check` clean.
 
 ## Dev Notes
 
@@ -195,10 +198,34 @@ godot --headless --path C:\Sealsworn\godot --scene res://tests/headless/test_run
 
 ### Agent Model Used
 
-Story context by Claude Opus 4.8 (gds-create-story).
+Story context by Claude Opus 4.8 (gds-create-story). Implementation by Claude Opus 4.8 (gds-dev-story).
 
 ### Debug Log References
 
+- Baseline (pre-change) headless suite: **205 PASS**, "Headless tests passed.", exit 0; false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0 matches (the 6 documented stderr negatives are benign `ERROR:` lines that do not match the guard pattern).
+- RED (test updated, seam not yet fixed): `test_tactical_layout_profiles.gd` **FAIL** with exactly the new expectations — phone_portrait/tablet/desktop/safe-area status region not > one band, and phone_portrait/phone_landscape/safe-area `log_or_outcome` empty/absent (tablet+desktop already had a ~6% log so only their status-holds assertion tripped).
+- GREEN (seam fixed): full suite **205 PASS / 0 FAIL**, `test_tactical_layout_profiles.gd` PASS, guard clean.
+- GREEN (presenter render added): full suite **205 PASS / 0 FAIL**, compile guardrail `test_run_flow_scenes_load.gd` PASS (presenter compiles), `test_tactical_layout_profiles.gd` PASS, guard `SCRIPT ERROR|Parse Error|^FAIL` = 0, "Headless tests passed.", exit 0. `git diff --check` clean.
+
 ### Completion Notes List
 
+- **Root cause (confirmed, Task 1):** the shared structural defect is the semantic region plan on `TacticalLayoutProfile`, not per-label geometry — `status` got ONE ~7% control band for a nine-label + HP-bar HUD, and `log_or_outcome` was `_empty_rect()` on both phone profiles / only ~6% on desktop/tablet. `clip_contents` + a top-aligned log block then hid the overflow. The profile math never emits a negative-x rect; the horizontal "negative-x" symptom is the heavy 24px nine-patch `panel_frame` border drawing 1:1 on a short band (project-context nine-patch gotcha), addressed by the light control-band backing.
+- **Seam fix (Task 2, AC1/AC2/AC3):** reshaped `_build_stacked_layout` into five bands (preview/confirm_cancel/inspect = one base band each; `status` = a bounded taller band `STATUS_HUD_BAND_FRACTION 0.18h`, ≥ 2 touch targets; `log_or_outcome` = a real `LOG_BAND_FRACTION 0.11h` strip, ≥ 1 touch target) with a proportional down-scale guard that keeps the board ≥ half the height so it stays the largest region. Reshaped `_build_side_rail_layout` (phone landscape) into five weighted rail bands (status = double weight, a real log band replacing `_empty_rect()`). Value-only, scene-free, three new named fraction constants. No new top-level `to_dictionary()` key — the layout slot's VALUES change, not its shape.
+- **Presenter render (Tasks 3/4, AC1/AC2/NFR9):** the HUD now renders inside a vertical `ScrollContainer` (h-scroll disabled → labels word-wrap; v-scroll auto → the full HUD is reachable, never off-canvas) with a small uniform content inset; HUD labels got `autowrap`. The log region is bottom-aligned (`VERTICAL_ALIGNMENT_BOTTOM`) + `clip_contents` so the NEWEST (last) lines pin to the panel bottom and older lines overflow the clipped top — the live tail. Both bands get a light `StyleBoxFlat` backing (presenter-local override) replacing the heavy nine-patch frame that swallowed the short bands. Everything rides the existing 14-11 event-driven resize path (FULL_RECT anchors re-flow with the panel); no `_process` poll added.
+- **Test (Task 5, AC3):** `test_tactical_layout_profiles.gd` updated with two deliberate pinned expectations — `_assert_log_region_surfaced` (log non-empty, ≥ touch target, inside content) and `_assert_status_region_holds_hud` (status ≥ 2 touch targets tall + board stays largest) — applied to phone_portrait, phone_landscape, tablet (portrait+landscape), desktop, and the safe-area case. `_board_is_largest_region`, region-inside-content, and the exact `to_dictionary()` key set stay green.
+- **Fingerprints / gates (AC3): all byte-identical.** No new `.gd` file (so no new `.gd.uid` sidecar needed). No domain/command/event/RNG/save/scene-schema/`project.godot`/input-map change; no board-VM key added; `TacticalCombatLogView` untouched (already tail-limits newest-last); the reward overlay/modal, theme button states, and `build_sealsworn_theme.gd`/`sealsworn_theme.tres` untouched. Epic-15 moves NO fingerprint.
+- **Deviation / decision:** the `ScrollContainer` accepts mouse input (needed for touch drag-scroll), unlike the mouse-IGNORE HUD labels. This does NOT violate the "never eat a board tap" invariant because the status region never overlaps the board (the board is a separate region/panel in both the stacked and side-rail plans). The compact single-line HUD fallback path still exists for a genuinely non-reachable/runless render but is no longer reached on any real fight profile (status is reachable everywhere now).
+- **Carried forward:** the on-screen human legibility (574/774/984 wide, portrait + landscape + mid-fight resize, 1.0x + 2.0x text scale) is still verify-by-construction only — recorded against the 14-10 on-device defer in `deferred-work.md` (structural half RESOLVED-by-15.1; human-eyes half → OSG-1 checklist).
+
 ### File List
+
+- `godot/scripts/ui/view_models/tactical_layout_profile.gd` — MODIFIED (seam): reshaped `_build_stacked_layout` + `_build_side_rail_layout`; added `STATUS_BASE_BAND_FRACTION` / `STATUS_HUD_BAND_FRACTION` / `LOG_BAND_FRACTION` constants.
+- `godot/scripts/ui/presenters/tactical_board_presenter.gd` — MODIFIED (presenter): HUD in a `ScrollContainer` + light backing (`_build_hud_controls`), HUD-label autowrap (`_add_hud_label`), log newest-line bottom tail (`_build_regions` + new `_configure_log_region`), new `_control_band_backing` / `_inset_full_rect` helpers, `CONTROL_BAND_CONTENT_INSET` constant.
+- `godot/tests/unit/ui/test_tactical_layout_profiles.gd` — MODIFIED (test): new `_assert_log_region_surfaced` + `_assert_status_region_holds_hud` helpers wired into the phone/tablet/desktop/safe-area profile tests.
+- `_bmad-output/implementation-artifacts/deferred-work.md` — MODIFIED: annotated the 14-10 on-device HUD-overflow defer as structurally RESOLVED-by-15.1 (human-eyes half → OSG-1).
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED: `15-1` backlog → in-progress → review; `last_updated`.
+- `_bmad-output/implementation-artifacts/15-1-hud-and-log-layout-clip-fix.md` — MODIFIED: `baseline_commit` frontmatter, task checkboxes, Dev Agent Record, Change Log, Status.
+
+### Change Log
+
+- 2026-07-25 — Story 15.1 implemented: shared-root-cause HUD/log layout clip fix. Reshaped the `TacticalLayoutProfile` region plan (bounded taller `status` HUD band + a real reachable `log_or_outcome` region on every fight profile, incl. the phone profiles); presenter now scrolls the full HUD and renders the log as a newest-line bottom tail with a light control-band backing. Updated the pinned layout test; suite **205 PASS**, all fingerprints byte-identical. Status → review.

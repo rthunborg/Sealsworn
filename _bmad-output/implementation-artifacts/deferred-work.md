@@ -1502,6 +1502,15 @@ Low / non-blocking:
   by-construction posture there is NO SceneTree presenter test, so the reachability/degrade branch and the real on-screen
   render are human-unverified. Re-confirms and extends the story's own documented defer and the standing 14-5/14-9 Band-1/2
   defers. Owner: the pending physical-device observed-playtest pass, before Band 2 closes.
+  - **UPDATE (Story 15.1, 2026-07-25):** the STRUCTURAL small-viewport HUD-overflow half is **RESOLVED-by-15.1** — the region
+    plan now gives the `status` (HUD) region a bounded taller band (`STATUS_HUD_BAND_FRACTION`, >= two touch targets) and a
+    REAL non-empty, reachable `log_or_outcome` region on EVERY fight profile (incl. the phone profiles, which were `0x0`
+    before), the presenter hosts the full HUD in a vertical `ScrollContainer` (every HUD element reachable, never off-canvas)
+    and renders the log as a newest-line BOTTOM tail, and a light control-band backing replaces the heavy nine-patch frame
+    that swallowed the short bands. `test_tactical_layout_profiles.gd` now pins the new region/reachability math (status holds
+    > one band; log non-empty + reachable + inside content; board stays largest on every profile). The REMAINING open portion
+    is the human-eyes on-screen legibility at 574/774/984 wide (portrait + landscape + a mid-fight resize) at the 1.0x and
+    2.0x text scale — carried into the OSG-1 on-device checklist; the checkbox stays OPEN until that physical-device pass.
 
 ---
 
