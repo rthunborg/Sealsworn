@@ -3,7 +3,7 @@ baseline_commit: 1e70f83908098fe69b46f9c28cac98ca1981e5e4
 ---
 # Story 15.1: HUD and Log Layout Clip Fix
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
