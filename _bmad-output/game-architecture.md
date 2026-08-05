@@ -409,6 +409,12 @@ Validation must check at least:
 
 Generator validation failures must produce seed, phase, reason, and compact debug output. Future authored templates can feed the same pipeline as constrained inputs.
 
+> **Epic 16 extends this pipeline.** A BSP room/corridor **structure phase** is inserted ahead of blocker
+> placement, structural filler makes reachability a *proven* rather than *constructed* property, and three
+> size classes replace two. The phase order, the new fixed draws, the connectivity/fightability validator,
+> and the re-pin plan are specified in **Dungeon Generation Architecture (Epic 16)** below. Read that
+> section before touching `scripts/generation/level/`.
+
 ### Rules And Effects
 
 **Approach:** extensible Sealsworn rules kernel.
@@ -528,6 +534,490 @@ Accepted because the MVP should prove the core game while preserving deeper futu
 
 **ADR-003: Automation helps balance, but does not replace design judgment.**  
 Accepted because headless simulation, bot playtests, and ML-assisted analysis can expose difficulty curves and exploits, while human playtesting remains necessary for game feel.
+
+**ADR-004: Structural filler reuses `Terrain.WALL`; there is no unreachable terrain kind.**
+
+Accepted because WALL already blocks movement and line of sight, already serializes, and is already honored by every board consumer — so the unreachable-cell invariant is inherited rather than re-implemented across twenty files. See *Dungeon Generation Architecture* §2.
+
+**ADR-005: Exit-based victory requires a new append-only event, not a relaxed `level_victory_reached`.**
+
+Accepted because `remaining_enemy_count == 0` is asserted at three independent enforcement layers, two of which are event-contract validators rather than gameplay branches. Relaxing them would weaken a validated domain contract for every existing consumer. See *Dungeon Generation Architecture* §9.
+
+---
+
+## Dungeon Generation Architecture (Epic 16)
+
+> **Authored:** 2026-08-05 (Game Architect pass) · **Build:** `6b7c4fd` · **Baseline suite:** 205 PASS / 0 FAIL.
+> Companions: `planning-artifacts/design-notes/epic-16-generation-architecture.md` (decisions AD-1..AD-7,
+> OQ-1..OQ-6), `epic-16-design-brief.md` (ratified Q1–Q6), and the `gdd.md` designer pass of 2026-08-05
+> (Enemy Awareness, Level Structure, Size Classes, Run Structure pacing).
+>
+> This section is the technical design that those ratified decisions call for. It is grounded in the
+> shipped generator, not assumed: every claim about current behavior below was read out of
+> `godot/scripts/` at the build above.
+
+### 1. The BSP structure phase and the fixed draw order
+
+The room/corridor algorithm enters as a **new structure phase ahead of the existing placer chain**, not as
+a rewrite of it. The phase emits its **reachable-floor cell list** as the candidate pool, and phases 2–5
+consume that pool through the same shrinking-pool discipline they use today, unchanged.
+
+```
+0. structure   (NEW)  BSP split -> room rects -> corridor carve -> dead-end stubs
+                      emits: terrain grid + reachable_cells[] (the candidate pool)
+1. blockers    (existing, now drawing from reachable_cells minus corridor spine)
+2. wrinkles    (existing, TacticalWrinklePlacer — unchanged)
+3. enemies     (existing, EntityRewardPlacer — unchanged)
+4. rewards     (existing, EntityRewardPlacer — unchanged)
+```
+
+Both `SmallLevelLayoutGenerator` and `MediumLevelLayoutGenerator` (and the new Large generator) share the
+structure phase as a sibling service — the same pattern `TacticalWrinklePlacer` and `EntityRewardPlacer`
+already established. One implementation, three callers.
+
+**The new draws, prepended to the FIXED DRAW ORDER docblock of every generator.** The existing draws keep
+their relative order and their semantics; they simply move down. Every draw routes through
+`GenerationRequest.draw_layout_int` / `draw_layout_float` → `RngStreamSet.STREAM_LEVEL`. No new stream.
+
+| # | Draw | Count | Notes |
+|---|---|---|---|
+| **S1** | `split_depth` | 1 | Over the recipe's BSP depth band. **Always drawn**, even when the band collapses to one value, so the stream advances identically across recipes (the shipped always-fire count-draw discipline). |
+| **S2** | `split_axis` | 1 per internal node | Fixed **pre-order** traversal of the BSP tree. |
+| **S3** | `split_position` | 1 per internal node | Interleaved with S2 per node (axis, then position), not batched. |
+| **S4** | `room_inset` | 4 per leaf | Left/top/right/bottom inset, in **leaf pre-order**. Always drawn even when an inset band collapses. |
+| **S5** | `corridor_bend` | 1 per corridor | Horizontal-first vs vertical-first for the L-carve. Corridors are cut between sibling rooms while **unwinding** the recursion (fixed post-order), so the corridor set is a pure function of the tree. |
+| **S6** | `dead_end_count` | 1 | Over the recipe's dead-end budget band. Always drawn. |
+| **S7** | `dead_end_origin`, `dead_end_length` | 2 per stub | In draw order of S6. |
+
+**The load-bearing property: every draw count must be derivable from earlier draws alone.** S1 fixes the
+tree shape, which fixes the internal-node and leaf counts, which fixes the S2–S5 counts. S6 fixes the S7
+count. No draw count may ever depend on a validation result, a rejection, or a retry — that is what keeps a
+layout a pure function of `(root seed, recipe, starting stream state)`.
+
+**Entrance and exit stay zero-draw.** Today they are fixed coordinates on a reserved central corridor row.
+After the structure phase they become **derived** coordinates: entrance = the room of the first leaf in
+traversal order; exit = the room whose centroid maximizes BFS distance from the entrance over the reachable
+set. Deterministic, no draws, and it maximizes traversal — which is the point of the size classes. The
+reserved-corridor fairness trick disappears with it, which is precisely why §3's validator must now *prove*
+what construction used to *guarantee*.
+
+**Recipe parameters** (OQ-5, ratified additive): `room_count_band`, `corridor_width`, `dead_end_budget`,
+and `bsp_depth_band` are added to `LevelRecipeDefinition` alongside 16.2, as a content-schema change through
+the existing repository boundary.
+
+### 2. The unreachable-cell invariant and the real consumer audit
+
+Filler reuses `BoardCell.Terrain.WALL` (AD-3 / OQ-3 / ADR-004). The invariant — *an unreachable cell is
+never a move target, never a spawn site, never a reward site, never a valid path node* — is therefore
+**enforced at the seam that already exists**: `BoardCell.terrain_blocks_occupancy()` /
+`blocks_movement()` / `blocks_line_of_sight()`, consumed through `BoardState`. No new predicate, no new
+terrain value, no per-consumer patching.
+
+**The audit list in the design note names five consumers. The real production surface is twenty files.**
+Grouped by what 16.2 actually has to do:
+
+**(a) Inherits the invariant for free — no change required.** These already branch on WALL and will treat
+filler correctly the day it appears:
+
+- `tactical_movement_query.gd`, `tactical_path_query.gd` — never route through or land on it
+- `tactical_visibility_query.gd`, `tactical_line_query.gd` — LoS already blocked by WALL
+- `board_state.gd`, `board_cell.gd`, `tactical_entity_state.gd` — occupancy and serialization
+
+> `tactical_line_query.gd` (targeting) is **missing from the design note's audit list** and is a real
+> consumer. It is in group (a), so it needs no work — but it belongs on the list.
+
+**(b) Requires a decision or a change in 16.2:**
+
+| File | What changes |
+|---|---|
+| `entity_reward_placer.gd` | Candidate pool now arrives from the structure phase instead of an open-interior scan. Behavior unchanged; **source** changed. |
+| `tactical_wrinkle_placer.gd` | Same — pool source only. |
+| `level_validator.gd` | **See §3 — two shipped checks break on room/corridor geometry.** |
+| `medium_level_layout_generator.gd` | Owns `validate_readability` and both bounds below. |
+| `darkness_fairness_query.gd` | Fairness math counts WALL cells; filler will inflate the count. Needs re-basing onto the reachable set. |
+| `tactical_board_tap_router.gd` | A tap on filler must resolve as "not a destination" with a cue, not a silent reject. |
+| `tactical_cell_view.gd`, `tactical_occupant_view.gd`, `tactical_board_presenter.gd` | Render filler as structure, not as unexplored dark floor. |
+
+**(c) Excluded by ratified decision:** `boss_arena_builder.gd` (OQ-4 — the arena stays hand-shaped),
+`epic_1_micro_combat_scenario.gd` (fixed Epic-1 fixture), `enemy_definition.gd` (definition data only).
+
+#### ⚠️ Two shipped validators reject BSP layouts by construction
+
+This is the highest-value finding of this pass, and it sits inside the very check the design note describes
+as reusable.
+
+**`MAX_INTERIOR_WALL_RATIO = 0.35`** (`medium_level_layout_generator.gd:116`) rejects any candidate where
+more than 35% of interior cells are WALL. In the open-interior model, interior WALL means **blockers
+scattered in the arena**, so the check reads "do not over-clutter the fight" — a sound bound and a
+well-chosen number. Once structural filler exists, interior WALL means blockers **plus the dungeon itself**.
+The metric conflates two unrelated things: clutter you placed, and space you never carved.
+
+**The consequence, stated precisely.** To pass 0.35 on a Large floor, the interior (24×26 = 624 cells) may
+hold at most 218 WALL — so **≥65% of the interior must be carved floor**. A conventional BSP dungeon carves
+35–55%. Clearing 65% requires rooms so large and dividers so thin that the floor is effectively open again.
+
+So the bound does not merely reject BSP output — **it exerts continuous pressure back toward the open room
+Epic 16 exists to replace.** Two failure modes follow, and the second is the dangerous one:
+
+- **Visible:** a node burns all eight retry attempts and fails. A generator outage, not a tuning miss.
+- **Invisible:** someone tuning room density upward in 16.2 until the check goes green, and quietly shipping
+  an open plan with dividers.
+
+> *Estimate, not measurement:* 35–55% is a general property of BSP generation, not of Sealsworn output —
+> no BSP generator exists here yet. The direction is certain and the bound is certainly exceeded at
+> conventional parameterizations; the exact fraction is for 16.2 to measure.
+
+#### ✅ Ratified resolution (Project Lead, 2026-08-05): re-base the metric onto the carved set
+
+**Redefine the ratio as `placed blockers + wrinkles ÷ carved floor cells`.** Raising the number was
+rejected — a bound of ~0.70 would pass a room stuffed with blockers at 68% filler and become a rubber stamp.
+
+- **Both numbers are already available.** AD-2 requires the structure phase to emit its reachable-floor cell
+  list as the candidate pool, so it lands in the layout dict beside the `blocker_cells` already there. No
+  geometric inference, and no ambiguity about whether a room's perimeter wall counts as clutter.
+- **No signature change.** `validate_readability(layout: Dictionary)` already receives the whole layout dict,
+  and its only two production call sites (`level_generator.gd:187`, `level_validator.gd:260`) already pass it.
+  The change is one function body plus its diagnostic payload.
+- **Keep `0.35`.** The semantics are preserved exactly — *at most 35% of the walkable space you carved may be
+  filled in*. Do not invent a new number; verify this one against the fairness batch in 16.2 and move it only
+  with evidence.
+- **Absent-key fallback protects 16.1.** When the carved-set key is missing — every 16.1 layout, since the
+  open-interior algorithm is unchanged there — the check falls back to the current interior computation.
+  **16.1 behavior is byte-identical.** This is purely a 16.2 concern and does not block starting the epic.
+
+**Rider — add `insufficient_reachable_fraction` (new check).** Once filler exists, nothing bounds it from
+the other direction. A floor must carve at least a minimum share of its grid, so a degenerate BSP cannot put
+three tiny rooms in a 26×28 board. The GDD implies this ("a genuine dungeon level — multiple rooms, real
+traversal") and nothing enforces it today. It becomes violable only in 16.2, so it belongs in that story.
+
+**Rejected alternative worth recording:** giving filler its own `Terrain` value would make the metric work
+untouched, but it reopens AD-3/ADR-004 and trades inheritance across ~20 consumers to fix a metric in one.
+Only three consumers care about the structure/clutter distinction — this check, `darkness_fairness_query`,
+and presentation — and presentation can already distinguish, because `blocker_cells` is in the layout dict.
+
+#### The second collision, and the third consumer to re-base
+
+**`MIN_FIRST_REVEAL_CELLS = 8` within `FIRST_REVEAL_RADIUS = 4`** is marginal rather than fatal: an entrance
+opening into a room passes comfortably; an entrance opening into a 1-wide corridor yields roughly 4–9 cells
+and will fail intermittently. Placing the entrance in a room (§1) largely resolves it. **Verify against real
+BSP output in 16.2 rather than assuming.**
+
+**`darkness_fairness_query.gd`** counts WALL for its fairness math and will be inflated by filler exactly as
+`excessive_blockage` is. Re-base it onto the carved set in the same pass.
+
+Both bounds are test-pinned. Changing `excessive_blockage`'s measured set is a **deliberate behavior change
+to a shipped validator** and must be a named acceptance criterion in 16.2 with recorded justification — not
+slipped in as a refactor. Note the re-pin interaction: the validator alters no terrain, but flipping a
+candidate from reject to accept changes which layout the retry loop returns, so **layout fingerprints move**.
+16.2 is already re-pinning those, which is precisely why the work belongs there and not in 16.1.
+
+### 3. The connectivity and fightability validator (AD-4)
+
+The validator extends `LevelValidator`'s existing shape: separate named checks, a fixed documented
+`CHECK_ORDER`, first-failure short-circuit, compact diagnostics (counts and coordinates, never a grid dump),
+and structured rejection through `GenerationResult` — validate-then-reject, never coerce. It stays a **pure
+query**: no RNG, no commands, no mutation, so the `_layout_draws_only_from_level_stream` assertions stay
+green.
+
+Four checks, appended after the shipped set:
+
+| Code | Proves | Method |
+|---|---|---|
+| `disconnected_reachable_set` | The reachable floor set is **one** component | Single 4-neighbour flood from the entrance; compare the flooded count against the total non-WALL count. A mismatch means a sealed pocket. |
+| `unreachable_exit` | entrance → exit | **Already shipped** (check (a)); no new code, it simply stops being true by construction. |
+| `entity_off_reachable_set` | Every enemy, reward, and entity sits on a reachable cell | Set membership against the §3 flood. Strengthens the shipped `illegal_enemy_placement`, which asserts legality but not reachable-set membership. |
+| `insufficient_fightable_space` | The floor affords its own encounter | See below. |
+
+**Fightable space, defined concretely** — the design note names the requirement but not the measure. A
+floor passes when **at least one room** in the reachable set satisfies both:
+
+- open-cell count ≥ `(enemy_count + 1) × 3`, and
+- a bounding box of at least 3×3.
+
+with per-class floors of **Small ≥ 12, Medium ≥ 20, Large ≥ 30** open cells in that room. The intent is
+narrow and worth stating: this rejects *an encounter jammed into a corridor*. It is **not** a difficulty
+knob and must never become one — it is a geometry guard, and the difficulty non-goal is unaffected.
+
+### 4. Enemy activation on the tactical entity and turn seam
+
+Dormant/awake is tactical truth — it changes whose turn resolves — so it lives on the entity, flows through
+the turn resolver, and is never read from or written to a scene node (AD-5).
+
+- **`TacticalEntityState` gains `awake: bool`, defaulting to `true`.** The default is deliberate: every
+  existing fixture, the Epic-1 scenario, and the boss arena keep their current behavior untouched, and the
+  **generator** is what sets `awake = false` on enemies it places on room/corridor floors. This keeps the
+  16.3 re-pin surface as small as it can be.
+- **`enemy_turn_resolver.gd` skips dormant units** and states why, in the existing AI-explanation language
+  ("dormant: no line of sight"), covered by explanation tests.
+- **Waking emits an append-only tail domain event** (`enemy_awakened`), growing `DomainEvent.Type` by
+  exactly one tail member: **`Type.size()` 44 → 45**, tail `enemy_awakened` at index 44.
+- **Serialization:** `awake` rides `TacticalEntityState.to_dictionary()`, which sits inside the `board` key.
+  `try_from_dictionary` must **default `awake` to `true` when the key is absent**, so pre-16.3 saves and
+  fixtures load unchanged. The entity key-set is pinned by test and that pin moves once, deliberately.
+- **The 23-key `RunSnapshot` gate stays 23** and `SCHEMA_VERSION` stays 1. The in-node fight remains
+  ephemeral; nothing here creates a mid-fight save, which stays out of scope as it has since Epic 11.
+- **No deadlock when every survivor is dormant:** the shipped `WaitCommand` (14.1) lets the player always
+  pass the turn. 16.3 must test it rather than assume it.
+
+> **Sequencing dependency — flag for the Project Lead.** The GDD's awareness guardrail is *"waking may
+> happen unseen; damage may not arrive unannounced."* The second half is satisfied by **Story 15.3 threat
+> telegraphs**, which is still `backlog` in Epic 15 Band 2. If 15.3 slips past 16.3, the guardrail is
+> unenforced and dormant enemies can deliver a first strike from outside the player's line of sight with no
+> telegraph. **16.3 depends on 15.3**; either 15.3 lands first or 16.3 carries a temporary in-story
+> telegraph.
+
+### 5. OQ-2 — the Story 3.6 bounded-retry seam is reusable as-is
+
+**Confirmed: reuse it. No structural change is required.** Story 3.6 shipped
+`_run_layout_phase_with_retry` with `MAX_GENERATION_ATTEMPTS = 8`, and it already does everything Epic 16
+needs: it retries any *recoverable* layout, readability, board-build, or validation failure; it
+short-circuits *unrecoverable* ones; and it stamps `attempts` into every diagnostic.
+
+**One correction to OQ-2's stated premise, and it makes the picture better rather than worse.** OQ-2 says
+*"retries consume `STREAM_LEVEL` draws, so the attempt count must stay fixed and documented in the FIXED
+DRAW ORDER."* The shipped implementation does not work that way. Each attempt constructs a **fresh
+`RngStreamSet.new(attempt_seed)`** (`level_generator.gd:149`); a failed attempt's draws are discarded with
+its stream set, and `_attempt_seed(base, 0) == base` so attempt 0 reproduces the unperturbed layout exactly.
+
+Consequences:
+
+- **Level generation is hermetic.** Retries cannot perturb any other system's stream state, because the
+  generator never touches the run-level stream set at all.
+- **The attempt count does not belong in the fixed draw order** for determinism of downstream systems. What
+  must be documented instead is that the structure draws live *inside* the per-attempt stream, and that
+  attempt 0 must remain byte-identical to the unperturbed seed. That invariant is the fingerprint anchor.
+- The determinism goal OQ-2 was protecting is already achieved, by a stronger mechanism than the one it
+  assumed.
+
+**What 16.2 must actually do to the seam — two small things, neither structural:**
+
+1. **Classify the new validator codes.** `_is_unrecoverable_layout_error` decides what is worth retrying.
+   All four §3 codes are **recoverable** (a different seed produces different geometry). Missing recipe
+   parameters are **unrecoverable**. Misclassifying a recoverable failure burns all eight attempts on a
+   hopeless candidate; misclassifying an unrecoverable one hides a content bug behind a retry.
+2. **Re-derive the attempt bound from measurement, not from a guess.** Eight attempts was sized against a
+   generator whose candidates passed on attempt 0. BSP plus four new invariants has a genuinely non-zero
+   rejection rate. 16.2 should **measure** the rejection rate across the fairness batch and set the bound so
+   the worst case stays inside the NFR4 `< 3s` load budget. Keep it a **fixed, documented constant** either
+   way.
+
+### 6. OQ-6 — round tracking, answered
+
+**The split is confirmed, in three parts.** These are independent and must not be collapsed into one
+another.
+
+**(a) No player-facing turn limit — anywhere, ever.** `interactive_combat_session.gd` imposes no cap today
+and must not gain one. 16.1 should add an explicit regression test asserting the *absence* of a cap, so the
+guarantee is enforced rather than merely intended. This is the ratified Q2 answer and nothing below
+qualifies it.
+
+**(b) `MAX_ROUNDS` becomes a per-size-class harness guard.** It binds only `live_combat_resolver.gd`
+(auto-resolve) and `reference_combat_driver.gd` (the winnability proof), where a `while` loop must
+terminate, and on the cap both fail loud rather than fabricate an outcome. The constant becomes a function
+of size class:
+
+| Class | Cells | Provisional guard | Basis |
+|---|---:|---:|---|
+| Small (~12×12) | 144 | **160** | |
+| Medium (~18×16) | 288 | **256** | Today's Medium (14×12) worst measured proof run is **~39 rounds** against a guard of 64 — only 1.6× headroom, which is why it is fragile. |
+| Large (~26×28) | 728 | **512** | ~2× the linear traversal of Medium at 1 tile/turn, plus room-by-room engagement. |
+
+The governing rule matters more than the numbers: **the guard must be ≥ 4× the worst measured proof run for
+that class**, re-derived in 16.1 and again in 16.2 from the re-proven catalog. Hitting it must always mean
+"this board is broken", never "this fight was long". `64` survives nowhere.
+
+**(c) A real round counter in domain state.** Verified gap: `tactical_turn_state.gd` carries `turn_number`
+but no round counter; the resolvers' `rounds` is a local loop variable, discarded at the end of the fight.
+
+- **`TacticalTurnState` gains `round_number: int`, defaulting to 1**, incremented at the round boundary by
+  the turn resolver, and exposed to the board view model and the combat log so it is addressable by later
+  content (secrets gated on acting before round N, round-keyed unlocks).
+- **A correction to AD-7's cost claim.** AD-7 states the counter does not persist and therefore costs
+  nothing at the save boundary. The 23-key gate is indeed untouched — but `TacticalTurnState.to_dictionary()`
+  is **exact-key pinned by test** and rides the `turn_state` key of `RunSnapshot`. So the counter *is*
+  serializable, the pinned key-set moves once, and `try_from_dictionary` must default `round_number` to 1
+  when the key is absent. Small, but real, and it should be in the story rather than discovered in review.
+  Nothing here creates a mid-fight save; the counter simply does not survive a quit, which is correct.
+
+### 7. The two-phase re-pin and the winnability re-proof
+
+| Story | What moves | What must NOT move |
+|---|---|---|
+| **16.1** | Layout fingerprints (Small/Medium dimensions) + new Large entries; the round-guard constants | The draw order; the algorithm; finale fingerprints |
+| **16.2** | Layout fingerprints (algorithm) + geometry-dependent combat-replay composites; the `excessive_blockage` measured set | Route/finale fingerprints; save schema; the seven named streams |
+
+Each re-pin is re-derived through the existing `tools/dump_*` path **in the same PR**, with the
+justification recorded. Never a hand-edit to make a drifting test pass. This is the project rule and the
+14.1 precedent.
+
+**The schedule is exactly two, as ratified.** Size-class selection (§8) was briefly thought to force a third
+— it does not, provided its draws are appended at the tail of the route draw order. Route fingerprints stay
+in the "must NOT move" column above.
+
+#### ⚠️ The reference driver's hero policies will not survive corridors unassisted
+
+`APPROVED_LIVE_COMBAT_SEED_CATALOG` must be re-derived from live runs for every class at every size class
+after **each** re-pin. That cost is understood. The cost that is routinely underestimated is that the
+**driver itself** needs work, and it should be budgeted inside 16.2 rather than discovered when the catalog
+fails.
+
+The precedent is exact and recent: Story 14.1's corpse-clearing — a far smaller geometry change than this
+one — made Medium seed 512 unwinnable *by the reference kite heuristic*, a legitimate deterministic
+consequence rather than a bug. The driver's policies each encode open-room assumptions:
+
+- **Ranger kiting** assumes a retreat cell always exists that increases distance. In a corridor there is
+  often no such cell; in a dead-end stub the policy retreats *into* the trap and oscillates until the guard
+  fires.
+- **Melee one-at-a-time commit** is arguably *helped* by chokepoints, but its target selection will thrash
+  when pathing through a doorway repeatedly re-orders candidates at equal distance.
+- **Seer-detonation dodging** assumes lateral space to step out of the marked tile. A 1-wide corridor
+  frequently has none.
+
+**Budget "reference driver policy v2" as explicit scope inside 16.2**, with two rules that make every policy
+terminate: a retreat cell must both increase distance *and* not be a dead-end; and when no policy move
+improves the position, the driver **commits to attack** rather than passing. A driver that always makes
+progress is what turns the round guard back into a genuine "broken board" signal.
+
+### 8. Size-class selection — a new weighted draw
+
+The designer pass created this; the design brief did not cover it. Q5 is now concrete depth-weighted bands
+(early 60/35/5, mid 25/60/15, late 10/55/35), with elite nodes shifting one band toward Large and the
+pre-boss node weighting Large heaviest — **positive weights only, never exclusive**.
+
+**What exists today:** size class is not drawn at all. `NodeEnterCommand` reads it from a static
+`NODE_TYPE_SIZE_CLASS` table (combat → Small, elite → Medium), and the command's docblock states it "draws
+ZERO RNG". The value already rides the `node_entered` event payload, so **no event-schema change is needed**.
+
+**Ratified placement (Project Lead, 2026-08-05): appended at the TAIL of `RouteGenerator`'s fixed draw
+order, on the `map` stream, stored on `RouteNode`. This costs ZERO fingerprint movement — see below.**
+
+- **`map`, not `STREAM_LEVEL`.** Size class is a property of the **node**, not of the layout. It must be
+  known *before* `LevelGenerator.generate` is called, because it selects the recipe. And `STREAM_LEVEL` is
+  structurally wrong here: the generator mints its own stream set from `request.level_seed()` on every call,
+  so a `STREAM_LEVEL` draw would return the **same** size class for every node in the run.
+- **Inside `RouteGenerator`, not the orchestrator.** Size class is route-structure truth — the GDD groups
+  affinity assignments with the run map and node structure, and size class is more structural still.
+  `RouteGenerator` already owns node type, depth, links, and clues; this is the same kind of fact.
+- **Appended as step (5), after the shipped (1) non-boss count → (2) column widths → (3) node type + clue →
+  (4) fan-out.** One weighted draw per **size-class-bearing node** (combat and elite only), in ascending
+  `(depth, index)` order. The boss node draws nothing (the arena is authored, OQ-4); compact special nodes
+  (shop, reforge, gambling, event, secret) draw nothing, because they are not combat floors.
+- **The draw count stays derivable from earlier draws.** Node types are fixed by draw (3a), which runs
+  before (5), so *which* nodes draw a size class is a pure function of earlier draws. That is the rule that
+  keeps route generation a pure function of `root_seed`.
+- **`RouteNode` gains an optional `size_class` field.** `try_from_dictionary` already treats
+  `outgoing_link_ids` and `clues` as optional with defaults, so an optional field with a default follows the
+  shipped pattern and **loads old saves unchanged**. It rides `route_state`, so the **23-key gate stays 23**
+  and the value is recorded — a resume reads it back instead of re-drawing. `RunOrchestrator.assign_affinity`
+  remains the precedent for *recording a per-node draw result keyed by node id*.
+- **Recipe lookup becomes `(node_type, size_class) → recipe`**, and a `large_combat_basic` recipe joins the
+  two shipped ones.
+
+**Interaction with §5 (bounded retry): provably none, in both directions.** Size class is fixed before
+`LevelGenerator.generate` is entered. The retry loop mints a fresh `RngStreamSet` from
+`request.level_seed()` and never touches the run-level set or the `map` stream. So retries cannot perturb
+the drawn size class, and the size-class draw cannot be perturbed by how many retries a node consumed. This
+is a structural guarantee, not a convention to be maintained.
+
+#### ✅ Why this moves no fingerprint — the two facts that make it free
+
+An earlier draft of this section escalated size-class selection as a **third re-pin** colliding with the
+ratified two-re-pin schedule. **That escalation was withdrawn on 2026-08-05 after verification. It was
+wrong, and the schedule survives intact.** Two facts, both read out of the shipped code:
+
+1. **There are two independent `map` stream-set instances, not one.** `RouteGenerator.generate()` mints its
+   own `RngStreamSet.new(root_seed)` internally (`route_generator.gd:100`), uses it, and discards it.
+   `RunOrchestrator.start()` separately mints `RngStreamSet.new(root_seed)` (`run_orchestrator.gd:203`) for
+   the run-level set that `assign_affinity` draws on. These are the **only two `map` consumers in the
+   codebase**. So a draw added inside route generation **cannot** perturb affinity, and vice versa — the two
+   fixture families are decoupled.
+2. **The route fingerprint does not cover the field being added.** `RouteGenerator.fingerprint()` is
+   `count|<id:type@depth …>|<links>|boss<depth>` — node count, id, type, depth, outgoing links, boss depth.
+   It does not cover `clues`, and it does not cover a new `size_class` field. The seed-regression suite's
+   route fixture calls that function directly (verified), so there is no second, broader pinning path.
+
+**Therefore:** appending the draws at the tail means draws (1)–(4) run from an identical starting state in
+an identical order, every field the fingerprint covers is byte-identical, and the fingerprint does not move.
+Affinity draws on a different instance over an unchanged node set, so it does not move either.
+**Route fingerprints stay in the "must NOT move" column of §7's table, exactly as ratified.**
+
+#### The coverage this costs, and how to pay for it properly
+
+Keeping `size_class` out of the route fingerprint means a size-class regression is not caught by it. **Do
+not fix that by folding the field into the fingerprint.** That would cost the re-pin this design just
+avoided, and buy weak coverage: a single-route hash barely tests a weighted distribution.
+
+**Add a separate size-class distribution fixture instead**, asserting across a batch of seeds that:
+
+- the depth-weighted bands hold (early 60/35/5, mid 25/60/15, late 10/55/35, within a stated tolerance);
+- elite nodes shift one band toward Large and the pre-boss node weights Large heaviest;
+- **no class is ever zero-probability at any depth** — the positive-weights-only contract (ratified D3),
+  which is the property most likely to be broken silently by a refactor and is invisible to a per-route hash.
+
+That is the contract Q5 actually ratified, and it is better tested here than it ever would have been inside
+the fingerprint.
+
+### 9. Shaping Epic 16 for Epic 17 — and the finding that changes Epic 17's shape
+
+**The designer's lean is confirmed: extend AD-4's validator, do not duplicate it — with one exception that
+must be named now.**
+
+Build AD-4 as a **reachability oracle plus a registered list of satisfiability predicates**, rather than as
+four hard-coded checks. Epic 16 registers exactly one predicate (`encounter_is_engageable`, §3's fightable
+space). Epic 17 registers `none`, `slay_boss`, and `cull_fraction` against the same oracle. The oracle — one
+flood-fill, one reachable set, one membership test — is written once and never rewritten. **The cost today
+is a parameter and an array; the saving in Epic 17 is a rewrite avoided.** That is the single most valuable
+shaping decision available, and it should land in 16.2.
+
+**The exception, and it is a real refinement of the designer's framing.** The three objective kinds are not
+the same species of question. "Is the exit reachable?" and "does a boss exist on this floor?" are geometry.
+"Can ≥50% of this floor's enemies be **defeated** by this class?" is combat — AD-4's flood fill has no model
+of damage, HP, or class kit, so it cannot decide it at any level of extension.
+
+**Ratified split (Project Lead, 2026-08-05): necessary vs. sufficient.**
+
+| | Condition | Owner | Method |
+|---|---|---|---|
+| **Necessary** | ≥2 living enemies (so a 50% threshold is meaningful in whole units); every enemy on the reachable set; `ceil(0.5 × enemy_count)` enemies sit in rooms with fightable space; the exit stays reachable once the threshold is met | **Story 17.1** | AD-4's oracle — pure geometry and counting |
+| **Sufficient** | A class can actually reach the threshold *and then* reach the exit | **Story 17.5** | Reference driver only |
+
+`none` and `slay_boss` are fully satisfiable by the extended AD-4 in 17.1, as the designer scoped them.
+Only `cull_fraction` splits.
+
+This keeps each story's acceptance criteria provable by the tool that story owns. Leaving the whole question
+in 17.1 would put an unanswerable AC inside the validator; moving it wholly to 17.5 would leave no
+generation-time guard at all, permitting degenerate floors — a `cull_fraction` objective on a one-enemy
+floor, or on enemies sealed where the threshold cannot be met. **Neither the "extend, don't duplicate"
+principle nor AD-4's shape changes; only the story boundary does.**
+
+**AD-5 (activation) is the second decision that should be shaped now.** Direction A makes stealth a complete
+strategy, which only works if "unseen" is a real, queryable board property. AD-5's `awake` flag on the
+entity — rather than a presenter-side wake cue — is exactly what a future stealth objective reads. Keeping
+it on the entity seam costs nothing extra today.
+
+#### ⚠️ The exit-victory win condition does not live where the stub says it does
+
+The Epic-17 stub, and the design note's §5b, both locate the win condition at
+`combat_outcome_evaluator.gd` (`living_enemy_count == 0 → victory`). That is where the *branch* is. It is
+not where the *contract* is. `remaining_enemy_count == 0` is asserted at **three independent layers**:
+
+1. **`CombatOutcomeEvaluator.evaluate`** — the gameplay branch (the known one).
+2. **`DomainEvent._validate_level_victory_reached_payload`** — a static event-payload validator that
+   **rejects any `level_victory_reached` payload with `remaining_enemy_count != 0`**.
+3. **`BoardState._validate_level_victory_reached_event`** — an apply-time validator that rejects the event
+   unless the board has **zero living enemies** *and* the payload's `defeated_enemy_ids` equals the board's
+   complete defeated list exactly.
+
+A fourth constraint sits alongside them: `CombatOutcomeState.apply_outcome_event` accepts only
+`LEVEL_VICTORY_REACHED` and `LEVEL_DEFEAT_REACHED` and returns `unsupported_event` for anything else.
+
+**Consequence for Epic 17 (ADR-005):** exit-victory cannot be expressed by flipping a branch. Emitting
+`level_victory_reached` with enemies still alive is rejected twice before it reaches the outcome state.
+The correct shape is a **new append-only tail event** — `level_exit_reached` — with its own payload
+validator and its own `BoardState` apply-time validator, leaving `level_victory_reached`'s meaning and every
+existing consumer untouched. `CombatOutcomeState` then maps the new event to `STATE_VICTORY`. This grows
+`DomainEvent.Type` by one tail member on top of §4's, and it is a materially different (and safer) piece of
+work from what "change the win condition" implies.
 
 ---
 

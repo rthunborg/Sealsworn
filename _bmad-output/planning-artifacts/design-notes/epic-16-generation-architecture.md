@@ -6,6 +6,33 @@
 > owns the technical seams, invariants, and the determinism plan.
 >
 > **Authored:** 2026-07-24 · **Build:** `a78653c` · **Grounded in the shipped generator**, not assumed.
+>
+> ---
+>
+> **⚑ SUPERSEDED IN PART BY THE GENERATION-ARCHITECTURE PASS OF 2026-08-05.** The full technical
+> design now lives in **`../../game-architecture.md` § "Dungeon Generation Architecture (Epic 16)"** —
+> BSP phase and fixed draw order, the real 20-file consumer audit, the connectivity/fightability
+> validator, activation state, the round-tracking split, the re-pin plan, and size-class selection.
+> **This note remains the decision record (AD-1..AD-7, OQ-1..OQ-6); that section is the design.**
+>
+> Three findings from that pass change what is written below. Read them before starting 16.1:
+>
+> 1. **`MAX_INTERIOR_WALL_RATIO = 0.35` rejects BSP layouts by construction** — the shipped
+>    `excessive_blockage` check, which §AD-3 describes as reusable, measures a metric that conflates
+>    placed blockers with structural filler. Left unchanged it pressures the generator back toward the
+>    open room. **✅ RESOLVED 2026-08-05:** re-base the ratio onto the carved set
+>    (`blockers + wrinkles / carved floor`), keep `0.35`, fall back to the current computation when the
+>    carved-cell key is absent so 16.1 is byte-identical, and add `insufficient_reachable_fraction`.
+>    Now an explicit acceptance criterion on Story 16.2. See `game-architecture.md` §2.
+> 2. **OQ-2's premise is corrected** — retries do **not** consume shared `STREAM_LEVEL` draws; each
+>    attempt mints a fresh `RngStreamSet`. The seam is more reusable than OQ-2 assumed. See §5 OQ-2
+>    below and `game-architecture.md` §5.
+> 3. **Size-class selection is a NEW weighted draw — and it costs no fingerprint movement.** Appended
+>    at the **tail** of `RouteGenerator`'s fixed draw order, stored on `RouteNode`. An earlier draft
+>    escalated this as a third re-pin colliding with the two-re-pin schedule; **that escalation was
+>    verified and withdrawn 2026-08-05** — `RouteGenerator` mints its own `map` stream-set instance
+>    (so affinity is decoupled) and `RouteGenerator.fingerprint()` does not cover the new field.
+>    **The ratified two-re-pin schedule stands unchanged.** See `game-architecture.md` §8.
 
 ---
 
@@ -200,6 +227,15 @@ concurrently with this load and must stay responsive.
   stay **fixed and documented in the FIXED DRAW ORDER** — otherwise a seed's layout depends on how
   many retries occurred. *Architect action: confirm the 3.6 retry seam is reusable as-is, or state
   what must change.*
+  > **✅ ANSWERED 2026-08-05 — the seam is reusable AS-IS; no structural change.** And the premise
+  > above is **corrected**: retries do *not* consume shared `STREAM_LEVEL` draws. Each attempt builds
+  > a **fresh `RngStreamSet.new(attempt_seed)`** (`level_generator.gd:149`), with
+  > `_attempt_seed(base, 0) == base`, so a failed attempt's draws are discarded with its stream set
+  > and level generation is **hermetic** — it never touches the run-level stream set. The attempt
+  > count therefore does not belong in the fixed draw order; the invariant to document is that
+  > **attempt 0 stays byte-identical to the unperturbed seed**. Two non-structural tasks for 16.2:
+  > classify the new validator codes as recoverable, and re-derive the attempt bound from a measured
+  > rejection rate inside the NFR4 `< 3s` budget. Full analysis: `game-architecture.md` §5.
 - **OQ-3 — Filler representation. → Reuse `Terrain.WALL`** (AD-3). Inherits movement-blocking,
   sight-blocking, serialization, and every existing consumer's handling, so the unreachable-cell
   invariant is inherited rather than re-implemented.
@@ -230,7 +266,25 @@ table against the real code** — it was compiled from targeted greps, not a ful
 **now** to make Epic 17 cheaper later. AD-4 is the obvious candidate — a validator designed with
 objective-satisfiability in mind costs little today and avoids a rewrite in Epic 17.
 
-## 5c. Remaining open question
+> **✅ DONE 2026-08-05.** The stub was reviewed and corrected in place (see its §8 change record).
+> Headline results:
+>
+> - **§2.2's impact table was wrong in both directions.** The **interactive tap loop** — the path a
+>   human actually plays — was missing from the consumer list, and the **finale path is not a
+>   consumer at all** (the boss chain never touches `CombatOutcomeEvaluator`).
+> - **The win condition is a validated EVENT CONTRACT, not a branch.** `remaining_enemy_count == 0`
+>   is enforced at **three independent layers**, two of them event-payload validators. Exit-victory
+>   needs a **new append-only `level_exit_reached` event**, not a relaxed existing one (**E17-Q6**).
+> - **AD-4 shaping: confirmed and acted on.** The validator is specified in `game-architecture.md`
+>   §3/§9 as a **reachability oracle + registered satisfiability predicates**. Epic 16 registers one;
+>   Epic 17 registers its objective kinds against the same oracle. **One refinement, ratified
+>   2026-08-05:** `cull_fraction` splits **necessary/sufficient** — the geometry-and-count guard stays
+>   in story 17.1 (AD-4 can prove it), the winnability question moves to 17.5 (only the reference
+>   driver can). `none` and `slay_boss` stay wholly in 17.1.
+> - **AD-5 added as a second shaping decision** — stealth needs `awake` to be a queryable *board*
+>   property, so keeping activation on the entity seam (not the presenter) is what Epic 17 reads.
+
+## 5c. Remaining open question — ✅ NOW CLOSED
 
 - **OQ-6 — Round-cap disposition.** Design **Q2** ratified that there is **no turn limit for
   levels**, but that **round/turn count must still be tracked** (secrets and unlocks may key off it).
@@ -239,6 +293,26 @@ objective-satisfiability in mind costs little today and avoids a rewrite in Epic
   100 rounds. **Architect action:** confirm the split — an explicit, generous per-size-class harness
   cap (low hundreds for Large, not 64), a round counter surfaced as durable run data, and no
   player-facing turn limit anywhere.
+  > **✅ ANSWERED 2026-08-05 — the three-part split is CONFIRMED.** Full specification in
+  > `game-architecture.md` §6.
+  >
+  > **(a) No player-facing limit, anywhere.** `interactive_combat_session.gd` has none and must not
+  > gain one; **16.1 adds a regression test asserting the absence of a cap**, so the guarantee is
+  > enforced rather than intended.
+  >
+  > **(b) Per-size-class harness guard.** Provisional: Small **160**, Medium **256**, Large **512**.
+  > `64` survives nowhere. The governing rule outranks the numbers: **the guard must be ≥ 4× the
+  > worst measured proof run for that class**, re-derived in 16.1 and again in 16.2. (Today's Medium
+  > worst is ~39 against a guard of 64 — only 1.6× headroom, which is exactly why it is fragile.)
+  >
+  > **(c) A real round counter.** `TacticalTurnState` gains `round_number: int = 1`, incremented at
+  > the round boundary, exposed to the view model and combat log.
+  >
+  > **⚠️ One correction to AD-7's cost claim.** AD-7 says the counter does not persist and therefore
+  > costs nothing at the save boundary. The 23-key gate is indeed untouched — but
+  > `TacticalTurnState.to_dictionary()` is **exact-key pinned by test** and rides the `turn_state`
+  > key of `RunSnapshot`. So the pinned key-set moves once and `try_from_dictionary` must default
+  > `round_number` to 1 when absent. Small, real, and it belongs in the story rather than in review.
 
 ## 6. Story-readiness checklist
 
