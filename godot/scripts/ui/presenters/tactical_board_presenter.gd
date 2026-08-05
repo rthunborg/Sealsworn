@@ -141,6 +141,10 @@ const ATTACK_HIGHLIGHT_COLOR := Color(0.98, 0.45, 0.38, 0.7)
 # Story 14.11 (Task 1/2) — the HP-bar min height fallback when the Theme's HudHpBar `bar_height` constant is
 # unresolved (graceful degradation — never a zero-height bar). The shipped value lives in the Theme (folded 14.10).
 const HUD_HP_BAR_FALLBACK_HEIGHT := 10
+# Story 15.1 (F1/F2) — the HUD/log control bands host their content inside a light flat backing (replacing the heavy
+# nine-patch panel frame on these short bands) with a small uniform content inset so text clears the region edges. A
+# structural region inset applied to the whole content container, never a per-label position offset.
+const CONTROL_BAND_CONTENT_INSET := 6.0
 # Story 14.3 (AC2/F8) — the combat feedback ANIMATION channels. The hit/death/telegraph cues are each a TRANSIENT,
 # self-freeing overlay node tweened by a bounded Godot Tween (NOT a per-frame _process redraw loop — the board grid's
 # one-draw-per-render perf rule stays intact once the short tween completes). The MOVE is a REAL sprite slide (Round-1
@@ -359,6 +363,8 @@ func _build_regions() -> void:
 			_board_grid.size = panel.size
 			_board_grid.cell_tapped.connect(_on_board_grid_tapped)
 			panel.add_child(_board_grid)
+		elif region_name == "log_or_outcome":
+			_configure_log_region(panel, label)
 	_build_wait_control()
 	_build_confirm_cancel_controls()
 	_build_hud_controls()
@@ -962,15 +968,37 @@ func _build_hud_controls() -> void:
 	if host == null:
 		host = self
 	if host is Panel:
-		(host as Panel).clip_contents = true
+		var status_panel := host as Panel
+		status_panel.clip_contents = true
+		# Story 15.1 (F1) — replace the heavy 24px nine-patch panel frame on this SHORT band with a light flat
+		# backing: the fixed-pixel frame border (project-context nine-patch gotcha) consumed the band + overlapped
+		# the first glyphs. A subtle dark box keeps the HUD legible without the frame swallowing content.
+		status_panel.add_theme_stylebox_override("panel", _control_band_backing())
+	# Story 15.1 (F1) — host the stacked HUD in a vertical ScrollContainer so the FULL HUD (nine labels + an HP bar)
+	# stays REACHABLE inside its bounded status region at every window size: it scrolls when the region cannot show
+	# it all at once, rather than overflowing off-canvas / clipping (the F1 root symptom). The board must stay the
+	# largest region, so a bounded region + scroll is the lever, not an unbounded band grow. Horizontal scroll is
+	# disabled (labels wrap to width, never clip sideways); vertical scroll is automatic (engages only on overflow).
+	# The scroll rides the existing event-driven resize path for free (its FULL_RECT anchors re-flow with the panel).
+	var scroll := ScrollContainer.new()
+	scroll.name = "hud_scroll"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	host.add_child(scroll)
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_inset_full_rect(scroll, CONTROL_BAND_CONTENT_INSET)
 	_hud_box = VBoxContainer.new()
 	_hud_box.name = "hud_box"
+	# Every HUD CHILD stays mouse-IGNORE so it never eats a board tap. The ScrollContainer itself must accept input
+	# to be drag-scrollable on touch, but it lives in the status region (never over the board — the board is a
+	# separate region/panel), so it cannot steal a board tap.
 	_hud_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# Story 14.11 (Task 1/2) — the HUD VBox separation folds into the Theme (HudBox variation), not a hardcoded
 	# per-widget override (deferred-work.md:1512).
 	_hud_box.theme_type_variation = &"HudBox"
-	host.add_child(_hud_box)
-	_hud_box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# Fill the scroll width so labels wrap to it (h-scroll disabled); its height is its content min height (scrolls).
+	_hud_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(_hud_box)
 	# The prominent turn indicator: its font (folded 14.10 `22`) + the active-turn emphasis now come from the
 	# Theme (HudTurnLabel / HudTurnLabelActive variations; the active one is set per-render from turn_is_player).
 	_hud_turn_label = _add_hud_label(&"HudTurnLabel")
@@ -1000,6 +1028,9 @@ func _build_hud_controls() -> void:
 func _add_hud_label(type_variation: StringName) -> Label:
 	var label: Label = Label.new()
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Story 15.1 (F1/NFR9) — wrap long HUD lines (the legend / affinity badge) to the region width instead of
+	# clipping them off an edge; the ScrollContainer disables horizontal scroll, so word-wrap is the horizontal fit.
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	if type_variation != &"":
 		label.theme_type_variation = type_variation
 	_hud_box.add_child(label)
@@ -1012,6 +1043,43 @@ func _hud_bar_height() -> int:
 	if _hud_hp_bar != null and _hud_hp_bar.has_theme_constant("bar_height", "HudHpBar"):
 		return _hud_hp_bar.get_theme_constant("bar_height", "HudHpBar")
 	return HUD_HP_BAR_FALLBACK_HEIGHT
+
+
+# Story 15.1 (F2) — configure the log region so it renders the NEWEST combat lines (a live tail). TacticalCombatLogView
+# already tail-limits newest-LAST; bottom-aligning the joined block pins the newest line to the panel BOTTOM so older
+# lines overflow the (clipped) TOP — the opposite of the stale-head symptom where the newest lines overflowed
+# invisibly BELOW a top-aligned block. A light flat backing replaces the heavy 24px nine-patch frame that consumed the
+# short band + overlapped the first glyphs (the F1 left-edge symptom), and a uniform content inset + word-wrap keep
+# every line fully on-canvas (including at the 2.0x text scale). The log rides the resize path via its FULL_RECT anchors.
+func _configure_log_region(panel: Panel, label: Label) -> void:
+	panel.clip_contents = true
+	panel.add_theme_stylebox_override("panel", _control_band_backing())
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_inset_full_rect(label, CONTROL_BAND_CONTENT_INSET)
+
+
+# Story 15.1 (F1/F2) — a LIGHT flat backing for the short HUD/log control bands, replacing the heavy nine-patch
+# `panel_frame` StyleBox that (per the project-context nine-patch gotcha) draws its border at ~24 control px 1:1 with
+# no downscale — on a short band that border consumed the band vertically and overlapped the first glyphs
+# horizontally (the F1 clip / left-edge symptom). A subtle dark box keeps light text legible with NO thick border so
+# content is never swallowed. Presenter-local override only — the shared Theme + the board/reward frames are
+# untouched (visual framing polish is Story 15.10).
+func _control_band_backing() -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.06, 0.06, 0.09, 0.82)
+	box.set_corner_radius_all(4)
+	return box
+
+
+# Uniform content inset for a PRESET_FULL_RECT child (keeps text off the region edges). A structural inset applied to
+# the whole region-content container, NOT a per-label position hack (AC1 forbids nudging individual label offsets).
+func _inset_full_rect(control: Control, inset: float) -> void:
+	control.offset_left = inset
+	control.offset_top = inset
+	control.offset_right = -inset
+	control.offset_bottom = -inset
 
 # --- Story 14.3: the in-combat move/hit/death/telegraph feedback animation (AC2/F8) ----------------------------
 

@@ -34,6 +34,16 @@ const DEFAULT_MINIMUM_TOUCH_TARGET: Vector2 = Vector2(44.0, 44.0)
 const COMPACT_SPACING: float = 8.0
 const COMFORTABLE_SPACING: float = 12.0
 
+# Story 15.1 (F1/F2) — the stacked lower-edge control-band height fractions (of the content height), kept as named
+# constants so later device-tier work can tune them without rewriting tests. `preview`/`confirm_cancel`/`inspect`
+# each get one base band; `status` carries the stacked HUD (nine labels + an HP bar) so it is the tallest control
+# band; `log_or_outcome` is a real newest-line combat-log tail strip. Every band still clamps to a >=44px reachable
+# floor and the board stays the largest region (a presenter scroll affordance absorbs HUD overflow instead of
+# growing the band unbounded). The side-rail (phone landscape) uses proportional weights, not these fractions.
+const STATUS_BASE_BAND_FRACTION: float = 0.07
+const STATUS_HUD_BAND_FRACTION: float = 0.18
+const LOG_BAND_FRACTION: float = 0.11
+
 const DEFAULT_CONTENT_SCALE: float = 1.0
 const MIN_CONTENT_SCALE: float = 0.5
 const MAX_CONTENT_SCALE: float = 4.0
@@ -167,39 +177,44 @@ func _build_layout() -> void:
 ## reachable control bands beneath it along the lower edge.
 func _build_stacked_layout() -> void:
 	var area: Rect2 = _content_area
-	var control_height: float = maxf(_minimum_touch_target.y, area.size.y * 0.07)
-	# Four stacked control bands: preview, confirm/cancel, inspect, status.
-	var bands: int = 4
-	var controls_total: float = control_height * float(bands)
-	# Reserve room for an optional log/outcome strip on wider, taller profiles.
-	var log_height: float = 0.0
-	if _profile_id == PROFILE_DESKTOP or _profile_id == PROFILE_TABLET:
-		log_height = maxf(_minimum_touch_target.y, area.size.y * 0.06)
-	var board_height: float = area.size.y - controls_total - log_height
-	# Guarantee the board stays the largest region even on short content areas.
-	var min_board_height: float = controls_total + log_height + 1.0
+	# preview / confirm_cancel / inspect each get one reachable control band (>=44px).
+	var base_control: float = maxf(_minimum_touch_target.y, area.size.y * STATUS_BASE_BAND_FRACTION)
+	# Story 15.1 (F1): the status region hosts the stacked player HUD (nine labels + an HP bar), so it gets a
+	# taller BOUNDED band (>= two touch targets) instead of a single ~7% band — a one-band status starved the
+	# HUD and `clip_contents` hid the overflow. The band stays bounded (the presenter scrolls any remainder) so
+	# the board stays the largest region; growing it unbounded is what the scroll affordance exists to avoid.
+	var status_height: float = maxf(_minimum_touch_target.y * 2.0, area.size.y * STATUS_HUD_BAND_FRACTION)
+	# Story 15.1 (F2): a REAL log/outcome strip on EVERY stacked profile (it was 0x0 on phone_portrait and only
+	# ~6% on desktop/tablet), so the newest combat lines are actually surfaced. At least one touch target tall.
+	var log_height: float = maxf(_minimum_touch_target.y, area.size.y * LOG_BAND_FRACTION)
+	# Five stacked bands beneath the board: preview, confirm_cancel, inspect, status (tall), log_or_outcome.
+	var controls_total: float = base_control * 3.0 + status_height + log_height
+	var board_height: float = area.size.y - controls_total
+	# The board MUST stay the largest region (test invariant). On a short content area where the >=44/88px floors
+	# would starve it, keep the board at least half the height (and thus >= the tallest control band) and scale the
+	# control bands down proportionally to fit the remainder — a genuinely degenerate viewport then reports its
+	# slots non-reachable honestly rather than overflowing.
+	var min_board_height: float = maxf(area.size.y * 0.5, status_height + 1.0)
 	if board_height < min_board_height:
-		board_height = maxf(area.size.y * 0.5, board_height)
-		var remaining: float = area.size.y - board_height
-		control_height = maxf(1.0, (remaining - log_height) / float(bands))
-		if log_height > remaining - control_height * float(bands):
-			log_height = maxf(0.0, remaining - control_height * float(bands))
+		board_height = min_board_height
+		var remaining: float = maxf(0.0, area.size.y - board_height)
+		var scale: float = remaining / controls_total if controls_total > 0.0 else 0.0
+		base_control *= scale
+		status_height *= scale
+		log_height *= scale
 
 	var cursor_y: float = area.position.y
 	_regions["board"] = _make_rect(area.position.x, cursor_y, area.size.x, board_height)
 	cursor_y += board_height
-	_regions["preview"] = _make_rect(area.position.x, cursor_y, area.size.x, control_height)
-	cursor_y += control_height
-	_regions["confirm_cancel"] = _make_rect(area.position.x, cursor_y, area.size.x, control_height)
-	cursor_y += control_height
-	_regions["inspect"] = _make_rect(area.position.x, cursor_y, area.size.x, control_height)
-	cursor_y += control_height
-	_regions["status"] = _make_rect(area.position.x, cursor_y, area.size.x, control_height)
-	cursor_y += control_height
-	if log_height > 0.0:
-		_regions["log_or_outcome"] = _make_rect(area.position.x, cursor_y, area.size.x, log_height)
-	else:
-		_regions["log_or_outcome"] = _empty_rect()
+	_regions["preview"] = _make_rect(area.position.x, cursor_y, area.size.x, base_control)
+	cursor_y += base_control
+	_regions["confirm_cancel"] = _make_rect(area.position.x, cursor_y, area.size.x, base_control)
+	cursor_y += base_control
+	_regions["inspect"] = _make_rect(area.position.x, cursor_y, area.size.x, base_control)
+	cursor_y += base_control
+	_regions["status"] = _make_rect(area.position.x, cursor_y, area.size.x, status_height)
+	cursor_y += status_height
+	_regions["log_or_outcome"] = _make_rect(area.position.x, cursor_y, area.size.x, log_height)
 
 
 ## Landscape phone: board prioritized on the left, controls relocated to a right-side rail
@@ -211,21 +226,23 @@ func _build_side_rail_layout() -> void:
 	var rail_x: float = area.position.x + board_width
 	_regions["board"] = _make_rect(area.position.x, area.position.y, board_width, area.size.y)
 
-	# Stack the four primary controls vertically inside the right rail.
-	var bands: int = 4
-	var band_height: float = maxf(_minimum_touch_target.y, area.size.y / float(bands))
-	# Avoid overflow if the rail is too short for four full bands.
-	if band_height * float(bands) > area.size.y:
-		band_height = area.size.y / float(bands)
+	# Story 15.1 (F1/F2) — five stacked bands in the right rail: preview, confirm_cancel, inspect, status (the tall
+	# stacked HUD), and a REAL log_or_outcome tail (it was `_empty_rect()` before, so the log was invisible in
+	# landscape). The status band carries DOUBLE weight for the HUD (the presenter scrolls any remainder); every
+	# band stays a reachable >=44px target while the rail can afford it. Weights sum to 6 so the bands tile the rail
+	# exactly. The board (full-height, left) stays the largest region.
+	var weight_units: float = 6.0
+	var unit: float = area.size.y / weight_units
 	var cursor_y: float = area.position.y
-	_regions["preview"] = _make_rect(rail_x, cursor_y, rail_width, band_height)
-	cursor_y += band_height
-	_regions["confirm_cancel"] = _make_rect(rail_x, cursor_y, rail_width, band_height)
-	cursor_y += band_height
-	_regions["inspect"] = _make_rect(rail_x, cursor_y, rail_width, band_height)
-	cursor_y += band_height
-	_regions["status"] = _make_rect(rail_x, cursor_y, rail_width, band_height)
-	_regions["log_or_outcome"] = _empty_rect()
+	_regions["preview"] = _make_rect(rail_x, cursor_y, rail_width, unit)
+	cursor_y += unit
+	_regions["confirm_cancel"] = _make_rect(rail_x, cursor_y, rail_width, unit)
+	cursor_y += unit
+	_regions["inspect"] = _make_rect(rail_x, cursor_y, rail_width, unit)
+	cursor_y += unit
+	_regions["status"] = _make_rect(rail_x, cursor_y, rail_width, unit * 2.0)
+	cursor_y += unit * 2.0
+	_regions["log_or_outcome"] = _make_rect(rail_x, cursor_y, rail_width, unit)
 
 
 func _build_control_slots() -> void:

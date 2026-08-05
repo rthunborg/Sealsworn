@@ -74,6 +74,8 @@ func _resolves_phone_portrait_with_board_first_priority() -> void:
 	assert_true(_board_is_largest_region(regions), "Phone portrait board region must be the largest first-priority region.")
 	assert_true((profile.get("cue_ids", []) as Array).has("layout_profile_phone_portrait"), "Phone portrait should expose its profile cue id.")
 	_assert_primary_controls_reachable_inside_content(profile)
+	_assert_status_region_holds_hud(profile, "Phone portrait")
+	_assert_log_region_surfaced(profile, "Phone portrait")
 
 
 func _resolves_phone_landscape_with_side_panels() -> void:
@@ -91,6 +93,8 @@ func _resolves_phone_landscape_with_side_panels() -> void:
 	assert_true(float(confirm_region.get("width", 0.0)) < float(profile.get("content_area", {}).get("width", 0.0)), "Phone landscape should move confirm/cancel to a side region, not full width.")
 	assert_true(_area(board_region) > 0, "Phone landscape board region should be non-empty.")
 	_assert_primary_controls_reachable_inside_content(profile)
+	_assert_status_region_holds_hud(profile, "Phone landscape")
+	_assert_log_region_surfaced(profile, "Phone landscape")
 
 
 func _resolves_tablet_for_tablet_fixtures() -> void:
@@ -108,6 +112,10 @@ func _resolves_tablet_for_tablet_fixtures() -> void:
 	assert_true((portrait_tablet.get("cue_ids", []) as Array).has("layout_profile_tablet"), "Tablet should expose its profile cue id.")
 	_assert_primary_controls_reachable_inside_content(portrait_tablet)
 	_assert_primary_controls_reachable_inside_content(landscape_tablet)
+	_assert_status_region_holds_hud(portrait_tablet, "Tablet portrait")
+	_assert_log_region_surfaced(portrait_tablet, "Tablet portrait")
+	_assert_status_region_holds_hud(landscape_tablet, "Tablet landscape")
+	_assert_log_region_surfaced(landscape_tablet, "Tablet landscape")
 
 
 func _resolves_desktop_for_wide_fixture() -> void:
@@ -120,6 +128,8 @@ func _resolves_desktop_for_wide_fixture() -> void:
 	assert_equal(profile.get("density"), "comfortable", "Desktop should use comfortable density.")
 	assert_true((profile.get("cue_ids", []) as Array).has("layout_profile_desktop"), "Desktop should expose its profile cue id.")
 	_assert_primary_controls_reachable_inside_content(profile)
+	_assert_status_region_holds_hud(profile, "Desktop")
+	_assert_log_region_surfaced(profile, "Desktop")
 
 
 func _exposes_stable_orientation_ids() -> void:
@@ -174,6 +184,8 @@ func _safe_area_shrinks_content_area_and_keeps_controls_inside() -> void:
 	assert_true(float(content_area.get("height", 0.0)) < 844.0, "Safe area should shrink the content area below the raw viewport height.")
 	assert_true((profile.get("cue_ids", []) as Array).has("layout_safe_area_applied"), "Applied safe area should expose a stable cue id.")
 	_assert_primary_controls_reachable_inside_content(profile)
+	_assert_status_region_holds_hud(profile, "Safe-area phone portrait")
+	_assert_log_region_surfaced(profile, "Safe-area phone portrait")
 	# Every region must also stay inside the safe-area-derived content area.
 	var regions: Dictionary = profile.get("regions", {})
 	for region_name: String in REQUIRED_REGIONS:
@@ -445,6 +457,31 @@ func _assert_primary_controls_reachable_inside_content(profile: Dictionary) -> v
 		assert_true(_rect_inside(region, content_area), "Control %s region %s must stay inside the content area." % [control_name, region_name])
 		assert_true(float(region.get("width", 0.0)) >= float(minimum_touch_target.get("x", 0.0)), "Control %s region must be at least one touch target wide." % control_name)
 		assert_true(float(region.get("height", 0.0)) >= float(minimum_touch_target.get("y", 0.0)), "Control %s region must be at least one touch target tall." % control_name)
+
+
+# Story 15.1 (F2) — the log_or_outcome region must be a REAL, reachable strip on every profile a live fight uses
+# (it was 0x0 on the phone profiles and only ~6% on desktop/tablet, so the newest combat lines rendered invisibly).
+# It must be non-empty, at least one touch target in each dimension, and inside the content area.
+func _assert_log_region_surfaced(profile: Dictionary, label: String) -> void:
+	var regions: Dictionary = profile.get("regions", {})
+	var log_region: Dictionary = regions.get("log_or_outcome", {})
+	var content_area: Dictionary = profile.get("content_area", {})
+	var minimum_touch_target: Dictionary = profile.get("minimum_touch_target", {})
+	assert_true(_area(log_region) > 0, "%s must surface a non-empty log_or_outcome region." % label)
+	assert_true(float(log_region.get("width", 0.0)) >= float(minimum_touch_target.get("x", 0.0)), "%s log region must be at least one touch target wide." % label)
+	assert_true(float(log_region.get("height", 0.0)) >= float(minimum_touch_target.get("y", 0.0)), "%s log region must be at least one touch target tall." % label)
+	assert_true(_rect_inside(log_region, content_area), "%s log region must stay inside the content area." % label)
+
+
+# Story 15.1 (F1) — the status (HUD) region stacks nine labels + an HP bar, so it must hold MORE than a single ~44px
+# control band (the one-band starvation was the clip root cause). It gets at least two touch targets of height (the
+# presenter scrolls any remainder); the board must still be the largest region so the band stays bounded.
+func _assert_status_region_holds_hud(profile: Dictionary, label: String) -> void:
+	var regions: Dictionary = profile.get("regions", {})
+	var status_region: Dictionary = regions.get("status", {})
+	var minimum_touch_target: Dictionary = profile.get("minimum_touch_target", {})
+	assert_true(float(status_region.get("height", 0.0)) >= float(minimum_touch_target.get("y", 0.0)) * 2.0 - 0.01, "%s status region must hold more than a single control band for the stacked HUD." % label)
+	assert_true(_board_is_largest_region(regions), "%s board must remain the largest region after the HUD/log reallocation." % label)
 
 
 func _board_is_largest_region(regions: Dictionary) -> bool:

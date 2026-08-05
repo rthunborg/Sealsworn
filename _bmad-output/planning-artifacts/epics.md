@@ -526,6 +526,22 @@ The MVP loop is genuinely **finishable and readable** (no soft-lock, visible pre
 
 **Implementation notes:** Added 2026-07-16 via sprint change proposal (see `sprint-change-proposal-2026-07-16.md`) after an agent-driven desktop playtest found the built game is not honestly finishable (F1 mid-fight soft-lock) and looks unfinished (F9–F16) (record: `playtest-sessions/agent-playtest-2026-07-16.md`). **Executes after Epic 13 as the second pre-ship backlog epic**, in two bands ordered so the game becomes finishable before it becomes pretty: **Band 1 (Stories 14.1–14.7)** makes the loop finishable + readable (F1–F8, F11, F12); **Band 2 (Stories 14.8–14.11)** makes it presentable (F13, F14, F9/F10, F15/F16). Adopts four overlapping `deferred-work.md` items (reward-overlay geometry + passive-confirm `display_name` → 14.11; full-backpack escape hatch → 14.7; run-summary outcome label/F-2 → 14.5). Additive over pinned contracts: the two domain touches (14.1 corpse-clearing + `WaitCommand`; 14.7 a reward decline/skip command) follow the 4.3 command idiom (validate-before-mutate, append-only tail event, named-stream/zero-RNG, 23-key gate held); every generator/route/finale/combat seed-regression fingerprint stays byte-identical **except** Story 14.1's justified combat-replay re-pin (corpse-clearing changes movement legality — re-pinned via the dump tools in the same PR, generation/route layout fingerprints untouched). No GDD/architecture/narrative/FR-map change; no new autoload; difficulty stays a hard non-goal.
 
+### Epic 15: Playtest Response
+
+The loop Epic 14 made completable becomes **readable and correct**: the HUD stops clipping off-canvas, the attack-preview number matches the damage dealt, a run can be quit and resumed, threats telegraph before they detonate, event nodes and the run summary report real outcomes, and movement animates instead of teleporting.
+
+**FRs covered:** the readability + correctness delivery of FR9/FR10 (a preview number that matches the resolved damage), FR1/FR28 (quit + resume a run in progress), FR22/FR69 (combat feedback, incl. threat telegraphs and animated movement/deaths), FR32/FR60/FR61/FR62 (run-end economy: shard award, event-node outcomes, run summary), FR52 (reward-offer relevance), and the FR68 UI-flow set (HUD, reward modal, hero select, copy), under NFR9. Primary FR-to-epic assignments in the FR Coverage Map are unchanged.
+
+**Implementation notes:** Added 2026-07-24 via sprint change proposal (see `sprint-change-proposal-2026-07-24.md`) after the post-Epic-14 agent playtest confirmed the loop is completable end-to-end for the first time but found 20 findings (record: `playtest-sessions/agent-playtest-2026-07-20.md`; triage `playtest-sessions/agent-playtest-2026-07-20-triage.md`). **Executes after Epic 14 as the third pre-ship playtest-response epic**, in three bands: **Band 1 (Story 15.1)** is the readability hotfix that un-hides most of Epic 14's UI and lands first and alone; **Band 2 (Stories 15.2–15.7)** fixes correctness and unwired surfaces; **Band 3 (Stories 15.8–15.12)** delivers presentation and feel, including movement animation. Four design decisions were ratified by the Project Lead on 2026-07-24 and are carried in-line on their owning stories (D1 HP persistence → 15.5; D2 move-confirm with a settings opt-out → 15.7; D3 positive class weighting → 15.6; D4 shards awarded on death → 15.5). **Epic 15 moves NO seed-regression fingerprint.** Two domain-rule touches: 15.5 reverses the Story-8.3 death-awards-nothing decision (`MetaAwardRules`, with its tests updated) and makes hero HP persist across nodes; 15.7 adds a settings preference key. No GDD/architecture change; no new autoload; difficulty stays a hard non-goal.
+
+### Epic 16: Dungeon Generation, Scale & Awareness
+
+Tactical floors become **large multi-room dungeons** — rooms, corridors, dead-ends, and structural filler that is not all reachable — across Small, Medium, and a new Large size class, viewed at a camera that defaults further out, with enemies that wake on their own line of sight instead of activating all at once.
+
+**FRs covered:** extends the Epic-3 procedural-generation FR set (deterministic seeded layout generation, tactical wrinkles, reachability validation) to a multi-room generator and three size classes; extends the Epic-1/Epic-12 enemy-behavior FRs with a sight-based activation model; touches the FR68 UI-flow set for board readability at scale, under the NFR performance budgets. **A new enemy-awareness FR and the level-structure/size-class design update are expected outputs of the pre-epic GDD pass** — the FR Coverage Map is updated there, not by this entry.
+
+**Implementation notes:** Added 2026-07-24 via the same sprint change proposal (`sprint-change-proposal-2026-07-24.md`) from a directed design expansion. **Executes after Epic 15.** The core loop and route/node model are UNCHANGED — a node is still one fight the player clears; only the floor geometry, its scale, and enemy activation change. **This is the most architecture-sensitive epic in the project so far and REQUIRES a GDD pass + a generation-architecture note BEFORE Story 16.1** (level structure, size classes, sight-aggro, pacing at scale; the room/corridor algorithm, the unreachable-cell invariant and its ripple into movement/path/fog/tap-router, enemy activation state, and the re-pin/winnability plan). Unlike Epic 15, this epic **deliberately re-pins seed-regression fingerprints — but only twice**: Story 16.1 (dimension change) and Story 16.2 (algorithm change), each re-derived and re-pinned in the same change via the dump tools with justification recorded, and with the reference-driver winnability catalog re-proven for every class at every size. The determinism discipline itself is unchanged: every layout-affecting draw still routes through `STREAM_LEVEL` in a fixed, documented order. Mobile performance at the Large class is a hard gate (Story 16.5). Difficulty stays a hard non-goal — scale and structure are not difficulty knobs.
+
 ## Epic 1: Core Tactical Combat Slice
 
 Players can launch a small tactical test level, move, see line of sight and fog, use weapon-shaped attacks, resolve enemy turns, take damage, win or die, and understand why combat outcomes occurred.
@@ -3225,3 +3241,369 @@ So that the game looks intentional on any window size.
 **Given** the pinned contracts
 **When** this story lands
 **Then** no domain/save/RNG contract changes, the layout/region decisions stay on the pinned `TacticalLayoutProfile` seam (verified without a SceneTree), and every pinned fingerprint stays byte-identical.
+
+## Epic 15: Playtest Response
+
+The loop Epic 14 made completable becomes readable and correct — the HUD stops clipping off-canvas, the attack-preview number matches the damage dealt, a run can be quit and resumed, threats telegraph before they detonate, event nodes and the run summary report real outcomes — and then gains the feel layer, with movement, deaths, and transitions that animate instead of snapping.
+
+> **Sequencing:** added 2026-07-24 via sprint change proposal (post-Epic-14 agent playtest; see `sprint-change-proposal-2026-07-24.md`; record `playtest-sessions/agent-playtest-2026-07-20.md`, triage `playtest-sessions/agent-playtest-2026-07-20-triage.md`). Executes after Epic 14 in three bands: Band 1 (15.1) is the readability hotfix and lands FIRST and ALONE; Band 2 (15.2–15.7) is correctness; Band 3 (15.8–15.12) is presentation and feel. **Every seed-regression fingerprint stays byte-identical across this entire epic.** Two domain-rule touches, both ratified design decisions rather than defects-of-implementation: 15.5 makes hero HP persist across nodes AND reverses the Story-8.3 "a death awards nothing" decision; 15.7 adds one settings preference key. No new autoload; difficulty stays a hard non-goal; assertable logic lives in scene-free `RefCounted` seams (scenes verified by construction + the compile guardrail).
+
+**Band 1 — Readability Hotfix (lands first and alone): Story 15.1.**
+
+### Story 15.1: HUD and Log Layout Clip Fix
+
+As a player,
+I want to see the whole HUD and the newest combat log lines at any window size,
+So that the information the game is already producing actually reaches me.
+
+**Acceptance Criteria:**
+
+**Given** a live combat node at any window size or aspect ratio (portrait, landscape, and a resize mid-fight)
+**When** the tactical HUD renders
+**Then** every HUD label is fully on-canvas and legible — HP, Gold, Bag, Node counter, class line, affinity badge, the highlight legend, the preview/damage panel, and the rejection-hint line — with no label rendering at a negative x-offset or otherwise clipped by its container
+**And** the fix addresses the shared layout root cause in the presenter rather than nudging individual label offsets.
+
+**Given** a combat with more log lines than the log panel can display
+**When** new events are appended
+**Then** the NEWEST lines are the visible ones (the panel shows a live tail, not a stale head), and no line is clipped by the panel's overflow
+**And** the log remains readable at the 2.0x text scale.
+
+**Given** the pinned contracts
+**When** this story lands
+**Then** no domain/save/RNG contract changes, the layout decisions stay on the pinned `TacticalLayoutProfile` seam (verified without a SceneTree), and every pinned fingerprint stays byte-identical.
+
+**Band 2 — Correctness and Unwired Surfaces: Stories 15.2–15.7.**
+
+### Story 15.2: Attack-Preview Damage Correctness
+
+As a player,
+I want the damage number in the attack preview to match the damage the attack actually deals,
+So that I can plan a fight on the one number the game asks me to trust.
+
+**Acceptance Criteria:**
+
+**Given** a hero whose loadout or consumed passives grant an attack bonus (a support item such as the tome, or a consumed damage passive)
+**When** an attack is armed and the preview renders its expected damage
+**Then** the previewed number equals the damage the committed attack resolves, including support-item bonuses and consumed-passive bonuses
+**And** a bonus that applies only conditionally (for example a range-conditional steady-aim bonus) is either reflected in the number for the previewed target or stated as a labelled condition — never silently omitted.
+
+**Given** the preview is a read model
+**When** the corrected computation lands
+**Then** the preview draws zero RNG and mutates nothing (arming and cancelling leave the run byte-identical), and the resolved-damage path is unchanged — the preview is corrected to match resolution, not the reverse
+**And** a regression test asserts preview-equals-resolved for each class's starting kit, so a future bonus source cannot silently desynchronize them again.
+
+### Story 15.3: Threat Telegraphs
+
+As a player,
+I want to see which tile a marked attack is about to hit,
+So that a detonation is something I can dodge rather than something that happens to me.
+
+**Acceptance Criteria:**
+
+**Given** an enemy marks a tile for a delayed or area attack (the ash-seer detonation pattern)
+**When** the mark is active
+**Then** the marked tile carries a persistent on-board telegraph from the moment of marking until it resolves, communicated by shape/glyph/label and not by color alone (NFR9)
+**And** the telegraph is legible under every affinity treatment and in darkness/fog, and it clears when the mark resolves or is cancelled.
+
+**Given** a detonation resolves on a specific board cell
+**When** the presentation renders its effect
+**Then** the effect renders on the cell the domain resolved it on (the flash anchor is verified against the domain event's cell, closing the playtest observation that a flash appeared on the hero's current tile while the log placed the detonation on the previous tile)
+**And** the telegraph and its resolution read from existing domain events with no new domain query and no fingerprint change.
+
+### Story 15.4: Quit, Pause and Resume
+
+As a player,
+I want to leave a run and come back to it,
+So that a descent survives closing the game.
+
+**Acceptance Criteria:**
+
+**Given** a run in progress at a route position
+**When** the player opens an in-game pause/menu affordance and quits
+**Then** the run's route position is saved through the existing Epic-2 save seam (`SaveManager.resume_route_position` / `RunResumeService` — reused, not re-implemented), and the player returns to the boot/outpost surface
+**And** the pause affordance is reachable from the live board and offers at minimum resume-play and quit-run.
+
+**Given** a saved run exists
+**When** the game boots
+**Then** a Continue affordance is offered and restores the run at the same route position with the run intact, and a boot with no saved run does not offer it
+**And** starting a NEW run when a saved run exists is a deliberate, confirmed choice rather than a silent overwrite.
+
+**Given** the save contracts
+**When** this story lands
+**Then** the 23-key `RunSnapshot` gate stays 23, `SCHEMA_VERSION` is unchanged (the in-node fight stays ephemeral — resuming lands at the route position, not mid-fight), and no fingerprint moves.
+
+### Story 15.5: Run Economy, HP Persistence and Event-Node Outcomes
+
+As a player,
+I want my wounds to carry between fights and my runs to actually pay out,
+So that the risk economy means something and unlocks are reachable.
+
+> Carries ratified decisions **D1** (HP persists) and **D4** (shards are awarded on death). Both are deliberate design reversals of current shipped behavior, not defect fixes — each updates the rule AND its existing tests.
+
+**Acceptance Criteria:**
+
+**Given** a hero finishes a combat node below maximum HP (ratified decision D1)
+**When** the run advances to the next node
+**Then** the hero's current HP CARRIES OVER unchanged — there is no implicit full heal between nodes — so healing is scarce and resource attrition is a real difficulty source per the GDD economy section
+**And** HP is restored only by defined sources (consumables and any explicitly defined rest/heal moment), and the persisted HP survives a quit/resume (15.4).
+
+**Given** a run ends in the hero's death (ratified decision D4)
+**When** the meta award is calculated
+**Then** the run awards Oath Shards on the same bounded, capped, deterministic basis as a completed run — the award scales with nodes cleared and remains capped — REVERSING the Story-8.3 decision that a failed run awards nothing
+**And** `MetaAwardRules` and every test asserting the old death-awards-zero behavior are updated together in the same change, the award stays pure/deterministic/zero-RNG, manual-seed runs remain ineligible, and the award remains idempotent (no double-award).
+
+**Given** the player resolves an event node
+**When** the node completes
+**Then** the player is shown what happened and what changed before returning to the route — an event node never resolves invisibly into a route-screen counter increment
+**And** the outcome surface reads from the event node's existing resolution data.
+
+**Given** a run ends and the summary renders
+**When** the player reads it
+**Then** the summary reports the real Oath Shards earned this run and the real nodes cleared, and any list it cannot yet honestly populate (notable loot, passives spent/destroyed — pending the deferred run-level event store) is either populated or honestly labelled as not-yet-recorded rather than shown as an empty result
+**And** the 23-key `RunSnapshot` gate holds, any new event is append-only at the enum tail and wired end-to-end, and no fingerprint moves.
+
+### Story 15.6: Reward Modal Fix and Class-Weighted Offers
+
+As a player,
+I want the reward modal to be readable and its offers to usually make sense for my class,
+So that choosing a reward is a real decision.
+
+> Carries ratified decision **D3**: POSITIVE class weighting only. Cross-class offers stay possible — they are made less frequent, never impossible.
+
+**Acceptance Criteria:**
+
+**Given** a reward or passive-choice modal is open
+**When** it renders
+**Then** the decorative frame is the modal's actual container with content laid out inside it (no text rendering over or through the frame art), and every button in the modal and its confirmation step carries a visible label
+**And** the modal is readable at the 2.0x text scale and on a small viewport, with all targets >=44px.
+
+**Given** a reward pool offering passives or loot to a hero of a known class (ratified decision D3)
+**When** offers are drawn
+**Then** class-relevant entries carry an increased POSITIVE weight, making a relevant offer more likely — and entries are NEVER excluded, zero-weighted, or negatively weighted, so a cross-class offer (a bow passive to a pyromancer) remains a possible and legitimate outcome
+**And** the weighting is deterministic content configuration drawn through the existing named `rewards` stream — no new stream, no new draw site outside the fixed order — and a test asserts both that relevance raises frequency AND that no entry becomes unreachable.
+
+### Story 15.7: Move-Confirm Step with Settings Opt-Out
+
+As a player,
+I want a stray tap not to cost me a turn, and I want to be able to switch that safety off,
+So that mis-taps are recoverable without slowing down players who do not want the extra step.
+
+> Carries ratified decision **D2**: a check-mark confirm on the tapped cell for BOTH moves and attacks, with a settings toggle to disable it.
+
+**Acceptance Criteria:**
+
+**Given** the move-confirm preference is enabled (the default)
+**When** the player taps a legal destination cell
+**Then** the tapped cell renders a highlighted CHECK-MARK affordance and no movement is committed yet; tapping that check-mark commits the move, and tapping elsewhere (or a cancel affordance) re-targets or clears it with zero mutation
+**And** the same check-mark confirm pattern applies to attacking a creature, so move and attack share ONE consistent two-step commit vocabulary
+**And** the check-mark is a shape/glyph channel legible without color (NFR9) and is >=44px.
+
+**Given** the move-confirm preference is disabled by the player
+**When** the player taps a legal destination or target
+**Then** the action commits on the single tap (the pre-15.7 behavior), and the preference is honored consistently for both moves and attacks.
+
+**Given** the preference must be reachable
+**When** this story lands
+**Then** the toggle is exposed on a settings surface and persisted as an additive `SettingsSnapshot` preference key, with `SCHEMA_VERSION` handled per the save-migration rules and a default that preserves the safer confirm-on behavior
+**And** if no settings scene exists yet, this story delivers the minimal surface needed to host the toggle (coordinating with the parked AG-3 settings-scene item rather than duplicating it) — the difficulty non-goal is unaffected: this is an input-safety preference, not a difficulty knob.
+
+**Band 3 — Presentation and Feel: Stories 15.8–15.12.**
+
+### Story 15.8: Combat Feel and Movement Animation
+
+As a player,
+I want units to move, get hit, and die visibly,
+So that a fight reads as events happening rather than state snapping between frames.
+
+**Acceptance Criteria:**
+
+**Given** any unit (hero or enemy) moves between cells
+**When** the move resolves
+**Then** the unit TWEENS along its path rather than teleporting to the destination, at a duration that stays responsive on a full enemy phase
+**And** deaths fade or collapse rather than snapping to corpse art, and HP changes are visibly marked (a count or floating change) rather than silently re-rendering.
+
+**Given** an enemy phase with several acting enemies
+**When** it resolves
+**Then** enemy actions are SEQUENCED so the player can see what each enemy did, rather than the entire phase resolving within one frame of the player's commit
+**And** the player receives an immediate acknowledgment (within ~100ms) for every committed input, including the Wait/End-Turn control, which currently gives no press feedback.
+
+**Given** animation is presentation
+**When** this story lands
+**Then** all animation is cosmetic — any randomness uses the `cosmetic` stream only and cannot affect outcomes — the domain resolves identically with animation skipped or instant, and every pinned fingerprint stays byte-identical.
+
+### Story 15.9: Transitions and the Death Moment
+
+As a player,
+I want scene changes to be staged rather than hard cuts, and my death to be acknowledged,
+So that the run has punctuation.
+
+**Acceptance Criteria:**
+
+**Given** any scene boundary (hero select to combat, victory to reward modal, modal to route, death to outpost)
+**When** the transition occurs
+**Then** it is staged with a fade or slide rather than swapping within a single frame.
+
+**Given** the hero dies and it is the run's first death
+**When** the run ends
+**Then** a death moment renders before the outpost — acknowledging the death and rendering the already-shipped Epic-8 first-death narrative beat, which currently never reaches the screen — and the player can dismiss it deliberately
+**And** the beat reads from the existing shipped beat DTOs with no domain change and no fingerprint movement.
+
+### Story 15.10: Theme and Layout Polish
+
+As a player,
+I want the screens to look composed rather than like placeholder panels,
+So that the game reads as intentional.
+
+**Acceptance Criteria:**
+
+**Given** the HUD, route, and outpost screens
+**When** they render
+**Then** empty full-width placeholder slabs are collapsed or sized to their content, so panels do not present as large empty gray voids, and the applied theme's frame art is visible at the sizes actually used
+**And** hero-select rows render the class NAME unclipped for playable classes (currently clipped until selected) and present the approved portrait art at a size that reads, rather than as a small thumbnail.
+
+**Given** the board's visual vocabulary
+**When** hazards, corpses, and safe floor are drawn
+**Then** a corpse is distinguishable from a hazard tile and from safe floor at a squint, using a non-color channel in addition to any color difference (NFR9), resolving the skull-motif collision where corpses on scorched boards are near-invisible.
+
+### Story 15.11: Player-Facing Copy Pass
+
+As a player,
+I want the game to speak in names rather than in identifiers,
+So that nothing reads as debug output.
+
+**Acceptance Criteria:**
+
+**Given** any player-facing string (combat log, preview panel, inspect line, route, outpost)
+**When** it renders
+**Then** no internal identifier reaches the player — no `enemy_3`, no `iron_cultist_melee`, no raw reach tokens such as `1 (adjacent_cardinal)`, and no unformatted-event fallback such as "Unknown event hero_waited occurred" — every entity and weapon is named by its `display_name` and every event has a written formatter
+**And** marker syntax (`[!]`, `[✓]`, `[☠]`, `◆`) and placeholder rows ("— Coming later") are replaced with themed presentation or removed.
+
+**Given** the combat log describes positions
+**When** a line references a location
+**Then** it uses language the player can act on (names, directions, or relative references) rather than raw grid coordinates in a coordinate space nothing else on screen shares.
+
+### Story 15.12: Weapon and Kit Display
+
+As a player,
+I want to know my weapon's reach and damage before I commit to a position,
+So that I do not discover my range by accident.
+
+**Acceptance Criteria:**
+
+**Given** a hero with a starting kit
+**When** the player is on the board or on hero select
+**Then** the weapon's damage and reach are visible WITHOUT arming an attack — closing the case where a reach-4 line weapon read as a melee weapon until an attack was armed — and the support item's effect is stated
+**And** the kit line reads from the existing pinned view models with no domain change and no fingerprint movement.
+
+## Epic 16: Dungeon Generation, Scale & Awareness
+
+Tactical floors become large multi-room dungeons — rooms, corridors, dead-ends, and structural filler that is not all reachable — across Small, Medium, and a new Large size class, viewed at a camera that defaults further out, with enemies that wake on their own line of sight instead of activating all at once.
+
+> **Sequencing:** added 2026-07-24 via `sprint-change-proposal-2026-07-24.md` from a directed design expansion. Executes AFTER Epic 15. The core loop and route/node model are UNCHANGED — a node is still one fight the player clears. **This epic REQUIRES a GDD pass and a generation-architecture note BEFORE Story 16.1**; the stories below are written to be refined by that pass, not to pre-empt it. It deliberately re-pins seed-regression fingerprints TWICE and only twice (16.1 dimensions, 16.2 algorithm), each re-derived via the dump tools in the same change with justification recorded and winnability re-proven. The determinism discipline is unchanged: every layout-affecting draw routes through `STREAM_LEVEL` in a fixed, documented order. Difficulty stays a hard non-goal — scale and structure are not difficulty knobs.
+
+### Story 16.1: Board Scale-Up and the Large Size Class
+
+As a player,
+I want tactical floors that are meaningfully larger,
+So that positioning has room to matter.
+
+**Acceptance Criteria:**
+
+**Given** the size-class contract (currently Small and Medium only, at fixed 8x8 and ~14x12)
+**When** this story lands
+**Then** Small and Medium are enlarged and a THIRD size class, Large, is added and accepted by `GenerationRequest`, `LevelRecipeDefinition`, and the size-class validator, with the target dimensions confirmed by the pre-epic GDD pass (working targets: Small ~12x12, Medium ~18x16, Large ~26x28)
+**And** the EXISTING open-interior algorithm is retained unchanged in this story — only dimensions and the new class change — so this story produces ONE clean, isolated fixture re-pin before the algorithm changes in 16.2.
+
+**Given** the enlarged boards
+**When** the seed-regression and winnability suites run
+**Then** the moved layout fingerprints are re-derived and re-pinned in the SAME change via the dump/regeneration path with the justification recorded — never a silent edit to make a drifting test pass
+**And** the reference-driver winnability catalog is re-proven: every MVP class can still win at every size class, with any unwinnable seed failing loud with seed, class, and reason rather than being quietly dropped.
+
+**Given** the determinism contract
+**When** the generators run at the new sizes
+**Then** the fixed draw order is unchanged, every layout-affecting draw still routes through `STREAM_LEVEL`, and generation remains a pure deterministic function of (root seed, recipe, stream state).
+
+### Story 16.2: Room, Corridor and Dead-End Generation
+
+As a player,
+I want floors made of rooms and corridors rather than one open box,
+So that a dungeon feels like a place.
+
+**Acceptance Criteria:**
+
+**Given** a generation request at any size class
+**When** the layout is generated
+**Then** the floor is composed of MULTIPLE ROOMS connected by CORRIDORS, including dead-ends, and structural filler cells that are NOT reachable destinations — replacing the single open interior — with the algorithm's shape and parameters as ratified by the pre-epic generation-architecture note
+**And** every layout-affecting choice is drawn through `STREAM_LEVEL` in a fixed, documented draw order, so a layout stays a pure deterministic function of its seed.
+
+**Given** a generated multi-room floor
+**When** it is validated
+**Then** the validator PROVES: the reachable set is fully connected; the entrance can reach the exit; every enemy, reward, and entity sits on a reachable cell; and each floor affords enough open space for its encounter to be fought (no node made unwinnable by cramped geometry)
+**And** a layout failing any invariant is REJECTED with a structured diagnostic (validate-then-reject, never coerce), consistent with the existing generation error contract.
+
+**Given** unreachable structural cells now exist on the board
+**When** the domain and presentation consume the board
+**Then** an unreachable cell is never a legal move target, never a spawn site, never a reward site, and is handled coherently by movement, pathing, line-of-sight/fog, and the tap router — the invariant is enforced at the domain seam, not patched per-consumer.
+
+**Given** the algorithm change moves layouts
+**When** the suites run
+**Then** the moved fingerprints are re-derived and re-pinned in the SAME change with justification recorded, and the winnability catalog is re-proven for every class at every size on the NEW geometry, failing loud on any unwinnable seed.
+
+### Story 16.3: Enemy Sight-Based Activation
+
+As a player,
+I want enemies to wake when they notice me,
+So that a large floor is explored with tension instead of fought all at once.
+
+**Acceptance Criteria:**
+
+**Given** a generated floor with enemies distributed across rooms
+**When** the fight begins
+**Then** enemies start DORMANT and take no turn while dormant, and an enemy ACTIVATES when it perceives the hero within its sight range along a valid line of sight — reusing the existing visibility/darkness layer rather than adding a parallel one
+**And** once activated an enemy uses the existing AI behavior, activation persists (an activated enemy does not silently return to dormant), and activation state is part of the tactical board's state rather than presentation state.
+
+**Given** the AI explainability rule
+**When** an enemy activates or stays dormant
+**Then** the decision is explainable in player/debug language ("woke: saw hero at range 3", "dormant: no line of sight"), covered by AI-decision explanation tests
+**And** the player receives a readable cue when an enemy wakes, so activation is observable rather than inferred.
+
+**Given** the win condition and the turn engine
+**When** enemies are dormant
+**Then** the node's clear condition remains coherent (a floor is cleared when its living enemies are defeated — dormant enemies still count), and the turn engine cannot deadlock when every remaining enemy is dormant
+**And** the domain contracts hold: zero unnamed RNG, events append-only, and the 23-key `RunSnapshot` gate unchanged (the in-node fight stays ephemeral).
+
+### Story 16.4: Camera Default Zoom-Out and Grid-Fit
+
+As a player,
+I want to see enough of a large floor at once to plan,
+So that scale does not become a keyhole.
+
+**Acceptance Criteria:**
+
+**Given** a floor at any size class, including Large, on a phone-sized viewport
+**When** the board first renders
+**Then** the camera defaults to a zoom that fits a useful portion of the floor — grid-fit for the size class rather than a fixed default zoom tuned for an 8x8 board — and the hero is visible on entry
+**And** the player can pan and zoom to inspect, with zoom clamped to bounds that keep tiles legible and touch targets usable.
+
+**Given** the zoom and hit-test seams are shared
+**When** the default changes
+**Then** draw and hit-test continue to share ONE zoom state (a tap resolves to the cell under the finger at every zoom level and on every size class), verified without a SceneTree
+**And** this story is presentation only: no domain change and no fingerprint movement.
+
+### Story 16.5: Mobile Performance Pass at Large Scale
+
+As a player on a phone,
+I want a Large floor to run smoothly,
+So that scale does not cost playability.
+
+**Acceptance Criteria:**
+
+**Given** the largest supported floor with a full enemy complement, fog, and an affinity treatment
+**When** it is rendered and played on the device tiers defined in `device-tiers-and-performance-budgets.md`
+**Then** frame time and memory stay within the documented budget for each tier, measured and RECORDED (a real measurement, not an assertion), and the movement/enemy-phase animation from 15.8 stays responsive at this scale
+**And** if a tier misses budget, the story delivers the rendering remedy (tile batching, culling of off-screen and unreachable cells, or a documented cap on the Large class for that tier) rather than silently shipping over budget.
+
+**Given** Large is gated on this pass
+**When** the epic closes
+**Then** the Large size class is enabled only for tiers proven within budget, with any exclusion recorded as an explicit, owned limitation
+**And** the headless suite stays green and every fingerprint pinned by 16.1/16.2 stays byte-identical through this story (a performance pass changes rendering, never layout).
