@@ -3369,6 +3369,7 @@ I want the reward modal to be readable and its offers to usually make sense for 
 So that choosing a reward is a real decision.
 
 > Carries ratified decision **D3**: POSITIVE class weighting only. Cross-class offers stay possible — they are made less frequent, never impossible.
+> Also carries the **reward-choice restructure** ratified 2026-07-24. Only the STRUCTURAL half is in scope here; the rich destroy-outcome content (boons, debuffs, synergies, secrets, meta unlocks, achievements) is deferred to the Epic-17 stub (`design-notes/epic-17-objectives-stub.md` §3).
 
 **Acceptance Criteria:**
 
@@ -3376,6 +3377,12 @@ So that choosing a reward is a real decision.
 **When** it renders
 **Then** the decorative frame is the modal's actual container with content laid out inside it (no text rendering over or through the frame art), and every button in the modal and its confirmation step carries a visible label
 **And** the modal is readable at the 2.0x text scale and on a small viewport, with all targets >=44px.
+
+**Given** a three-choice reward offer is presented (ratified restructure, 2026-07-24)
+**When** the player reads the modal
+**Then** the choice reads as "pick exactly ONE of these three rewards" — each option carries its own Consume/accept affordance ONLY, and no per-option Destroy affordance is rendered (the playtest state where every one of the three options carried its own Consume/Destroy pair is removed)
+**And** a SINGLE "Destroy" affordance sits at the bottom of the modal, applying to the OFFER AS A WHOLE — choosing it destroys ALL offered rewards — and its copy makes that scope unmistakable before the player commits
+**And** Destroy-All is presented as a legitimate alternative play rather than a decline/fallback, and it routes through the existing `DestroyPassiveCommand` outcome path (whose v0 outcomes remain outcome-record-only until the Epic-17 content story lands).
 
 **Given** a reward pool offering passives or loot to a hero of a known class (ratified decision D3)
 **When** offers are drawn
