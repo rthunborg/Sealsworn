@@ -222,7 +222,7 @@ development_status:
   # Band 3 = 15-8..15-12 (presentation/feel, incl. movement animation in 15-8).
   epic-15: in-progress
   15-1-hud-and-log-layout-clip-fix: done
-  15-2-attack-preview-damage-correctness: ready-for-dev
+  15-2-attack-preview-damage-correctness: review
   15-3-threat-telegraphs: backlog
   15-4-quit-pause-resume: backlog
   15-5-event-node-and-run-summary-wiring: backlog

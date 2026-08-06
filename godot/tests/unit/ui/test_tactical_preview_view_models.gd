@@ -25,10 +25,35 @@ const WeaponRepository = preload("res://scripts/content/repositories/weapon_repo
 func run() -> Dictionary:
 	_movement_preview_contract_cases_do_not_mutate_domain()
 	_attack_preview_contract_matrix_does_not_mutate_domain()
+	_attack_preview_folds_deterministic_loadout_bonus()
 	_preview_dictionaries_are_deep_copied_and_reference_free()
 	_board_view_model_preserves_preview_contracts_and_commit_availability()
 	_command_bridge_still_strips_path_and_line_internals()
 	return result()
+
+
+# Story 15.2 (F4/AC1): the corrected read model folds the DETERMINISTIC attacker-support bonus into `expected_damage`
+# while leaving `expected_base_damage` (the weapon base AttackCommand reads) untouched, so shown N == resolved N. A
+# no-bonus support (the shield on a hero's own attack) keeps the two equal — the fix must not over-count.
+func _attack_preview_folds_deterministic_loadout_bonus() -> void:
+	var cases: Array[Dictionary] = [
+		# Pyromancer tome (+1 for staff/wand): the base stays adjacency-adjusted; expected_damage folds the +1.
+		{"id": "staff_tome_ranged", "board": BoardFixtureFactory.attack_preview_open_lane(), "target": Vector2i(3, 1), "weapon": &"staff", "support": &"tome", "base": 4, "total": 5},
+		{"id": "staff_tome_adjacent", "board": BoardFixtureFactory.attack_preview_adjacent_enemy(), "target": Vector2i(2, 1), "weapon": &"staff", "support": &"tome", "base": 2, "total": 3},
+		# Shield carries bonus_damage 0, so as a hero's own attacker support it folds NOTHING (no over-count).
+		{"id": "sword_shield_no_overcount", "board": BoardFixtureFactory.attack_preview_adjacent_enemy(), "target": Vector2i(2, 1), "weapon": &"sword", "support": &"shield", "base": 4, "total": 4}
+	]
+	for case_data: Dictionary in cases:
+		var board: BoardState = case_data.get("board") as BoardState
+		var weapon: WeaponDefinition = _weapon(case_data.get("weapon"))
+		var support: Variant = _support(case_data.get("support"))
+		var preview: Dictionary = TacticalAttackPreview.from_query(board, &"hero", case_data.get("target"), weapon, support).to_dictionary()
+		var metadata: Dictionary = preview.get("metadata", {})
+		var case_id: String = String(case_data.get("id", ""))
+
+		assert_equal(preview.get("available"), true, "Loadout-bonus case %s should preview a legal attack." % case_id)
+		assert_equal(metadata.get("expected_base_damage"), int(case_data.get("base")), "Case %s should keep the weapon base damage AttackCommand reads." % case_id)
+		assert_equal(metadata.get("expected_damage"), int(case_data.get("total")), "Case %s should fold the deterministic loadout bonus into expected_damage." % case_id)
 
 
 func _movement_preview_contract_cases_do_not_mutate_domain() -> void:
@@ -194,7 +219,10 @@ func _attack_preview_contract_matrix_does_not_mutate_domain() -> void:
 		assert_equal(metadata.get("weapon_reach"), weapon.attack_range, "Attack preview should expose weapon reach.")
 		assert_equal(metadata.get("targeting_shape"), String(weapon.targeting_shape), "Attack preview should expose targeting shape.")
 		assert_equal(metadata.get("expected_base_damage"), int(case_data.get("expected_base_damage", -1)), "Attack preview should expose deterministic base damage only.")
-		assert_equal(metadata.get("expected_damage"), int(case_data.get("expected_base_damage", -1)), "Attack preview should not include execution-only damage outcomes.")
+		# Story 15.2 (F4): `expected_damage` now folds DETERMINISTIC loadout bonuses (e.g. the tome's +1) while still
+		# excluding EXECUTION-ONLY (RNG/block) outcomes. These contract-matrix cases pass NO support, so the total still
+		# equals the base — the divergence is proven by _attack_preview_folds_deterministic_loadout_bonus() below.
+		assert_equal(metadata.get("expected_damage"), int(case_data.get("expected_base_damage", -1)), "No-support attack preview folds no bonus, so expected_damage equals base and excludes execution-only outcomes.")
 		assert_equal(metadata.get("blocker_ignored"), bool(case_data.get("expected_blocker_ignored", false)), "Attack preview should preserve blocker ignored flag.")
 		assert_true(metadata.has("line_cells"), "Attack preview metadata should always include line_cells.")
 		assert_true(metadata.has("blocker_cells"), "Attack preview metadata should always include blocker_cells.")

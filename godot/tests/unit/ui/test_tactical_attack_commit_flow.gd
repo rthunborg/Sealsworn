@@ -225,7 +225,7 @@ func _refresh_changed_target_reports_target_changed() -> void:
 
 	flow.tap_attack_target(context, &"hero", Vector2i(2, 1), _weapon(&"sword"), _support(&"none"), null)
 	context.board = _attack_board_with_enemy_id(&"enemy_2")
-	var refresh_result: TacticalAttackCommitFlowResult = flow.refresh_or_clear(context, _weapon(&"sword"))
+	var refresh_result: TacticalAttackCommitFlowResult = flow.refresh_or_clear(context, _weapon(&"sword"), _support(&"none"))
 
 	assert_false(refresh_result.submitted, "Refresh should not submit when the occupying target changed.")
 	assert_equal(refresh_result.command_result, null, "Changed target refresh should not expose a command result.")
