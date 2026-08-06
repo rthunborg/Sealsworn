@@ -1,3 +1,26 @@
+## Deferred from: code review of 15-2-attack-preview-damage-correctness (2026-08-06)
+
+Surfaced by `gds-code-review` Round 1 (verdict **Approve**; no blocking findings). Independently
+verified against the story branch @ base `6e121e9`.
+
+- [ ] **[Review][Defer]** (Low, forward-guard, from code review of 15-2, 2026-08-06) —
+  **`AttackPreviewQuery.preview_target_entity` was left support-blind.** Story 15.2 threaded the
+  optional `attacker_support` param through `preview_target_cell` → `TacticalAttackPreview.from_query`
+  → the commit-flow arming path so the armed preview's `expected_damage` folds the deterministic tome
+  bonus (the F4 fix). But the sibling entry point `preview_target_entity`
+  (`godot/scripts/tactical/targeting/attack_preview_query.gd:115-142`) still forwards to
+  `preview_target_cell` WITHOUT the support param, and the AC2 preview-equals-resolved regression test
+  (`test_attack_preview_matches_resolution.gd`) guards only `preview_target_cell`/`from_query`.
+  **Zero live impact today** — `preview_target_entity` has NO production caller (only
+  `test_attack_preview_query.gd`), so no armed preview routes through it. **Latent risk:** if a future
+  story builds an armed preview via `preview_target_entity`, the F4 desync silently returns and the
+  regression test will not catch it. **Future hardening (do when a caller appears, or opportunistically):**
+  add the optional `attacker_support: SupportDefinition = null` param to `preview_target_entity` and
+  forward it into `preview_target_cell`, OR add an assertion/comment that it must never feed an armed
+  preview. Originating story: 15-2-attack-preview-damage-correctness; review date 2026-08-06.
+
+---
+
 ## Deferred from: Epic-16 designer/architect design pass (2026-08-05) — FR75 character-level debt
 
 Surfaced by the Epic-16 Game Designer pass while resolving E17-Q1 (the "XP" question in the ratified
