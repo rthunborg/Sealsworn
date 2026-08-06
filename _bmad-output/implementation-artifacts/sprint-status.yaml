@@ -220,7 +220,7 @@ development_status:
   # Epic 16 additionally requires a GDD + generation-architecture pass BEFORE 16-1 (see proposal §5).
   # Band 1 = 15-1 (readability hotfix, lands first and alone); Band 2 = 15-2..15-7 (correctness);
   # Band 3 = 15-8..15-12 (presentation/feel, incl. movement animation in 15-8).
-  epic-15: backlog
+  epic-15: in-progress
   15-1-hud-and-log-layout-clip-fix: done
   15-2-attack-preview-damage-correctness: backlog
   15-3-threat-telegraphs: backlog
