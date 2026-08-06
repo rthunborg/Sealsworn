@@ -43,7 +43,7 @@
 # - Epic 3 through Epic 10 stories source from the canonical epics file: planning-artifacts/epics.md.
 
 generated: 2026-06-04T14:23:04+02:00
-last_updated: 2026-07-28T07:30:00+00:00
+last_updated: 2026-08-06T00:00:00+00:00
 project: Sealsworn
 project_key: NOKEY
 tracking_system: file-system
@@ -222,7 +222,7 @@ development_status:
   # Band 3 = 15-8..15-12 (presentation/feel, incl. movement animation in 15-8).
   epic-15: in-progress
   15-1-hud-and-log-layout-clip-fix: done
-  15-2-attack-preview-damage-correctness: backlog
+  15-2-attack-preview-damage-correctness: ready-for-dev
   15-3-threat-telegraphs: backlog
   15-4-quit-pause-resume: backlog
   15-5-event-node-and-run-summary-wiring: backlog
