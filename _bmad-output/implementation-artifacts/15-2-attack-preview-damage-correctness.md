@@ -3,7 +3,7 @@ baseline_commit: 52b694b96ebb6861f83c2006def24e555b31d2a7
 ---
 # Story 15.2: Attack-Preview Damage Correctness
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
