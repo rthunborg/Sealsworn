@@ -3,7 +3,7 @@ baseline_commit: 1d78543
 ---
 # Story 15.3: Threat Telegraphs
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
