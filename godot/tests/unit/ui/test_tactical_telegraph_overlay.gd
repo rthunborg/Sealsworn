@@ -11,7 +11,6 @@ extends "res://tests/unit/test_case.gd"
 #   - two simultaneous marks -> both active, and detonating ONE clears only that one (independent);
 #   - kind-agnostic -> a boss-telegraph mark (a different telegraph_id namespace + kind) surfaces too;
 #   - a malformed / absent entry is a safe no-op (never a fabricated cell);
-#   - has_active_marks mirrors whether any mark is active;
 #   - zero mutation of the input.
 # str() (never eager String(nullable)) is used in assert messages (the 14.1 retro test-honesty note).
 
@@ -28,7 +27,6 @@ func run() -> Dictionary:
 	_two_simultaneous_marks_are_independent()
 	_a_boss_telegraph_mark_surfaces_kind_agnostically()
 	_malformed_or_absent_entries_are_a_safe_no_op()
-	_has_active_marks_reflects_state()
 	_active_marks_does_not_mutate_the_input()
 	return result()
 
@@ -145,14 +143,6 @@ func _malformed_or_absent_entries_are_a_safe_no_op() -> void:
 	assert_equal((active[0] as Dictionary).get("telegraph_id"), "t_ok", "The one surviving mark is the well-formed one. Got %s." % str((active[0] as Dictionary).get("telegraph_id")))
 	# An empty log yields no active marks.
 	assert_equal(TacticalTelegraphOverlay.active_marks([]).size(), 0, "An empty event_log_summary yields no active marks.")
-
-
-# ---- has_active_marks ----------------------------------------------------------------------------
-
-func _has_active_marks_reflects_state() -> void:
-	assert_true(TacticalTelegraphOverlay.has_active_marks([_mark(1, "t1", 3, 3)]), "A pending mark reports active.")
-	assert_false(TacticalTelegraphOverlay.has_active_marks([_mark(1, "t1", 3, 3), _detonation(2, "t1", 3, 3, "hit")]), "A resolved mark reports NOT active.")
-	assert_false(TacticalTelegraphOverlay.has_active_marks([]), "An empty log reports NOT active.")
 
 
 # ---- purity --------------------------------------------------------------------------------------

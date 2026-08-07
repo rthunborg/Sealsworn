@@ -3,7 +3,7 @@ epic_num: 15
 story_num: 3
 branch: story/15-3-threat-telegraphs
 status: in-progress
-updated_at: "2026-08-07T15:20:00Z"
+updated_at: "2026-08-07T20:55:00Z"
 started_at: "2026-08-07T14:24:51Z"
 completed_at: null
 active_seconds: 0
@@ -23,8 +23,8 @@ git_mode: remote
 base_branch: main
 epic_story_count: 12
 completed_phases: [0, 1, 3, 5]
-code_review_iterations: 0
-code_review_loop_done: false
+code_review_iterations: 1
+code_review_loop_done: true
 external_review_iterations: 0
 convergence_unverified: false
 testing:
@@ -33,6 +33,7 @@ testing:
 commits:
   - 4fb85f5
   - 78bcd44
+  - 7a2f1b6
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -44,6 +45,7 @@ merge_commit: null
 branch_deleted: false
 open_questions: []
 deferred_work:
+  - "Detonation anchor pairs damage_applied to marked_tile_detonated by seq-1 emit adjacency; a future domain event inserted between them would silently regress the F5 anchor uncaught — logged to deferred-work.md, owned by the next story touching the detonation emit sequence."
   - "OSG-1 on-device legibility checks: telegraph glyph over each affinity floor + fog at 2.0x scale, detonation flash on the marked tile, killing the seer reads as safe (cell-correctness is test-locked)."
 blockers: []
 overrides: {}

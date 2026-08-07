@@ -1,3 +1,34 @@
+## Deferred from: code review of 15-3-threat-telegraphs (2026-08-07)
+
+Surfaced by `gds-code-review` Round 1 (Claude Opus 4.8; verdict **Approve**; Critical 0 / High 0 /
+Med 0 / Low 2; 1 open `[Review][Decision]` — the source-death mark-clear scope call, recorded in the
+story file with a recommended ACCEPT). Independently re-verified against the branch @ base `main`
+(merge-base `8c45c31`): presentation/read-model only (`scripts/ui/` + `tests/unit/ui/` only — no
+domain/RNG/save/fixture file touched, so the 16-key `TacticalBoardViewModel` gate, the 7 named RNG
+streams, and every seed-regression fingerprint are byte-untouched), suite re-run **207 PASS / 0 FAIL**
+(false-PASS guard clean; the 6 documented stderr negatives, ZERO new), `git diff --check` clean. One
+`[Review][Defer]`:
+
+- [ ] **[Review][Defer]** (Low, forward-guard, from code review of 15-3, 2026-08-07) — The
+  detonation-flash re-anchor pairs the detonation `damage_applied` to its `marked_tile_detonated` by
+  **seq-1 emit adjacency** (`godot/scripts/ui/view_models/tactical_combat_feedback.gd:99`,
+  `_detonation_cells_by_sequence` + `detonation_cell_by_event_seq.get(sequence_id - 1)`), because the
+  `damage_applied` payload carries no `telegraph_id` to cross-check (only the `marked_tile_detonated`
+  event does). This is sanctioned (story CRUX boundary 3 — "pair by telegraph_id / adjacent
+  sequence_id") and defensive (a missing pair falls back to the victim's occupant cell), and it is
+  byte-safe while the Epic-15 domain is frozen (`_apply_detonation` emits `marked_tile_detonated(seq)`
+  then `damage_applied(seq+1)` consecutively with nothing between,
+  `enemy_command_adapter.gd:257-300`). **Latent risk:** if a future story inserts any event between the
+  `marked_tile_detonated` and its `damage_applied` (breaking the +1 adjacency), the F5 anchor silently
+  regresses to the occupant cell (the flash-on-wrong-tile bug returns) with NO test catching it — the
+  anchor tests hardcode seq 2/3 adjacency. **Future hardening (do when a domain-emit-order change
+  lands, or opportunistically):** assert the seq-1 entry is the detonation's own `marked_tile_detonated`
+  before anchoring, OR carry `telegraph_id` on the detonation `damage_applied` payload and pair on that
+  instead of on adjacency. Non-blocking. Originating story: 15-3-threat-telegraphs; review date
+  2026-08-07. Owner: the next story that touches the ash-seer/boss detonation emit sequence.
+
+---
+
 ## Deferred from: code review of 15-2-attack-preview-damage-correctness (2026-08-06)
 
 Surfaced by `gds-code-review` Round 1 (verdict **Approve**; no blocking findings). Independently

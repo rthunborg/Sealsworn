@@ -95,11 +95,6 @@ static func active_marks(event_log_summary: Array) -> Array[Dictionary]:
 	return active
 
 
-# Whether any marked cell is currently active (a cheap gate; the presenter can skip the telegraph op loop otherwise).
-static func has_active_marks(event_log_summary: Array) -> bool:
-	return not active_marks(event_log_summary).is_empty()
-
-
 static func _cell_or_null(value: Variant) -> Variant:
 	if value is Vector2i:
 		var vector: Vector2i = value
