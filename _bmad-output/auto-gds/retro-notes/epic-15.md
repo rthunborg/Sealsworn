@@ -3,6 +3,9 @@
 ## Story 15-1-hud-and-log-layout-clip-fix
 - [Phase 5 — dev-story] The F1 "negative-x" symptom cannot be reproduced headlessly (verify-by-construction has no render pass), so the frame-border mitigation (light band backing replacing the nine-patch on short control bands) is a reasoned structural fix, not a pixel-confirmed one — real confirmation depends on the OSG-1 on-device pass.
 
+## Story 15-4-quit-pause-resume
+- [Phase 3 — create-story] A story titled as pure UI wiring ("Quit, Pause and Resume") hides a real domain-correctness fix: the shipped resume seat path (RunOrchestrator.start_from) seats a restored run with starting_kit == null, so CombatLoadout.for_run falls open to the 60 HP/sword default and a resumed Warrior/Pyromancer/Ranger silently loses its class loadout. 15.4 is the first story to feed a resumed run into live play, which is why the latent desync surfaces here — review should focus on the kit-intact test, not just button wiring.
+
 ## Story 15-3-threat-telegraphs
 - [Phase 5 — dev-story] Deliberate scope call beyond the story's literal "pair by telegraph_id": the projection also clears a mark when its source enemy dies. Grep-verified the domain strands a mark on seer death (a dead enemy returns early in prototype_enemy_ai.gd:28 and no board sweep emits a clearing event), so killing the seer to avoid the blast would otherwise leave a lying "danger" glyph. Satisfies AC1's "or is cancelled" clause via the only cancellation the event log exposes — a pure event-log read, no new query/key/fingerprint.
 
