@@ -223,7 +223,7 @@ development_status:
   epic-15: in-progress
   15-1-hud-and-log-layout-clip-fix: done
   15-2-attack-preview-damage-correctness: done
-  15-3-threat-telegraphs: ready-for-dev
+  15-3-threat-telegraphs: review
   15-4-quit-pause-resume: backlog
   15-5-event-node-and-run-summary-wiring: backlog
   15-6-reward-modal-fix: backlog
