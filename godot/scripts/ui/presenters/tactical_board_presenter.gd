@@ -53,6 +53,10 @@ const TacticalRejectionFeedback = preload("res://scripts/ui/view_models/tactical
 const CombatExplanationLog = preload("res://scripts/tactical/outcomes/combat_explanation_log.gd")
 const TacticalCombatLogView = preload("res://scripts/ui/view_models/tactical_combat_log_view.gd")
 const TacticalCombatFeedback = preload("res://scripts/ui/view_models/tactical_combat_feedback.gd")
+# Story 15.3 (AC1/F5) — the PERSISTENT-telegraph projection: the set of currently-active marked cells (a tile_marked
+# with no matching marked_tile_detonated) read from the SAME `event_log_summary` slot. The presenter draws a persistent
+# non-color danger glyph on each active cell every render (mark -> resolution); no new board-VM key, no domain query.
+const TacticalTelegraphOverlay = preload("res://scripts/ui/view_models/tactical_telegraph_overlay.gd")
 # Story 13.2 — the post-victory reward HUD (an ADDITIVE overlay surface, NOT a board-VM key). It renders
 # run.pending_reward_offer via the RewardHudViewModel projection (which reuses PassiveRewardModalViewModel's pinned
 # MODAL_KEYS) and drives the two-step Consume/Destroy via the already-imported PassiveRewardCommitFlow. The resolving
@@ -165,6 +169,15 @@ const DAMAGE_NUMBER_DURATION := 0.6
 const DAMAGE_NUMBER_RISE := 22.0
 const DEATH_FADE_DURATION := 0.5
 const TELEGRAPH_PULSE_DURATION := 0.5
+# Story 15.3 (AC1/F5/NFR9) — the PERSISTENT marked-tile danger telegraph. Unlike the one-shot color pulse above, this
+# is drawn EVERY render on each active marked cell (mark -> resolution) from the TacticalTelegraphOverlay projection.
+# Its accessible channel is SHAPE/glyph, not hue: a bright framing outline around the whole danger cell PLUS a distinct
+# corner warning badge (a dark-backed "!" exclamation glyph) that reads over every affinity floor variant and the fog
+# fill and never obscures an occupant standing on the marked tile. Drawn regardless of the cell's visibility_state (a
+# telegraphed danger stays known in memory/fog). Colors are cosmetic tints ON those shape channels.
+const TELEGRAPH_MARK_FRAME_COLOR := Color(1.0, 0.42, 0.12, 0.95)
+const TELEGRAPH_MARK_BADGE_BACKING_COLOR := Color(0.08, 0.05, 0.04, 0.85)
+const TELEGRAPH_MARK_GLYPH_COLOR := Color(1.0, 0.88, 0.35, 1.0)
 
 # The region -> slot vocabulary (the appendix §1.2 region plan; the TacticalLayoutProfile region names).
 const REGION_NAMES: Array[String] = [
@@ -1411,6 +1424,21 @@ func _build_board_draw_ops(vm: Dictionary, panel: Dictionary = {}, highlights: D
 		if reject_rect.size.x > 0.0:
 			ops.append(_outline_op(reject_rect.grow(-4.0), REJECT_MARKER_COLOR, 3.0))
 
+	# Story 15.3 (AC1/F5/NFR9) — the PERSISTENT marked-tile danger telegraph, drawn LAST so it is never obscured (a
+	# safety cue must stay visible over occupants + every other overlay). The active marked cells come from the
+	# TacticalTelegraphOverlay projection over the SAME `event_log_summary` slot (a tile_marked with no matching
+	# detonation) — once per render, no domain query, no new board-VM key. Each glyph is a SHAPE channel (frame outline
+	# + a corner "!" badge), drawn regardless of the marked cell's visibility_state (a telegraphed danger is known even
+	# in memory/fog); a fog/edge/off-board cell resolves to a zero-size rect and is a safe no-op (never fabricated).
+	for mark_value: Variant in TacticalTelegraphOverlay.active_marks(vm.get("event_log_summary", []) as Array):
+		if not mark_value is Dictionary:
+			continue
+		var mark_rect: Rect2 = _cell_rect((mark_value as Dictionary).get("cell"))
+		if mark_rect.size.x <= 0.0:
+			continue
+		for telegraph_op: Dictionary in _telegraph_glyph_ops(mark_rect):
+			ops.append(telegraph_op)
+
 	return ops
 
 
@@ -1553,6 +1581,32 @@ func _corner_tick_ops(rect: Rect2, color: Color) -> Array:
 		_fill_op(Rect2(right - tick, bottom - thick, tick, thick), color),
 		_fill_op(Rect2(right - thick, bottom - tick, thick, tick), color)
 	]
+
+
+# Story 15.3 (AC1/F5/NFR9) — the PERSISTENT marked-tile danger telegraph glyph (composed from the ratified fill/outline
+# op vocabulary — the grid draw surface is untouched). Two SHAPE channels, distinct from every other overlay and legible
+# over any affinity floor + the fog fill WITHOUT relying on hue:
+#   (1) a bright FRAME outline around the whole danger cell (delineates the cell even with the hero standing on it), and
+#   (2) a corner WARNING BADGE — a dark-backed, bright-bordered "!" exclamation glyph (a vertical bar + a dot) placed in
+#       the top-left corner so it never obscures a centered occupant sprite.
+# The "!" glyph is the primary non-color signal (a warning symbol reads without color at the 2.0x text scale).
+func _telegraph_glyph_ops(rect: Rect2) -> Array:
+	var ops: Array = []
+	# (1) the danger-cell frame (a bright bordered outline, inset so it sits inside the tile grid line).
+	ops.append(_outline_op(rect.grow(-2.0), TELEGRAPH_MARK_FRAME_COLOR, 3.0))
+	# (2) the corner "!" warning badge (dark backing -> bright border -> the glyph, so it reads over any floor).
+	var badge: float = clampf(minf(rect.size.x, rect.size.y) * 0.34, 12.0, 26.0)
+	var margin: float = clampf(rect.size.x * 0.06, 2.0, 5.0)
+	var badge_rect: Rect2 = Rect2(rect.position.x + margin, rect.position.y + margin, badge, badge)
+	ops.append(_fill_op(badge_rect, TELEGRAPH_MARK_BADGE_BACKING_COLOR))
+	ops.append(_outline_op(badge_rect, TELEGRAPH_MARK_FRAME_COLOR, 2.0))
+	var glyph_w: float = clampf(badge * 0.16, 2.0, 5.0)
+	var glyph_x: float = badge_rect.position.x + badge * 0.5 - glyph_w * 0.5
+	var bar_top: float = badge_rect.position.y + badge * 0.18
+	var bar_height: float = badge * 0.42
+	ops.append(_fill_op(Rect2(glyph_x, bar_top, glyph_w, bar_height), TELEGRAPH_MARK_GLYPH_COLOR))
+	ops.append(_fill_op(Rect2(glyph_x, bar_top + bar_height + badge * 0.10, glyph_w, glyph_w), TELEGRAPH_MARK_GLYPH_COLOR))
+	return ops
 
 
 # Story 14.1 (F8) — the corpse/loot-marker decal for a DEAD occupant. It draws the fallen unit as a DESATURATED,

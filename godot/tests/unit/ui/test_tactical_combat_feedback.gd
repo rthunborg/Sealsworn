@@ -15,6 +15,11 @@ extends "res://tests/unit/test_case.gd"
 #   - a damage entry with NO hp_after is a hit but NOT a death (no fabricated death);
 #   - has_feedback reflects whether any entry is present;
 #   - zero mutation of the input; reads only the two pinned slots (passed directly, no other VM read).
+# Story 15.3 (AC2) adds the DETONATION-anchor coverage (and closes the 14-3 R1 defer, deferred-work.md:113): an
+# ash-seer detonation `damage_applied` (weapon_id ash_seer_detonation) anchors its flash/death to the DOMAIN cell (the
+# paired marked_tile_detonated.marked_cell) even when the victim's occupant cell differs; the marked_tile_detonated ->
+# telegraph branch is now directly exercised; a NORMAL hit still anchors to the occupant cell (no regression); and the
+# seq-1 pairing does not misanchor a normal hit that follows an AVOIDED detonation.
 # str() (never eager String(nullable)) is used in assert messages (the 14.1 retro test-honesty note).
 
 const TacticalCombatFeedback = preload("res://scripts/ui/view_models/tactical_combat_feedback.gd")
@@ -28,6 +33,11 @@ func run() -> Dictionary:
 	_damage_without_hp_after_is_a_hit_but_not_a_death()
 	_has_feedback_reflects_plan_contents()
 	_plan_does_not_mutate_the_input()
+	# Story 15.3 (AC2) — the detonation anchor + the marked_tile_detonated telegraph branch (closes deferred-work.md:113).
+	_detonation_effect_anchors_to_the_marked_cell_not_the_occupant()
+	_marked_tile_detonated_surfaces_a_telegraph_and_a_lethal_detonation_death_anchors_to_the_marked_cell()
+	_a_normal_hit_still_anchors_to_the_occupant_cell()
+	_a_normal_hit_after_an_avoided_detonation_is_not_misanchored()
 	return result()
 
 
@@ -171,6 +181,117 @@ func _plan_does_not_mutate_the_input() -> void:
 	TacticalCombatFeedback.plan(summary, 0, occupants)
 	assert_equal(summary, summary_before, "plan must not mutate the event_log_summary input.")
 	assert_equal(occupants, occupants_before, "plan must not mutate the occupants input.")
+
+
+# ---- Story 15.3 (AC2): the detonation anchor + the marked_tile_detonated telegraph branch -------
+
+# The F5 correctness guard: an ash-seer DETONATION damage (its `weapon_id == ash_seer_detonation`) anchors its flash
+# to the DOMAIN-resolved cell — the paired marked_tile_detonated.marked_cell, found by the seq-1 emit adjacency — even
+# when the victim's CURRENT occupant cell differs (the bug: the flash landed on the hero's current tile while the log
+# named the marked tile). The occupants deliberately place the victim at (7,7), a divergence from the marked (5,5).
+func _detonation_effect_anchors_to_the_marked_cell_not_the_occupant() -> void:
+	var plan: Dictionary = TacticalCombatFeedback.plan(_detonation_batch(), 0, _diverged_occupants())
+	var hits: Array = plan.get("hits", [])
+	assert_equal(hits.size(), 1, "The detonation surfaces one hit. Got %s." % str(hits.size()))
+	var hit: Dictionary = hits[0] if hits.size() > 0 else {}
+	assert_equal(hit.get("cell"), {"x": 5, "y": 5}, "The detonation flash anchors to the DOMAIN marked_cell (5,5), NOT the victim's current occupant cell (7,7). Got %s." % str(hit.get("cell")))
+	assert_equal(hit.get("target_id"), "hero", "The detonation hit still names the victim. Got %s." % str(hit.get("target_id")))
+	assert_equal(hit.get("amount"), 4, "The detonation hit reads the final damage. Got %s." % str(hit.get("amount")))
+
+
+# The marked_tile_detonated -> telegraph branch (seam lines the 14-3 R1 defer left unexercised, deferred-work.md:113),
+# now DIRECTLY asserted; and a LETHAL detonation whose death fade ALSO anchors to the domain marked cell (not the
+# diverged occupant cell) — the death is co-located with the detonation on the marked tile.
+func _marked_tile_detonated_surfaces_a_telegraph_and_a_lethal_detonation_death_anchors_to_the_marked_cell() -> void:
+	var summary: Array = [
+		{
+			"sequence_id": 2,
+			"event_id": "marked_tile_detonated",
+			"actor_id": "ash_seer",
+			"details": {"marked_cell": {"x": 5, "y": 5}, "telegraph_id": "t1", "outcome": "hit"}
+		},
+		{
+			"sequence_id": 3,
+			"event_id": "damage_applied",
+			"actor_id": "ash_seer",
+			"details": {"target_entity_id": "hero", "weapon_id": "ash_seer_detonation", "final_damage": 9, "amount": 9, "hp_after": 0, "max_hp": 10}
+		}
+	]
+	var plan: Dictionary = TacticalCombatFeedback.plan(summary, 0, _diverged_occupants())
+	var telegraphs: Array = plan.get("telegraphs", [])
+	assert_equal(telegraphs.size(), 1, "The marked_tile_detonated surfaces a telegraph (the 14-3 branch, now covered). Got %s." % str(telegraphs.size()))
+	assert_equal((telegraphs[0] as Dictionary).get("cell"), {"x": 5, "y": 5}, "The detonation telegraph reads the marked cell. Got %s." % str((telegraphs[0] as Dictionary).get("cell")))
+	var deaths: Array = plan.get("deaths", [])
+	assert_equal(deaths.size(), 1, "The lethal detonation is a death. Got %s." % str(deaths.size()))
+	assert_equal((deaths[0] as Dictionary).get("cell"), {"x": 5, "y": 5}, "The lethal detonation death anchors to the DOMAIN marked cell (5,5), not the occupant cell (7,7). Got %s." % str((deaths[0] as Dictionary).get("cell")))
+
+
+# The no-regression: a NORMAL weapon hit (no ash_seer_detonation marker) still resolves its cell from occupants — the
+# detonation re-anchor must NOT blanket-reroute every damage_applied.
+func _a_normal_hit_still_anchors_to_the_occupant_cell() -> void:
+	var summary: Array = [
+		{
+			"sequence_id": 8,
+			"event_id": "damage_applied",
+			"actor_id": "enemy_iron",
+			"details": {"target_entity_id": "hero", "weapon_id": "iron_blade", "final_damage": 2, "amount": 2, "hp_after": 5, "max_hp": 10}
+		}
+	]
+	var plan: Dictionary = TacticalCombatFeedback.plan(summary, 0, _diverged_occupants())
+	var hits: Array = plan.get("hits", [])
+	assert_equal(hits.size(), 1, "The normal hit surfaces. Got %s." % str(hits.size()))
+	assert_equal((hits[0] as Dictionary).get("cell"), {"x": 7, "y": 7}, "A normal hit anchors to the victim's occupant cell (7,7), unchanged. Got %s." % str((hits[0] as Dictionary).get("cell")))
+
+
+# The seq-1 pairing collision guard: an AVOIDED detonation (a marked_tile_detonated with NO paired damage) at seq 4,
+# then an UNRELATED normal hit at seq 5. The normal hit must NOT borrow the avoided detonation's marked cell — the
+# `ash_seer_detonation` weapon gate keeps it on the victim's occupant cell.
+func _a_normal_hit_after_an_avoided_detonation_is_not_misanchored() -> void:
+	var summary: Array = [
+		{
+			"sequence_id": 4,
+			"event_id": "marked_tile_detonated",
+			"actor_id": "ash_seer",
+			"details": {"marked_cell": {"x": 5, "y": 5}, "telegraph_id": "t9", "outcome": "avoided"}
+		},
+		{
+			"sequence_id": 5,
+			"event_id": "damage_applied",
+			"actor_id": "enemy_iron",
+			"details": {"target_entity_id": "hero", "weapon_id": "iron_blade", "final_damage": 3, "amount": 3, "hp_after": 4, "max_hp": 10}
+		}
+	]
+	var plan: Dictionary = TacticalCombatFeedback.plan(summary, 0, _diverged_occupants())
+	var hits: Array = plan.get("hits", [])
+	assert_equal(hits.size(), 1, "The normal hit after an avoided detonation surfaces. Got %s." % str(hits.size()))
+	assert_equal((hits[0] as Dictionary).get("cell"), {"x": 7, "y": 7}, "A normal hit right after an avoided detonation still anchors to the occupant cell (7,7), never the avoided mark's cell (5,5). Got %s." % str((hits[0] as Dictionary).get("cell")))
+
+
+# A hit detonation batch: the marked_tile_detonated on (5,5) (seq 2) + its paired detonation damage (seq 3, the
+# ash_seer_detonation marker). The victim's occupant cell is (7,7) — the deliberate divergence the anchor must ignore.
+func _detonation_batch() -> Array:
+	return [
+		{
+			"sequence_id": 2,
+			"event_id": "marked_tile_detonated",
+			"actor_id": "ash_seer",
+			"details": {"marked_cell": {"x": 5, "y": 5}, "telegraph_id": "ash_seer_mark:ash_seer:1", "outcome": "hit"}
+		},
+		{
+			"sequence_id": 3,
+			"event_id": "damage_applied",
+			"actor_id": "ash_seer",
+			"details": {"target_entity_id": "hero", "weapon_id": "ash_seer_detonation", "final_damage": 4, "amount": 4, "hp_after": 6, "max_hp": 10}
+		}
+	]
+
+
+# The victim sits at (7,7) — a divergence from the marked (5,5), so an occupant-anchored flash would land on the WRONG
+# tile (the F5 bug the AC2 anchor test locks against).
+func _diverged_occupants() -> Array:
+	return [
+		{"entity_id": "hero", "position": {"x": 7, "y": 7}}
+	]
 
 
 # ---- fixtures / helpers --------------------------------------------------------------------------

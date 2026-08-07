@@ -21,6 +21,12 @@ extends RefCounted
 # cell (Story 14.1: is_dead == true), so the death cell resolves too. If the id is absent from occupants (fog / edge
 # case) NO hit/death is emitted for it — a safe no-op, never a fabricated cell.
 #
+# LOAD-BEARING — Story 15.3 (AC2) the DETONATION anchor exception: an ash-seer detonation `damage_applied` (its
+# `weapon_id == ash_seer_detonation`) is a CELL effect, so its flash/number anchor to the DOMAIN-resolved cell — the
+# paired marked_tile_detonated.marked_cell, found by the domain's fixed seq-1 emit adjacency — NOT the victim's current
+# occupant cell (the F5 bug: the flash landed on the hero's current tile while the log named the marked tile). Every
+# OTHER `damage_applied` (a normal weapon hit) keeps the occupant anchor above.
+#
 # `since_sequence_id` (presenter state, reset on bind) is what makes each event animate EXACTLY once: a batch at/above
 # `since_sequence_id` re-animates nothing; `last_sequence_id` is the high-water mark the presenter advances to.
 
@@ -41,6 +47,11 @@ const EVENT_ID_DAMAGE_APPLIED := "damage_applied"
 const EVENT_ID_TILE_MARKED := "tile_marked"
 const EVENT_ID_MARKED_TILE_DETONATED := "marked_tile_detonated"
 
+# Story 15.3 (AC2) — the detonation-damage weapon marker (the CombatExplanationLog source-marker precedent, mirroring
+# `scorched_hazard`). A `damage_applied` carrying this weapon id is the ash-seer detonation's CELL effect, so its flash
+# must anchor to the DOMAIN-resolved `marked_cell` (the paired marked_tile_detonated), NOT the victim's occupant cell.
+const WEAPON_ID_ASH_SEER_DETONATION := "ash_seer_detonation"
+
 
 # Project the animation plan for the events NEWER than `since_sequence_id`. An empty log, or a `since_sequence_id`
 # at/above the batch max, yields the empty plan (no moves/hits/deaths/telegraphs) so the presenter animates nothing.
@@ -51,6 +62,9 @@ static func plan(event_log_summary: Array, since_sequence_id: int, occupants: Ar
 	var telegraphs: Array[Dictionary] = []
 	var last_sequence_id: int = since_sequence_id
 	var cell_by_id: Dictionary = _occupant_cells(occupants)
+	# Story 15.3 (AC2) — {marked_tile_detonated.sequence_id -> marked_cell} over the FULL log, so the paired detonation
+	# `damage_applied` (emitted at seq + 1) anchors its flash to that authoritative DOMAIN cell.
+	var detonation_cell_by_event_seq: Dictionary = _detonation_cells_by_sequence(event_log_summary)
 
 	for entry_value: Variant in event_log_summary:
 		if not entry_value is Dictionary:
@@ -75,13 +89,24 @@ static func plan(event_log_summary: Array, since_sequence_id: int, occupants: Ar
 					})
 			EVENT_ID_DAMAGE_APPLIED:
 				var target_id: String = String(details.get("target_entity_id", ""))
-				# Resolve the victim cell from occupants. Absent id -> no hit/death (safe no-op, never fabricated).
-				if not cell_by_id.has(target_id):
-					continue
-				var cell: Dictionary = cell_by_id[target_id]
+				# Story 15.3 (AC2) — an ash-seer DETONATION damage is a CELL effect: its flash/number anchor to the
+				# DOMAIN-resolved cell (the paired marked_tile_detonated.marked_cell, at seq - 1), NEVER the victim's
+				# current occupant cell (the F5 bug: a flash on the hero's current tile while the log named the marked
+				# tile). Identified by its `ash_seer_detonation` weapon marker; the seq-1 pair is the domain's fixed emit
+				# order. A NORMAL hit still anchors to the victim's occupant cell (unchanged).
+				var cell: Variant = null
+				if String(details.get("weapon_id", "")) == WEAPON_ID_ASH_SEER_DETONATION:
+					cell = detonation_cell_by_event_seq.get(sequence_id - 1)
+				if cell == null:
+					# A normal hit (or a detonation whose pair didn't resolve — defensive): the victim's occupant cell.
+					# Absent id -> no hit/death (safe no-op, never a fabricated cell).
+					if not cell_by_id.has(target_id):
+						continue
+					cell = cell_by_id[target_id]
+				var cell_dict: Dictionary = cell
 				var amount: int = int(details.get("final_damage", details.get("amount", 0)))
 				hits.append({
-					"cell": cell.duplicate(),
+					"cell": cell_dict.duplicate(),
 					"target_id": target_id,
 					"amount": amount
 				})
@@ -89,7 +114,7 @@ static func plan(event_log_summary: Array, since_sequence_id: int, occupants: Ar
 				# non-zero sentinel so a payload that omits it is NOT mistaken for a death.
 				if int(details.get("hp_after", -1)) == 0:
 					deaths.append({
-						"cell": cell.duplicate(),
+						"cell": cell_dict.duplicate(),
 						"entity_id": target_id
 					})
 			EVENT_ID_TILE_MARKED:
@@ -134,6 +159,25 @@ static func _occupant_cells(occupants: Array) -> Dictionary:
 		var cell: Variant = _cell_or_null(occupant.get("position"))
 		if cell != null:
 			result[entity_id] = cell
+	return result
+
+
+# Story 15.3 (AC2) — {marked_tile_detonated.sequence_id -> marked_cell {x,y}} over the full log. The paired detonation
+# `damage_applied` (emitted at seq + 1) reads this to anchor its flash to the DOMAIN-resolved cell. Kind-agnostic (the
+# ash-seer + boss telegraphs share the marked_tile_detonated vocabulary). An entry with no resolvable cell is skipped
+# (never a fabricated cell). Pure; reads only the passed slot; mutates nothing.
+static func _detonation_cells_by_sequence(event_log_summary: Array) -> Dictionary:
+	var result: Dictionary = {}
+	for entry_value: Variant in event_log_summary:
+		if not entry_value is Dictionary:
+			continue
+		var entry: Dictionary = entry_value
+		if String(entry.get("event_id", "")) != EVENT_ID_MARKED_TILE_DETONATED:
+			continue
+		var details: Dictionary = _dict(entry.get("details", {}))
+		var cell: Variant = _cell_or_null(details.get("marked_cell"))
+		if cell != null:
+			result[int(entry.get("sequence_id", 0))] = cell
 	return result
 
 
