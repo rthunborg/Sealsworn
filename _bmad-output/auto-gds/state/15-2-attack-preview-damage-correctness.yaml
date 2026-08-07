@@ -35,15 +35,18 @@ commits:
   - 6c67fc9
   - 20c28d7
   - 2360231
+  - ac0e0a0
+  - 1d78543
+  - 311b682
 deferred_work_archived: 0
 planning_drift: []
 pr_url: "https://github.com/rthunborg/Sealsworn/pull/84"
 ci_run_url: null
 ci_status: none
-pr_merged: false
-merge_method: null
-merge_commit: null
-branch_deleted: false
+pr_merged: true
+merge_method: merge
+merge_commit: 2f49f5a
+branch_deleted: true
 open_questions: []
 deferred_work:
   - "AttackPreviewQuery.preview_target_entity left support-blind (no live caller; latent F4-desync risk for a future armed surface) — logged to deferred-work.md."
