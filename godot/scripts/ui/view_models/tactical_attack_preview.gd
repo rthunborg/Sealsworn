@@ -4,6 +4,7 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const AttackPreviewQuery = preload("res://scripts/tactical/targeting/attack_preview_query.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalPreviewView = preload("res://scripts/ui/view_models/tactical_preview_view.gd")
 const WeaponDefinition = preload("res://scripts/content/definitions/weapon_definition.gd")
 
@@ -21,9 +22,10 @@ static func from_query(
 	board: BoardState,
 	actor_id: StringName,
 	target_cell: Vector2i,
-	weapon: WeaponDefinition
+	weapon: WeaponDefinition,
+	attacker_support: SupportDefinition = null
 ) -> TacticalAttackPreview:
-	var validation: ActionResult = AttackPreviewQuery.new().preview_target_cell(board, actor_id, target_cell, weapon)
+	var validation: ActionResult = AttackPreviewQuery.new().preview_target_cell(board, actor_id, target_cell, weapon, attacker_support)
 	var source_metadata: Dictionary = validation.metadata if validation.metadata is Dictionary else {}
 	var reason: String = String(source_metadata.get("reason", "valid" if validation.succeeded else validation.error_code))
 	var available: bool = validation.succeeded
@@ -31,6 +33,10 @@ static func from_query(
 	var weapon_reach: int = int(source_metadata.get("range", weapon.attack_range if weapon != null else 0))
 	var targeting_shape: String = String(source_metadata.get("targeting_shape", String(weapon.targeting_shape) if weapon != null else ""))
 	var expected_base_damage: int = int(source_metadata.get("expected_base_damage", -1))
+	# Story 15.2 (F4): `expected_damage` is the deterministic total (base + attacker-support bonus) the query computed.
+	# For an invalid preview or a support-blind query it falls back to `expected_base_damage`, so the two keys stay equal
+	# unless a real loadout bonus (the tome) applies — the panel reads `expected_damage` first, so the shown N == resolved N.
+	var expected_damage: int = int(source_metadata.get("expected_damage", expected_base_damage))
 	var blocker_ignored: bool = bool(source_metadata.get("blocker_ignored", false))
 	var warnings: Array = TacticalPreviewView.safe_array_copy(source_metadata.get("warnings", []))
 	var effects: Array = TacticalPreviewView.safe_array_copy(source_metadata.get("effects", []))
@@ -45,7 +51,7 @@ static func from_query(
 		"blocker_cells": blocker_cells,
 		"blocker_state": _blocker_state(available, blocker_cells, blocker_ignored),
 		"blocker_ignored": blocker_ignored,
-		"expected_damage": expected_base_damage,
+		"expected_damage": expected_damage,
 		"expected_base_damage": expected_base_damage,
 		"effects": effects,
 		"warnings": warnings,

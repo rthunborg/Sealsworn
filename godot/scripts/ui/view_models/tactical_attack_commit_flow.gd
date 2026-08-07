@@ -31,7 +31,7 @@ func tap_attack_target(
 ) -> TacticalAttackCommitFlowResult:
 	if _matches_pending_attack(actor_id, target_cell, weapon):
 		return confirm_attack(context, weapon, attacker_support, defender_support, command_bridge)
-	return _start_attack_preview(context, actor_id, target_cell, weapon)
+	return _start_attack_preview(context, actor_id, target_cell, weapon, attacker_support)
 
 
 func confirm_attack(
@@ -50,7 +50,9 @@ func confirm_attack(
 
 	var actor_id: StringName = StringName(String(_state.get("actor_id", "")))
 	var target_cell: Vector2i = _cell_from_value(_state.get("target_cell", {}))
-	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon).to_dictionary()
+	# Story 15.2 (F4): the confirm-time rebuild is used only for legality gating (the number came from the arm), but
+	# thread the support anyway so a re-arm can never regress the stored `expected_damage`.
+	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon, attacker_support).to_dictionary()
 	var preview_reason: String = String(preview.get("reason", "invalid_attack_preview"))
 	if not bool(preview.get("commit_available", false)):
 		_clear(preview_reason)
@@ -93,7 +95,8 @@ func clear_for_mode_switch(reason: StringName = &"mode_switch") -> TacticalAttac
 
 func refresh_or_clear(
 	context: TacticalActionContext,
-	weapon: WeaponDefinition
+	weapon: WeaponDefinition,
+	attacker_support: SupportDefinition = null
 ) -> TacticalAttackCommitFlowResult:
 	if String(_state.get("mode", MODE_NONE)) != MODE_ATTACK_PREVIEW:
 		return _result(false, "", "no_pending_attack", null)
@@ -103,7 +106,8 @@ func refresh_or_clear(
 
 	var actor_id: StringName = StringName(String(_state.get("actor_id", "")))
 	var target_cell: Vector2i = _cell_from_value(_state.get("target_cell", {}))
-	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon).to_dictionary()
+	# Story 15.2 (F4): thread the support so a re-preview keeps the loadout-boosted `expected_damage` consistent.
+	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon, attacker_support).to_dictionary()
 	var reason: String = String(preview.get("reason", "invalid_attack_preview"))
 	if not bool(preview.get("commit_available", false)):
 		_clear(reason)
@@ -120,9 +124,13 @@ func _start_attack_preview(
 	context: TacticalActionContext,
 	actor_id: StringName,
 	target_cell: Vector2i,
-	weapon: WeaponDefinition
+	weapon: WeaponDefinition,
+	attacker_support: SupportDefinition = null
 ) -> TacticalAttackCommitFlowResult:
-	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon).to_dictionary()
+	# Story 15.2 (F4): the ARMED preview stored here is what the panel renders as "Expected damage: N". Thread the
+	# attacker support (the class off-hand, e.g. the pyromancer tome) so the stored `expected_damage` folds the same
+	# deterministic bonus AttackCommand applies on commit — the exact bug locus where the arm previously dropped it.
+	var preview: Dictionary = TacticalAttackPreview.from_query(_context_board(context), actor_id, target_cell, weapon, attacker_support).to_dictionary()
 	var reason: String = String(preview.get("reason", "invalid_attack_preview"))
 	if not bool(preview.get("commit_available", false)):
 		_clear(reason)

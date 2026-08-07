@@ -216,13 +216,36 @@ parked in **`epic-17-objectives-stub.md`**:
 
 **The designer pass MUST review that stub and correct it** — it was drafted before this analysis and
 is expected to be wrong in places. Its §6.1 lists your required actions verbatim. The single most
-important is **E17-Q1: the XP gap** — the ratified Q3 wording says a skipping player forfeits "XP",
-but **no XP or character-progression system exists in this codebase**. Resolve whether that means
-the existing currencies (gold / loot / Oath Shards) or a genuinely new system, because the two
-readings differ by an entire epic of scope.
+important is **E17-Q1: the XP gap** — the ratified Q3 wording says a skipping player forfeits "XP".
+
+> ### ✅ E17-Q1 RESOLVED by the designer pass (2026-08-05) — and this brief was WRONG
+>
+> **This brief originally asserted "no XP or character-progression system exists in this codebase."
+> That claim was incorrect and is retracted.** It was drawn from a grep for *experience/XP* naming
+> and over-concluded from a negative result.
+>
+> **What is actually shipped** (independently verified 2026-08-05): `character_level_requirement` is
+> a real, validated, content-populated field on `ArmorDefinition` and `JewelryDefinition`, backed by
+> ratified **GDD FR75**. Four baseline items carry non-zero gates — `warded_plate` (4),
+> `sealbearers_signet` (4), `chain_hauberk` (2), `jasper_amulet` (2).
+>
+> **The true finding is worse and more useful than the false one.** `requires_character_level()` has
+> **no production consumer** outside its own definitions, and **no character-level state exists
+> anywhere** in `scripts/run/` or `scripts/core/`. Epic 6 shipped the **demand** side of character
+> progression; the **supply** side has never existed. So **GDD FR75 is currently unsatisfiable** and
+> those four items are permanently unequippable.
+>
+> **Answer for Epic 17: (a) the existing currencies** — gold / loot / Oath Shards. Direction A needs
+> **no** new progression system, and its scope is unchanged.
+>
+> **FR75 is separate, pre-existing debt** belonging to neither Epic 16 nor Epic 17. **Ratified
+> 2026-08-05: option (ii) — retire the character-level gate**, preserving FR75's surviving intent
+> ("never gate equipment on run depth"). Tracked in `implementation-artifacts/deferred-work.md`;
+> **do not absorb it into Epic 16 or 17.**
 
 You are also explicitly invited to **challenge the container**: Directions A and B share no
 machinery and are grouped only because both were deferred on the same day.
+*(Challenged and split — Epic 17 / Epic 18, ratified 2026-08-05.)*
 
 ## 5. What this brief does NOT decide
 

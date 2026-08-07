@@ -93,11 +93,11 @@ FR35: Procedural combat levels must include a clear entrance, clear exit, enough
 
 FR36: Procedural generation validation must check entrance-to-exit pathing, absence of required class or item gates, legal enemy placement, reachable intended rewards, and safe first reveal.
 
-FR37: Small levels must be supported around 8x8 tiles.
+FR37: Small levels must be supported around 12x12 tiles. (Amended 2026-08-05 by the Epic-16 GDD pass; was 8x8.)
 
-FR38: Medium levels must be supported around 14x12 tiles.
+FR38: Medium levels must be supported around 18x16 tiles. (Amended 2026-08-05 by the Epic-16 GDD pass; was 14x12.)
 
-FR39: Large and Huge level generation polish must be deferred for MVP unless needed for the boss or a rare special node.
+FR39: Large levels must be supported around 26x28 tiles as a third size class, drawn by depth-weighted but never exclusive selection; Huge level generation remains deferred. (Amended 2026-08-05 by the Epic-16 GDD pass; previously deferred Large alongside Huge.)
 
 FR40: The MVP must support save/resume between levels.
 
@@ -160,6 +160,8 @@ FR68: The MVP must include UI flows for hero select, tactical HUD, tile/attack p
 FR69: The game must expose enough combat log or equivalent feedback for players to identify why they took damage or died.
 
 FR70: Every epic milestone must preserve a playable build that can launch and validate a small test loop.
+
+FR71: Enemies must begin a floor dormant and activate only on perceiving the hero within their own per-enemy sight range along a valid line of sight; activation must be permanent for the encounter, observable to the player, and explainable in player or debug language, and it must be evaluated through the same shared visibility model that governs the player (so the Darkness affinity reduces sight range for enemies and player alike). (Added 2026-08-05 by the Epic-16 GDD pass.)
 
 ### NonFunctional Requirements
 
@@ -382,9 +384,13 @@ FR69: Epic 1 - Combat log or equivalent damage explanation belongs to tactical c
 
 FR70: Epic 10 - Playable-build preservation is validated across MVP readiness gates.
 
+FR71: Epic 16 - Dormant-until-seen enemy activation, per-enemy sight ranges, and symmetric Darkness sight reduction belong to the dungeon-scale awareness model. Primary delivery is Story 16.3, over the visibility layer Epic 7 established and the enemy AI Epic 1 established.
+
 ### 2026-06-04 Readiness Backlog Patch Traceability
 
-This supplemental map preserves the existing 70-item implementation FR inventory while tracing targeted backlog patches from `implementation-readiness-report-2026-06-04.md` to the amended stories.
+This supplemental map preserves the implementation FR inventory above while tracing targeted backlog patches from `implementation-readiness-report-2026-06-04.md` to the amended stories.
+
+> **Two FR namespaces — do not conflate them.** Entries in this section are prefixed **`GDD FRxx`** and refer to the longer GDD FR inventory in `implementation-readiness-report-2026-06-04.md`. Unprefixed `FRxx` elsewhere in this file refers to the **implementation FR inventory** (FR1-FR71) and its Coverage Map. The two numbering schemes overlap and are not the same requirement: e.g. **GDD FR71** is 3-choice passive moments, while **implementation FR71** is enemy sight-based activation.
 
 - GDD FR46: door sealing/containment-law feedback -> Story 4.4 and Story 10.7.
 - GDD FR47 and NFR5: early/mid/late/finale pacing and run-length targets -> Story 4.6 and Story 10.4.
@@ -538,7 +544,7 @@ The loop Epic 14 made completable becomes **readable and correct**: the HUD stop
 
 Tactical floors become **large multi-room dungeons** — rooms, corridors, dead-ends, and structural filler that is not all reachable — across Small, Medium, and a new Large size class, viewed at a camera that defaults further out, with enemies that wake on their own line of sight instead of activating all at once.
 
-**FRs covered:** extends the Epic-3 procedural-generation FR set (deterministic seeded layout generation, tactical wrinkles, reachability validation) to a multi-room generator and three size classes; extends the Epic-1/Epic-12 enemy-behavior FRs with a sight-based activation model; touches the FR68 UI-flow set for board readability at scale, under the NFR performance budgets. **A new enemy-awareness FR and the level-structure/size-class design update are expected outputs of the pre-epic GDD pass** — the FR Coverage Map is updated there, not by this entry.
+**FRs covered:** extends the Epic-3 procedural-generation FR set (deterministic seeded layout generation, tactical wrinkles, reachability validation) to a multi-room generator and three size classes; extends the Epic-1/Epic-12 enemy-behavior FRs with a sight-based activation model; touches the FR68 UI-flow set for board readability at scale, under the NFR performance budgets. **Adds FR71** (dormant-until-seen enemy activation, per-enemy sight ranges, symmetric Darkness sight reduction) as its primary new requirement, delivered by Story 16.3. **Amends FR37/FR38/FR39** to the ratified size-class dimensions (Small ~12x12, Medium ~18x16, Large ~26x28 as a supported third class; Huge still deferred). Both were delivered by the pre-epic GDD pass of 2026-08-05, which also applied the level-structure, pacing, and difficulty-non-goal updates to `gdd.md`.
 
 **Implementation notes:** Added 2026-07-24 via the same sprint change proposal (`sprint-change-proposal-2026-07-24.md`) from a directed design expansion. **Executes after Epic 15.** The core loop and route/node model are UNCHANGED — a node is still one fight the player clears; only the floor geometry, its scale, and enemy activation change. **This is the most architecture-sensitive epic in the project so far and REQUIRES a GDD pass + a generation-architecture note BEFORE Story 16.1** (level structure, size classes, sight-aggro, pacing at scale; the room/corridor algorithm, the unreachable-cell invariant and its ripple into movement/path/fog/tap-router, enemy activation state, and the re-pin/winnability plan). Unlike Epic 15, this epic **deliberately re-pins seed-regression fingerprints — but only twice**: Story 16.1 (dimension change) and Story 16.2 (algorithm change), each re-derived and re-pinned in the same change via the dump tools with justification recorded, and with the reference-driver winnability catalog re-proven for every class at every size. The determinism discipline itself is unchanged: every layout-affecting draw still routes through `STREAM_LEVEL` in a fixed, documented order. Mobile performance at the Large class is a hard gate (Story 16.5). Difficulty stays a hard non-goal — scale and structure are not difficulty knobs.
 
@@ -3552,9 +3558,20 @@ So that a dungeon feels like a place.
 **When** the domain and presentation consume the board
 **Then** an unreachable cell is never a legal move target, never a spawn site, never a reward site, and is handled coherently by movement, pathing, line-of-sight/fog, and the tap router — the invariant is enforced at the domain seam, not patched per-consumer.
 
+**Given** the shipped `excessive_blockage` bound measures interior WALL cells against interior cells (`MAX_INTERIOR_WALL_RATIO = 0.35`), a metric that conflates placed blockers with structural filler once rooms and corridors exist
+**When** the room/corridor algorithm lands
+**Then** the bound is RE-BASED onto the carved set — `placed blockers + wrinkles / carved floor cells` — keeping the ratio value at `0.35` and its original meaning ("at most 35% of the walkable space carved may be filled in"), read from the carved-cell list the structure phase already emits into the layout dictionary
+**And** the check FALLS BACK to the current interior computation when that key is absent, so Story 16.1's open-interior layouts validate byte-identically
+**And** a new `insufficient_reachable_fraction` check bounds filler from the other direction, so a degenerate layout of a few tiny rooms in a large grid is rejected rather than shipped
+**And** `MIN_FIRST_REVEAL_CELLS` and `darkness_fairness_query`'s WALL-counting fairness math are both verified against real generated output and re-based if inflated by filler
+**And** this deliberate behavior change to a shipped, test-pinned validator is recorded with justification, never slipped in as a refactor.
+
+> **Why this is an explicit AC:** at `0.35`, a Large floor must carve ≥65% of its interior as floor to pass, while a conventional BSP dungeon carves 35-55%. Left unchanged the bound does not merely reject the new algorithm — it pressures the generator back toward the open room this epic exists to replace, either by failing every node after all retry attempts or, worse, by silently rewarding whoever raises room density until the check goes green. See `game-architecture.md` §"Dungeon Generation Architecture (Epic 16)" §2.
+
 **Given** the algorithm change moves layouts
 **When** the suites run
-**Then** the moved fingerprints are re-derived and re-pinned in the SAME change with justification recorded, and the winnability catalog is re-proven for every class at every size on the NEW geometry, failing loud on any unwinnable seed.
+**Then** the moved fingerprints are re-derived and re-pinned in the SAME change with justification recorded, and the winnability catalog is re-proven for every class at every size on the NEW geometry, failing loud on any unwinnable seed
+**And** the reference driver's hero policies are treated as IN SCOPE for this story — kiting, melee commit, and detonation-dodging all encode open-room assumptions that corridors and dead-ends break, and Story 14.1 already made a Medium seed unwinnable by the kite heuristic after a far smaller geometry change.
 
 ### Story 16.3: Enemy Sight-Based Activation
 

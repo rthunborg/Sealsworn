@@ -6,8 +6,8 @@ platforms:
   - Windows desktop/laptop
   - Mobile-first UX with desktop-playable parity
 created: 2026-05-31
-updated: 2026-06-01
-status: Frozen for architecture v0
+updated: 2026-08-05
+status: Frozen for architecture v0; amended 2026-08-05 by the Epic-16 pre-epic design pass
 ---
 
 # Sealsworn - Game Design Document
@@ -128,7 +128,7 @@ These values are **Prototype Baseline v0**: the official first combat baseline f
 - Baseline player movement budget is 3 tiles per committed move action.
 - Baseline line-of-sight radius is 4 tiles.
 - Baseline player HP is 18.
-- Small levels average around 8x8 tiles.
+- Tactical floors are multi-room dungeons in one of three size classes (Small ~12x12, Medium ~18x16, Large ~26x28). See Procedural Generation.
 - Levels use fog of war: unexplored tiles are black; explored-but-out-of-LoS tiles remain as gray memory.
 - The player has a universal basic attack shaped by the equipped weapon.
 - Attacks generally require straight-line alignment unless a weapon or effect explicitly overrides that rule.
@@ -160,13 +160,34 @@ These values are **Prototype Baseline v0**: the official first combat baseline f
 
 #### Prototype Enemy Baseline
 
-| Enemy | Role | HP | Baseline Behavior |
-|---|---|---:|---|
-| Iron Cultist | Melee | 10 | Advances toward the player; deals 3 physical damage when adjacent. |
-| Gate Brute | Melee | 12 | Heavier melee body; uses the same prototype melee behavior. |
-| Ash Seer | Caster | 8 | Marks the player's tile from range 5 with LoS, then detonates next enemy turn for 4 damage if the player remains there. |
+| Enemy | Role | HP | Sight | Baseline Behavior |
+|---|---|---:|---:|---|
+| Iron Cultist | Melee | 10 | 4 | Advances toward the player; deals 3 physical damage when adjacent. |
+| Gate Brute | Melee | 12 | 3 | Heavier melee body; uses the same prototype melee behavior. |
+| Ash Seer | Caster | 8 | 6 | Marks the player's tile from range 5 with LoS, then detonates next enemy turn for 4 damage if the player remains there. |
 
 These enemies are the first enemy-pattern tests. They exist to validate melee pressure, heavier body blocking, and telegraphed caster danger before the enemy roster expands.
+
+#### Enemy Awareness
+
+These rules are **Enemy Awareness Baseline v0**. They replace the implicit model in which every enemy on a floor engages from the first turn.
+
+- Enemies begin a floor **dormant**. A dormant enemy takes no turn and applies no pressure.
+- An enemy **wakes** when it perceives the hero: within its own **sight range**, along a valid **line of sight**, evaluated through the same visibility model the player is subject to.
+- Waking is **permanent** for the encounter. A woken enemy never returns to dormant.
+- Waking is **observable**: the player gets a readable cue at the moment an enemy wakes.
+- Waking is **explainable**: every activation decision can be stated in plain language ("woke: saw hero at range 3", "dormant: no line of sight").
+- A dormant enemy still counts toward the floor's clear condition. Dormancy hides threat; it does not remove it.
+
+**Sight range is a per-enemy property, not a global constant.** It varies by monster type and fighting style, and **ranged and caster enemies generally see further than melee enemies** — a caster's threat is its reach, so its awareness matches it. Baseline v0 bands: melee 3-5, ranged/caster 5-7. Player baseline line-of-sight radius stays 4.
+
+An enemy may therefore notice the hero before the hero can see it. That asymmetry is the intended source of tension, bounded by one rule:
+
+> **Waking may happen unseen; damage may not arrive unannounced.** An enemy waking outside the player's line of sight is fair play. Its first damaging action must still be perceivable in advance — through a telegraph, or by the enemy entering view first. This is the existing Darkness guardrail ("must not spawn unavoidable damage from unseen space") applied to awareness.
+
+**Design intent: the player controls the pace of engagement.** Approach route, sightlines, and positioning decide how many enemies are awake at once. Pulling one room at a time is a legitimate and skillful way to play a large floor; blundering down a long sightline and waking three rooms is a real and self-inflicted mistake. This is the mechanism that keeps "one node = one fight" playable once floors get large — without it, a Large floor is not tense, merely exhausting.
+
+**Darkness cuts both ways.** The Darkness affinity darkens the floor **visually** and **reduces sight range for the player and for monsters alike**, applied through one shared visibility seam rather than two parallel models. Darkness is therefore **mutual concealment**, not a pure player debuff: it hides the player from enemies exactly as it hides enemies from the player, and it makes sneaking past a room a viable option that a lit floor does not offer.
 
 #### Run-Building Mechanics
 
@@ -197,10 +218,10 @@ The two-step attack flow supports the **Deliberate Turns, No Real-Time Pressure*
 
 This is the MVP run-structure baseline:
 
-- Target successful MVP run length: 20-35 minutes.
-- Failed runs often end much earlier, usually around 5-15 minutes.
-- Long, careful, or completionist runs can stretch toward 45 minutes.
-- Run map length: 8-12 nodes before the boss.
+- **Target length of an AVERAGE run: 20-35 minutes.** The target describes the typical run, and the typical run **ends in death** — the expected outcome is the player dying at roughly **70% of nodes completed**, about 5-6 of the ~8 nodes a route traverses before the boss. The budget covers an incomplete run, not a full clear.
+- A full clear through the boss legitimately runs longer than 35 minutes. That is the exception the target does not describe.
+- Runs that end early — a bad third node — still land around 5-15 minutes.
+- Run map length: 8-12 nodes before the boss, arranged roughly 8 tiers deep, one node visited per tier.
 - Finale: Larval Avatar only for MVP.
 - Save/resume between levels is required.
 - Mid-level save/resume is desirable if feasible.
@@ -218,6 +239,23 @@ Pacing:
 
 The player should usually see at least one meaningful build-defining passive by the early-mid run, so the run has identity before it reaches the late phase.
 
+**Pacing pressure — stated honestly.** Three ratified changes all push node duration in the same direction at once, and none of them is being reversed:
+
+| Pressure | Effect on node duration |
+|---|---|
+| Hero movement stays **1 tile per turn** at every size class | Crossing a floor costs turns in direct proportion to its size. No move-points model or out-of-combat speed boost offsets it. |
+| A Large floor is **~4.3x the area** of the current Medium (728 vs 168 cells) and roughly **2x the linear traversal distance** | Tens of turns of walking before a blow is struck. |
+| **Movement animation** gives every turn real wall-clock cost it previously did not have | A direct multiplier on perceived node duration, compounded by a sequenced enemy phase. |
+
+Two things hold the 20-35 minute target against that pressure:
+
+1. **The target covers ~5-6 nodes, not 8.** Death at ~70% of nodes is the expected outcome, so the budget was never buying a full clear.
+2. **Size-class mix is the primary pacing lever** — and the only one still free. Large floors are rare by design (see Procedural Generation); if runs measure long in playtest, the mix is the dial to turn, not movement speed and not the number of enemies.
+
+Enemy awareness cuts the other way and partly offsets the cost: a floor fought a room at a time resolves in shorter, more decisive engagements than one where every enemy converges at once. Sight-based activation is a pacing feature, not only a tension feature.
+
+If measured runs still overshoot after the mix is tuned, the target is what gets revisited — deliberately and on the record — rather than quietly left to become false.
+
 ### Procedural Generation
 
 These rules are **Procedural Generation Baseline v0** for MVP.
@@ -225,11 +263,45 @@ These rules are **Procedural Generation Baseline v0** for MVP.
 - Seeds reproduce the run map, node structure, level layouts, affinity assignments, enemy placements, reward categories, major event outcomes, and boss/finale setup.
 - Manual seed entry is allowed for replay, debug, sharing, and practice, but grants no meta progression.
 - Level generation prioritizes readable tactical spaces over novelty.
-- Small levels are around 8x8 tiles and appear mostly early or in compact special nodes.
-- Medium levels are around 14x12 tiles and are introduced mid-run.
-- Large and Huge levels are deferred for MVP polish unless needed for the boss or a rare special node.
 - Each combat level needs a clear entrance, a clear exit, enough blockers/cover to make line of sight matter, and at least one tactical wrinkle.
 - Fog hides exact future danger but must not create unfair instant punishment when new space is revealed.
+
+#### Level Structure
+
+A tactical floor is **a place, not an arena**. The single open interior is replaced by:
+
+- **Rooms connected by corridors**, including **dead-ends** that lead nowhere and reward the detour or punish it.
+- **Structural filler that is not reachable** — wall mass, rubble, collapsed sections. **Not every cell is a destination.** An unreachable cell is never a legal move target, never a spawn site, and never a reward site.
+- A **connected reachable set**: everywhere the player can stand is mutually reachable, and the entrance can always reach the exit.
+- Geometry generated **deterministically from the run seed** and validated for connectivity and fightability before use. **Structure never makes a node unwinnable** — a floor too cramped to fight its own encounter is rejected and regenerated, not shipped.
+
+This is a change to what a fight *is*. Before: one open room where every enemy engages at once. After: an approach through structure where threat arrives in waves the player provokes. It is the tactical expression of the **Position Is Power** pillar at a scale where position finally has room to matter.
+
+#### Size Classes
+
+Three size classes replace the previous two:
+
+| Class | Target dimensions | Role |
+|---|---|---|
+| **Small** | ~12x12 | Tight, quick, legible. Early floors and compact special nodes. |
+| **Medium** | ~18x16 | The standard tactical floor. The class most fights happen on. |
+| **Large** | ~26x28 | Rare and special. A genuine dungeon level — multiple rooms, real traversal, room to be outflanked. |
+
+Large is **not a hard mode**. It is a different tactical space (see Difficulty Modifiers).
+
+**Size-class mix.** Which class a node draws is **weighted by route depth and never exclusive.** Baseline v0 weighting bands:
+
+| Route depth | Small | Medium | Large |
+|---|---:|---:|---:|
+| Early (tiers 1-3) | 60 | 35 | 5 |
+| Mid (tiers 4-6) | 25 | 60 | 15 |
+| Late (tiers 7-8) | 10 | 55 | 35 |
+
+Modifiers: **elite nodes** shift one band toward Large; the **pre-boss node** weights Large heaviest. The boss arena is authored, not drawn from this table. Compact special nodes (shop, reforge, gambling, lore) are not combat floors and take no size class.
+
+**Positive weights only — no zero-probability entries.** Every class remains possible at every depth: a Large floor can appear at tier 2 and a Small floor at tier 8, each rare enough to be a genuine surprise. Depth shifts the odds; it never forecloses an outcome. This follows the same weighting contract as class-relevant reward offers — relevance raises frequency, and nothing is ever excluded.
+
+#### Generation Rules and Validation
 
 Tactical wrinkle examples:
 
@@ -252,10 +324,15 @@ Determinism rules:
 Generator validation:
 
 - Entrance-to-exit path exists.
+- The reachable set is fully connected — no walkable pocket is sealed off from the rest of the floor.
+- Every enemy, reward, and entity sits on a reachable cell; no unreachable cell is ever a move target, spawn site, or reward site.
+- The floor affords enough open space for its own encounter to be fought — no node is made unwinnable by cramped geometry.
 - No required class or item gates block mandatory progress.
 - Enemy placements are legal.
 - Rewards are reachable if intended.
 - The first revealed area cannot immediately punish the player without a reasonable response.
+
+A layout failing any invariant is **rejected and regenerated with a structured diagnostic** — never coerced into validity.
 
 ### Permadeath and Progression
 
@@ -404,6 +481,14 @@ These rules are **Difficulty and Challenge Systems Baseline v0**.
 - Manual seed runs are practice, sharing, replay, and debug tools only; they grant no meta progression.
 - Post-MVP challenge content can exist as explicit variant content, trials, oaths, or special runs, but not as a generic selectable difficulty ladder.
 
+**Scale and structure are not difficulty knobs.** This restates the existing non-goal against the size classes and dungeon structure above; nothing in them relaxes it.
+
+- A Large floor is **not** a hard mode and a Small floor is **not** an easy mode. They are different tactical spaces that reward different play — more room to maneuver and be outflanked, versus less room to do either.
+- Size class carries **no stat scaling**. Enemies on a Large floor are not tougher, more numerous per room, or better rewarded for being on a Large floor.
+- Enemy awareness is **not** a difficulty setting. Sight ranges are a per-monster identity trait, not a global aggression dial.
+- Depth-weighted size mix shifts **variety**, not challenge. A Large floor appearing late is late-run texture, not a late-run penalty.
+- No story may introduce a player-selectable difficulty tier or a stat-scaling multiplier under cover of the scale work.
+
 ---
 
 ## Progression and Balance
@@ -502,7 +587,7 @@ MVP affinity set:
 - **Scorched:** failed purge protocol; fire hazards, burning terrain, and damage-over-time pressure.
 - **Flooded/Conductive:** broken ward conduits; water/electric interactions, pathing pressure, and danger zones.
 - **Cursed:** corrupted oath-law; risk/reward, penalties, and dangerous bargains.
-- **Darkness:** failed concealment protocol; reduced visibility, hidden threats, uncertainty, and stronger fog/memory pressure.
+- **Darkness:** failed concealment protocol; reduced visibility, hidden threats, uncertainty, and stronger fog/memory pressure. Darkens the floor visually **and reduces sight range for the player and for monsters alike** (see Enemy Awareness).
 
 Darkness guardrail:
 
@@ -510,6 +595,7 @@ Darkness guardrail:
 - It can reduce visibility, obscure enemy counts, hide rewards, distort explored memory, or empower certain enemies.
 - It must not spawn unavoidable damage from unseen space.
 - The player should feel cautious and clever, not ambushed unfairly.
+- **Darkness is symmetric.** It cuts the player's sight and every monster's sight through **one shared visibility seam**, never two parallel models. A darkened floor is mutual concealment — harder to see threats, and harder to be seen — which makes slipping past a room a real option Darkness uniquely offers. It is never a one-sided player debuff.
 
 ---
 
@@ -593,7 +679,8 @@ MVP asset baseline:
 - 3 enemy-pattern visuals: Iron Cultist, Gate Brute, Ash Seer.
 - 1 boss visual: Larval Avatar.
 - 4 affinity visual treatments: Scorched, Flooded/Conductive, Cursed, Darkness.
-- Tile and prop set for Small and Medium dark fantasy Labyrinth levels, including floor, wall, rubble/blocker, exit, door, hazard, and reward/object tiles.
+- Tile and prop set for Small, Medium, and Large dark fantasy Labyrinth levels, including floor, wall, corridor, rubble/blocker, unreachable structural filler, exit, door, hazard, and reward/object tiles.
+- A readable dormant-versus-awake enemy state distinction, and a wake cue that reads at a zoomed-out Large-floor camera.
 - Core weapon/support icons for the Prototype Baseline v0 weapon and support list.
 - 20-30 passive icons or placeholder glyphs with enough visual distinction to support reward choice.
 - UI frames and controls for hero select, tactical HUD, tile/attack preview, passive modal, run map, outpost/meta menu, run summary, settings, and save/resume.
@@ -621,6 +708,17 @@ Detailed epics are maintained in `epics.md`. Every epic must preserve a playable
 | 9 | Larval Avatar MVP Finale | Boss encounter, victory, first-victory reveal, and post-victory return loop complete the first finale. |
 | 10 | Playtest Tuning and MVP Readiness | Success metrics, balance passes, generator soft-lock checks, device checks, and first playable test loop are ready. |
 
+Epics 1-10 are the MVP set defined at GDD v0. The epics below were added after MVP close, each via a recorded sprint change proposal, as the design met real play. They are listed here so this table stays the design-side view of the same sequence `epics.md` carries.
+
+| Sequence | Epic | Playable Outcome |
+|---|---|---|
+| 11 | Live Run Flow, HUD, and Outpost | The full descent is playable hands-on: launch, choose a class, fight generated levels and the Larval Avatar on the live board, win or die for real, see the reveal lines and run summary, spend meta progress at the outpost, and descend again. |
+| 12 | Interactive Tactical Combat | Players drive moment-to-moment combat by hand — tap to move, preview and confirm attacks, inspect tiles — with a class loadout that makes generated fights winnable and classes tactically distinct. |
+| 13 | Human-Playable Board | The board draws as a real tile grid — terrain, occupants, fog, affinity treatments — taps resolve to board cells and drive the interactive-combat seams, and post-fight reward and passive choices are clickable on screen. |
+| 14 | Playable & Presentable | The loop is genuinely finishable and readable (no soft-lock, visible previews, feedback for every action, a run-end summary, seed variety, a route map), then made to look intentional across hero select, outpost, HUD, and a shared UI theme. |
+| 15 | Playtest Response | The loop becomes readable and correct: the HUD stops clipping, the attack-preview number matches the damage dealt, a run can be quit and resumed, threats telegraph before they detonate, event nodes and the run summary report real outcomes, and movement animates instead of teleporting. |
+| 16 | Dungeon Generation, Scale & Awareness | Tactical floors become large multi-room dungeons — rooms, corridors, dead-ends, unreachable structural filler — across three size classes, viewed at a camera that defaults further out, with enemies that wake on their own line of sight instead of activating all at once. |
+
 ---
 
 ## Success Metrics
@@ -646,6 +744,7 @@ Gameplay and comprehension success signals:
 
 - Players understand valid movement and attack options after a short first session.
 - Players can identify why they took damage or died.
+- Players can tell a dormant enemy from an awake one, and can say what woke it.
 - Players understand the difference between preview and commit on mobile.
 - Players understand what Consume and Destroy do on passive rewards.
 - Players report that positioning choices matter.
@@ -655,7 +754,7 @@ Run-quality success signals:
 - At least one meaningful build-defining passive appears by early-mid run.
 - Players encounter at least one tempting risk/reward decision per run.
 - Failed runs feel like they taught something.
-- Successful MVP runs land in the 20-35 minute target most of the time.
+- Average runs land in the 20-35 minute target most of the time, measured across all runs rather than clears only. The typical measured run ends in death around 70% of the way through the route.
 - Players can name one memorable build, passive, risk, enemy, or moment after a run.
 
 Behavioral success signals:
@@ -673,7 +772,7 @@ Behavioral success signals:
 MVP non-goals:
 
 - Full five-class depth.
-- Large/Huge level generation polish.
+- Huge level generation polish. (Large is in scope — it is a supported size class; see Procedural Generation.)
 - Deep class talent trees.
 - Hundreds of loot affixes.
 - Full elemental interaction matrix.
@@ -697,6 +796,9 @@ Current source inputs:
 - `project-context.md`
 - `_bmad-output/game-brief.md`
 - `_bmad-output/brainstorming-game-brief-handoff-2026-05-29.md`
+- `_bmad-output/planning-artifacts/design-notes/epic-16-design-brief.md` (Q1-Q6 ratified 2026-07-24)
+
+**Amendment 2026-08-05 — Epic-16 pre-epic design pass.** Applied the ratified Epic-16 brief to this GDD: multi-room level structure with unreachable structural filler; three size classes (Small ~12x12, Medium ~18x16, Large ~26x28) with depth-weighted, never-exclusive mix; the new Enemy Awareness subsection (dormant-until-seen activation, per-enemy sight ranges, symmetric Darkness); the run-length target restated as an average run ending in death at ~70% of nodes, with the pacing pressures named; and the difficulty non-goal restated against scale and structure. Sections touched: Core Turn Rules, Prototype Enemy Baseline, Enemy Awareness (new), Run Structure, Procedural Generation, Difficulty Modifiers, Level Design Framework, Asset Requirements, Success Metrics, Out of Scope. Also reconciled the Development Epics table, which had gone stale at Epic 10 while `epics.md` had reached Epic 16.
 
 No phase-blocking design decisions remain for GDD v0.
 

@@ -4,15 +4,22 @@ extends RefCounted
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
 const BoardCell = preload("res://scripts/tactical/board/board_cell.gd")
 const BoardState = preload("res://scripts/tactical/board/board_state.gd")
+const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
 const TacticalLineQuery = preload("res://scripts/tactical/targeting/tactical_line_query.gd")
 const WeaponDefinition = preload("res://scripts/content/definitions/weapon_definition.gd")
 
+# Story 15.2 (F4) — `attacker_support` folds the DETERMINISTIC loadout bonus (the pyromancer tome's +1 for staff/wand)
+# into the previewed total so the shown number equals what AttackCommand resolves. It is an OPTIONAL trailing param:
+# a null / no-bonus support contributes 0, so every existing caller (AttackCommand.validate, inspect, range-highlight)
+# stays byte-identical to the support-blind path. `expected_base_damage` (weapon base) is UNCHANGED — the command reads
+# it independently and adds its own support bonus, so folding into base would double-count. Only `expected_damage` diverges.
 func preview_target_cell(
 	board: BoardState,
 	actor_id: StringName,
 	target_cell: Vector2i,
-	weapon: WeaponDefinition
+	weapon: WeaponDefinition,
+	attacker_support: SupportDefinition = null
 ) -> ActionResult:
 	if board == null:
 		return _invalid(&"invalid_board")
@@ -75,8 +82,13 @@ func preview_target_cell(
 		blocker_metadata["blocker_ignored"] = false
 		return _invalid(&"blocked_line", blocker_metadata)
 
-	var expected_damage: int = _expected_damage(weapon, distance)
-	var warnings: Array[Dictionary] = _warning_entries(weapon, distance, expected_damage)
+	var expected_base_damage: int = _expected_damage(weapon, distance)
+	var attacker_support_bonus: int = _attacker_support_bonus(attacker_support, weapon)
+	# The deterministic total the player reads — mirrors AttackCommand's hero-attack path (defender null): no armor, no
+	# shield-block RNG, so final_damage == max(1, adjacency_base + attacker_support_bonus). Warnings/explanation keep the
+	# WEAPON BASE (the adjacency warning says "from 4 to 2" about the base reduction, not the tome-boosted total).
+	var expected_damage: int = max(1, expected_base_damage + attacker_support_bonus)
+	var warnings: Array[Dictionary] = _warning_entries(weapon, distance, expected_base_damage)
 	var effects: Array[Dictionary] = _effect_entries(weapon)
 
 	return ActionResult.ok([], {
@@ -92,10 +104,11 @@ func preview_target_cell(
 		"line_cells": _serialize_cells(line_cells),
 		"blocker_cells": _serialize_cells(blocker_cells),
 		"blocker_ignored": blocker_ignored,
-		"expected_base_damage": expected_damage,
+		"expected_base_damage": expected_base_damage,
+		"expected_damage": expected_damage,
 		"warnings": warnings,
 		"effects": effects,
-		"explanation": _explanation(weapon, target_entity_id, expected_damage, blocker_ignored, warnings, effects)
+		"explanation": _explanation(weapon, target_entity_id, expected_base_damage, blocker_ignored, warnings, effects)
 	})
 
 
@@ -161,6 +174,16 @@ func _expected_damage(weapon: WeaponDefinition, distance: int) -> int:
 	if distance == 1 and weapon.has_adjacency_modifier():
 		return max(1, int(floor(float(weapon.base_damage) * weapon.adjacency_damage_multiplier)))
 	return weapon.base_damage
+
+
+# Mirrors AttackCommand._support_bonus_damage(): fail-open, weapon-gated, zero for a null / non-bonus support (the shield's
+# bonus_damage is 0, so it contributes nothing to a hero's own attack). Never rejects — the weapon is already validated.
+func _attacker_support_bonus(attacker_support: SupportDefinition, weapon: WeaponDefinition) -> int:
+	if attacker_support == null:
+		return 0
+	if attacker_support.supports_bonus_for_weapon(weapon.weapon_id):
+		return attacker_support.bonus_damage
+	return 0
 
 
 func _warning_entries(weapon: WeaponDefinition, distance: int, expected_damage: int) -> Array[Dictionary]:

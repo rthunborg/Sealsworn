@@ -1,3 +1,66 @@
+## Deferred from: code review of 15-2-attack-preview-damage-correctness (2026-08-06)
+
+Surfaced by `gds-code-review` Round 1 (verdict **Approve**; no blocking findings). Independently
+verified against the story branch @ base `6e121e9`.
+
+- [ ] **[Review][Defer]** (Low, forward-guard, from code review of 15-2, 2026-08-06) —
+  **`AttackPreviewQuery.preview_target_entity` was left support-blind.** Story 15.2 threaded the
+  optional `attacker_support` param through `preview_target_cell` → `TacticalAttackPreview.from_query`
+  → the commit-flow arming path so the armed preview's `expected_damage` folds the deterministic tome
+  bonus (the F4 fix). But the sibling entry point `preview_target_entity`
+  (`godot/scripts/tactical/targeting/attack_preview_query.gd:115-142`) still forwards to
+  `preview_target_cell` WITHOUT the support param, and the AC2 preview-equals-resolved regression test
+  (`test_attack_preview_matches_resolution.gd`) guards only `preview_target_cell`/`from_query`.
+  **Zero live impact today** — `preview_target_entity` has NO production caller (only
+  `test_attack_preview_query.gd`), so no armed preview routes through it. **Latent risk:** if a future
+  story builds an armed preview via `preview_target_entity`, the F4 desync silently returns and the
+  regression test will not catch it. **Future hardening (do when a caller appears, or opportunistically):**
+  add the optional `attacker_support: SupportDefinition = null` param to `preview_target_entity` and
+  forward it into `preview_target_cell`, OR add an assertion/comment that it must never feed an armed
+  preview. Originating story: 15-2-attack-preview-damage-correctness; review date 2026-08-06.
+
+---
+
+## Deferred from: Epic-16 designer/architect design pass (2026-08-05) — FR75 character-level debt
+
+Surfaced by the Epic-16 Game Designer pass while resolving E17-Q1 (the "XP" question in the ratified
+exit-victory design) and costed by the Game Architect pass. **This is PRE-EXISTING debt that belongs
+to neither Epic 16 nor Epic 17** — it is recorded here with its own owner precisely so it is not
+silently absorbed into either. Independently verified 2026-08-05 against `main` @ `6b7c4fd`.
+
+- [ ] **[Design][Defer]** (Med, from the Epic-16 design pass, 2026-08-05) — **GDD FR75 is currently
+  unsatisfiable: the equipment character-level gate has a demand side but no supply side.**
+  `character_level_requirement` is a real, validated, `@export`-ed field on `ArmorDefinition`
+  (`armor_definition.gd:31`) and `JewelryDefinition` (`jewelry_definition.gd:37`), with
+  `requires_character_level()` accessors and validation rejecting negatives — backed by ratified
+  **GDD FR75/FR76**. Four baseline items carry NON-ZERO gates: `warded_plate` (4),
+  `sealbearers_signet` (4), `chain_hauberk` (2), `jasper_amulet` (2). **But `requires_character_level()`
+  has ZERO production consumers outside its own definition files** (verified by grep across
+  `godot/scripts/`), and **no character-level state exists anywhere** in `scripts/run/` or
+  `scripts/core/`. Epic 6 shipped the DEMAND side of character progression; the SUPPLY side has never
+  existed. Consequence: those four items are **permanently unequippable dead content**, and any future
+  equip-gate consumer would fail closed against a level that can never rise.
+
+  **RATIFIED DISPOSITION (Project Lead, 2026-08-05): option (ii) — retire the character-level gate.**
+  Drop the `character_level_requirement` field and its accessor/validation, and **keep FR75's
+  surviving intent explicit in the GDD: equipment is NEVER gated on run depth.** That protective rule
+  is the part of FR75 that was always real; the level gate was the unimplementable half. Retiring the
+  gate does NOT foreclose in-run levelling — if it is ever wanted post-MVP, it returns as its own
+  epic with both sides built together (option (i), explicitly deferred, not rejected).
+
+  **Architect-costed scope (small, fully enumerated):** ZERO save migration — inventory serializes
+  `item_id` only, so no `RunSnapshot`/`ProfileSnapshot` key moves, the 23-key gate stays 23 and
+  `SCHEMA_VERSION` stays 1. ~5 definition-layer files plus ~13 test references. No fingerprint moves
+  (definitions are content, not generation draws). The four gated items keep their stats and stay in
+  the content pool — only the unsatisfiable gate is removed.
+
+  **Owner: a standalone content/definition-cleanup story**, schedulable any time — it blocks nothing
+  and nothing blocks it. Do NOT fold into Epic 16 (generation/scale) or Epic 17 (exit victory); both
+  passes were explicit that this debt is orthogonal to each. Sources: `epic-16-design-brief.md` §4b
+  (E17-Q1 resolution), `epic-17-objectives-stub.md` §2.3 (options i/ii/iii + architect costing).
+
+---
+
 ## Deferred from: code review of 14-8-hero-select-rebuild (2026-07-19)
 
 Round 1 primary review (`gds-code-review`, Opus 4.8, full depth; verdict **Approve**; Critical 0 / High 0 / Med 0 / Low 3; **0 open `[Review][Decision]`**). Diffed against base `story/14-7-full-backpack-reward-escape-hatch` (merge-base == the 14-7 tip `69e4fded` — this story is STACKED on the 14-7 branch, deliberately NOT diffed against `main`; two-/three-dot identical). Presentation-scene-ONLY over `scripts/ui/` — the changed code set is EXACTLY the story's File List: MODIFIED `hero_select_presenter.gd` + NEW `hero_select_render_view.gd` (+ `.gd.uid`) + NEW `test_hero_select_render_view.gd` (+ `.gd.uid`); `hero_select.tscn` NOT touched (layout is code-built); NO domain/command/event/RNG/save/generation/route/finale/combat/schema file in the diff, so the 23-key `RunSnapshot` gate / `SCHEMA_VERSION == 1` / the 7 named streams are byte-untouched and 14.8 re-pins NOTHING. Verified against source: (byte-identical start path) `_on_confirm_pressed` (the 14.4 `RunSeedSource` seam → class-ful `RunFlowController.start`) + `_new_run_entropy` appear NOWHERE in the diff (the last hunk ends at `_on_class_selected`, only edit `_confirm_button.disabled = false` → `_render_roster()`); (profile-unaware) `_ready`'s `HeroSelectViewModel.new()` unchanged — the class-kit-content profile-threading defer inherited unchanged, necro/shade render locked via `_locked` portraits + cost; (no `summarize(run)`) the seam uses only the STATIC `re_derive_kit` + `re_derive_resolver().explain(BEFORE_ATTACK)` then `.explain(RUN_STARTED)` (zero-RNG pre-start read; `summarize` appears only in comments); (defensive art) `_load_portrait` guards `is_empty` + `ResourceLoader.exists` + `is Texture2D` → labeled placeholder, never `preload` (all five `char.*.png` + `.png.import` in-repo, no new art); (`support_id == "none"`) rendered honestly as "No support", pinned by `_ranger_kit_carries_the_real_none_support`; (NFR9) selection = border `StyleBoxFlat` + "✓ Selected" marker, locked = "[Locked]" + `locked_label` (hint + numeric cost) — never color alone; `is_selected` fail-closed; the seam leaks no live handle, `class_name HeroSelectRenderView` unique, all preload paths exist. Suite INDEPENDENTLY re-run on the review head: **203 PASS / 0 FAIL** ("Headless tests passed.", exit 0; false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0; exactly the 6 documented stderr negatives — int64-overflow ×2 / `invalid_node_type` ×1 / malformed-JSON ×3, ZERO new; the new `test_hero_select_render_view.gd` GREEN; the `test_run_flow_scenes_load.gd` compile guardrail GREEN; both new `.gd.uid` sidecars present). Three `[Review][Defer]`, all Low / non-blocking:
