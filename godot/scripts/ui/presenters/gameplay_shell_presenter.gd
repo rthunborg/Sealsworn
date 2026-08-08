@@ -27,6 +27,9 @@ const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 # byte-identical).
 const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
 const RewardResolutionBridge = preload("res://scripts/ui/flow/reward_resolution_bridge.gd")
+# Story 15.4 (AC1) — the scene-free quit-save composition seam (compose the route position at the resumable
+# boundary; the presenter persists it through the existing SaveManager.autosave_route_position seam).
+const QuitRunBridge = preload("res://scripts/ui/flow/quit_run_bridge.gd")
 # L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
 # shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
 # anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
@@ -43,9 +46,15 @@ var _board_presenter: Control = null
 # callback can finish the node + route. Ephemeral (no in-node save — the 23-key RunSnapshot gate stays 23).
 var _active_session: InteractiveCombatSession = null
 var _active_node: RouteNode = null
+# Story 15.4 (AC1) — the live-board pause affordance: a corner button that opens a modal pause overlay (Resume
+# play / Quit run). The overlay is null when not showing; a Quit-run composes + persists the route position, then
+# returns to the boot/menu surface.
+var _pause_button: Button = null
+var _pause_overlay: Control = null
 
 func _ready() -> void:
 	_build_board_presenter()
+	_build_pause_affordance()
 	call_deferred("_drive_current_stage")
 	if has_node("/root/Diagnostics"):
 		Diagnostics.info(&"ui", &"gameplay_shell_ready", {})
@@ -57,6 +66,100 @@ func _ready() -> void:
 func _build_board_presenter() -> void:
 	_board_presenter = TacticalBoardScene.instantiate() as Control
 	add_child(_board_presenter)
+
+
+# Story 15.4 (AC1) — the live-board pause affordance: a corner button (≥44px, added ON TOP of the board so it is
+# always reachable, including mid-fight) that opens the modal pause overlay. Verified by construction; on-screen
+# legibility at the 2.0x text scale is OSG-1.
+func _build_pause_affordance() -> void:
+	_pause_button = Button.new()
+	_pause_button.text = "☰ Menu"
+	_pause_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	# Grow leftward from the top-right anchor so the button hugs the corner without overflowing off-screen.
+	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_pause_button.pressed.connect(_on_pause_pressed)
+	add_child(_pause_button)
+
+
+# Open the modal pause overlay (Resume play / Quit run). A mouse-blocking backdrop so taps do not fall through to
+# the board. Built lazily; a second open never stacks.
+func _on_pause_pressed() -> void:
+	if _pause_overlay != null:
+		return
+	var overlay: Control = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var backdrop: ColorRect = ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.7)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(backdrop)
+
+	var panel: VBoxContainer = VBoxContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.add_theme_constant_override("separation", int(TacticalLayoutProfile.COMFORTABLE_SPACING))
+	overlay.add_child(panel)
+
+	var title: Label = Label.new()
+	title.text = "Paused"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	panel.add_child(title)
+
+	var resume_button: Button = Button.new()
+	resume_button.text = "Resume play"
+	resume_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	resume_button.pressed.connect(_on_resume_play_pressed)
+	panel.add_child(resume_button)
+
+	var quit_button: Button = Button.new()
+	quit_button.text = "Quit run"
+	quit_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	quit_button.pressed.connect(_on_quit_run_pressed)
+	panel.add_child(quit_button)
+
+	_pause_overlay = overlay
+	add_child(overlay)
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"gameplay_shell_paused", {})
+
+
+# Resume play: dismiss the overlay; the fight/position is untouched (the compose is never invoked).
+func _on_resume_play_pressed() -> void:
+	_dismiss_pause_overlay()
+
+
+# Quit run (AC1): SAVE the route position through the EXISTING seam (QuitRunBridge composes at the resumable
+# boundary — backing a mid-fight run out to ACTIVE_ROUTE on a copy so the node re-enters cleanly on resume — then
+# SaveManager.autosave_route_position persists it), DISCARD the ephemeral in-node fight (the current node stays
+# un-cleared; no in-node save — the 23-key gate stays 23), clear the run-flow handle, and return to the boot/menu
+# (Continue-offering) surface — NOT the outpost (which is the completed/failed run-END destination).
+func _on_quit_run_pressed() -> void:
+	var flow: RunFlowController = _flow()
+	if flow != null and flow.orchestrator() != null:
+		var snapshot = QuitRunBridge.compose_quit_save(flow.orchestrator())
+		if snapshot != null and has_node("/root/SaveManager"):
+			SaveManager.autosave_route_position(snapshot)
+		if has_node("/root/Diagnostics"):
+			Diagnostics.info(&"ui", &"gameplay_shell_quit_run", {"saved": snapshot != null})
+	# Discard the ephemeral fight (no in-node save; resume re-enters the un-cleared node from the route position).
+	_active_session = null
+	_active_node = null
+	_dismiss_pause_overlay()
+	if has_node("/root/GameSession"):
+		GameSession.clear_run_flow()
+	if has_node("/root/SceneManager"):
+		SceneManager.go_to_stage("boot")
+
+
+func _dismiss_pause_overlay() -> void:
+	if _pause_overlay != null:
+		_pause_overlay.queue_free()
+		_pause_overlay = null
 
 
 # Drive the live node the run is parked on, render it, then advance the flow. A boss terminus drives the boss

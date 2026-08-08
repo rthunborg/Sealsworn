@@ -12,6 +12,7 @@ extends Control
 # TESTABLE logic (the roster projection, the fail-closed start gate) lives in HeroSelectViewModel / RunOrchestrator
 # / RunFlowController, all unit-tested. This presenter is thin glue.
 
+const BootMenuViewModel = preload("res://scripts/ui/view_models/boot_menu_view_model.gd")
 const HeroSelectViewModel = preload("res://scripts/ui/view_models/hero_select_view_model.gd")
 const HeroSelectRenderView = preload("res://scripts/ui/view_models/hero_select_render_view.gd")
 const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
@@ -41,6 +42,9 @@ var _view_model: HeroSelectViewModel = null
 var _selected_class_id: StringName = &""
 var _roster_container: VBoxContainer = null
 var _confirm_button: Button = null
+# Story 15.4 (AC2): the new-run overwrite-confirm overlay (built lazily when a saved run exists on confirm; null
+# when no confirm is showing). A modal, mouse-blocking Control freed on confirm/cancel.
+var _overwrite_overlay: Control = null
 
 func _ready() -> void:
 	_view_model = HeroSelectViewModel.new()
@@ -292,12 +296,101 @@ func _on_class_selected(class_id: StringName) -> void:
 		Diagnostics.info(&"ui", &"hero_select_class_chosen", {"class_id": String(class_id)})
 
 
-# Confirm: start a fresh run through the RunFlowController (the AUTHORITATIVE fail-closed start), stash the live
-# controller on GameSession (so it outlives this scene), then navigate to the route-map stage. A rejected start
-# (a mis-enabled confirm on a locked class) surfaces the command error and does NOT navigate — the fail-closed gate.
+# Confirm: start a fresh run — UNLESS a saved run exists, in which case starting a new run is a DELIBERATE,
+# CONFIRMED choice (Story 15.4, AC2 — never a silent overwrite). A cold start (no save) starts directly
+# (byte-identical to the Story-14.4 behavior); a save present routes through the overwrite confirm, which clears
+# the stale save before starting so a later boot does not offer Continue to the abandoned run.
 func _on_confirm_pressed() -> void:
 	if _selected_class_id == &"":
 		return
+	# The "does a new run need an overwrite confirm?" decision lives in the SAME BootMenuViewModel seam the boot
+	# menu reads (a single source of truth; fail-closed — a false/malformed has-saved-run needs no confirm).
+	if BootMenuViewModel.from_has_saved_run(_has_saved_run()).new_run_needs_overwrite_confirm:
+		_show_overwrite_confirm()
+		return
+	_start_new_run()
+
+
+# The has-saved-run probe through the SaveManager delegator (additive; a file-existence check). Fail-closed to
+# false when the autoload is absent (a headless / no-save context needs no overwrite confirm).
+func _has_saved_run() -> bool:
+	if has_node("/root/SaveManager"):
+		return SaveManager.has_saved_run()
+	return false
+
+
+# Story 15.4 (AC2): the modal overwrite confirm. A mouse-blocking overlay warns that a new run clears the saved
+# descent, with Overwrite (clear + start) + Cancel (dismiss) affordances (≥44px, 2.0x-legible — the render is
+# verified by construction; on-screen legibility is OSG-1). Built lazily; a second confirm never stacks.
+func _show_overwrite_confirm() -> void:
+	if _overwrite_overlay != null:
+		return
+	var overlay: Control = Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var backdrop: ColorRect = ColorRect.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.color = Color(0.0, 0.0, 0.0, 0.7)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(backdrop)
+
+	var panel: VBoxContainer = VBoxContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.add_theme_constant_override("separation", int(TacticalLayoutProfile.COMFORTABLE_SPACING))
+	overlay.add_child(panel)
+
+	var message: Label = Label.new()
+	message.text = "Starting a new run will overwrite your saved descent. Begin a fresh descent?"
+	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.custom_minimum_size = Vector2(TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET.x * 5.0, 0.0)
+	panel.add_child(message)
+
+	var overwrite_button: Button = Button.new()
+	overwrite_button.text = "Overwrite and Begin"
+	overwrite_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	overwrite_button.pressed.connect(_on_overwrite_confirmed)
+	panel.add_child(overwrite_button)
+
+	var cancel_button: Button = Button.new()
+	cancel_button.text = "Cancel"
+	cancel_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	cancel_button.pressed.connect(_on_overwrite_cancelled)
+	panel.add_child(cancel_button)
+
+	_overwrite_overlay = overlay
+	add_child(overlay)
+
+
+# The confirmed overwrite: CLEAR the stale save (so a later boot does not offer Continue to the abandoned run),
+# dismiss the overlay, then start the fresh run.
+func _on_overwrite_confirmed() -> void:
+	if has_node("/root/SaveManager"):
+		SaveManager.delete_saved_run()
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"hero_select_overwrite_confirmed", {"class_id": String(_selected_class_id)})
+	_dismiss_overwrite_confirm()
+	_start_new_run()
+
+
+# Cancel: dismiss the overlay and leave the saved run intact (the player stays on hero select).
+func _on_overwrite_cancelled() -> void:
+	_dismiss_overwrite_confirm()
+
+
+func _dismiss_overwrite_confirm() -> void:
+	if _overwrite_overlay != null:
+		_overwrite_overlay.queue_free()
+		_overwrite_overlay = null
+
+
+# Start a fresh run through the RunFlowController (the AUTHORITATIVE fail-closed start), stash the live controller
+# on GameSession (so it outlives this scene), then navigate to the route-map stage. A rejected start (a
+# mis-enabled confirm on a locked class) surfaces the command error and does NOT navigate — the fail-closed gate.
+func _start_new_run() -> void:
 	# Story 14.4 (AC1/AC2): resolve the run seed through the pure RunSeedSource seam — a launch-configured explicit
 	# seed (manual: byte-deterministic, no meta) or, when unconfigured, a one-time OS-entropy seed (a NEW different
 	# room every boot — the F11 fix). The seam decides (root_seed, is_manual_seed); the impure entropy read is the

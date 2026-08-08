@@ -2,8 +2,8 @@ story_key: 15-4-quit-pause-resume
 epic_num: 15
 story_num: 4
 branch: story/15-4-quit-pause-resume
-status: in-progress
-updated_at: "2026-08-07T21:16:00Z"
+status: in-progress-wip
+updated_at: "2026-08-07T21:55:00Z"
 started_at: "2026-08-07T21:00:09Z"
 completed_at: null
 active_seconds: 0
@@ -32,6 +32,7 @@ testing:
   ran: []
 commits:
   - 46bd01a
+  - 59b5711
 deferred_work_archived: 0
 planning_drift: []
 pr_url: null
@@ -43,7 +44,8 @@ merge_commit: null
 branch_deleted: false
 open_questions: []
 deferred_work: []
-blockers: []
+blockers:
+  - "Phase 5 dev-story delegate died to a session limit (resets 3:40am Europe/Stockholm) mid-run. Substantial work persisted and is committed as a WIP checkpoint; the suite has NEVER been run against it. See state/15-4-resume-notes.md before touching this story."
 overrides: {}
 constraints:
   - "AC3: RunSnapshot gate stays at 23 keys, SCHEMA_VERSION stays 1, zero gameplay RNG, no fingerprint move."

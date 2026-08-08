@@ -105,6 +105,14 @@ func _render_map() -> void:
 			SceneManager.go_to_stage("tactical_board")
 		return
 
+	# ⭐ Story 15.4 (AC1, optional robustness) — persist the route position at THIS between-node ACTIVE_ROUTE
+	# boundary so a HARD close (not just an explicit Quit run) survives too ("a descent survives closing the
+	# game"). A pure read (compose_route_position_snapshot draws no RNG, mutates nothing) through the EXISTING
+	# SaveManager.autosave_route_position seam — the SAME board-free save Quit-run writes. Wired into the ON-SCREEN
+	# route map ONLY; it NEVER touches the hands-off run_to_completion auto-resolve driver, so every reward/route/
+	# finale fingerprint stays byte-identical.
+	_autosave_route_position(flow)
+
 	# ⭐ Story 14.6 (AC1): the ENRICHED render — hold the VM OBJECT (not just its dict) so the new render-fact
 	# accessors are callable. The map now conveys real forward progression: current position + cleared progress +
 	# the pickable forward choices + the terminal boss goal, all non-color (glyph / reveal marker / human label).
@@ -281,6 +289,22 @@ func _advance_reject_cue(error_code: String) -> String:
 		"wrong_run_phase": return "You cannot choose a path right now."
 		"no_active_run": return "There is no active run."
 		_: return "That path is not open."
+
+
+# Story 15.4 (AC1, optional robustness): persist the current route position through the EXISTING autosave seam.
+# Only writes a clean between-node ACTIVE_ROUTE position (a resumable boundary) — defensive: the enriched render is
+# only reached in ACTIVE_ROUTE, but the phase guard ensures a stray NODE_RESOLUTION never writes a save the
+# route-map re-entry could not host. A pure read (no RNG, no mutation) + a file write; fail-open when SaveManager
+# is absent (a headless context).
+func _autosave_route_position(flow: RunFlowController) -> void:
+	if not has_node("/root/SaveManager"):
+		return
+	var run: RunState = flow.run()
+	if run == null or run.phase != RunState.PHASE_ACTIVE_ROUTE:
+		return
+	var snapshot = flow.orchestrator().compose_route_position_snapshot()
+	if snapshot != null:
+		SaveManager.autosave_route_position(snapshot)
 
 
 func _route_to_run_end(flow: RunFlowController) -> void:

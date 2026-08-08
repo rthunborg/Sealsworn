@@ -29,6 +29,8 @@ const CursedRewardRepository = preload("res://scripts/content/repositories/curse
 const DestroyOutcomeTableDefinition = preload("res://scripts/content/definitions/destroy_outcome_table_definition.gd")
 const DestroyPassiveCommand = preload("res://scripts/core/commands/destroy_passive_command.gd")
 const RewardOffer = preload("res://scripts/run/reward_offer.gd")
+const CombatLoadout = preload("res://scripts/run/combat_loadout.gd")
+const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
@@ -38,6 +40,7 @@ const RunState = preload("res://scripts/run/run_state.gd")
 const SaveManager = preload("res://scripts/autoloads/save_manager.gd")
 const SaveRepository = preload("res://scripts/save/save_repository.gd")
 const StartingKit = preload("res://scripts/run/starting_kit.gd")
+const StartingKitDeriver = preload("res://scripts/run/starting_kit_deriver.gd")
 
 const SAVE_PATH := "user://test_route_position_save.json"
 
@@ -58,6 +61,10 @@ func run() -> Dictionary:
 	_selected_class_survives_route_position_resume()
 	_pre_5_3_route_position_payload_restores_with_legacy_empty_default()
 	_kit_re_derives_from_restored_class_id()
+	# Story 15.4 (CRUX-3) — the PRODUCTION seat path (start_from) re-derives the kit so a resumed class run's
+	# CombatLoadout is class-intact (18 HP + class weapon + support), NOT the 60 HP / sword driver default.
+	_start_from_re_derives_kit_so_resumed_loadout_is_class_intact()
+	_starting_kit_deriver_matches_run_start_command_and_falls_open()
 	_composed_class_run_snapshot_stays_within_the_23_key_gate()
 	# Story 7.1 — the risk-economy survives a route-position resume + the top-level mirror + back-compat + migration.
 	_economy_survives_route_position_resume()
@@ -514,6 +521,72 @@ func _kit_re_derives_from_restored_class_id() -> void:
 		def.equipment_synergy_passive_id
 	)
 	assert_equal(JSON.stringify(re_derived.to_dictionary()), JSON.stringify(recorded_kit.to_dictionary()), "The kit re-derived from the restored class id must match the kit RunStartCommand recorded (deterministic pure function).")
+
+
+# Story 15.4 (CRUX-3, the highest-value guard): a route-position save of a started Warrior/Pyromancer/Ranger run,
+# resumed via resume_route_position + SEATED via the PRODUCTION RunOrchestrator.start_from seam, yields a run
+# whose CombatLoadout is the CLASS loadout (18 HP + class weapon + class support) — NOT the 60 HP / sword driver
+# default. Before 15.4 start_from seated a null kit (the kit is not persisted), so CombatLoadout.for_run fell open
+# to the driver default and a resumed class run fought with the wrong loadout (AC2's "run intact" failed). This is
+# the 15-2 "test-lock what is headlessly provable" lesson applied to the resume-loadout desync.
+func _start_from_re_derives_kit_so_resumed_loadout_is_class_intact() -> void:
+	var expected: Dictionary = {
+		&"warrior": {"weapon": &"sword", "has_support": true},
+		&"pyromancer": {"weapon": &"staff", "has_support": true},
+		&"ranger": {"weapon": &"bow", "has_support": false}
+	}
+	for class_id: StringName in [&"warrior", &"pyromancer", &"ranger"]:
+		var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing_with_class(42, 2, class_id)
+		var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+		_write_through_repository(snapshot)
+		var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+		assert_true(restore.succeeded, "%s: the resume should succeed: %s" % [class_id, restore.metadata])
+		var restored_run: RunState = restore.metadata.get("run_state") as RunState
+		var restored_streams: RngStreamSet = restore.metadata.get("rng_streams") as RngStreamSet
+		# The resumed run carries NO kit before the seat (the kit is deliberately not persisted).
+		assert_true(restored_run.starting_kit == null, "%s: the resumed run carries no kit before the seat (not persisted)." % class_id)
+
+		# SEAT via the production start_from — it must RE-DERIVE the kit so the loadout is class-intact.
+		var resumed: RunOrchestrator = RunOrchestrator.new()
+		assert_true(resumed.start_from(restored_run, restored_streams).succeeded, "%s: seating the resumed run should succeed." % class_id)
+		assert_true(resumed.run.starting_kit != null, "%s: start_from must RE-DERIVE the kit on the seat path." % class_id)
+
+		var loadout: CombatLoadout = CombatLoadout.for_run(resumed.run)
+		assert_true(loadout.derived_from_kit, "%s: the resumed loadout must derive from the class kit, NOT the driver default." % class_id)
+		assert_equal(loadout.hp, 18, "%s: the resumed loadout HP must be the class baseline (18), NOT the driver default." % class_id)
+		assert_false(loadout.hp == LiveCombatResolver.DEFAULT_HERO_HP, "%s: the resumed loadout must NOT be the 60 HP driver default." % class_id)
+		assert_equal(loadout.weapon_id, StringName(String(expected[class_id]["weapon"])), "%s: the resumed loadout weapon must be the class weapon." % class_id)
+		assert_equal(loadout.support != null, bool(expected[class_id]["has_support"]), "%s: the resumed loadout support must match the class off-hand." % class_id)
+
+	# A seed-only run (empty class) seated via start_from keeps a null kit -> the driver default (fall-open unchanged,
+	# so a fresh seed-only start_from and every pinned fingerprint path stay byte-identical).
+	var seed_only: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	var seed_snapshot: RunSnapshot = seed_only.compose_route_position_snapshot()
+	_write_through_repository(seed_snapshot)
+	var seed_restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(seed_restore.succeeded, "The seed-only resume should succeed.")
+	var seed_resumed: RunOrchestrator = RunOrchestrator.new()
+	assert_true(seed_resumed.start_from(seed_restore.metadata.get("run_state") as RunState, seed_restore.metadata.get("rng_streams") as RngStreamSet).succeeded, "Seating the seed-only run should succeed.")
+	assert_true(seed_resumed.run.starting_kit == null, "A seed-only (empty class) run keeps a null kit on seat (fall-open unchanged).")
+	var seed_loadout: CombatLoadout = CombatLoadout.for_run(seed_resumed.run)
+	assert_false(seed_loadout.derived_from_kit, "The seed-only resumed loadout falls open to the driver default (no kit).")
+	assert_equal(seed_loadout.hp, LiveCombatResolver.DEFAULT_HERO_HP, "The seed-only resumed loadout is the 60 HP driver default (unchanged).")
+
+
+# Story 15.4 — the StartingKitDeriver seam directly: for_class_id re-derives the SAME kit RunStartCommand records
+# at start time (a deterministic pure content read), and falls open to null for an empty / unknown class id (the
+# driver-default path — no crash).
+func _starting_kit_deriver_matches_run_start_command_and_falls_open() -> void:
+	for class_id: StringName in [&"warrior", &"pyromancer", &"ranger"]:
+		var fresh: ActionResult = RunOrchestrator.new().start(42, false, class_id)
+		assert_true(fresh.succeeded, "%s: a fresh start should record the authoritative kit." % class_id)
+		var recorded_kit: StartingKit = (fresh.metadata.get("run") as RunState).starting_kit
+		var derived: StartingKit = StartingKitDeriver.for_class_id(class_id)
+		assert_true(derived != null, "%s: the deriver must produce a kit for a selectable class." % class_id)
+		assert_equal(JSON.stringify(derived.to_dictionary()), JSON.stringify(recorded_kit.to_dictionary()), "%s: StartingKitDeriver must match the kit RunStartCommand recorded." % class_id)
+	# Fall-open: an empty / unknown class id derives no kit (the driver-default path).
+	assert_true(StartingKitDeriver.for_class_id(&"") == null, "An empty class id derives no kit (fall-open).")
+	assert_true(StartingKitDeriver.for_class_id(&"not_a_class") == null, "An unknown class id derives no kit (fall-open).")
 
 
 # The composed route-position snapshot of a CLASS run still stays within the 23-key gate (the nested

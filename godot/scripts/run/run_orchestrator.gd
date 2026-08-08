@@ -87,6 +87,7 @@ const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
+const StartingKitDeriver = preload("res://scripts/run/starting_kit_deriver.gd")
 const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
@@ -231,6 +232,19 @@ func start_from(existing_run: RunState, existing_streams: RngStreamSet, next_seq
 			"inner_error_code": String(validation.error_code),
 			"inner_metadata": validation.metadata.duplicate(true)
 		})
+
+	# Story 15.4 (CRUX-3) — RE-DERIVE the starting kit so a RESTORED run is genuinely INTACT. A route-position
+	# resume rebuilds the RunState with selected_class_id preserved but starting_kit == null (the kit is
+	# deliberately NOT persisted — it is re-derived from the class id on restore, run_state.gd:515). Without this,
+	# CombatLoadout.for_run(run) falls open to the driver default (60 HP / sword / no support) and a resumed
+	# Warrior/Pyromancer/Ranger fights with the wrong loadout (AC2's "run intact" fails). Re-derive ONLY when the
+	# kit is absent AND a class id is present (an empty/legacy/seed-only run keeps its null kit -> the driver
+	# default, unchanged — so a fresh seed-only start_from and every pinned fingerprint path stay byte-identical).
+	# A pure content read (StartingKitDeriver -> ClassRepository), ZERO RNG; an unknown class id falls open to null.
+	if existing_run.starting_kit == null and not existing_run.selected_class_id.is_empty():
+		var rederived_kit: StartingKit = StartingKitDeriver.for_class_id(existing_run.selected_class_id)
+		if rederived_kit != null:
+			existing_run.starting_kit = rederived_kit
 
 	run = existing_run
 	streams = existing_streams

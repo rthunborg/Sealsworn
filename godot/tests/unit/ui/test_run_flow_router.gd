@@ -24,6 +24,7 @@ const RouteState = preload("res://scripts/run/route_state.gd")
 func run() -> Dictionary:
 	_stage_vocabulary_is_the_five_flow_stages()
 	_every_stage_maps_to_a_real_scene_path()
+	_boot_and_save_recovery_are_reachable_named_targets()
 	_ordered_walk_is_launch_to_run_end()
 	_next_destination_outpost_routes_to_run_end_stage()
 	_non_terminal_destination_routes_nowhere()
