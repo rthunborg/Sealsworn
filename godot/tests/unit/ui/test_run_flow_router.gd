@@ -57,6 +57,21 @@ func _every_stage_maps_to_a_real_scene_path() -> void:
 	assert_equal(RunFlowRouter.scene_path_for_stage("outpost"), "res://scenes/ui/outpost.tscn", "outpost -> outpost.tscn (the real OutpostViewModel-bound scene — Story 11.5).")
 
 
+# Story 15.4 (AC1/AC2): `boot` and `save_recovery` are NON-LINEAR named scene targets — reachable via
+# go_to_stage (the Quit-run return surface + the Continue resume landing) but NOT forward steps in the ordered
+# STAGES walk. Pin their scene paths AND that they are absent from the walk (next_stage fail-closes to "").
+func _boot_and_save_recovery_are_reachable_named_targets() -> void:
+	# Each non-linear target resolves to its real .tscn via the route table (a call site names the STAGE, not a string).
+	assert_equal(RunFlowRouter.scene_path_for_stage("boot"), "res://scenes/app/boot.tscn", "boot -> boot.tscn (the Continue-offering boot surface a Quit-run returns to).")
+	assert_equal(RunFlowRouter.scene_path_for_stage("save_recovery"), "res://scenes/ui/save_recovery.tscn", "save_recovery -> save_recovery.tscn (the resume->seat->route_map Continue landing).")
+	# They are NON-LINEAR: a branch off the boot chain, NOT part of the ordered forward walk.
+	assert_false(RunFlowRouter.STAGES.has("boot"), "boot is a non-linear target, NOT part of the ordered STAGES walk.")
+	assert_false(RunFlowRouter.STAGES.has("save_recovery"), "save_recovery is a non-linear target, NOT part of the ordered STAGES walk.")
+	# Because they are not in the ordered walk, next_stage fail-closes to "" (never a wrong forward step).
+	assert_equal(RunFlowRouter.next_stage("boot"), "", "boot has no next stage (not a forward walk step — fail-closed).")
+	assert_equal(RunFlowRouter.next_stage("save_recovery"), "", "save_recovery has no next stage (not a forward walk step — fail-closed).")
+
+
 # AC1: the ordered walk steps launch -> hero_select -> route_map -> tactical_board -> run_end -> outpost (next_stage).
 # Story 11.5 appends the outpost stage as the terminal step (the run-end return lands on the real outpost scene).
 func _ordered_walk_is_launch_to_run_end() -> void:
