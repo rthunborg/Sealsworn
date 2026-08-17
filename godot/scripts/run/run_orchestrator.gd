@@ -1002,10 +1002,13 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 		})
 
 	# Story 11.4 (AC1) — ASSIGN THE NODE'S AFFINITY ONCE (the assign-if-absent guard the 7.4 review deferred to "the later
-	# per-node-assign story" — that is 11.4). Only draw the `map`-stream assignment roll when the node carries NO affinity
-	# yet (a re-drive reads the already-recorded id back, never re-rolls — idempotency). A failed assignment surfaces
-	# structurally + STOPS (no partial progression). The draw routes EXCLUSIVELY through the run-level streams on `map`.
-	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+	# per-node-assign story" — that is 11.4). Only draw the `map`-stream assignment roll when the node has NO RECORDED
+	# affinity yet — a PRESENCE check on run.assigned_affinities, NOT a `== none` compare (Story 15.4 Review D4): an
+	# explicitly-recorded neutral `none` counts as ALREADY ASSIGNED, so a re-drive reads the already-recorded id back for
+	# ALL FIVE candidates (incl. `none`) and never re-rolls — idempotency. A failed assignment surfaces structurally +
+	# STOPS (no partial progression). The draw routes EXCLUSIVELY through the run-level streams on `map`. `run` is non-null
+	# here (the top-of-function no_active_run guard returned already).
+	if not run.assigned_affinities.has(String(node.id)):
 		var assign: ActionResult = assign_affinity(node)
 		if assign.is_error():
 			return ActionResult.error(&"affinity_assignment_failed", {
@@ -1162,9 +1165,11 @@ func begin_interactive_combat_node(
 			"inner_reason": String(generation.reason)
 		})
 
-	# PRE-fight step 3 — assign the node's affinity ONCE (the assign-if-absent guard; a re-drive reads the recorded id
-	# back, never re-rolls the `map` stream — the SAME once-per-node discipline resolve_combat_node_live uses).
-	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+	# PRE-fight step 3 — assign the node's affinity ONCE (the assign-if-absent guard; a PRESENCE check on
+	# run.assigned_affinities, NOT a `== none` compare (Story 15.4 Review D4) — a re-drive reads the recorded id back for
+	# ALL FIVE candidates incl. neutral `none`, never re-rolls the `map` stream — the SAME once-per-node discipline
+	# resolve_combat_node_live uses; `run` is non-null here (the top-of-function no_active_run guard returned already)).
+	if not run.assigned_affinities.has(String(node.id)):
 		var assign: ActionResult = assign_affinity(node)
 		if assign.is_error():
 			return ActionResult.error(&"affinity_assignment_failed", {

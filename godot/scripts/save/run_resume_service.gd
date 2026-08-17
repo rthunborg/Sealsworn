@@ -126,13 +126,15 @@ func resume_route_position(save_path: String = SaveRepository.DEFAULT_RUN_PATH) 
 	# WITHOUT this a mid-fight quit -> resume -> re-enter re-runs assign_affinity — a SECOND `map`-stream draw that
 	# can REROLL the un-cleared room's hazard (quit-scum across scorched/flooded_conductive/cursed/darkness/none) AND
 	# drifts the `map` stream one draw ahead of an uninterrupted run. Restoring the recorded assignment makes the
-	# assign-if-absent guard (run_orchestrator.gd:1008/1167) SKIP the draw for a non-none room, so resume re-enters
+	# assign-if-absent guard (run_orchestrator.gd:1008/1167) SKIP the draw for the recorded room, so resume re-enters
 	# the SAME room and the `map` stream takes NO extra draw. FINGERPRINT-SAFE: the hands-off auto-resolve driver
 	# NEVER assigns affinity (run_orchestrator.gd:701-705 — assign_affinity is off _resolve_combat/run_to_completion),
-	# so no pinned fingerprint reads assigned_affinities. A pure read; ZERO RNG. A node whose recorded affinity is the
-	# neutral `none` is UNCHANGED (the guard treats `none` as "not yet assigned" and re-rolls either way — restoring a
-	# `none` entry produces the same guard behavior as an absent one; the in-node fight stays ephemeral, the
-	# mid-encounter-save defer is NOT reopened, and the 23-key gate stays 23 — `affinities` is an existing key).
+	# so no pinned fingerprint reads assigned_affinities. A pure read; ZERO RNG. Story 15.4 Review D4 completed that guard
+	# to a PRESENCE check (`not run.assigned_affinities.has(...)`), so a node whose recorded affinity is the neutral `none`
+	# is now RESTORED and recognised as ALREADY ASSIGNED: re-entry reads the recorded `none` back and takes NO extra `map`
+	# draw (no reroll), exactly like the four hazard affinities — a restored `none` entry now behaves DIFFERENTLY from an
+	# absent one (present -> skip; absent -> assign). The in-node fight stays ephemeral, the mid-encounter-save defer is
+	# NOT reopened, and the 23-key gate stays 23 — `affinities` is an existing key.
 	run_state.assigned_affinities = _restored_assigned_affinities(run_snapshot.affinities)
 
 	# Run-level rng_streams is the resume RNG authority. try_restore does not mutate on failure and consumes

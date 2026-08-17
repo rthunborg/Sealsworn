@@ -29,8 +29,9 @@ const SEED := 4242
 func run() -> Dictionary:
 	_between_node_quit_is_a_pure_read_and_round_trips()
 	_mid_fight_quit_backs_out_to_active_route_on_a_copy_and_re_enters()
-	# Story 15.4 (Review D2) — a mid-fight quit -> resume -> re-enter yields the SAME room affinity (no reroll) and
-	# the `map` stream is at the SAME position an uninterrupted run would have (no extra draw) for a non-none room.
+	# Story 15.4 (Review D2/D4) — a mid-fight quit -> resume -> re-enter yields the SAME room affinity (no reroll) and
+	# the `map` stream is at the SAME position an uninterrupted run would have (no extra draw) for EVERY room, including
+	# the neutral `none` (D4 completed the guard to a presence check so `none` no longer re-rolls).
 	_mid_fight_quit_preserves_room_affinity_and_map_stream_on_resume()
 	_null_unseated_and_terminal_return_null()
 	_cleanup()
@@ -132,16 +133,21 @@ func _mid_fight_quit_backs_out_to_active_route_on_a_copy_and_re_enters() -> void
 
 # ---- D2: the entered room's affinity survives quit/resume (no reroll, no extra map draw) ----------
 
-# Story 15.4 (Review D2). A mid-fight quit discards the ephemeral fight but the ENTERED room's assigned affinity
+# Story 15.4 (Review D2 + D4). A mid-fight quit discards the ephemeral fight but the ENTERED room's assigned affinity
 # must survive the quit/resume round trip so the player re-enters the SAME room, and the `map` stream must NOT take
 # an extra draw. WITHOUT the fix the route-position restore rebuilds the run with an EMPTY assigned_affinities, so
 # re-entering the un-cleared node re-runs assign_affinity (a second `map` draw -> possible reroll + a one-draw map
 # drift). This drives the real interactive entry (a natural affinity draw), quits at the resumable boundary, resumes
-# through RunResumeService, seats via start_from, and re-enters — asserting the room affinity is preserved for EVERY
-# seed and, for a NON-none room (the guard-skip path), the map stream is byte-at-the-same-position as an
-# uninterrupted single entry. Iterates seeds so at least one exercises a non-none room (none is 1 of 5 affinities).
+# through RunResumeService, seats via start_from, and re-enters — asserting the room affinity is preserved AND the
+# `map` stream is byte-at-the-same-position as an uninterrupted single entry for EVERY room. D4 completed the
+# assign-if-absent guard to a presence check (`not run.assigned_affinities.has(...)`), so the neutral `none` room no
+# longer re-rolls either — the assertion is UNCONDITIONAL (the pre-D4 code skipped the `none` case). Iterates a
+# curated seed set covering BOTH a neutral `none` room (seed 42) and hazard rooms (none is 1 of 5 affinities).
 func _mid_fight_quit_preserves_room_affinity_and_map_stream_on_resume() -> void:
 	var proved_non_none: bool = false
+	var proved_none: bool = false
+	# Curated seeds covering BOTH a neutral `none` room (seed 42) and hazard rooms (e.g. seed 13 -> scorched), so D4's
+	# fix is exercised for the none case AND the four hazard cases (the affinity is a deterministic function of the seed).
 	for seed_value: int in [4242, 42, 777, 2026, 13, 99]:
 		# Enter the depth-0 combat node interactively (RouteGenerator GUARANTEES depth-0 is a combat node) so the
 		# room's affinity is drawn + recorded and the run is mid-fight (NODE_RESOLUTION, node un-cleared).
@@ -165,18 +171,22 @@ func _mid_fight_quit_preserves_room_affinity_and_map_stream_on_resume() -> void:
 		var restored_run: RunState = restore.metadata.get("run_state") as RunState
 		assert_equal(String(restored_run.assigned_affinities.get(node_id, "")), entered_affinity, "Seed %d: D2 — the resumed run restores the entered room's assigned affinity (no reroll surface)." % seed_value)
 
-		# For a NON-none room the assign-if-absent guard SKIPS the draw on re-enter -> the room is the SAME and the
-		# `map` stream is at the SAME position an uninterrupted single entry left it (no extra draw). (A `none` room
-		# re-rolls by the guard's design — the human-accepted deferred edge; do not assert the map position there.)
-		if entered_affinity != String(AffinityDefinition.AFFINITY_NONE):
-			var resumed: RunOrchestrator = RunOrchestrator.new()
-			assert_true(resumed.start_from(restored_run, restore.metadata.get("rng_streams") as RngStreamSet).succeeded, "Seed %d: seating the resumed run should succeed." % seed_value)
-			var re_node: RouteNode = resumed.run.route.node_by_id(node_id)
-			assert_true(resumed.begin_interactive_combat_node(re_node).succeeded, "Seed %d: the un-cleared room re-enters cleanly on resume." % seed_value)
-			assert_equal(String(resumed.assigned_affinity_for(node_id)), entered_affinity, "Seed %d: D2 — re-entering the resumed room yields the SAME affinity (no reroll)." % seed_value)
-			assert_equal(_map_draw_index(resumed.streams), map_after_entry, "Seed %d: D2 — a non-none room takes NO extra map draw on resume (interrupted map position == uninterrupted)." % seed_value)
+		# Story 15.4 Review D4 — the assign-if-absent guard is now a PRESENCE check on run.assigned_affinities, so EVERY
+		# recorded room (all five affinities INCLUDING the neutral `none`) re-enters with the SAME affinity and takes NO
+		# extra `map` draw. Asserted UNCONDITIONALLY (the prior `none`-room skip mislabelled this "the human-accepted
+		# deferred edge" — the D2 human direction was unconditional; D4 delivers it for 5/5 candidates).
+		var resumed: RunOrchestrator = RunOrchestrator.new()
+		assert_true(resumed.start_from(restored_run, restore.metadata.get("rng_streams") as RngStreamSet).succeeded, "Seed %d: seating the resumed run should succeed." % seed_value)
+		var re_node: RouteNode = resumed.run.route.node_by_id(node_id)
+		assert_true(resumed.begin_interactive_combat_node(re_node).succeeded, "Seed %d: the un-cleared room re-enters cleanly on resume." % seed_value)
+		assert_equal(String(resumed.assigned_affinity_for(node_id)), entered_affinity, "Seed %d: D4 — re-entering the resumed room yields the SAME affinity (no reroll), even for neutral `none`." % seed_value)
+		assert_equal(_map_draw_index(resumed.streams), map_after_entry, "Seed %d: D4 — the resumed room takes NO extra map draw (interrupted map position == uninterrupted), even for neutral `none`." % seed_value)
+		if entered_affinity == String(AffinityDefinition.AFFINITY_NONE):
+			proved_none = true
+		else:
 			proved_non_none = true
-	assert_true(proved_non_none, "D2: at least one seed must exercise a non-none room (the guard-skip / no-extra-draw path).")
+	assert_true(proved_non_none, "D4: at least one seed must exercise a non-none room (the guard-skip / no-extra-draw path).")
+	assert_true(proved_none, "D4: at least one seed must exercise a neutral `none` room — the case D4 fixed (no reroll, no extra draw).")
 
 
 # The `map` stream's draw index from an RngStreamSet snapshot (the position the affinity draw advances). The
