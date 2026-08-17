@@ -27,6 +27,11 @@ const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
 const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_layout_profile.gd")
+# Story 15.4 (Review D1) — the ONE shared pause surface (Resume play / Save & Exit / Options + run metrics). The
+# route map now hosts the SAME pause menu the live board does (the OSG-1 "from a live fight AND from the route map,
+# a pause affordance opens" close), instead of only a silent between-node autosave. No ephemeral fight to discard on
+# the map, so it passes no on_before_quit callback.
+const PauseMenuOverlay = preload("res://scripts/ui/presenters/pause_menu_overlay.gd")
 
 # The node types that play a LIVE tactical board (combat / elite) — picking one navigates to the board stage.
 const LIVE_BOARD_NODE_TYPES: Array[String] = ["combat", "elite_combat", "boss"]
@@ -38,9 +43,14 @@ const BOSS_DISPLAY_NAME := "The Larval Avatar"
 
 var _choices_container: VBoxContainer = null
 var _status_label: Label = null
+# Story 15.4 (Review D1) — the route-map pause affordance: a corner button opening the SHARED PauseMenuOverlay (the
+# same surface the live board opens). The overlay is null when not showing.
+var _pause_button: Button = null
+var _pause_overlay: PauseMenuOverlay = null
 
 func _ready() -> void:
 	_build_layout()
+	_build_pause_affordance()
 	# Story 13.1 (AC3) — emit the "route map entered" diagnostics line BEFORE _render_map(). On a fresh run
 	# _render_map() takes the resolve-then-advance branch and synchronously navigates away
 	# (SceneManager.go_to_stage -> change_scene_to_file removes THIS scene from the tree mid-_ready), so probing
@@ -69,6 +79,41 @@ func _build_layout() -> void:
 	_choices_container = VBoxContainer.new()
 	_choices_container.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(_choices_container)
+
+
+# Story 15.4 (Review D1) — the route-map pause affordance: a corner button (>=44px, added ON TOP of the map choices)
+# that opens the SAME shared pause overlay the live board opens. Verified by construction; on-screen legibility at
+# the 2.0x text scale is OSG-1.
+func _build_pause_affordance() -> void:
+	_pause_button = Button.new()
+	_pause_button.text = "☰ Menu"
+	_pause_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	# Grow leftward from the top-right anchor so the button hugs the corner without overflowing off-screen.
+	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_pause_button.pressed.connect(_on_pause_pressed)
+	add_child(_pause_button)
+
+
+# Open the SHARED pause overlay (Resume play / Save & Exit / Options + run metrics). Built lazily; a second open
+# never stacks. The route map has no ephemeral in-node fight, so it passes no on_before_quit callback (Save & Exit
+# composes the clean between-node ACTIVE_ROUTE position directly).
+func _on_pause_pressed() -> void:
+	if _pause_overlay != null:
+		return
+	var overlay: PauseMenuOverlay = PauseMenuOverlay.new()
+	_pause_overlay = overlay
+	add_child(overlay)
+	overlay.open(_flow(), _dismiss_pause_overlay)
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"route_map_paused", {})
+
+
+# Resume play: the shared overlay invokes this to dismiss the overlay; the route position is untouched.
+func _dismiss_pause_overlay() -> void:
+	if _pause_overlay != null:
+		_pause_overlay.queue_free()
+		_pause_overlay = null
 
 
 func _render_map() -> void:

@@ -369,7 +369,17 @@ func _show_overwrite_confirm() -> void:
 # dismiss the overlay, then start the fresh run.
 func _on_overwrite_confirmed() -> void:
 	if has_node("/root/SaveManager"):
-		SaveManager.delete_saved_run()
+		# Story 15.4 (Review D3) — check the delete result and emit a DIAGNOSTIC on failure (e.g. a locked file).
+		# The failure is DELIBERATELY NOT surfaced to the player: the fresh run's first route-map autosave overwrites
+		# the stale save anyway (self-healing), so alarming the player about a recovered condition is not wanted — the
+		# diagnostic just records the fire-and-forget so it is no longer silently masked. WARNING severity (a
+		# recovered condition, not a player-facing error).
+		var delete_result = SaveManager.delete_saved_run()
+		if delete_result.is_error() and has_node("/root/Diagnostics"):
+			Diagnostics.warning(&"ui", &"hero_select_overwrite_save_delete_failed", {
+				"class_id": String(_selected_class_id),
+				"error_code": String(delete_result.error_code)
+			})
 	if has_node("/root/Diagnostics"):
 		Diagnostics.info(&"ui", &"hero_select_overwrite_confirmed", {"class_id": String(_selected_class_id)})
 	_dismiss_overwrite_confirm()

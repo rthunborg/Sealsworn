@@ -13,6 +13,7 @@ extends "res://tests/unit/test_case.gd"
 # route position).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AffinityDefinition = preload("res://scripts/content/definitions/affinity_definition.gd")
 const QuitRunBridge = preload("res://scripts/ui/flow/quit_run_bridge.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
@@ -28,6 +29,9 @@ const SEED := 4242
 func run() -> Dictionary:
 	_between_node_quit_is_a_pure_read_and_round_trips()
 	_mid_fight_quit_backs_out_to_active_route_on_a_copy_and_re_enters()
+	# Story 15.4 (Review D2) — a mid-fight quit -> resume -> re-enter yields the SAME room affinity (no reroll) and
+	# the `map` stream is at the SAME position an uninterrupted run would have (no extra draw) for a non-none room.
+	_mid_fight_quit_preserves_room_affinity_and_map_stream_on_resume()
 	_null_unseated_and_terminal_return_null()
 	_cleanup()
 	return result()
@@ -124,6 +128,63 @@ func _mid_fight_quit_backs_out_to_active_route_on_a_copy_and_re_enters() -> void
 	var re_node: RouteNode = resumed.run.route.node_by_id(resumed.run.route.current_node_id)
 	var re_enter: ActionResult = resumed.begin_interactive_combat_node(re_node)
 	assert_true(re_enter.succeeded, "The un-cleared node must RE-ENTER cleanly on resume (NodeEnterCommand from ACTIVE_ROUTE): %s" % re_enter.metadata)
+
+
+# ---- D2: the entered room's affinity survives quit/resume (no reroll, no extra map draw) ----------
+
+# Story 15.4 (Review D2). A mid-fight quit discards the ephemeral fight but the ENTERED room's assigned affinity
+# must survive the quit/resume round trip so the player re-enters the SAME room, and the `map` stream must NOT take
+# an extra draw. WITHOUT the fix the route-position restore rebuilds the run with an EMPTY assigned_affinities, so
+# re-entering the un-cleared node re-runs assign_affinity (a second `map` draw -> possible reroll + a one-draw map
+# drift). This drives the real interactive entry (a natural affinity draw), quits at the resumable boundary, resumes
+# through RunResumeService, seats via start_from, and re-enters — asserting the room affinity is preserved for EVERY
+# seed and, for a NON-none room (the guard-skip path), the map stream is byte-at-the-same-position as an
+# uninterrupted single entry. Iterates seeds so at least one exercises a non-none room (none is 1 of 5 affinities).
+func _mid_fight_quit_preserves_room_affinity_and_map_stream_on_resume() -> void:
+	var proved_non_none: bool = false
+	for seed_value: int in [4242, 42, 777, 2026, 13, 99]:
+		# Enter the depth-0 combat node interactively (RouteGenerator GUARANTEES depth-0 is a combat node) so the
+		# room's affinity is drawn + recorded and the run is mid-fight (NODE_RESOLUTION, node un-cleared).
+		var live: RunOrchestrator = RunOrchestrator.new()
+		assert_true(live.start(seed_value, false, &"warrior").succeeded, "Seed %d: warrior start should succeed." % seed_value)
+		var node_id: String = live.run.route.current_node_id
+		var node: RouteNode = live.run.route.node_by_id(node_id)
+		assert_true(live.begin_interactive_combat_node(node).succeeded, "Seed %d: entering the depth-0 room should succeed." % seed_value)
+		var entered_affinity: String = String(live.assigned_affinity_for(node_id))
+		var map_after_entry: int = _map_draw_index(live.streams)
+
+		# Quit mid-fight -> compose at the resumable boundary. The snapshot mirrors the entered room's affinity.
+		var snapshot: RunSnapshot = QuitRunBridge.compose_quit_save(live)
+		assert_true(snapshot != null, "Seed %d: a mid-fight quit composes a snapshot." % seed_value)
+		assert_equal(String(snapshot.affinities.get(node_id, "")), entered_affinity, "Seed %d: the quit save mirrors the entered room's affinity." % seed_value)
+		_write(snapshot)
+
+		# Resume -> D2: the restored run carries the entered room's affinity (NOT an empty reroll surface).
+		var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+		assert_true(restore.succeeded, "Seed %d: resuming the mid-fight quit save should succeed: %s" % [seed_value, restore.metadata])
+		var restored_run: RunState = restore.metadata.get("run_state") as RunState
+		assert_equal(String(restored_run.assigned_affinities.get(node_id, "")), entered_affinity, "Seed %d: D2 — the resumed run restores the entered room's assigned affinity (no reroll surface)." % seed_value)
+
+		# For a NON-none room the assign-if-absent guard SKIPS the draw on re-enter -> the room is the SAME and the
+		# `map` stream is at the SAME position an uninterrupted single entry left it (no extra draw). (A `none` room
+		# re-rolls by the guard's design — the human-accepted deferred edge; do not assert the map position there.)
+		if entered_affinity != String(AffinityDefinition.AFFINITY_NONE):
+			var resumed: RunOrchestrator = RunOrchestrator.new()
+			assert_true(resumed.start_from(restored_run, restore.metadata.get("rng_streams") as RngStreamSet).succeeded, "Seed %d: seating the resumed run should succeed." % seed_value)
+			var re_node: RouteNode = resumed.run.route.node_by_id(node_id)
+			assert_true(resumed.begin_interactive_combat_node(re_node).succeeded, "Seed %d: the un-cleared room re-enters cleanly on resume." % seed_value)
+			assert_equal(String(resumed.assigned_affinity_for(node_id)), entered_affinity, "Seed %d: D2 — re-entering the resumed room yields the SAME affinity (no reroll)." % seed_value)
+			assert_equal(_map_draw_index(resumed.streams), map_after_entry, "Seed %d: D2 — a non-none room takes NO extra map draw on resume (interrupted map position == uninterrupted)." % seed_value)
+			proved_non_none = true
+	assert_true(proved_non_none, "D2: at least one seed must exercise a non-none room (the guard-skip / no-extra-draw path).")
+
+
+# The `map` stream's draw index from an RngStreamSet snapshot (the position the affinity draw advances). The
+# affinity assign is the ONLY run-level `map` draw in begin_interactive_combat_node (LevelGenerator mints its own
+# level stream; NodeEnterCommand never sees the run-level streams), so this index advances by exactly 1 per entry.
+func _map_draw_index(streams: RngStreamSet) -> int:
+	var by_stream: Dictionary = streams.to_snapshot().get("streams", {})
+	return int((by_stream.get("map", {}) as Dictionary).get("draw_index", 0))
 
 
 # ---- null / unseated / terminal ------------------------------------------------------------------
