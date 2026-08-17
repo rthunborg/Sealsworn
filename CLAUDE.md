@@ -11,3 +11,4 @@
 - `prototype/` (React/Vite) is frozen validation evidence. Do not modify it and do not make production Godot code depend on it.
 - `_bmad/` is installer-managed and gitignored. Never hand-edit it; re-run the BMAD installer to change install answers.
 - `.agents/skills/` is the legacy Codex-targeted BMAD skill install. It is not used by Claude Code; do not edit or load skills from it.
+- Decisions escalated to Rasmus must follow AGENTS.md → "Presenting Decisions That Need Human Input" (player-first context, real code investigation, options with costs, an unbiased recommendation). `.claude/skills/auto-gds/references/{pipeline,delegation}.md` carry pointers to it at the Phase 7 ask and in the code-review prompt, but those files are **vendored** from the upstream auto-gds module — if a module update overwrites them, AGENTS.md remains canonical and the pointers must be re-added.

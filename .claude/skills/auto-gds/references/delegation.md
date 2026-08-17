@@ -110,6 +110,13 @@ PERSIST the findings in the story file's `### Review Findings` section (add it i
 ledger `<impl>/deferred-work.md` (its own `deferred_work_file`) under a `## Deferred from: 
 code review of {key} (<date>)` heading — create that file if absent.
 
+Write each `[Review][Decision]` bullet so a human can act on it without reading the diff — the
+orchestrator escalates these verbatim under AGENTS.md → "Presenting Decisions That Need Human
+Input". Each one must carry: the current behavior with file:line cites, what it means for the
+PLAYER in a concrete in-game scenario (not just the code-level defect), why it is built that way
+(AC-required vs optional-and-skipped vs oversight), and the viable directions with their costs and
+dependencies. State a recommendation, but never choose for the human.
+
 Do not end on the skill's summary alone. Report: verdict (Approve / Changes Requested / Blocked);
 Critical/High/Med/Low counts; the count of open `[Review][Decision]` items (a human call — see
 `pipeline.md` Phase 7); `Findings persisted: <N>` = `[Review][*]` bullets now in <story_file>;

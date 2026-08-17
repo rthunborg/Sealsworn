@@ -92,6 +92,42 @@ Do not start with UI-heavy scenes before the model, command/event flow, RNG, and
 - Commit all relevant story, code, test, fixture, and tracking files before starting the next story.
 - Before handing off, remove only proven-redundant generated files or temp files, never planning artifacts or story files. Verify `git status --short` is clean.
 
+## Presenting Decisions That Need Human Input
+
+Whenever a decision is escalated to the human — a `[Review][Decision]` finding, an ambiguity that
+changes the outcome, a scope or design fork, a `needs-human` stop — present it in **player/user
+terms first, code terms second**. The human must be able to make a competent call without reading
+the diff. Never reduce a decision to a one-line question, a bare finding title, or a menu of
+options with no analysis.
+
+**Investigate before presenting.** Read the actual code paths, content definitions, and data the
+decision touches. A decision presentation built only from a reviewer's summary, a story file, or
+inference is not acceptable — verify what the code really does, and say which files you checked.
+
+**Required shape for each decision:**
+
+1. **What happens now** — the concrete current behavior, in the order the player/user encounters
+   it. Cite the real files and lines (`file.gd:123`).
+2. **What that means for the player** — walk a specific in-game scenario end to end. Name the
+   actual stakes: what the player sees, loses, gains, can exploit, or misreads. Include what
+   silently works as well as what visibly breaks.
+3. **Why it is built this way** — the constraint, acceptance criterion, or deliberate trade-off
+   that produced the current behavior. Distinguish "required by the AC" from "optional and
+   skipped" from "oversight".
+4. **Options** — every genuinely viable direction, including keeping the current behavior. For
+   each: what changes for the player, rough implementation cost, and what it risks or forecloses.
+   Name any dependency the option would pull in (a missing screen, an absent system, a schema
+   change).
+5. **An unbiased recommendation** — state which option you would pick **and why**, calibrated to
+   the scope of the decision: weigh the finding's severity, the story's acceptance criteria, the
+   cost of doing it now vs later, and whether a scheduled later story already covers it. Do not
+   default to the largest or the smallest option; do not hedge into "either is fine" when the
+   evidence favors one. Say plainly when the honest answer is that all options are defensible,
+   and give the tie-breaker you would use.
+
+Recommendations are advisory. The human decides; never proceed on a guessed direction, and never
+implement a `[Review][Decision]` item that has no chosen direction.
+
 ## Before Finishing Work
 
 - Run relevant tests or explain why they could not be run.

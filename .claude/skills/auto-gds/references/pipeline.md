@@ -115,6 +115,13 @@ For each review iteration:
   still do not persist, stop with `needs-human`.
 - Ask the user only for `[Review][Decision]` items that truly require a human product/design/
   security/asset call. Do not guess those decisions.
+- **Present every such decision in the shape AGENTS.md → "Presenting Decisions That Need Human
+  Input" requires** (project convention; read it before asking). Investigate the real code paths
+  first — do not build the presentation from the reviewer's summary alone — then give, per
+  decision: current behavior with file:line cites, a walked player-facing scenario, why it is
+  built that way, every viable option with cost/risk/dependencies, and an unbiased recommendation
+  calibrated to the decision's scope. A bare question or an unanalyzed option list is not
+  sufficient.
 - Delegate `code-review fix` for fixable `[Review][Patch]` items and human-resolved decisions.
 - Continue until the loop converges or reaches `code_review.max_iterations`.
 
