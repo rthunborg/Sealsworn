@@ -3,7 +3,7 @@ baseline_commit: 7a2f1b6
 ---
 # Story 15.4: Quit, Pause and Resume
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
