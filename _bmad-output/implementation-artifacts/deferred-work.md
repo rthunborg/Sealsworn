@@ -1,3 +1,25 @@
+## Deferred from: code review of 15-4-quit-pause-resume (2026-08-17)
+
+Round 2 code review (independent second-model adversarial re-review; Claude Opus 4.8; verdict **Approve**;
+Critical 0 / High 0 / Med 0 / Low 1; **1** open `[Review][Decision]`). Re-verified against the branch @ base
+`main`: suite re-run **211 PASS / 0 FAIL** (false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0 hits; only
+the 6 documented stderr negatives, ZERO new, none referencing a 15.4 file); `git diff --check` clean. AC3
+invariants hold (23-key `RunSnapshot`, `SCHEMA_VERSION == 1`, 7 named RNG streams; `run_snapshot.gd`/
+`rng_stream_set.gd`/`domain_event.gd`/`project.godot`/`combat_loadout.gd` untouched); D2 is fingerprint-safe
+(the hands-off `_resolve_combat`/`run_to_completion` driver never assigns affinity, so no pinned artifact reads
+`assigned_affinities`); the mid-encounter-save defer (`deferred-work.md:418`) was NOT reopened.
+
+**No new `[Review][Defer]` items from this review.** The one Round-2 finding is a `[Review][Decision]` (Low) held
+in the story file `### Review Findings` (Round 2 of 3): a mid-fight quit + resume still re-rolls a room whose
+recorded affinity was the neutral `none` (the assign-if-absent guard treats `none` as "unassigned"), so ~1-in-5
+resumed rooms re-roll and the `map` stream drifts one draw — recommended Option B (a ~2-line `has()`-based guard,
+fingerprint-safe). It awaits human direction and is NOT yet a deferral. **If the human chooses Option A (accept
+the residual)**, fold it into the standing ephemeral-fight defer at the entry below (`:418` region — "the live
+in-node board / pending-fight SAVE stays EPHEMERAL"): the none-room reroll is a faithful consequence of the
+ephemeral in-node fight, and the 23-key gate stays 23 either way.
+
+---
+
 ## Deferred from: code review of 15-3-threat-telegraphs (2026-08-07)
 
 Surfaced by `gds-code-review` Round 1 (Claude Opus 4.8; verdict **Approve**; Critical 0 / High 0 /
