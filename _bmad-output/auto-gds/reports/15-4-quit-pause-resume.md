@@ -33,3 +33,35 @@
 3. This report file is written but **not committed** (halted-path convention) — commit it alongside the decision resolutions.
 
 **Next:** `15-5-event-node-and-run-summary-wiring` (currently `backlog`) — preview only; not started.
+
+## Report — 2026-08-17T20:20:00Z (final)
+
+**Story:** `15-4-quit-pause-resume` (epic 15, story 4) — mid-epic (4 of 12).
+**Branch:** `story/15-4-quit-pause-resume`.
+**Pipeline status:** clean completion — code-review loop converged at Round 3 of 3 (Approve, zero findings, zero open decisions); story advanced to `done`.
+**Continues:** the `2026-08-17T09:36:21Z (halted — unresolved [Review][Decision] items)` section above.
+
+**Timing:** started 2026-08-07T21:00:09Z; completed 2026-08-17T20:20:00Z — elapsed ≈9d 23h (≈1h 35m AI-run this session across 5 delegate runs; the remainder is human/idle wait between sessions plus prior-session delegate time, which `active_seconds` did not track). Resumed 4× (Phase 5 interruption 2026-08-07; Phase 5 completion + review Round 1 on 2026-08-08; decision triage 2026-08-17 morning; fix + Rounds 2–3 + finalize 2026-08-17 afternoon).
+
+**Phases run (this session):** Phase 7 code-review loop — Round 1 decision fixes (`agds-high`), Round 2 independent second-model review (`agds-alt-xhigh`), Round 2 decision fix D4 (`agds-high`), Round 3 final review (`agds-xhigh`); Phase 9 finalize (orchestrator).
+**Skipped:** Phase 0, 1, 3, 5 (completed in prior sessions); Phase 2 (project-context present); Phase 4, 6 (gds-testing-disabled); Phase 8 (not last in epic).
+
+**Overrides:** none.
+
+**Testing:** disabled in V0. The project's own headless suite was run and independently re-verified by each review round: final state **211 PASS / 0 FAIL**, false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0 hits with only the 6 documented pre-existing negatives.
+
+**Code review:** 3 iterations of max 3.
+- Round 1 — primary adversarial (`agds-xhigh`, 2026-08-08): **Approve**, Critical 0 / High 0 / Medium 0 / Low 3. All 3 Low were `[Review][Decision]`; escalated to the human, who chose: D1 add a route-map pause sharing the board's menu (with Save & Exit, Options, run metrics); D2 persist the entered room's affinity; D3 add a diagnostic log on delete failure.
+- Round 2 — independent second-model (`agds-alt-xhigh`, 2026-08-17): **Approve**, Critical 0 / High 0 / Medium 0 / Low 1. Confirmed D1/D3 correct and the rewritten pinned assertion a legitimate contract inversion; found D2 incomplete — the assign-if-absent guard conflated "absent" with "recorded `none`", so neutral rooms still re-rolled. Escalated; the human chose Option B.
+- Round 3 — final (`agds-xhigh`, 2026-08-17): **Approve**, Critical 0 / High 0 / Medium 0 / **Low 0**. Zero new findings; delta verified (no String/StringName key mismatch, both sites null-guarded, test strengthening non-vacuous); AC3 invariants and out-of-scope items re-confirmed.
+- HITL halt outcome: **continued** (twice halted on open `[Review][Decision]` items, both resolved by human direction; final halt clean). No external-review changes.
+
+**Open questions:** (none).
+
+**Deferred work:** no `[Review][Defer]` items from any round. One non-review deferral recorded this session in `<impl>/deferred-work.md` under `## Deferred from: story 15-4 scope decision (2026-08-17)`: rebalance affinity frequency to ~1-in-5 (currently a uniform draw over 5 candidates → ~80% of rooms carry a hazard). Excluded from 15-4 because it contradicts this story's AC3, breaks the curated 40-seed `AFFINITY_SEED_SAMPLE` fixture, and has no GDD backing. Needs a flat-vs-depth-scaled design call before it can be scoped.
+
+**Planning drift:** (none — not epic-end).
+
+**Needs human:** (none blocking — the story is `done`). Optional follow-ups: (1) merge the open PR on your own time; (2) decide flat vs depth-scaled for the affinity-frequency rebalance so it can be turned into a story; (3) OSG-1 playtest should verify on-screen legibility of the new pause menu, Options panel, boot Continue/New-Run menu, and the overwrite-confirm modal at 2.0x text scale — every UI element in this story is verified by construction only.
+
+**Next:** `15-5-event-node-and-run-summary-wiring` (currently `backlog`) — preview only; not started.
