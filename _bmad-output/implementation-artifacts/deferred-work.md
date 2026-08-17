@@ -18,6 +18,12 @@ the residual)**, fold it into the standing ephemeral-fight defer at the entry be
 in-node board / pending-fight SAVE stays EPHEMERAL"): the none-room reroll is a faithful consequence of the
 ephemeral in-node fight, and the 23-key gate stays 23 either way.
 
+**Update — code review Round 3 (2026-08-17, FINAL round; verdict Approve, 0 findings):** the human chose **Option B**
+(applied as D4, commit `f705ca4`), so the none-room reroll residual is **RESOLVED, not deferred** — the Option-A
+fold-in above is moot. Round 3 re-verified the `f705ca4` delta (guard key-type + null-safety, comment-only resume
+change, non-vacuous test strengthening) and the AC3 invariants against source: **211 PASS / 0 FAIL**, false-PASS guard
+0 hits, `git diff --check` clean. **Zero new `[Review][Defer]` items from Round 3.** No open 15-4 deferrals remain.
+
 ---
 
 ## Deferred from: code review of 15-3-threat-telegraphs (2026-08-07)
