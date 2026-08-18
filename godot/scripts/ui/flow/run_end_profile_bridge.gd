@@ -48,16 +48,29 @@ extends RefCounted
 # ⭐ THE G3 COUPLING ([Decision] — Option A, the honest as-is): the AWARDED Oath-Shard total is the PROFILE's
 # (profile.oath_shards, surfaced via OutpostViewModel.oath_shards); RunSummary.profile_meta.oath_shards_earned STAYS
 # 0/not_yet_supported (the summary reads NO profile — wiring the DTO field non-zero would break the 8.2/8.4
-# not_yet_supported pinned contract). No summary->profile coupling. The presenter shows an honest "not yet tallied" note
-# on the summary + the AWARDED total at the outpost level.
+# not_yet_supported pinned contract). No summary->profile coupling. The presenter shows the honest earned-THIS-RUN read
+# (OutpostRenderView.run_oath_shards_earned — the D4-aware render-side amount) on the summary + the AWARDED total at the
+# outpost level.
+#
+# ⭐ STORY 15.5 (D5 — human decision 2026-08-18, Option B): the bridge NOW DRIVES AwardMetaProgressCommand at the live
+# run-end so the meta-profile actually ACCRUES the Oath Shards (previously the command was NEVER called in production, so
+# the profile never gained shards and the summary reported currency the player never received). It reuses the command's
+# EXISTING gates VERBATIM — eligibility (a manual-seed run is DENIED, ZERO mutation), the terminal-run check, and the
+# idempotency guard (profile.last_awarded_run_seed prevents a double-award on a re-drive / a re-loaded profile). D4: a
+# death now accrues on the same bounded/capped/nodes-cleared basis. The award draws ZERO RNG (a pure calculation) and
+# mutates ONLY the profile — never the run/streams/any fingerprint. A denied/idempotent-rejected award is EXPECTED, not
+# an error (the bridge ignores the result, exactly as it ignores an idempotent first-death/victory reject). It still does
+# NOT drive MergeRunDiscoveriesCommand (the 11.6 meta-GRANT concern stays out of scope — the run-level discovery event
+# store is deferred).
 #
 # ⭐ SCOPE (the 11.5 fences): the bridge records the NARRATIVE first-death/victory LATCH (eligibility-independent — a flag,
-# not progression currency) and closes the loop; it does NOT drive AwardMetaProgressCommand / MergeRunDiscoveriesCommand
-# (the 11.6 meta-SPEND/GRANT concern). It draws ZERO RNG (the record commands are ZERO-RNG deterministic flag sets;
-# RunSummary/OutpostViewModel/the beats are pure reads); it mutates ONLY the profile (never the run, never the streams,
-# never any fingerprint). Fail-closed on a null/non-terminal run (build_outpost returns null so the presenter branches).
+# not progression currency), APPLIES the Oath-Shard award (D5 Option B, behind the eligibility+idempotency gates), and
+# closes the loop. It draws ZERO RNG (the record + award commands are ZERO-RNG deterministic; RunSummary/OutpostViewModel/
+# the beats are pure reads); it mutates ONLY the profile (never the run, never the streams, never any fingerprint).
+# Fail-closed on a null/non-terminal run (build_outpost returns null so the presenter branches).
 
 const ActionResult = preload("res://scripts/core/results/action_result.gd")
+const AwardMetaProgressCommand = preload("res://scripts/core/commands/award_meta_progress_command.gd")
 const FirstDeathNarrativeBeat = preload("res://scripts/run/first_death_narrative_beat.gd")
 const FirstVictoryRevealBeat = preload("res://scripts/run/first_victory_reveal_beat.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
@@ -146,6 +159,15 @@ func build_outpost(run: RunState, orchestrator: RunOrchestrator = null) -> Outpo
 				StringName(String(victory_result.metadata.get("line_id", ""))),
 				bool(victory_result.metadata.get("is_skippable", true))
 			)
+
+	# (2b) Story 15.5 (D5 — Option B): APPLY the Oath-Shard award so the meta-profile ACTUALLY ACCRUES (behind the
+	# command's EXISTING gates: a manual-seed run is DENIED, a re-drive / already-awarded run is a no-op via
+	# last_awarded_run_seed, D4 makes a death accrue too). A DISTINCT sequence_id (sequence_id + 1) keeps the award event
+	# id off the record-latch id (next_sequence_id() is a pure peek that does not advance, so both would otherwise share
+	# an id). The award mutates ONLY profile.oath_shards + last_awarded_run_seed on success; a denied/idempotent reject
+	# leaves the profile byte-identical (EXPECTED — ignored, like an idempotent latch reject). ZERO RNG. Persisted below
+	# in step (3), so the accrued total survives the app restart.
+	AwardMetaProgressCommand.new(profile, _summary_for(run), sequence_id + 1).execute(run)
 
 	# (3) PERSIST the (possibly mutated) profile.
 	var write_result: ActionResult = _repository.write_profile(profile, _save_path)

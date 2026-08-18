@@ -126,10 +126,21 @@ func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = 
 # driver (ReferenceCombatDriver) makes 18 HP winnable on the approved seeds, so the loadout is now class-derived. A run
 # with NO kit (a seed-only / empty-class / legacy run) FALLS OPEN to the driver default (DEFAULT_HERO_HP 60 / sword),
 # so the run still resolves. Kept pure / fail-closed — no RNG, no command, no run truth (the loadout DECISION is a
-# domain/flow read; the shell OBSERVES it). The HUD still displays the class baseline_hp between levels + the live
-# board entity's current_hp during a fight (two distinct DISPLAY reads — unchanged; there is still NO run-level HP field
-# and the in-node fight stays EPHEMERAL — the 23-key RunSnapshot gate stays 23).
+# domain/flow read; the shell OBSERVES it).
+#
+# ⭐ Story 15.5 (D1 — the ratified "wounds carry between nodes" reversal): PREFER the run-level CARRIED HP
+# (run.current_hp, set by the orchestrator when a combat node CLEARED below max HP) so the NEXT node's fight arms from
+# the carried HP, NOT a fresh kit baseline — attrition is real, with NO implicit full heal between nodes (AC1). When
+# current_hp is UNSET (HP_UNSET — the FIRST node of a run, or a legacy / seed-only run) it falls back to the kit baseline
+# (CombatLoadout.for_run(run).hp), i.e. the pre-15.5 behaviour. The between-level HUD reads this same carried value; the
+# live board entity's current_hp during a fight is a distinct DISPLAY read. The persisted HP now rides the route-position
+# save (nested in route_state — 23-key gate stays 23); the in-node fight stays EPHEMERAL (a mid-fight quit re-enters at
+# ENTRY HP). FINGERPRINT-SAFE: the hands-off play_hands_off_to_run_end path is DECOUPLED (DEFAULT_HERO_HP), so no pinned
+# reward/route/finale/combat fingerprint reads run.current_hp.
 func hero_hp() -> int:
+	var current: RunState = _orchestrator.run
+	if current != null and current.current_hp != RunState.HP_UNSET:
+		return current.current_hp
 	return _combat_loadout().hp
 
 

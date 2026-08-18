@@ -1,10 +1,11 @@
 extends "res://tests/unit/test_case.gd"
 
-# Story 8.3 Task 3 (AC1, AC3): the Oath-Shard award CALCULATION — deterministic, capped, sparse. An eligible completed
-# run yields the expected capped amount; an over-cap signal clamps to MAX_AWARD (the AC3 cap); the calculation is
-# deterministic (twice → identical) + draws ZERO RNG; a failed (death) run yields 0; a non-terminal/null run yields 0.
-# The manual-seed DENIAL is enforced at the APPLICATION gate (test_award_meta_progress_command.gd), not here — the
-# calculator is a pure amount.
+# Story 8.3 Task 3 (AC1, AC3) + Story 15.5 (D4): the Oath-Shard award CALCULATION — deterministic, capped, sparse. An
+# eligible completed run yields the expected capped amount; an over-cap signal clamps to MAX_AWARD (the AC3 cap); the
+# calculation is deterministic (twice → identical) + draws ZERO RNG; a FAILED (death) run now awards on the SAME capped
+# nodes-cleared basis as a completion (Story 15.5 D4 — the ratified reversal of the 8.3 death-awards-zero decision); a
+# non-terminal/null run yields 0. The manual-seed DENIAL is enforced at the APPLICATION gate
+# (test_award_meta_progress_command.gd), not here — the calculator is a pure amount.
 #
 # Code review of 8-3 Round 1 (human option (b), harden now): the amount is a PURE FUNCTION OF THE RunState — nodes_cleared
 # is derived DIRECTLY off run.route.cleared_node_ids, NOT off a caller-supplied RunSummary. _amount_comes_from_the_run_state
@@ -22,7 +23,7 @@ func run() -> Dictionary:
 	_completed_run_yields_expected_capped_amount()
 	_over_cap_signal_clamps_to_max_award()
 	_calculation_is_deterministic_and_rng_free()
-	_failed_run_yields_zero()
+	_failed_run_awards_the_same_capped_nodes_cleared_basis()
 	_non_terminal_and_null_run_yield_zero()
 	_completed_run_with_zero_nodes_yields_the_base_award()
 	_award_does_not_depend_on_economy_or_difficulty_signals()
@@ -63,12 +64,24 @@ func _calculation_is_deterministic_and_rng_free() -> void:
 	assert_equal(MetaAwardRules.oath_shard_award_for(rebuilt_run), first, "Rebuilding from the same inputs yields the same award (deterministic).")
 
 
-func _failed_run_yields_zero() -> void:
-	# A death (PHASE_FAILED) awards NOTHING this story ([Decision]).
+func _failed_run_awards_the_same_capped_nodes_cleared_basis() -> void:
+	# Story 15.5 (D4 — the ratified REVERSAL of the 8.3 death-awards-zero decision): a death (PHASE_FAILED) now awards on
+	# the SAME bounded, capped, nodes-cleared basis as a COMPLETION — the currency rewards the DEPTH reached, so unlocks
+	# are reachable even from a run that ended in death.
 	var run: RunState = _failed_run_with_cleared_nodes(3)
 
 	var award: int = MetaAwardRules.oath_shard_award_for(run)
-	assert_equal(award, 0, "A failed (death) run must award 0 Oath Shards this story.")
+	var expected: int = MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * 3
+	assert_equal(award, expected, "D4: a failed 3-node run awards min(BASE + PER_NODE * 3, MAX) — the same basis as a completion.")
+	# It equals what a COMPLETED run with the SAME cleared count awards (the same-basis invariant).
+	assert_equal(award, MetaAwardRules.oath_shard_award_for(_completed_run_with_cleared_nodes(3)), "D4: a death and a completion with the same nodes cleared award the SAME amount.")
+	# Still bounded/capped: a deep death clamps to MAX_AWARD.
+	assert_equal(MetaAwardRules.oath_shard_award_for(_failed_run_with_cleared_nodes(50)), MetaAwardRules.MAX_AWARD, "D4: a deep death still clamps to MAX_AWARD (bounded/capped).")
+	# A 0-node death still earns the BASE grant (reaching an ending — dying at depth 0 — is the sparse floor).
+	assert_equal(MetaAwardRules.oath_shard_award_for(_failed_run_with_cleared_nodes(0)), MetaAwardRules.BASE_AWARD, "D4: a 0-node death earns exactly the BASE grant.")
+	# CRUX-3 single-authority: the shared amount helper equals the rule for the same nodes-cleared signal (the render read
+	# and the domain rule both call THIS, so the summary can never desync from the award).
+	assert_equal(MetaAwardRules.award_amount_for_nodes_cleared(3), award, "CRUX-3: award_amount_for_nodes_cleared(3) is the single-authority amount both the rule and the render read.")
 
 
 func _non_terminal_and_null_run_yield_zero() -> void:

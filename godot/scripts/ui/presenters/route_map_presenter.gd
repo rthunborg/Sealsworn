@@ -32,6 +32,9 @@ const TacticalLayoutProfile = preload("res://scripts/ui/view_models/tactical_lay
 # a pause affordance opens" close), instead of only a silent between-node autosave. No ephemeral fight to discard on
 # the map, so it passes no on_before_quit callback.
 const PauseMenuOverlay = preload("res://scripts/ui/presenters/pause_menu_overlay.gd")
+# Story 15.5 (AC3) — the event-node choice/outcome surface the route map opens when the player picks an `event` node
+# (generate offer -> present choices -> apply pick -> SHOW the outcome -> resolve), replacing the silent placeholder.
+const EventNodeOverlay = preload("res://scripts/ui/presenters/event_node_overlay.gd")
 
 # The node types that play a LIVE tactical board (combat / elite) — picking one navigates to the board stage.
 const LIVE_BOARD_NODE_TYPES: Array[String] = ["combat", "elite_combat", "boss"]
@@ -47,6 +50,9 @@ var _status_label: Label = null
 # same surface the live board opens). The overlay is null when not showing.
 var _pause_button: Button = null
 var _pause_overlay: PauseMenuOverlay = null
+# Story 15.5 (AC3) — the event-node overlay: null when not showing (a second open never stacks). Freed on dismiss, which
+# then re-renders the map so the just-cleared event node is reflected.
+var _event_overlay: EventNodeOverlay = null
 
 func _ready() -> void:
 	_build_layout()
@@ -312,6 +318,15 @@ func _on_choice_picked(choice_id: String) -> void:
 			SceneManager.go_to_stage("tactical_board")
 		return
 
+	# ⭐ Story 15.5 (AC3): an EVENT node PRESENTS its risk/reward offer + SHOWS what changed before returning to the
+	# route (never a silent placeholder counter bump). Open the event overlay; it drives generate_event_offer ->
+	# EventViewModel present -> resolve_event_node_live (apply + clear) -> EventOutcomeViewModel show, then dismisses back
+	# to a re-rendered map. Only the LIVE on-screen path draws the `events` stream (the hands-off driver keeps its
+	# placeholder resolution), so no fingerprint moves. The other non-combat types keep the placeholder resolve below.
+	if picked_type == String(RouteNode.TYPE_EVENT):
+		_present_event_node()
+		return
+
 	# A non-combat node resolves live in place (placeholder round-trip), then re-render the map.
 	var resolved = orchestrator.resolve_current_node_live()
 	if resolved.is_error():
@@ -321,6 +336,29 @@ func _on_choice_picked(choice_id: String) -> void:
 		if has_node("/root/Diagnostics"):
 			Diagnostics.info(&"ui", &"route_map_resolve_rejected", {"error_code": String(resolved.error_code)})
 		return
+	_render_map()
+
+
+# Story 15.5 (AC3): open the event-node choice/outcome surface. Built lazily; a second open never stacks. The overlay
+# drives the whole event interaction (generate offer -> present -> choose -> show outcome -> resolve) and calls back
+# _dismiss_event_overlay when the player finishes (which frees the overlay + re-renders the now-cleared map).
+func _present_event_node() -> void:
+	if _event_overlay != null:
+		return
+	var overlay: EventNodeOverlay = EventNodeOverlay.new()
+	_event_overlay = overlay
+	add_child(overlay)
+	overlay.open(_flow(), _dismiss_event_overlay)
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"route_map_event_opened", {})
+
+
+# The event overlay invokes this when the player finishes the event: free the overlay + re-render the map so the
+# just-cleared event node is reflected (the run advanced through resolve_event_node_live).
+func _dismiss_event_overlay() -> void:
+	if _event_overlay != null:
+		_event_overlay.queue_free()
+		_event_overlay = null
 	_render_map()
 
 

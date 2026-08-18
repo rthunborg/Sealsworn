@@ -81,6 +81,14 @@ const SUMMARY_OUTCOME_DEATH := "Fallen"
 # (mirrors MANUAL_SEED_WARNING_LINE / INSUFFICIENT_SHARDS_NOTE).
 const NAMED_SPACE_DEFERRED_LABEL := "Coming later"
 
+# Story 15.5 (AC4 — the honesty requirement): the label a run-summary list renders when it is EMPTY only because the
+# deferred run-level event store (deferred-work.md:447/1004) is not built yet — NOT because "nothing happened". The live
+# bridge builds RunSummary.build(run, []) with an empty events list, so notable_loot / passives_consumed /
+# passives_destroyed come out empty for EVERY real run; a bare "— none —" would dishonestly read as "you looted nothing /
+# lost nothing". The presenter renders THIS label instead when the render view reports the list not-yet-recorded; a
+# POPULATED list renders its real entries. A non-color TEXT channel (NFR9). Centralized + testable without a SceneTree.
+const NOT_YET_RECORDED_LABEL := "Not yet recorded"
+
 # The projection this render view reads (OutpostViewModel.to_dictionary() — the pinned DICTIONARY_KEYS). A deep copy is
 # stored so a mutation of a caller's dict never perturbs this seam's reads.
 var _projection: Dictionary = {}
@@ -221,20 +229,24 @@ func summary_seed() -> String:
 	return String(summary.get("seed", ""))
 
 
-# Story 14.5 (AC2): the honest OATH-SHARDS-EARNED-THIS-RUN count — a SEPARATE deterministic render-side read (NOT a
-# summary-key change; RunSummary.profile_meta.oath_shards_earned STAYS 0/not_yet_supported). It is 0 unless the run
-# COMPLETED (phase) AND is meta-eligible (a manual-seed run earns no meta — FR28); otherwise it is the SAME capped, sparse
-# amount MetaAwardRules.oath_shard_award_for(run) would grant: clampi(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, 0,
-# MAX_AWARD). The MetaAwardRules consts are referenced so the NUMBERS are single-sourced (not hardcoded 1/1/5). A death or
-# manual-seed run honestly earns 0. Pure read; draws ZERO RNG; touches NO domain/save file.
+# Story 14.5 (AC2) + Story 15.5 (D4/CRUX-3): the honest OATH-SHARDS-EARNED-THIS-RUN count — a SEPARATE deterministic
+# render-side read (NOT a summary-key change; RunSummary.profile_meta.oath_shards_earned STAYS 0/not_yet_supported).
+# Story 15.5 (D4): a terminal run — a COMPLETED run OR a FAILED death — earns the award on the SAME capped nodes-cleared
+# basis (the death-awards-zero reversal); the completed-only gate is REMOVED, so a death now honestly shows its award.
+# It is still 0 unless the run is meta-ELIGIBLE (a manual-seed run earns no meta — FR28 — the case
+# MetaAwardRules.oath_shard_award_for alone would NOT catch, since the calculator does not gate on eligibility) AND
+# terminal (a non-terminal / absent summary is fail-closed 0). The AMOUNT is SINGLE-SOURCED from
+# MetaAwardRules.award_amount_for_nodes_cleared so it EQUALS oath_shard_award_for(run) for the SAME run (the CRUX-3
+# single authority — collapsing the 15-2 "computed in two places" desync; test-locked for BOTH a completion AND a
+# death). Pure read; draws ZERO RNG; touches NO domain/save file.
 func run_oath_shards_earned() -> int:
 	var summary: Dictionary = _projection.get("run_summary", {})
-	var is_completed: bool = _summary_phase() == String(RunState.PHASE_COMPLETED)
+	var phase: String = _summary_phase()
+	var is_terminal: bool = phase == String(RunState.PHASE_COMPLETED) or phase == String(RunState.PHASE_FAILED)
 	var is_eligible: bool = bool(summary.get("meta_progression_eligible", false))
-	if not (is_completed and is_eligible):
+	if not (is_terminal and is_eligible):
 		return 0
-	var raw_award: int = MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * summary_nodes_cleared()
-	return clampi(raw_award, 0, MetaAwardRules.MAX_AWARD)
+	return MetaAwardRules.award_amount_for_nodes_cleared(summary_nodes_cleared())
 
 
 # Story 14.9 (AC1, F14): the NOTABLE-LOOT list the run-summary row renders — a pure read of the REAL 8.2 field
@@ -248,6 +260,38 @@ func summary_notable_loot() -> Array:
 	var run_scoped: Dictionary = (_projection.get("run_summary", {}) as Dictionary).get("run_scoped", {})
 	var loot: Array = run_scoped.get("notable_loot", [])
 	return loot.duplicate(true)
+
+
+# Story 15.5 (AC4): the passives-consumed / passives-destroyed run-summary lists — pure reads of the REAL 8.2 fields
+# run_scoped.passives_consumed / passives_destroyed (each a flat id list). EMPTY in the v0 live flow (the bridge builds
+# RunSummary.build(run, []) with an empty events list — the deferred run-level event store), populated when events ARE
+# supplied. Fresh copies (the no-live-handle discipline). Mirror summary_notable_loot.
+func summary_passives_consumed() -> Array:
+	var run_scoped: Dictionary = (_projection.get("run_summary", {}) as Dictionary).get("run_scoped", {})
+	return (run_scoped.get("passives_consumed", []) as Array).duplicate(true)
+
+
+func summary_passives_destroyed() -> Array:
+	var run_scoped: Dictionary = (_projection.get("run_summary", {}) as Dictionary).get("run_scoped", {})
+	return (run_scoped.get("passives_destroyed", []) as Array).duplicate(true)
+
+
+# Story 15.5 (AC4 — the honesty requirement): whether the NOTABLE-LOOT row should render the "not yet recorded" label
+# rather than a bare empty result. True when a run summary IS present (a real run ended) but the loot list is EMPTY —
+# which in the v0 live flow is ALWAYS (the deferred run-level event store, deferred-work.md:447/1004), NOT because "you
+# looted nothing". A POPULATED list -> false (render the real entries); an ABSENT summary -> false (the "no just-ended
+# run" gate handles it upstream). This is the seam the presenter maps to NOT_YET_RECORDED_LABEL. Test-locked.
+func summary_notable_loot_not_yet_recorded() -> bool:
+	return shows_run_summary() and summary_notable_loot().is_empty()
+
+
+# Story 15.5 (AC4 — honesty): whether the PASSIVES spent/destroyed row should render the "not yet recorded" label. True
+# when a run summary IS present but BOTH the consumed AND the destroyed lists are empty (the same deferred-store
+# limitation). Either list populated -> false (render the real entries). An absent summary -> false. Test-locked.
+func summary_passives_not_yet_recorded() -> bool:
+	return shows_run_summary() \
+		and summary_passives_consumed().is_empty() \
+		and summary_passives_destroyed().is_empty()
 
 
 # Story 14.5: the summary's terminal phase String (the projected run_summary.phase — "completed" / "failed", or "" for an

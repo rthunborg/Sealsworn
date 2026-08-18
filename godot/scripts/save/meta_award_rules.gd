@@ -21,9 +21,12 @@ extends RefCounted
 #     UNCONDITIONALLY bounded regardless of the signal (AC3 "capped"). A short run trickles a little; a long run
 #     trickles a little more, up to the cap — SPARSE, a shallow trickle that expands OPTIONS over time (the user
 #     story "without becoming a stat grind"; AC3 "sparse + secondary to variety").
-#   - A FAILED run (RunState.PHASE_FAILED — the hero died): 0 ([Decision] — a death awards NOTHING this story; the
-#     currency rewards finishing/reaching an ending, not dying. A future story MAY grant a small consolation, but v0
-#     keeps the currency tied to completion so the trickle stays sparse). A death is a terminal run but yields 0 here.
+#   - A FAILED run (RunState.PHASE_FAILED — the hero died): the SAME capped, nodes-cleared grant as a completion
+#     (Story 15.5 [Decision D4] — the ratified REVERSAL of the Story-8.3 death-awards-zero decision). A death now
+#     awards min(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, MAX_AWARD): the currency rewards the DEPTH the run
+#     reached, not only finishing — so "the risk economy means something and unlocks are reachable" (the 15.5 user
+#     story) even from a run that ended in death. It stays bounded/capped/deterministic/zero-RNG; the manual-seed
+#     DENIAL + idempotency are still enforced ONLY at the APPLICATION gate (AwardMetaProgressCommand), unchanged.
 #   - WHY IT IS NOT A RAW-STAT LADDER (AC3 second half): Oath Shards are a CURRENCY toward variety/knowledge/options
 #     (spent in a later unlock story on classes/loot-pools/passives/secrets/codex/starting-options), NOT a direct
 #     combat stat. 8.3 AWARDS the currency; it applies NO damage/max-HP/armor/crit/dodge upgrade and builds NO
@@ -47,21 +50,29 @@ const PER_NODE_AWARD: int = 1
 # keeps meta power sparse + secondary.
 const MAX_AWARD: int = 5
 
-# The Oath-Shard amount an eligible run's award would grant. PURE + DETERMINISTIC + CAPPED. A COMPLETED run yields
-# min(BASE + PER_NODE * nodes_cleared, MAX_AWARD); a FAILED (death) run yields 0; a non-terminal / null run yields 0
-# (there is no ended run to reward). This is the AMOUNT ONLY — the APPLICATION gate (AwardMetaProgressCommand) enforces
-# eligibility (a manual-seed run is denied) + idempotency (no double-award). Draws ZERO RNG. The amount is a pure
-# function of `run` ALONE (nodes_cleared comes off the run's own route — see the SELF-CONSISTENCY note above).
+# The Oath-Shard amount an eligible run's award would grant. PURE + DETERMINISTIC + CAPPED. BOTH terminal phases — a
+# COMPLETED run AND (Story 15.5 D4) a FAILED (death) run — yield min(BASE + PER_NODE * nodes_cleared, MAX_AWARD); a
+# non-terminal / null run yields 0 (there is no ended run to reward). This is the AMOUNT ONLY — the APPLICATION gate
+# (AwardMetaProgressCommand) enforces eligibility (a manual-seed run is denied) + idempotency (no double-award). Draws
+# ZERO RNG. The amount is a pure function of `run` ALONE (nodes_cleared comes off the run's own route — see the
+# SELF-CONSISTENCY note above).
 static func oath_shard_award_for(run: RunState) -> int:
 	if run == null or not run.is_terminal():
 		return 0
-	# A death (PHASE_FAILED) awards nothing this story ([Decision]).
-	if run.phase != RunState.PHASE_COMPLETED:
-		return 0
+	# Story 15.5 (D4): a death (PHASE_FAILED) now awards on the SAME capped nodes-cleared basis as a completion (the
+	# ratified reversal of the 8.3 death-awards-zero gate). Both terminal phases route through the single-authority
+	# amount helper.
+	return award_amount_for_nodes_cleared(_nodes_cleared_from(run))
 
-	var nodes_cleared: int = _nodes_cleared_from(run)
-	var raw_award: int = BASE_AWARD + PER_NODE_AWARD * nodes_cleared
-	return _clamp_to_cap(raw_award)
+
+# Story 15.5 (CRUX-3 — the SINGLE-AUTHORITY award AMOUNT): the capped, sparse award for a bounded nodes-cleared signal,
+# min(BASE_AWARD + PER_NODE_AWARD * nodes_cleared, MAX_AWARD). BOTH oath_shard_award_for (the domain rule, terminal-
+# gated) AND the render-side earned-count read (OutpostRenderView.run_oath_shards_earned, terminal + eligibility-gated)
+# call THIS so the NUMBER is authoritative in ONE place — collapsing the 15-2 "the same amount computed in two places"
+# desync class (a D4 change that touched only the rule would otherwise show 0 for a death on the summary while the rule
+# says non-zero). Pure, deterministic, ZERO RNG.
+static func award_amount_for_nodes_cleared(nodes_cleared: int) -> int:
+	return _clamp_to_cap(BASE_AWARD + PER_NODE_AWARD * nodes_cleared)
 
 
 # Read the bounded nodes-cleared signal DIRECTLY off the terminal run's own route (IDENTICAL to how RunSummary.build

@@ -71,6 +71,7 @@ const LevelGenerator = preload("res://scripts/generation/level/level_generator.g
 const LevelRecipeRepository = preload("res://scripts/content/repositories/level_recipe_repository.gd")
 const InteractiveCombatSession = preload("res://scripts/run/interactive_combat_session.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
+const ChooseEventOptionCommand = preload("res://scripts/core/commands/choose_event_option_command.gd")
 const NodeEnterCommand = preload("res://scripts/core/commands/node_enter_command.gd")
 const NodeExitCommand = preload("res://scripts/core/commands/node_exit_command.gd")
 const NodeResolvePlaceholderCommand = preload("res://scripts/core/commands/node_resolve_placeholder_command.gd")
@@ -1091,6 +1092,12 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 			"run_completed": false
 		})
 
+	# Story 15.5 (D1) — CAPTURE the hero's ENDING HP from the cleared node's board into run.current_hp so the NEXT node's
+	# fight arms from the carried HP (RunFlowController.hero_hp()), realising the "wounds carry between nodes" reversal
+	# (AC1 — no implicit full heal). A PURE board read (ZERO RNG). The hands-off SMOKE path threads DEFAULT_HERO_HP
+	# explicitly (never run.current_hp), so this capture never perturbs it — fingerprint-safe.
+	_capture_hero_hp_from_board(combat.metadata.get("board"))
+
 	# LIVE VICTORY -> clear + exit the node (the v0 forward-advance), so the run continues. The board outcome decided it.
 	var exit: ActionResult = NodeExitCommand.new(_next_sequence_id).execute(run)
 	if exit.is_error():
@@ -1269,6 +1276,11 @@ func finish_interactive_combat_node(node: RouteNode, session: InteractiveCombatS
 			"next_destination": run_end_destination(),
 			"run_completed": false
 		})
+
+	# Story 15.5 (D1) — CAPTURE the hero's ENDING HP from the interactive session's board into run.current_hp (the SAME
+	# between-node carry the auto-resolve-live path applies) so the NEXT node arms from the carried HP (no implicit full
+	# heal — AC1). A pure board read (ZERO RNG). This is the ON-SCREEN interactive path (the human drives the fight).
+	_capture_hero_hp_from_board(session.board())
 
 	# LIVE VICTORY -> clear + exit the node (the SAME NodeExitCommand the auto-resolve path runs), so the run advances.
 	var exit: ActionResult = NodeExitCommand.new(_next_sequence_id).execute(run)
@@ -1660,6 +1672,102 @@ func _resolve_non_combat_placeholder(node: RouteNode) -> ActionResult:
 		"resolution": "placeholder_resolved",
 		"run_completed": false
 	})
+
+
+# Story 15.5 (AC3) — RESOLVE the parked EVENT node LIVE: apply the player's chosen event option (the REAL risk/reward
+# resolution the Epic-7 machinery already ships — ChooseEventOptionCommand) and clear+exit the node, so the player SEES
+# what changed before returning to the route instead of the silent NodeResolvePlaceholderCommand counter bump. It is the
+# ON-SCREEN counterpart the route-map presenter drives AFTER presenting the offer (generate_event_offer -> EventViewModel
+# -> the human picks a choice); this method applies the pick + resolves the node + returns the outcome deltas the AC3
+# outcome surface (EventOutcomeViewModel) reads. PRECONDITION: the run is parked on an EVENT node with a PENDING event
+# offer (generate_event_offer already rolled it on the LIVE `events` stream). Fail-closed: a rejected choice (invalid /
+# off-offer / insufficient-resource) surfaces the ChooseEventOptionCommand error VERBATIM with ZERO node clear (the node
+# stays un-cleared -> the presenter shows a visible cue + re-presents, never a silent stall — the 14.6 no-soft-lock
+# posture; an event node ALWAYS resolves through a valid pick). It draws ZERO RNG (the `events` OFFER roll already
+# happened at generate; choosing is a recorded tradeoff). LIVE-ONLY: the hands-off run_to_completion / run_to_completion_
+# live drivers still resolve an event node via _resolve_non_combat_placeholder (no `events` draw), so NO pinned
+# fingerprint moves.
+func resolve_event_node_live(choice_id: StringName) -> ActionResult:
+	if run == null:
+		return ActionResult.error(&"no_active_run", {"command": "run_orchestrator"})
+	if run.is_terminal():
+		return ActionResult.error(&"run_already_terminal", {"phase": String(run.phase)})
+	var current: RouteNode = run.route.node_by_id(run.route.current_node_id)
+	if current == null:
+		return ActionResult.error(&"no_current_node", {"command": "run_orchestrator"})
+	if current.type != RouteNode.TYPE_EVENT:
+		return ActionResult.error(&"node_not_event", {
+			"command": "run_orchestrator",
+			"node_id": current.id,
+			"node_type": String(current.type)
+		})
+	# Already-cleared no-op guard (mirrors resolve_current_node_live): a parked-on-a-cleared-node position is a no-op.
+	if run.route.cleared_node_ids.has(current.id):
+		return ActionResult.ok([], {
+			"node_id": current.id,
+			"node_type": String(current.type),
+			"resolution": "already_cleared_noop",
+			"run_completed": false
+		})
+
+	# (1) Apply the chosen event option (the REAL resolution). ChooseEventOptionCommand applies BOTH the reward + the risk,
+	# raises the choice's risk flags, emits event_resolved + economy_changed [+ curse_applied], and draws ZERO RNG. It uses
+	# the orchestrator's OWN _event_repository (the SAME gate generate_event_offer rolled the offer from). A rejected pick
+	# fails closed BEFORE any node clear, so an event node never resolves invisibly AND never soft-locks.
+	var choose: ActionResult = ChooseEventOptionCommand.new(choice_id, _next_sequence_id, _event_repository).execute(run)
+	if choose.is_error():
+		return choose
+	_advance_sequence_past(choose)
+
+	# (2) Resolve the node forward: ACTIVE_ROUTE -> NODE_RESOLUTION (the entry transition the placeholder made) THEN
+	# NodeExitCommand (NODE_RESOLUTION -> ACTIVE_ROUTE + clear the node), so the run advances. No node_placeholder_resolved
+	# event is emitted — the event now has a REAL resolution (event_resolved), so the placeholder marker would be a lie.
+	if run.phase == RunState.PHASE_ACTIVE_ROUTE:
+		var to_resolution: ActionResult = run.transition_to(RunState.PHASE_NODE_RESOLUTION)
+		if to_resolution.is_error():
+			return ActionResult.error(&"event_node_resolution_failed", {
+				"command": "run_orchestrator",
+				"node_id": current.id,
+				"inner_error_code": String(to_resolution.error_code)
+			})
+	var exit: ActionResult = NodeExitCommand.new(_next_sequence_id).execute(run)
+	if exit.is_error():
+		return exit
+	_advance_sequence_past(exit)
+
+	# (3) Return the OUTCOME (the AC3 surface data — the gold/healing/curse/corruption before/after + the raised risk flags,
+	# read from the choose command's result metadata; NO new domain data invented). The presenter builds an
+	# EventOutcomeViewModel from this to SHOW what changed before returning to the map.
+	return ActionResult.ok(choose.events + exit.events, {
+		"node_id": current.id,
+		"node_type": String(current.type),
+		"resolution": "event_resolved",
+		"run_completed": false,
+		"event_id": String(choose.metadata.get("event_id", "")),
+		"choice_id": String(choose.metadata.get("choice_id", "")),
+		"risk_flags": choose.metadata.get("risk_flags", []),
+		"gold_before": int(choose.metadata.get("gold_before", 0)),
+		"gold_after": int(choose.metadata.get("gold_after", 0)),
+		"healing_before": int(choose.metadata.get("healing_before", 0)),
+		"healing_after": int(choose.metadata.get("healing_after", 0)),
+		"curse_before": int(choose.metadata.get("curse_before", 0)),
+		"curse_after": int(choose.metadata.get("curse_after", 0)),
+		"corruption_before": int(choose.metadata.get("corruption_before", 0)),
+		"corruption_after": int(choose.metadata.get("corruption_after", 0)),
+		"applies_curse": bool(choose.metadata.get("applies_curse", false))
+	})
+
+
+# Story 15.5 (D1): CAPTURE the hero's ENDING HP from a cleared node's board into run.current_hp (the between-node carry).
+# A PURE board read — draws ZERO RNG, mutates only run.current_hp. Reads the live board's `hero` entity; only records a
+# LIVE hero (current_hp > 0 — a victory always leaves the hero alive), so a missing/dead hero leaves run.current_hp
+# untouched (defensive; the caller only invokes this on a victory boundary).
+func _capture_hero_hp_from_board(board_value: Variant) -> void:
+	if run == null or not (board_value is BoardState):
+		return
+	var hero: TacticalEntityState = (board_value as BoardState).get_entity(LiveCombatResolver.HERO_ID)
+	if hero != null and hero.current_hp > 0:
+		run.current_hp = hero.current_hp
 
 
 # Boss (Story 9.1): SET UP the Larval Avatar encounter via BossNodeEnterCommand — build the boss encounter

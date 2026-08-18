@@ -55,6 +55,19 @@ const SELECTED_CLASS_ID_KEY := &"selected_class_id"
 # is this nested copy.
 const RISK_ECONOMY_KEY := &"risk_economy"
 
+# Story 15.5 (D1 — the ratified HP-persists-between-nodes reversal): the sentinel `current_hp` value meaning "no
+# run-level HP recorded yet" (the FIRST node of a run / a pre-15.5 legacy save). When current_hp is unset the live
+# loadout falls back to the kit baseline (CombatLoadout.for_run(run).hp — today's behaviour), so a legacy save
+# fails OPEN to full/baseline HP rather than 0 or a crash. A non-negative value is the carried between-node HP.
+const HP_UNSET: int = -1
+
+# Story 15.5 (D1): key under which the run-level current HP is NESTED inside the route_state payload of
+# to_run_snapshot_fields(), so a between-node route-position save carries HP through the EXISTING 15.4 restore seam
+# WITHOUT adding a new top-level RunSnapshot key (the pinned 23-key gate stays 23, SCHEMA_VERSION stays 1) — the SAME
+# proven mechanism as run_phase (4.3) / selected_class_id (5.3) / risk_economy (7.1). AC1's "persisted HP survives a
+# quit/resume": the nested copy is the SOURCE OF TRUTH on resume (try_from_run_snapshot_fields reads it back).
+const CURRENT_HP_KEY := &"current_hp"
+
 var phase: StringName = PHASE_NEW_RUN
 var root_seed: int = 0
 var is_manual_seed: bool = false
@@ -151,6 +164,17 @@ var pending_event_offer: EventOffer = null
 # rides to_dictionary()/try_from_dictionary (the FULL run dict) lenient-read so a copied/round-tripped run preserves the
 # assignments. copy() DEEP-copies it (the dict must not be shared by reference).
 var assigned_affinities: Dictionary = {}
+# The run's CURRENT HP (Story 15.5, D1 — the ratified "wounds carry between nodes" reversal, FR-run-economy). An
+# ADDITIVE + LENIENT run-progression field: default HP_UNSET (-1) means "no HP recorded yet" (the FIRST node / a legacy
+# pre-15.5 save), and the live loadout falls back to the kit baseline (CombatLoadout.for_run(run).hp) — i.e. today's
+# behaviour, so an old save fails OPEN to full/baseline HP. When a combat node CLEARS below max HP the orchestrator
+# CAPTURES the hero's ending board HP here (a pure board read — ZERO RNG), and the NEXT node's fight arms from THIS value
+# (RunFlowController.hero_hp()), so attrition is real (no implicit full heal between nodes). It is DELIBERATELY NOT a
+# required validate() field (a pre-15.5 run has none and must still validate). It rides to_dictionary()/try_from_dictionary
+# (the FULL run dict) AND — like the economy — the route-position save (nested under route_state via CURRENT_HP_KEY; AC1's
+# "the persisted HP survives a quit/resume"). A mid-fight quit re-enters the un-cleared node at its ENTRY HP (the in-node
+# fight stays EPHEMERAL — deferred-work.md:418 NOT reopened). copy() carries it (a plain int).
+var current_hp: int = HP_UNSET
 
 func _init(
 	new_phase: StringName = PHASE_NEW_RUN,
@@ -165,7 +189,8 @@ func _init(
 	new_pending_reward_offer: RewardOffer = null,
 	new_risk_economy: RiskEconomyState = null,
 	new_pending_event_offer: EventOffer = null,
-	new_assigned_affinities: Dictionary = {}
+	new_assigned_affinities: Dictionary = {},
+	new_current_hp: int = HP_UNSET
 ) -> void:
 	phase = new_phase
 	root_seed = new_root_seed
@@ -189,6 +214,8 @@ func _init(
 	# Story 7.4: default to a fresh EMPTY dict (never null) so the assigned-affinities record is always present. A
 	# supplied dict (a decode / copy) is DEEP-copied so the run never shares the caller's dict by reference.
 	assigned_affinities = new_assigned_affinities.duplicate(true)
+	# Story 15.5 (D1): the run-level current HP (default HP_UNSET -> the live loadout uses the kit baseline).
+	current_hp = new_current_hp
 
 
 # AC1 "new run" entry point: a fresh run in PHASE_NEW_RUN with the manual-seed eligibility invariant
@@ -307,7 +334,11 @@ func to_dictionary() -> Dictionary:
 		# RunSnapshot — RunSnapshot.affinities is mirrored from this by from_route_position). It is never null (a
 		# default-empty dict), serialized as a plain String->String map. try_from_dictionary reads it back leniently
 		# (absent/non-dict -> a fresh empty dict) so every pre-7.4 run dict still parses.
-		"assigned_affinities": assigned_affinities.duplicate(true)
+		"assigned_affinities": assigned_affinities.duplicate(true),
+		# Story 15.5 (D1): the run-level current HP rides the FULL run dict too (a small JSON-safe int; HP_UNSET default).
+		# It ALSO rides the route-position save (nested under route_state — see to_run_snapshot_fields()).
+		# try_from_dictionary reads it back leniently (absent/non-numeric -> HP_UNSET) so every pre-15.5 run dict parses.
+		"current_hp": current_hp
 	}
 
 
@@ -341,7 +372,9 @@ func copy() -> RunState:
 		# Story 7.4: DEEP-copy the assigned-affinities dict (it must not be shared by reference, so a mutation of the
 		# copy's assignments never perturbs the source). The constructor deep-copies its argument too, but pass a
 		# fresh copy here for clarity/parity with the other deep-copied fields.
-		assigned_affinities.duplicate(true)
+		assigned_affinities.duplicate(true),
+		# Story 15.5 (D1): carry the run-level current HP on a copy (a plain int).
+		current_hp
 	)
 
 
@@ -373,6 +406,13 @@ func to_run_snapshot_fields() -> Dictionary:
 	# reads it back); the top-level RunSnapshot.gold/curses/corruption/oath_shards may ALSO be populated from it
 	# (human-readable) by RunSnapshot.from_route_position.
 	route_payload[String(RISK_ECONOMY_KEY)] = _risk_economy_or_new().to_dictionary()
+	# Story 15.5 (D1): NEST the run-level current HP inside the route payload too (the SAME mechanism as run_phase /
+	# selected_class_id / risk_economy), so a between-node route-position save carries HP through the EXISTING 15.4
+	# restore seam WITHOUT a new top-level RunSnapshot key (the pinned 23-key gate stays 23). AC1's "the persisted HP
+	# survives a quit/resume": the nested copy is the SOURCE OF TRUTH on resume (try_from_run_snapshot_fields reads it
+	# back). HP_UNSET (a first-node / legacy run) nests -1; try_from_run_snapshot_fields reads an absent key as HP_UNSET
+	# too (the migration/back-compat default — an old save restores at full/baseline HP).
+	route_payload[String(CURRENT_HP_KEY)] = current_hp
 
 	# Derive the revealed-node id list from the route nodes (reveal_state revealed OR cleared).
 	# Cleared nodes were necessarily revealed; both surface in revealed_route_node_ids for the
@@ -439,7 +479,10 @@ static func try_from_dictionary(data: Dictionary) -> ActionResult:
 		# Story 7.4: lenient assigned-affinities decode. A pre-7.4 run dict has no assigned_affinities key -> a fresh
 		# empty dict (never null). A present dict is normalized to a String->String map (any non-string-keyable or
 		# non-string value is dropped) so a partial/legacy dict still parses to usable data.
-		_assigned_affinities_or_empty(_field(data, &"assigned_affinities") if _has_field(data, &"assigned_affinities") else null)
+		_assigned_affinities_or_empty(_field(data, &"assigned_affinities") if _has_field(data, &"assigned_affinities") else null),
+		# Story 15.5 (D1): lenient current-HP decode. A pre-15.5 run dict has no current_hp key -> HP_UNSET (the live
+		# loadout falls back to the kit baseline). A present numeric value is coerced to int; anything else -> HP_UNSET.
+		_current_hp_or_unset(_field(data, &"current_hp") if _has_field(data, &"current_hp") else HP_UNSET)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -505,6 +548,12 @@ static func try_from_run_snapshot_fields(fields: Dictionary) -> ActionResult:
 	# save (their _init defaults apply); only the economy joins the class id as nested route-position state.
 	var restored_economy: RiskEconomyState = _risk_economy_or_new_from(route_payload.get(String(RISK_ECONOMY_KEY), null))
 
+	# Story 15.5 (D1): read the run-level current HP back from the nested route_state key (lenient: a pre-15.5
+	# route-position payload has NO CURRENT_HP_KEY -> HP_UNSET, so the live loadout falls back to the kit baseline —
+	# the MANDATORY migration/back-compat default: an old save restores at full/baseline HP, never 0/a crash). A
+	# present value round-trips the carried HP through the 15.4 resume seam (AC1's "the persisted HP survives a resume").
+	var restored_hp: int = _current_hp_or_unset(route_payload.get(String(CURRENT_HP_KEY), HP_UNSET))
+
 	var run_state: RunState = load("res://scripts/run/run_state.gd").new(
 		StringName(String(phase_value)),
 		_int64_or_zero(fields.get("root_seed", 0)),
@@ -516,7 +565,10 @@ static func try_from_run_snapshot_fields(fields: Dictionary) -> ActionResult:
 		null,  # rules_resolver — live re-derivable service, not serialized
 		null,  # inventory — _init defaults a fresh empty model (not in the route-position save)
 		null,  # pending_reward_offer — not in the route-position save
-		restored_economy  # Story 7.1: the nested economy IS in the route-position save (the source of truth on resume)
+		restored_economy,  # Story 7.1: the nested economy IS in the route-position save (the source of truth on resume)
+		null,  # pending_event_offer — not in the route-position save (the _init default)
+		{},  # assigned_affinities — restored separately from the top-level RunSnapshot.affinities mirror (15.4 Review D2)
+		restored_hp  # Story 15.5 (D1): the nested current HP IS in the route-position save (the source of truth on resume)
 	)
 	var validation: ActionResult = run_state.validate()
 	if validation.is_error():
@@ -680,6 +732,23 @@ static func _assigned_affinities_or_empty(value: Variant) -> Dictionary:
 			if key is String or key is StringName:
 				result[String(key)] = String((value as Dictionary)[key])
 	return result
+
+
+# Story 15.5 (D1): Lenient current-HP decode for the additive current_hp field. Accept an int or an integral-float
+# (JSON numbers round-trip as doubles); anything else (a missing/absent/non-numeric value) -> HP_UNSET (the live
+# loadout then falls back to the kit baseline — the fail-open migration/back-compat default). A recorded HP is a small
+# positive int (a board HP read), so no int64/decimal-string handling is needed.
+static func _current_hp_or_unset(value: Variant) -> int:
+	match typeof(value):
+		TYPE_INT:
+			return int(value)
+		TYPE_FLOAT:
+			var numeric_value: float = float(value)
+			if is_nan(numeric_value) or is_inf(numeric_value):
+				return HP_UNSET
+			return int(numeric_value)
+		_:
+			return HP_UNSET
 
 
 static func _has_field(data: Dictionary, field_name: StringName) -> bool:

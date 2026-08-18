@@ -195,21 +195,29 @@ func _render_run_summary() -> void:
 	earned_label.text = "Oath Shards earned this run: %d" % _render_view.run_oath_shards_earned()
 	_content.add_child(earned_label)
 
-	# Story 14.9 (AC1, F14): NOTABLE LOOT as its OWN honest row, reading the REAL summary field run_scoped.notable_loot
-	# (via the seam). In v0 the live bridge builds RunSummary.build(run, []) with an empty events list, so notable_loot is
-	# legitimately EMPTY — render it honestly ("— none —"), never fabricated, never a placeholder; the gained item ids show
-	# when present. Do NOT read a presentation/combat log as source truth (8.2 AC2 forbids it); do NOT build the deferred
-	# run-level event store (out of scope — it stays deferred).
+	# Story 14.9 (AC1, F14) + Story 15.5 (AC4 — honesty): NOTABLE LOOT as its OWN row, reading the REAL summary field
+	# run_scoped.notable_loot (via the seam). In v0 the live bridge builds RunSummary.build(run, []) with an empty events
+	# list, so notable_loot is EMPTY for EVERY real run — the DEFERRED run-level event store, NOT "you looted nothing". So
+	# render the HONEST OutpostRenderView.NOT_YET_RECORDED_LABEL when the seam reports it not-yet-recorded (never the old
+	# "— none —", which read as an empty result); the gained item ids show when present. Do NOT read a presentation/combat
+	# log as source truth (8.2 AC2 forbids it); do NOT build the deferred run-level event store (it stays deferred).
 	var loot_label: Label = Label.new()
-	loot_label.text = "Notable loot: %s" % _notable_loot_summary(_render_view.summary_notable_loot())
+	if _render_view.summary_notable_loot_not_yet_recorded():
+		loot_label.text = "Notable loot: %s" % OutpostRenderView.NOT_YET_RECORDED_LABEL
+	else:
+		loot_label.text = "Notable loot: %s" % _notable_loot_summary(_render_view.summary_notable_loot())
 	_content.add_child(loot_label)
 
-	# AC2: the passives-consumed/destroyed lists share the SAME deferred run-level event store (empty in v0 — the bridge
-	# passes an empty events list). Shown HONESTLY as pending — never fabricated, never silently omitted (the visible-
-	# exception discipline). This stays deferred until the run-level event store lands (out of scope for 14.9).
-	var pending_label: Label = Label.new()
-	pending_label.text = "Passives spent/destroyed: — none recorded yet —"
-	_content.add_child(pending_label)
+	# AC2 + Story 15.5 (AC4 — honesty): the passives-consumed/destroyed lists share the SAME deferred run-level event
+	# store (empty in v0 — the bridge passes an empty events list). Render the SAME honest NOT_YET_RECORDED_LABEL via the
+	# testable seam rather than a hardcoded string — never fabricated, never silently omitted (the visible-exception
+	# discipline). The real ids show if a future run-level store populates them. This stays deferred (out of scope).
+	var passives_label: Label = Label.new()
+	if _render_view.summary_passives_not_yet_recorded():
+		passives_label.text = "Passives spent/destroyed: %s" % OutpostRenderView.NOT_YET_RECORDED_LABEL
+	else:
+		passives_label.text = "Passives spent/destroyed: %s" % _passives_summary()
+	_content.add_child(passives_label)
 
 
 # Story 14.9 (AC1, F14): a human-readable summary of the notable-loot entries (the gained item ids, joined) — the honest
@@ -223,6 +231,18 @@ func _notable_loot_summary(loot_entries: Array) -> String:
 	for entry_value: Variant in loot_entries:
 		var entry: Dictionary = entry_value
 		names.append(String(entry.get("item_id", "")))
+	return ", ".join(names)
+
+
+# Story 15.5 (AC4): a human-readable summary of the passives spent/destroyed this run (the flat id lists, joined). Only
+# reached when at least one list is populated (the not-yet-recorded seam handles the empty live-flow case honestly). A
+# pure read of the REAL 8.2 fields — never fabricates an entry.
+func _passives_summary() -> String:
+	var names: PackedStringArray = PackedStringArray()
+	for consumed_id: Variant in _render_view.summary_passives_consumed():
+		names.append("%s (spent)" % String(consumed_id))
+	for destroyed_id: Variant in _render_view.summary_passives_destroyed():
+		names.append("%s (destroyed)" % String(destroyed_id))
 	return ", ".join(names)
 
 
