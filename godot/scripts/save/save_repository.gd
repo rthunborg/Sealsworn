@@ -56,6 +56,34 @@ func write_run_snapshot(snapshot: RunSnapshot, save_path: String = DEFAULT_RUN_P
 	return ActionResult.ok()
 
 
+# Story 15.4 (AC2/AC3) — an ADDITIVE has-saved-run probe (a pure file-existence check; NO schema change, NO read
+# of the payload). The boot flow branches on this to offer Continue only when a saved run exists. Returns false
+# when the save file is absent (a cold start / a cleared save -> no Continue). Draws no RNG, mutates nothing.
+func has_run_snapshot(save_path: String = DEFAULT_RUN_PATH) -> bool:
+	return FileAccess.file_exists(save_path)
+
+
+# Story 15.4 (AC2/AC3) — an ADDITIVE save-clear file op (NO schema change). Used by the new-run-over-a-save path:
+# when the player confirms a fresh descent while a saved run exists, the stale save is cleared so a subsequent
+# boot does not offer Continue to an abandoned run. Idempotent: an already-absent save is a no-op success. Also
+# removes the atomic-writer's leftover .bak (defensive — the write path normally cleans it up). Returns a
+# structured ActionResult (never a bare bool). Draws no RNG.
+func delete_run_snapshot(save_path: String = DEFAULT_RUN_PATH) -> ActionResult:
+	var backup_path: String = "%s.bak" % save_path
+	if FileAccess.file_exists(backup_path):
+		DirAccess.remove_absolute(backup_path)
+	if not FileAccess.file_exists(save_path):
+		# Already absent — nothing to clear (idempotent success).
+		return ActionResult.ok([], {"deleted": false})
+	var remove_error: Error = DirAccess.remove_absolute(save_path)
+	if remove_error != OK:
+		return ActionResult.error(&"save_delete_failed", {
+			"path": save_path,
+			"remove_error": remove_error
+		})
+	return ActionResult.ok([], {"deleted": true})
+
+
 func read_run_snapshot(save_path: String = DEFAULT_RUN_PATH) -> ActionResult:
 	if not FileAccess.file_exists(save_path):
 		return ActionResult.error(&"save_not_found", {"path": save_path})

@@ -24,7 +24,10 @@ func _every_run_flow_presenter_script_compiles() -> void:
 		"res://scripts/ui/presenters/gameplay_shell_presenter.gd",
 		"res://scripts/ui/presenters/run_end_presenter.gd",
 		"res://scripts/ui/presenters/outpost_presenter.gd",
-		"res://scripts/ui/presenters/save_recovery_presenter.gd"
+		"res://scripts/ui/presenters/save_recovery_presenter.gd",
+		# Story 15.4 (Review D1) — the ONE shared pause surface both the board + route map open (built in code, not a
+		# .tscn); compile-checked here alongside the presenters that preload it.
+		"res://scripts/ui/presenters/pause_menu_overlay.gd"
 	]
 	for script_path: String in presenter_scripts:
 		var script: Variant = load(script_path)

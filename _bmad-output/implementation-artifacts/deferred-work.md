@@ -1,3 +1,31 @@
+## Deferred from: code review of 15-4-quit-pause-resume (2026-08-17)
+
+Round 2 code review (independent second-model adversarial re-review; Claude Opus 4.8; verdict **Approve**;
+Critical 0 / High 0 / Med 0 / Low 1; **1** open `[Review][Decision]`). Re-verified against the branch @ base
+`main`: suite re-run **211 PASS / 0 FAIL** (false-PASS guard `SCRIPT ERROR|Parse Error|^FAIL` = 0 hits; only
+the 6 documented stderr negatives, ZERO new, none referencing a 15.4 file); `git diff --check` clean. AC3
+invariants hold (23-key `RunSnapshot`, `SCHEMA_VERSION == 1`, 7 named RNG streams; `run_snapshot.gd`/
+`rng_stream_set.gd`/`domain_event.gd`/`project.godot`/`combat_loadout.gd` untouched); D2 is fingerprint-safe
+(the hands-off `_resolve_combat`/`run_to_completion` driver never assigns affinity, so no pinned artifact reads
+`assigned_affinities`); the mid-encounter-save defer (`deferred-work.md:418`) was NOT reopened.
+
+**No new `[Review][Defer]` items from this review.** The one Round-2 finding is a `[Review][Decision]` (Low) held
+in the story file `### Review Findings` (Round 2 of 3): a mid-fight quit + resume still re-rolls a room whose
+recorded affinity was the neutral `none` (the assign-if-absent guard treats `none` as "unassigned"), so ~1-in-5
+resumed rooms re-roll and the `map` stream drifts one draw — recommended Option B (a ~2-line `has()`-based guard,
+fingerprint-safe). It awaits human direction and is NOT yet a deferral. **If the human chooses Option A (accept
+the residual)**, fold it into the standing ephemeral-fight defer at the entry below (`:418` region — "the live
+in-node board / pending-fight SAVE stays EPHEMERAL"): the none-room reroll is a faithful consequence of the
+ephemeral in-node fight, and the 23-key gate stays 23 either way.
+
+**Update — code review Round 3 (2026-08-17, FINAL round; verdict Approve, 0 findings):** the human chose **Option B**
+(applied as D4, commit `f705ca4`), so the none-room reroll residual is **RESOLVED, not deferred** — the Option-A
+fold-in above is moot. Round 3 re-verified the `f705ca4` delta (guard key-type + null-safety, comment-only resume
+change, non-vacuous test strengthening) and the AC3 invariants against source: **211 PASS / 0 FAIL**, false-PASS guard
+0 hits, `git diff --check` clean. **Zero new `[Review][Defer]` items from Round 3.** No open 15-4 deferrals remain.
+
+---
+
 ## Deferred from: code review of 15-3-threat-telegraphs (2026-08-07)
 
 Surfaced by `gds-code-review` Round 1 (Claude Opus 4.8; verdict **Approve**; Critical 0 / High 0 /
@@ -1624,3 +1652,24 @@ Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / Hi
 - [ ] **[Review][Defer]** (Low, from code review of 15-1, 2026-07-25) — The side-rail (phone_landscape) band height in `TacticalLayoutProfile._build_side_rail_layout` dropped its per-band `maxf(_minimum_touch_target.y, …)` ≥44px floor: it now tiles `area.size.y / 6` (status = 2 units) with no floor. The tested 844×390 fixture yields unit=65px and real phones clear it, but a landscape content height below ~264px would drop preview/confirm/inspect/log below the 44px reachability floor the previous code guaranteed (by overflow). Sanctioned "honest non-reachable on a degenerate viewport," but a robustness reduction not called out in the story. Owner: fold into device-tier layout tuning (re-introduce a floor or an explicit degenerate-rail branch).
 - [ ] **[Review][Defer]** (Low, from code review of 15-1, 2026-07-25) — The stacked band fractions (`STATUS_BASE_BAND_FRACTION*3 + STATUS_HUD_BAND_FRACTION + LOG_BAND_FRACTION` = 0.07*3 + 0.18 + 0.11) sum to EXACTLY 0.50, which is what keeps `board_height == 0.50h == min_board` and dodges the proportional scale-down on the tested fixtures. Undocumented coupling: nudging any constant up, or a stacked viewport with content height below ~489px, triggers the scale-down and can shrink `status` below the `2×44 − 0.01` the new `_assert_status_region_holds_hud` pins → the layout test fails. Owner: add a documenting comment (and ideally a test asserting the fractions sum ≤ 0.5) when device-tier work tunes these constants.
 - [ ] **[Review][Defer]** (Low, from code review of 15-1, 2026-07-25) — The light `_control_band_backing()` (`tactical_board_presenter.gd`) that replaces the heavy 24px nine-patch `panel_frame` was applied only to the `status` and `log_or_outcome` panels. The `preview`/`confirm_cancel`/`inspect` short bands (~44–59px) still carry the full nine-patch frame; if F1's border-swallows-short-band effect also degrades them it persists. Those bands were not flagged in the playtest and control-band framing is explicitly Story 15.10's domain. Owner: Story 15.10 (Theme & Layout Polish) — framing-consistency pass across all short control bands.
+
+## Deferred from: code review of 15-4-quit-pause-resume (2026-08-08)
+
+Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / High 0 / Med 0 / Low 3). **No new `[Review][Defer]` items (0 deferrals).** All three Low findings are `[Review][Decision]` (human calls) recorded in the story file's `### Review Findings` — they need a scope/awareness call, not tracked follow-up work: (1) route-map pause/Quit-run affordance absent (board-only pause + silent route-map autosave; AC1 met by the board), (2) mid-fight-quit affinity reroll + one-draw `map`-stream drift on resume (by-design ephemeral fight; moves no pinned fingerprint; do NOT reopen the `:418` mid-encounter-save defer), (3) hero-select overwrite path ignores the `delete_saved_run` result (self-healing via the subsequent autosave). AC3 confirmed byte-identical (23-key gate, `SCHEMA_VERSION == 1`, 7 RNG streams, no fingerprint moved; suite 209 PASS / 0 FAIL, false-PASS guard clean). This heading is retained for ledger continuity even though it logs zero deferrals.
+
+## Deferred from: story 15-4 scope decision (2026-08-17)
+
+- [ ] **[Defer]** (Design/Balance, from the 15-4 pipeline, 2026-08-17) — **Rebalance affinity frequency: roughly 1 room in 5 should carry an affinity, 4 in 5 should be normal.** Requested by Rasmus during the 15-4 review loop. Today `RunOrchestrator.assign_affinity` (`run_orchestrator.gd:735`) draws a **uniform** `rand_int` over the 5 baseline candidates in `affinity_repository.gd:36-42` (scorched / flooded_conductive / cursed / darkness / **none**), so ~80% of rooms carry a hazard — hazards read as ambient rather than eventful. Deliberately EXCLUDED from 15-4: that story's AC3 pins "zero gameplay RNG change, no fingerprint move", and all three review rounds verified against it.
+  **Blast radius (why this needs its own story, not a patch):**
+  1. Breaks the curated `AFFINITY_SEED_SAMPLE` / `AFFINITY_SEED_BY_AFFINITY` fixture in `godot/tests/integration/test_seed_regression_suite.gd:130` — 40 hand-picked seeds, exactly 10 landing on each of the 4 affinities (Story 10.8 AC5 MVP-readiness target). Changing the distribution re-maps every seed; the sample must be re-curated by targeted search, and with affinities ~5x rarer the search space (and likely the sample size) grows.
+  2. **No GDD backing.** The GDD names the MVP affinity set and says "Late run: higher affinity pressure" (gdd.md:237, :524) but specifies NO frequency or distribution anywhere. This is a NEW design decision and needs a GDD line recording the intended frequency.
+  3. ~~Open design question: flat or depth-scaled?~~ **DECIDED by Rasmus, 2026-08-17: depth-scaled.**
+
+  **Design spec (Rasmus, 2026-08-17) — implement to this:**
+  - An affinity-presence chance that **scales with route depth**: **20% at the first node**, rising to **at most 40% at the deepest/final nodes**. The 40% is a ceiling, not a target to exceed.
+  - Consequence for the model: this replaces "neutral `none` is a 5th uniform candidate" with a **two-step draw** — (1) roll whether the room carries an affinity at all, at the depth-scaled rate; (2) if yes, select which of the **4** hazard affinities. Note this changes the **number of `map`-stream draws per node** (currently exactly 1), which is a determinism-relevant change on top of the distribution change.
+  - Interpolation curve between the 20% floor and the 40% ceiling is unspecified — linear over route depth is the obvious default; the implementing story should propose and record one. Routes are 8-12 nodes (Story 4.2).
+  - Record the chosen frequency in the GDD alongside the MVP affinity set, since the GDD currently specifies none.
+  - Whether `AffinityDefinition.AFFINITY_NONE` remains a registered baseline id (for the read-back/no-affinity default at `run_orchestrator.gd:766`) or is removed from the *candidate* list only, is an implementation call — the read-back default must keep working either way.
+
+  Owner: unassigned — candidate for an Epic 15 story alongside 15-5, or Epic 16. Ready to scope: the design call is made. Adding it to the sprint needs an epics.md entry plus `gds-sprint-planning` (or `gds-correct-course`), since it is not in the current 12-story Epic 15 breakdown.

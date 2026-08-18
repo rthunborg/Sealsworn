@@ -15,6 +15,19 @@ func read_run_snapshot() -> ActionResult:
 	return repository.read_run_snapshot()
 
 
+# Story 15.4 (AC2) — thin delegation to the repository's additive has-saved-run probe (a pure file-existence check;
+# NO schema change). The boot flow reads this to decide whether to offer Continue. This autoload owns no policy.
+func has_saved_run(save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> bool:
+	return repository.has_run_snapshot(save_path)
+
+
+# Story 15.4 (AC2) — thin delegation to the repository's additive save-clear file op (NO schema change). The
+# new-run-over-a-save path calls this on a confirmed fresh descent so a stale save is not offered on the next boot.
+# Returns the repository's structured ActionResult UNCHANGED. This autoload owns no policy.
+func delete_saved_run(save_path: String = SaveRepository.DEFAULT_RUN_PATH) -> ActionResult:
+	return repository.delete_run_snapshot(save_path)
+
+
 # Between-level autosave entry point (Story 2.7). Thin delegation to the repository's atomic write;
 # returns the repository's structured ActionResult UNCHANGED (error_code + diagnostic metadata
 # preserved, never collapsed to a bool). This autoload owns no snapshot schema policy, no tactical

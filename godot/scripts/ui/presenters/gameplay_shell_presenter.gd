@@ -27,6 +27,12 @@ const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 # byte-identical).
 const RewardHudViewModel = preload("res://scripts/ui/view_models/reward_hud_view_model.gd")
 const RewardResolutionBridge = preload("res://scripts/ui/flow/reward_resolution_bridge.gd")
+# Story 15.4 (AC1 / Review D1) — the ONE shared pause surface both the live board AND the route map open (Resume
+# play / Save & Exit / Options + run metrics). The board hosts the ephemeral in-node fight, so it passes an
+# on_before_quit callback that discards the live session before Save & Exit composes the route position. The
+# compose+persist (QuitRunBridge -> SaveManager.autosave_route_position) + the boot navigation live inside the
+# shared overlay, so the board and the map share ONE menu instead of forking a second near-copy.
+const PauseMenuOverlay = preload("res://scripts/ui/presenters/pause_menu_overlay.gd")
 # L1 (Round 1 decision): the board surface is the SCENE FILE, not an in-code TacticalBoardPresenter.new(). The
 # shell INSTANCES tactical_board.tscn (whose Control root carries the TacticalBoardPresenter script + its full-rect
 # anchors), so scenes/game/tactical_board.tscn is the single source of the board surface (no longer dead as a nav
@@ -43,9 +49,15 @@ var _board_presenter: Control = null
 # callback can finish the node + route. Ephemeral (no in-node save — the 23-key RunSnapshot gate stays 23).
 var _active_session: InteractiveCombatSession = null
 var _active_node: RouteNode = null
+# Story 15.4 (AC1 / Review D1) — the live-board pause affordance: a corner button that opens the SHARED PauseMenuOverlay
+# (Resume play / Save & Exit / Options + run metrics — the SAME surface the route map opens). The overlay is null when
+# not showing; Save & Exit composes + persists the route position then returns to the boot/menu surface.
+var _pause_button: Button = null
+var _pause_overlay: PauseMenuOverlay = null
 
 func _ready() -> void:
 	_build_board_presenter()
+	_build_pause_affordance()
 	call_deferred("_drive_current_stage")
 	if has_node("/root/Diagnostics"):
 		Diagnostics.info(&"ui", &"gameplay_shell_ready", {})
@@ -57,6 +69,51 @@ func _ready() -> void:
 func _build_board_presenter() -> void:
 	_board_presenter = TacticalBoardScene.instantiate() as Control
 	add_child(_board_presenter)
+
+
+# Story 15.4 (AC1) — the live-board pause affordance: a corner button (≥44px, added ON TOP of the board so it is
+# always reachable, including mid-fight) that opens the modal pause overlay. Verified by construction; on-screen
+# legibility at the 2.0x text scale is OSG-1.
+func _build_pause_affordance() -> void:
+	_pause_button = Button.new()
+	_pause_button.text = "☰ Menu"
+	_pause_button.custom_minimum_size = TacticalLayoutProfile.DEFAULT_MINIMUM_TOUCH_TARGET
+	_pause_button.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	# Grow leftward from the top-right anchor so the button hugs the corner without overflowing off-screen.
+	_pause_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_pause_button.pressed.connect(_on_pause_pressed)
+	add_child(_pause_button)
+
+
+# Open the SHARED pause overlay (Resume play / Save & Exit / Options + run metrics). Built lazily; a second open
+# never stacks. The board passes _discard_active_fight as the on_before_quit callback so a mid-fight Save & Exit
+# discards the ephemeral session (the current node stays un-cleared) before the overlay composes the route position.
+func _on_pause_pressed() -> void:
+	if _pause_overlay != null:
+		return
+	var overlay: PauseMenuOverlay = PauseMenuOverlay.new()
+	_pause_overlay = overlay
+	add_child(overlay)
+	overlay.open(_flow(), _dismiss_pause_overlay, _discard_active_fight)
+	if has_node("/root/Diagnostics"):
+		Diagnostics.info(&"ui", &"gameplay_shell_paused", {})
+
+
+# The on_before_quit callback the shared overlay invokes just before a Save & Exit composes the quit save: DISCARD
+# the ephemeral in-node fight (no in-node save — the 23-key RunSnapshot gate stays 23) so the current node stays
+# un-cleared and resume re-enters it fresh from the route position. The route map has no ephemeral fight and passes
+# no such callback.
+func _discard_active_fight() -> void:
+	_active_session = null
+	_active_node = null
+
+
+# Resume play: the shared overlay invokes this to dismiss the overlay; the fight/position is untouched (the compose
+# is never invoked).
+func _dismiss_pause_overlay() -> void:
+	if _pause_overlay != null:
+		_pause_overlay.queue_free()
+		_pause_overlay = null
 
 
 # Drive the live node the run is parked on, render it, then advance the flow. A boss terminus drives the boss

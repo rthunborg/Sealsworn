@@ -156,14 +156,15 @@ func _assign_records_the_affinity_in_the_snapshot_and_route_position_save() -> v
 
 
 func _assignment_is_re_derivable_from_the_seed_after_resume() -> void:
-	# The recorded affinity is NOT the route-position resume's source of truth: the resume reconstructs the run with an
-	# EMPTY assigned_affinities (only the economy + class id are nested route-position state). The recorded affinity
-	# survives ONLY via (a) the top-level RunSnapshot.affinities MIRROR (read-back below) and (b) being RE-DERIVABLE from
-	# the seed. RE-DERIVE means: a FRESH run at the SAME seed (which reproduces the run-start `map`-stream state — the
-	# pre-assign state S0) re-runs assign_affinity for the same node and gets the SAME id. (Re-running on the RESUMED run
-	# would draw from the POST-assign state S1 — the save persists the advanced stream — so a resumer must re-derive from
-	# the run-start state, NOT by re-drawing the already-advanced resumed stream. This is the 5.3 re-derive-from-seed
-	# class.)
+	# Story 15.4 (Review D2) UPDATED THE RESUME CONTRACT: the recorded affinity now SURVIVES a route-position resume.
+	# RunResumeService.resume_route_position RESTORES RunState.assigned_affinities from the top-level RunSnapshot.affinities
+	# MIRROR, so a mid-fight quit -> resume -> re-enter yields the SAME room (no reroll) and the `map` stream takes NO
+	# extra draw (the assign-if-absent guard reads the restored non-none id back). BEFORE D2 the resume reconstructed an
+	# EMPTY assigned_affinities and the affinity survived ONLY via the mirror + being re-derivable from the seed; that
+	# empty-dict assertion is now obsolete (it pinned the exact defect D2 fixes). This test now pins BOTH: (a) the resume
+	# RESTORES the recorded affinity from the mirror, AND (b) the assignment is STILL a pure deterministic function of
+	# (root_seed, route position) — a FRESH run at the same seed reproduces the SAME id (the standing 7.4 property; the
+	# assign_affinity draw is UNCHANGED, so no affinity fingerprint moves).
 	var orchestrator: RunOrchestrator = _started(99)
 	var node: RouteNode = _first_node(orchestrator)
 	var original: ActionResult = orchestrator.assign_affinity(node)
@@ -177,9 +178,9 @@ func _assignment_is_re_derivable_from_the_seed_after_resume() -> void:
 	assert_true(restore.succeeded, "Resuming the post-assignment route position should succeed: %s" % restore.metadata)
 	var restored_run = restore.metadata.get("run_state")
 	assert_true(restored_run != null, "The route-position resume should return the run_state.")
-	# The resumed run carries NO assigned_affinities (it is NOT the route-position resume's source of truth).
-	assert_equal(restored_run.assigned_affinities, {}, "The route-position resume reconstructs the run with an empty assigned_affinities (not the resume source of truth).")
-	# The recorded affinity DID survive via the top-level mirror in the persisted snapshot.
+	# Story 15.4 (D2): the resume RESTORES the recorded affinity from the top-level mirror (the room is not re-rolled).
+	assert_equal(String(restored_run.assigned_affinities.get(String(node.id))), original_id, "Story 15.4 (D2): the route-position resume restores the recorded affinity from the RunSnapshot.affinities mirror (no reroll on re-entry).")
+	# The recorded affinity is carried in the persisted snapshot's top-level mirror (the restore source).
 	assert_equal(String(snapshot.affinities.get(String(node.id))), original_id, "The recorded affinity survives via the top-level RunSnapshot.affinities mirror.")
 
 	# RE-DERIVE from the seed: a FRESH run at the same seed reproduces the run-start map-stream state, so re-running the

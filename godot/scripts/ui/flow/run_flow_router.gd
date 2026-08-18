@@ -49,7 +49,14 @@ const _STAGE_SCENES: Dictionary = {
 	"run_end": "res://scenes/ui/run_end.tscn",
 	# Story 11.5: the real OutpostViewModel-bound outpost scene (the run-end return lands here — the polished
 	# meta dashboard + reveal beats + start-another-descent). `run_end` STAYS the minimal dead-end landing.
-	"outpost": "res://scenes/ui/outpost.tscn"
+	"outpost": "res://scenes/ui/outpost.tscn",
+	# Story 15.4: two NON-LINEAR named scene targets (reachable via go_to_stage, NOT part of the ordered STAGES
+	# walk — they are branches off the boot chain, not forward steps). `boot` is the Continue-offering boot surface
+	# a Quit-run returns to (the project main_scene boot.tscn; `launch`/main.tscn is the dev direct-into-shell
+	# entry, NOT the boot menu). `save_recovery` is the existing resume->seat->route_map Continue landing
+	# (save_recovery.tscn -> save_recovery_presenter), now made reachable from the boot Continue affordance.
+	"boot": "res://scenes/app/boot.tscn",
+	"save_recovery": "res://scenes/ui/save_recovery.tscn"
 }
 
 # The RunEndOutcome.next_destination marker -> flow-stage transition (the AC1 routing signal). Story 11.5 RE-POINTS

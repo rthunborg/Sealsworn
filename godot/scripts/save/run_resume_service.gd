@@ -120,6 +120,23 @@ func resume_route_position(save_path: String = SaveRepository.DEFAULT_RUN_PATH) 
 		return run_result
 	var run_state: RunState = run_result.metadata.get("run_state") as RunState
 
+	# Story 15.4 (Review D2) — RESTORE the entered node's ASSIGNED AFFINITY from the snapshot's top-level `affinities`
+	# mirror (RunSnapshot.from_route_position writes it; run_snapshot.gd:281-283). try_from_run_snapshot_fields
+	# rebuilds the run with an EMPTY assigned_affinities (only the class id + economy nest under route_state), so
+	# WITHOUT this a mid-fight quit -> resume -> re-enter re-runs assign_affinity — a SECOND `map`-stream draw that
+	# can REROLL the un-cleared room's hazard (quit-scum across scorched/flooded_conductive/cursed/darkness/none) AND
+	# drifts the `map` stream one draw ahead of an uninterrupted run. Restoring the recorded assignment makes the
+	# assign-if-absent guard (run_orchestrator.gd:1008/1167) SKIP the draw for the recorded room, so resume re-enters
+	# the SAME room and the `map` stream takes NO extra draw. FINGERPRINT-SAFE: the hands-off auto-resolve driver
+	# NEVER assigns affinity (run_orchestrator.gd:701-705 — assign_affinity is off _resolve_combat/run_to_completion),
+	# so no pinned fingerprint reads assigned_affinities. A pure read; ZERO RNG. Story 15.4 Review D4 completed that guard
+	# to a PRESENCE check (`not run.assigned_affinities.has(...)`), so a node whose recorded affinity is the neutral `none`
+	# is now RESTORED and recognised as ALREADY ASSIGNED: re-entry reads the recorded `none` back and takes NO extra `map`
+	# draw (no reroll), exactly like the four hazard affinities — a restored `none` entry now behaves DIFFERENTLY from an
+	# absent one (present -> skip; absent -> assign). The in-node fight stays ephemeral, the mid-encounter-save defer is
+	# NOT reopened, and the 23-key gate stays 23 — `affinities` is an existing key.
+	run_state.assigned_affinities = _restored_assigned_affinities(run_snapshot.affinities)
+
 	# Run-level rng_streams is the resume RNG authority. try_restore does not mutate on failure and consumes
 	# no draws.
 	var streams: RngStreamSet = RngStreamSet.new(0)
@@ -146,3 +163,16 @@ func resume_route_position(save_path: String = SaveRepository.DEFAULT_RUN_PATH) 
 		"run_state": run_state,
 		"rng_streams": streams
 	})
+
+
+# Story 15.4 (Review D2) — normalize the snapshot's top-level `affinities` mirror (node id -> affinity id) into a
+# fresh String->String dict for RunState.assigned_affinities on resume. Defensive against a hand-edited save: only
+# string-like keys survive, values are coerced to String. Anything not a Dictionary -> an empty dict (a pre-7.4 /
+# affinity-less save restores no assignments, unchanged). Draws no RNG, mutates nothing.
+static func _restored_assigned_affinities(affinities: Variant) -> Dictionary:
+	var result: Dictionary = {}
+	if affinities is Dictionary:
+		for key: Variant in (affinities as Dictionary).keys():
+			if key is String or key is StringName:
+				result[String(key)] = String((affinities as Dictionary)[key])
+	return result

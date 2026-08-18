@@ -16,6 +16,11 @@ func run() -> Dictionary:
 	_write_failure_returns_structured_error_without_mutation()
 	_write_failure_preserves_existing_valid_save()
 	_save_manager_autosave_between_level_delegates_to_repository()
+	# Story 15.4 (AC2/AC3): the additive has-saved-run probe + the save-clear file op (no schema change) + the
+	# new-run-save-clear semantics through the SaveManager delegators.
+	_has_run_snapshot_reflects_presence()
+	_delete_run_snapshot_clears_the_save_and_is_idempotent()
+	_save_manager_has_and_delete_delegators_and_new_run_clear()
 	_cleanup()
 	return result()
 
@@ -148,6 +153,59 @@ func _save_manager_autosave_between_level_delegates_to_repository() -> void:
 	if FileAccess.file_exists("%s.bak" % SaveRepository.DEFAULT_RUN_PATH):
 		DirAccess.remove_absolute("%s.bak" % SaveRepository.DEFAULT_RUN_PATH)
 	manager.free()
+
+
+# Story 15.4 (AC2/AC3): has_run_snapshot is a pure file-existence probe (no payload read, no schema change) —
+# false when absent, true after a write.
+func _has_run_snapshot_reflects_presence() -> void:
+	_cleanup()
+	var repository: SaveRepository = SaveRepository.new()
+	assert_false(repository.has_run_snapshot(TEST_SAVE_PATH), "has_run_snapshot must be false when no save exists (a cold start).")
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	snapshot.root_seed = 42
+	assert_true(repository.write_run_snapshot(snapshot, TEST_SAVE_PATH).succeeded, "Writing a save should succeed.")
+	assert_true(repository.has_run_snapshot(TEST_SAVE_PATH), "has_run_snapshot must be true after a save is written.")
+	_cleanup()
+
+
+# Story 15.4 (AC2): delete_run_snapshot clears the save (has_run_snapshot -> false) and is idempotent (deleting an
+# already-absent save is a no-op success).
+func _delete_run_snapshot_clears_the_save_and_is_idempotent() -> void:
+	_cleanup()
+	var repository: SaveRepository = SaveRepository.new()
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	assert_true(repository.write_run_snapshot(snapshot, TEST_SAVE_PATH).succeeded, "Writing a save should succeed.")
+	assert_true(repository.has_run_snapshot(TEST_SAVE_PATH), "Setup: the save exists before the delete.")
+
+	var delete_result: ActionResult = repository.delete_run_snapshot(TEST_SAVE_PATH)
+	assert_true(delete_result.succeeded, "Deleting an existing save should succeed: %s" % delete_result.metadata)
+	assert_true(bool(delete_result.metadata.get("deleted")), "Deleting an existing save should report deleted == true.")
+	assert_false(repository.has_run_snapshot(TEST_SAVE_PATH), "After delete, has_run_snapshot must be false (no Continue on the next boot).")
+
+	# Idempotent: deleting an already-absent save is a no-op success.
+	var again: ActionResult = repository.delete_run_snapshot(TEST_SAVE_PATH)
+	assert_true(again.succeeded, "Deleting an already-absent save should be an idempotent success.")
+	assert_false(bool(again.metadata.get("deleted")), "An idempotent delete reports deleted == false (nothing was there).")
+
+
+# Story 15.4 (AC2): the SaveManager delegators (has_saved_run / delete_saved_run) delegate to the repository, and
+# the new-run-save-clear semantics hold — after delete_saved_run, has_saved_run reads false (a later boot offers no
+# Continue to the abandoned run).
+func _save_manager_has_and_delete_delegators_and_new_run_clear() -> void:
+	_cleanup()
+	var manager: Node = SaveManager.new()
+	assert_false(manager.has_saved_run(TEST_SAVE_PATH), "SaveManager.has_saved_run must be false with no save.")
+	var snapshot: RunSnapshot = RunSnapshot.new()
+	assert_true(manager.autosave_route_position(snapshot, TEST_SAVE_PATH).succeeded, "A route-position autosave should write through the delegator.")
+	assert_true(manager.has_saved_run(TEST_SAVE_PATH), "SaveManager.has_saved_run must be true after a save is written.")
+
+	# The confirmed-new-run save-clear: delete_saved_run clears it, so has_saved_run reads false.
+	var delete_result: ActionResult = manager.delete_saved_run(TEST_SAVE_PATH)
+	assert_true(delete_result is ActionResult, "delete_saved_run must return the repository ActionResult (not a bool).")
+	assert_true(delete_result.succeeded, "delete_saved_run should succeed.")
+	assert_false(manager.has_saved_run(TEST_SAVE_PATH), "After the new-run save-clear, has_saved_run reads false (no stale Continue).")
+	manager.free()
+	_cleanup()
 
 
 func _cleanup() -> void:

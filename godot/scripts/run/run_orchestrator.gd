@@ -87,6 +87,7 @@ const RulesResolver = preload("res://scripts/rules/resolver/rules_resolver.gd")
 const RunStartCommand = preload("res://scripts/core/commands/run_start_command.gd")
 const RunState = preload("res://scripts/run/run_state.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
+const StartingKitDeriver = preload("res://scripts/run/starting_kit_deriver.gd")
 const SupportDefinition = preload("res://scripts/content/definitions/support_definition.gd")
 const TacticalActionContext = preload("res://scripts/tactical/tactical_action_context.gd")
 const TacticalEntityState = preload("res://scripts/tactical/entities/tactical_entity_state.gd")
@@ -231,6 +232,19 @@ func start_from(existing_run: RunState, existing_streams: RngStreamSet, next_seq
 			"inner_error_code": String(validation.error_code),
 			"inner_metadata": validation.metadata.duplicate(true)
 		})
+
+	# Story 15.4 (CRUX-3) — RE-DERIVE the starting kit so a RESTORED run is genuinely INTACT. A route-position
+	# resume rebuilds the RunState with selected_class_id preserved but starting_kit == null (the kit is
+	# deliberately NOT persisted — it is re-derived from the class id on restore, run_state.gd:515). Without this,
+	# CombatLoadout.for_run(run) falls open to the driver default (60 HP / sword / no support) and a resumed
+	# Warrior/Pyromancer/Ranger fights with the wrong loadout (AC2's "run intact" fails). Re-derive ONLY when the
+	# kit is absent AND a class id is present (an empty/legacy/seed-only run keeps its null kit -> the driver
+	# default, unchanged — so a fresh seed-only start_from and every pinned fingerprint path stay byte-identical).
+	# A pure content read (StartingKitDeriver -> ClassRepository), ZERO RNG; an unknown class id falls open to null.
+	if existing_run.starting_kit == null and not existing_run.selected_class_id.is_empty():
+		var rederived_kit: StartingKit = StartingKitDeriver.for_class_id(existing_run.selected_class_id)
+		if rederived_kit != null:
+			existing_run.starting_kit = rederived_kit
 
 	run = existing_run
 	streams = existing_streams
@@ -988,10 +1002,13 @@ func resolve_combat_node_live(node: RouteNode, hero_hp: int = LiveCombatResolver
 		})
 
 	# Story 11.4 (AC1) — ASSIGN THE NODE'S AFFINITY ONCE (the assign-if-absent guard the 7.4 review deferred to "the later
-	# per-node-assign story" — that is 11.4). Only draw the `map`-stream assignment roll when the node carries NO affinity
-	# yet (a re-drive reads the already-recorded id back, never re-rolls — idempotency). A failed assignment surfaces
-	# structurally + STOPS (no partial progression). The draw routes EXCLUSIVELY through the run-level streams on `map`.
-	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+	# per-node-assign story" — that is 11.4). Only draw the `map`-stream assignment roll when the node has NO RECORDED
+	# affinity yet — a PRESENCE check on run.assigned_affinities, NOT a `== none` compare (Story 15.4 Review D4): an
+	# explicitly-recorded neutral `none` counts as ALREADY ASSIGNED, so a re-drive reads the already-recorded id back for
+	# ALL FIVE candidates (incl. `none`) and never re-rolls — idempotency. A failed assignment surfaces structurally +
+	# STOPS (no partial progression). The draw routes EXCLUSIVELY through the run-level streams on `map`. `run` is non-null
+	# here (the top-of-function no_active_run guard returned already).
+	if not run.assigned_affinities.has(String(node.id)):
 		var assign: ActionResult = assign_affinity(node)
 		if assign.is_error():
 			return ActionResult.error(&"affinity_assignment_failed", {
@@ -1148,9 +1165,11 @@ func begin_interactive_combat_node(
 			"inner_reason": String(generation.reason)
 		})
 
-	# PRE-fight step 3 — assign the node's affinity ONCE (the assign-if-absent guard; a re-drive reads the recorded id
-	# back, never re-rolls the `map` stream — the SAME once-per-node discipline resolve_combat_node_live uses).
-	if assigned_affinity_for(node.id) == AffinityDefinition.AFFINITY_NONE:
+	# PRE-fight step 3 — assign the node's affinity ONCE (the assign-if-absent guard; a PRESENCE check on
+	# run.assigned_affinities, NOT a `== none` compare (Story 15.4 Review D4) — a re-drive reads the recorded id back for
+	# ALL FIVE candidates incl. neutral `none`, never re-rolls the `map` stream — the SAME once-per-node discipline
+	# resolve_combat_node_live uses; `run` is non-null here (the top-of-function no_active_run guard returned already)).
+	if not run.assigned_affinities.has(String(node.id)):
 		var assign: ActionResult = assign_affinity(node)
 		if assign.is_error():
 			return ActionResult.error(&"affinity_assignment_failed", {
