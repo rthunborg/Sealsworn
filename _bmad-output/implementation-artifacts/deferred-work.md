@@ -1663,5 +1663,13 @@ Round 1 primary review (`gds-code-review`; verdict: **Approve**; Critical 0 / Hi
   **Blast radius (why this needs its own story, not a patch):**
   1. Breaks the curated `AFFINITY_SEED_SAMPLE` / `AFFINITY_SEED_BY_AFFINITY` fixture in `godot/tests/integration/test_seed_regression_suite.gd:130` — 40 hand-picked seeds, exactly 10 landing on each of the 4 affinities (Story 10.8 AC5 MVP-readiness target). Changing the distribution re-maps every seed; the sample must be re-curated by targeted search, and with affinities ~5x rarer the search space (and likely the sample size) grows.
   2. **No GDD backing.** The GDD names the MVP affinity set and says "Late run: higher affinity pressure" (gdd.md:237, :524) but specifies NO frequency or distribution anywhere. This is a NEW design decision and needs a GDD line recording the intended frequency.
-  3. **Open design question to settle first:** flat 1-in-5, or **depth-scaled** (rare early, common late — which is what the GDD's "late run: higher affinity pressure" implies)? Recommendation at time of writing: depth-scaled with a low early floor. Rasmus has not yet chosen.
-  Owner: unassigned — candidate for an Epic 15 story alongside 15-5, or Epic 16. Needs the flat-vs-depth-scaled call before `gds-create-story`.
+  3. ~~Open design question: flat or depth-scaled?~~ **DECIDED by Rasmus, 2026-08-17: depth-scaled.**
+
+  **Design spec (Rasmus, 2026-08-17) — implement to this:**
+  - An affinity-presence chance that **scales with route depth**: **20% at the first node**, rising to **at most 40% at the deepest/final nodes**. The 40% is a ceiling, not a target to exceed.
+  - Consequence for the model: this replaces "neutral `none` is a 5th uniform candidate" with a **two-step draw** — (1) roll whether the room carries an affinity at all, at the depth-scaled rate; (2) if yes, select which of the **4** hazard affinities. Note this changes the **number of `map`-stream draws per node** (currently exactly 1), which is a determinism-relevant change on top of the distribution change.
+  - Interpolation curve between the 20% floor and the 40% ceiling is unspecified — linear over route depth is the obvious default; the implementing story should propose and record one. Routes are 8-12 nodes (Story 4.2).
+  - Record the chosen frequency in the GDD alongside the MVP affinity set, since the GDD currently specifies none.
+  - Whether `AffinityDefinition.AFFINITY_NONE` remains a registered baseline id (for the read-back/no-affinity default at `run_orchestrator.gd:766`) or is removed from the *candidate* list only, is an implementation call — the read-back default must keep working either way.
+
+  Owner: unassigned — candidate for an Epic 15 story alongside 15-5, or Epic 16. Ready to scope: the design call is made. Adding it to the sprint needs an epics.md entry plus `gds-sprint-planning` (or `gds-correct-course`), since it is not in the current 12-story Epic 15 breakdown.
