@@ -33,6 +33,7 @@ const CombatLoadout = preload("res://scripts/run/combat_loadout.gd")
 const LiveCombatResolver = preload("res://scripts/run/live_combat_resolver.gd")
 const RngStreamSet = preload("res://scripts/core/state/rng_stream_set.gd")
 const RouteNode = preload("res://scripts/run/route_node.gd")
+const RunFlowController = preload("res://scripts/ui/flow/run_flow_controller.gd")
 const RunOrchestrator = preload("res://scripts/run/run_orchestrator.gd")
 const RunResumeService = preload("res://scripts/save/run_resume_service.gd")
 const RunSnapshot = preload("res://scripts/save/snapshots/run_snapshot.gd")
@@ -85,6 +86,12 @@ func run() -> Dictionary:
 	# calls SaveManager.autosave_route_position (compose+persist) then SaveManager.resume_route_position (restore) then
 	# RunOrchestrator.start_from (seat) — this proves that exact chain matches the uninterrupted path + consumes no RNG.
 	_save_manager_delegated_resume_equals_uninterrupted()
+	# Story 15.5 (D1) — the carried current HP rides the route-position save end-to-end + the MANDATORY migration test +
+	# the live-clear HP capture (the between-node "wounds carry" carry, over the EXISTING 15.4 nested plumbing — the
+	# 23-key gate stays 23).
+	_current_hp_survives_route_position_resume()
+	_pre_15_5_route_position_payload_restores_at_unset_hp()
+	_live_combat_clear_captures_the_hero_ending_hp()
 	_cleanup()
 	return result()
 
@@ -851,6 +858,88 @@ func _save_manager_delegated_resume_equals_uninterrupted() -> void:
 func _write_and_path(snapshot: RunSnapshot) -> String:
 	_write_through_repository(snapshot)
 	return SAVE_PATH
+
+
+# ---- Story 15.5 (D1): the carried current HP rides the route-position save ------------------------
+
+# AC1 ("the persisted HP survives a quit/resume"): a parked run whose current_hp carries a wounded value, composed +
+# WRITTEN + READ through the REAL SaveRepository and restored via resume_route_position, rehydrates the SAME current_hp
+# (nested under route_state — the source of truth on resume; no new top-level key). Seated via the PRODUCTION start_from,
+# the RunFlowController arms the NEXT fight from the CARRIED HP, NOT the kit baseline (attrition is real — no full heal).
+func _current_hp_survives_route_position_resume() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	orchestrator.run.current_hp = 7  # a wounded value carried between nodes (below the 60 driver default / any kit baseline)
+
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	assert_true(snapshot != null, "compose_route_position_snapshot should return a snapshot.")
+	# The current HP nests under route_state (no new top-level key).
+	assert_true(snapshot.route_state.has(String(RunState.CURRENT_HP_KEY)), "The current HP nests inside route_state.")
+	assert_equal(int(snapshot.route_state.get(String(RunState.CURRENT_HP_KEY))), 7, "The nested route_state carries the carried HP.")
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "Resuming the route position should succeed: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_equal(restored_run.current_hp, 7, "AC1: the carried current_hp survives the route-position resume (the nested source of truth).")
+	assert_true(restored_run.validate().succeeded, "The restored HP run must validate.")
+
+	# Seated via the PRODUCTION start_from, the next fight arms from the CARRIED HP (not the kit baseline / driver default).
+	var restored_streams: RngStreamSet = restore.metadata.get("rng_streams") as RngStreamSet
+	var resumed: RunOrchestrator = RunOrchestrator.new()
+	assert_true(resumed.start_from(restored_run, restored_streams).succeeded, "Seating the resumed HP run should succeed.")
+	assert_equal(RunFlowController.new(resumed).hero_hp(), 7, "AC1: the resumed live loadout arms the next fight from the CARRIED HP (7), not the kit baseline.")
+
+	# The 23-key gate stays green (current_hp nests under route_state, adds no top-level key).
+	var json_data: Variant = JSON.parse_string(JSON.stringify(snapshot.to_dictionary()))
+	var allowed: Dictionary = _allowed_run_snapshot_keys()
+	assert_equal((json_data as Dictionary).keys().size(), allowed.size(), "Story 15.5 (D1): the snapshot key COUNT stays 23 (current_hp nests under route_state).")
+
+
+# Story 15.5 (D1 — the MANDATORY migration/back-compat guarantee): a PRE-15.5 route-position payload (no nested
+# current_hp key under route_state) restores at HP_UNSET — the live loadout then falls OPEN to the kit/driver baseline
+# (full HP), NEVER 0 and NEVER a crash. Composes a real snapshot, STRIPS the nested key, writes + reads through the repo.
+func _pre_15_5_route_position_payload_restores_at_unset_hp() -> void:
+	var orchestrator: RunOrchestrator = _orchestrator_parked_after_clearing(42, 2)
+	orchestrator.run.current_hp = 7  # a value that must be LOST when the nested key is stripped (a legacy save has none)
+	var snapshot: RunSnapshot = orchestrator.compose_route_position_snapshot()
+	# Simulate a pre-15.5 save: remove the nested current_hp key from route_state (the key 15.5 added).
+	var legacy_route_state: Dictionary = snapshot.route_state.duplicate(true)
+	legacy_route_state.erase(String(RunState.CURRENT_HP_KEY))
+	assert_false(legacy_route_state.has(String(RunState.CURRENT_HP_KEY)), "The pre-15.5 fixture must have NO nested current_hp key.")
+	snapshot.route_state = legacy_route_state
+	_write_through_repository(snapshot)
+
+	var restore: ActionResult = RunResumeService.new().resume_route_position(SAVE_PATH)
+	assert_true(restore.succeeded, "A pre-15.5 route-position payload must still resume: %s" % restore.metadata)
+	var restored_run: RunState = restore.metadata.get("run_state") as RunState
+	assert_equal(restored_run.current_hp, RunState.HP_UNSET, "A pre-15.5 payload (no nested HP key) restores at HP_UNSET (fail-open, NOT 0).")
+	assert_true(restored_run.validate().succeeded, "A pre-15.5 restored run must still validate.")
+
+	# The fail-open contract end-to-end: seated via start_from, a seed-only parked run (no kit) arms the next fight at the
+	# 60 HP driver baseline, NEVER 0 -> the hero re-enters at full/baseline HP.
+	var resumed: RunOrchestrator = RunOrchestrator.new()
+	assert_true(resumed.start_from(restored_run, restore.metadata.get("rng_streams") as RngStreamSet).succeeded, "Seating the pre-15.5 restored run should succeed.")
+	assert_equal(RunFlowController.new(resumed).hero_hp(), LiveCombatResolver.DEFAULT_HERO_HP, "A pre-15.5 (unset HP) resume arms the next fight at the kit/driver baseline (full HP), NEVER 0.")
+
+
+# Story 15.5 (D1): clearing a combat node LIVE CAPTURES the hero's ending board HP into run.current_hp (a pure board read
+# — ZERO RNG), so the NEXT node's fight arms from the carried HP. Before the clear the run has HP_UNSET; after a live
+# victory it carries a real positive board HP (attrition, no implicit full heal between nodes).
+func _live_combat_clear_captures_the_hero_ending_hp() -> void:
+	var orchestrator: RunOrchestrator = RunOrchestrator.new()
+	assert_true(orchestrator.start(4242, false).succeeded, "Setup: the live-capture start should succeed.")
+	assert_equal(orchestrator.run.current_hp, RunState.HP_UNSET, "Setup: a fresh run has no captured HP (HP_UNSET).")
+
+	var resolved: ActionResult = orchestrator.resolve_current_node_live()
+	assert_true(resolved.succeeded, "The live combat clear should resolve: %s" % resolved.metadata)
+	assert_equal(String(resolved.metadata.get("resolution")), "live_combat_victory", "Setup: the node was cleared by a live victory.")
+
+	# The hero's ending HP was captured: a real positive board HP, NOT HP_UNSET, NOT above the driver starting HP.
+	assert_true(orchestrator.run.current_hp != RunState.HP_UNSET, "A live victory CAPTURES the hero's ending HP into run.current_hp.")
+	assert_true(orchestrator.run.current_hp > 0, "The captured HP is a live hero's positive board HP.")
+	assert_true(orchestrator.run.current_hp <= LiveCombatResolver.DEFAULT_HERO_HP, "The captured HP does not exceed the driver starting HP (a board read, no heal).")
+	# The captured HP now arms the NEXT node's fight (the carried loadout, not a fresh baseline).
+	assert_equal(RunFlowController.new(orchestrator).hero_hp(), orchestrator.run.current_hp, "The captured HP arms the next node's fight (hero_hp() reads the carried HP).")
 
 
 # ---- utilities -----------------------------------------------------------------------------------

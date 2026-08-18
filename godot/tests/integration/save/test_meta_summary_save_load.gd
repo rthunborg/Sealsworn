@@ -71,7 +71,7 @@ func run() -> Dictionary:
 	_schema_version_stays_one()
 	# --- AC3: the grant/deny matrix across the four run-end cases -------------------------------------
 	_eligible_completed_run_awards_and_merges_and_is_not_a_first_death()
-	_eligible_death_awards_zero_merges_and_latches_first_death()
+	_eligible_death_awards_the_capped_amount_merges_and_latches_first_death()
 	_manual_seed_completed_run_denies_award_and_merge()
 	_manual_seed_death_denies_award_and_merge_but_still_latches_first_death()
 	_three_run_end_markers_are_order_independent()
@@ -441,25 +441,28 @@ func _eligible_completed_run_awards_and_merges_and_is_not_a_first_death() -> voi
 	_cleanup()
 
 
-func _eligible_death_awards_zero_merges_and_latches_first_death() -> void:
-	# CASE 2 — Eligible + FAILED (death): award GRANTED but amount 0 (a death yields 0 currency this story — oath_shards
-	# UNCHANGED, but the marker + event STILL fire, an eligible death IS a valid 0-award, NOT a reject); merge GRANTED (a
-	# death can still have discovered content); first-death GRANTED (the FIRST death latches first_death_recorded + emits).
-	# Then the granted profile SAVES + RELOADS with the withheld-currency + merged discoveries + set latch intact.
+func _eligible_death_awards_the_capped_amount_merges_and_latches_first_death() -> void:
+	# CASE 2 — Eligible + FAILED (death), Story 15.5 (D4 — the ratified REVERSAL of the 8.3 death-awards-zero decision):
+	# award GRANTED for the SAME capped nodes-cleared amount as a completion (the currency rewards the DEPTH reached, so
+	# oath_shards RISE by the award; the marker + event fire); merge GRANTED (a death can still have discovered content);
+	# first-death GRANTED (the FIRST death latches first_death_recorded + emits). Then the granted profile SAVES + RELOADS
+	# with the accrued currency + merged discoveries + set latch intact.
 	_cleanup()
-	var run: RunState = _failed_run(2, 5555, false)
+	var run: RunState = _failed_run(2, 5555, false)  # 2 cleared nodes -> award = min(1 + 2, 5) = 3.
 	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_failed(1, {"cause": "hero_death"})])
 	var profile: ProfileSnapshot = ProfileSnapshot.new()
-	profile.oath_shards = 6  # a prior accumulated total — a death must NOT change it.
+	profile.oath_shards = 6  # a prior accumulated total — the D4 death award ADDS to it.
 
-	# AWARD: granted, amount 0.
+	# AWARD: granted, the D4 capped nodes-cleared amount (3 for a 2-node death).
+	var expected_amount: int = MetaAwardRules.oath_shard_award_for(run)
+	assert_equal(expected_amount, 3, "D4: a 2-node death awards min(BASE + PER_NODE * 2, MAX) == 3 (the same basis as a completion).")
 	var award: ActionResult = AwardMetaProgressCommand.new(profile, summary, 1).execute(run)
-	assert_true(award.succeeded, "An eligible death resolves the award (a valid 0-award, NOT a reject).")
-	assert_equal(award.metadata.get("amount"), 0, "A death awards 0 Oath Shards this story.")
-	assert_equal(profile.oath_shards, 6, "A death must NOT change the Oath-Shard total (0 award).")
+	assert_true(award.succeeded, "An eligible death resolves the award (a valid capped award, NOT a reject).")
+	assert_equal(award.metadata.get("amount"), expected_amount, "D4: a death awards the single-authority MetaAwardRules amount (3).")
+	assert_equal(profile.oath_shards, 6 + expected_amount, "D4: the death award (3) raises the prior Oath-Shard total (6) to 9.")
 	assert_equal(profile.last_awarded_run_seed, "5555", "An eligible death still records the run identity (the marker fires).")
-	assert_equal(award.events.size(), 1, "An eligible death STILL emits an honest 0-amount award event.")
-	assert_equal((award.events[0] as DomainEvent).payload.get("amount"), 0, "The award event records the 0 amount.")
+	assert_equal(award.events.size(), 1, "An eligible death emits exactly one award event carrying the D4 amount.")
+	assert_equal((award.events[0] as DomainEvent).payload.get("amount"), expected_amount, "The award event records the D4 death award (3).")
 
 	# MERGE: granted (a death discovered content too).
 	var discovery_events: Array = [DomainEvent.content_discovered(2, {"content_kind": "echo", "content_id": "echo_of_tide"})]
@@ -473,15 +476,15 @@ func _eligible_death_awards_zero_merges_and_latches_first_death() -> void:
 	assert_true(profile.first_death_recorded, "The first death sets first_death_recorded.")
 	assert_equal(first_death.events.size(), 1, "The first death emits exactly one first_death_recorded event.")
 
-	# GRANTED-state SURVIVES a save-reload: oath_shards still 6 (withheld), the merged Echo, the set latch.
+	# GRANTED-state SURVIVES a save-reload: oath_shards now 9 (6 + the D4 award), the merged Echo, the set latch.
 	var expected: Dictionary = profile.to_dictionary()
 	var repository: ProfileRepository = ProfileRepository.new()
 	assert_true(repository.write_profile(profile, TEST_PROFILE_PATH).succeeded, "The eligible-death granted profile should persist.")
 	var reloaded: ActionResult = ProfileRepository.new().read_profile(TEST_PROFILE_PATH)
 	assert_true(reloaded.succeeded, "The eligible-death granted profile should reload.")
 	var restored: ProfileSnapshot = reloaded.metadata.get("snapshot")
-	assert_true(_profile_round_trip_matches(restored, expected), "The granted (0-award + merged + first-death) state must survive a save-reload faithfully (int-coercion aware).")
-	assert_equal(restored.oath_shards, 6, "The withheld-currency total (0 award on a death) survives the reload.")
+	assert_true(_profile_round_trip_matches(restored, expected), "The granted (D4 award + merged + first-death) state must survive a save-reload faithfully (int-coercion aware).")
+	assert_equal(restored.oath_shards, 6 + expected_amount, "The accrued death-award total (9) survives the reload.")
 	assert_true(restored.first_death_recorded, "The set first-death latch survives the reload.")
 	assert_true(restored.echoes.has("echo_of_tide"), "The death's merged discovery survives the reload.")
 	_cleanup()
@@ -591,7 +594,7 @@ func _three_run_end_markers_are_order_independent() -> void:
 	]
 	var profile_a: ProfileSnapshot = ProfileSnapshot.new()
 	profile_a.oath_shards = 4
-	assert_true(AwardMetaProgressCommand.new(profile_a, summary_a, 1).execute(run_a).succeeded, "Order A: the award (0 on a death) resolves.")
+	assert_true(AwardMetaProgressCommand.new(profile_a, summary_a, 1).execute(run_a).succeeded, "Order A: the award (the D4 death amount) resolves.")
 	assert_true(MergeRunDiscoveriesCommand.new(profile_a, discoveries_a, 2).execute(run_a).succeeded, "Order A: the merge resolves.")
 	assert_true(RecordFirstDeathCommand.new(profile_a, 3).execute(run_a).succeeded, "Order A: the first-death latches.")
 
@@ -606,12 +609,14 @@ func _three_run_end_markers_are_order_independent() -> void:
 	profile_b.oath_shards = 4
 	assert_true(RecordFirstDeathCommand.new(profile_b, 1).execute(run_b).succeeded, "Order B: the first-death latches first.")
 	assert_true(MergeRunDiscoveriesCommand.new(profile_b, discoveries_b, 2).execute(run_b).succeeded, "Order B: the merge resolves.")
-	assert_true(AwardMetaProgressCommand.new(profile_b, summary_b, 3).execute(run_b).succeeded, "Order B: the award (0 on a death) resolves last.")
+	assert_true(AwardMetaProgressCommand.new(profile_b, summary_b, 3).execute(run_b).succeeded, "Order B: the award (the D4 death amount) resolves last.")
 
 	# The two final profiles are IDENTICAL (order-independent — each marker is separately idempotent per its own scope).
 	assert_equal(profile_a.to_dictionary(), profile_b.to_dictionary(), "award+merge+first-death in ANY caller order must produce an IDENTICAL final profile (independent markers).")
 	# And that final state is the expected union (award marker + merge marker + first-death latch + merged discoveries).
-	assert_equal(profile_a.oath_shards, 4, "A death awards 0 — the total is unchanged in both orders.")
+	# Story 15.5 (D4): the 2-node eligible death awards min(BASE + PER_NODE * 2, MAX) == 3, raising the starting 4 to 7 in
+	# BOTH orders (the award is applied exactly once per order — order-independence is about the RESULT, not a 0 amount).
+	assert_equal(profile_a.oath_shards, 7, "D4: the death award (3) raises the total (4 -> 7) identically in both orders.")
 	assert_equal(profile_a.last_awarded_run_seed, "4242", "The award marker is set in both orders.")
 	assert_equal(String(profile_a.unlock_progress.get(MergeRunDiscoveriesCommand.LAST_MERGED_RUN_SEED_KEY)), "4242", "The merge marker is set in both orders.")
 	assert_true(profile_a.first_death_recorded, "The first-death latch is set in both orders.")

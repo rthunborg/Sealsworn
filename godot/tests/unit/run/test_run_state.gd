@@ -52,6 +52,11 @@ func run() -> Dictionary:
 	_run_with_pending_event_offer_round_trips_through_dictionary_and_copy()
 	_pre_7_3_run_dict_without_event_offer_key_parses_to_null()
 	_pending_event_offer_stays_out_of_the_run_snapshot_bridge()
+	# Story 15.5 (D1) — the additive current_hp field + its lenient back-compat default + the route-position bridge nest.
+	_fresh_run_has_unset_hp_and_validates()
+	_run_with_current_hp_round_trips_through_dictionary_and_copy()
+	_pre_15_5_run_dict_without_current_hp_key_parses_to_unset()
+	_current_hp_nests_in_the_snapshot_bridge_and_round_trips()
 	return result()
 
 
@@ -59,6 +64,57 @@ func _build_route() -> RouteState:
 	var start: RouteNode = RouteNode.new("start", RouteNode.TYPE_COMBAT, 0, RouteNode.REVEAL_REVEALED, ["boss"])
 	var boss: RouteNode = RouteNode.new("boss", RouteNode.TYPE_BOSS, 1, RouteNode.REVEAL_HIDDEN, [])
 	return RouteState.new([start, boss], "", [])
+
+
+# ---- Story 15.5 (D1): the additive current_hp field ----------------------------------------------
+
+func _fresh_run_has_unset_hp_and_validates() -> void:
+	# Story 15.5 (D1): a fresh run has current_hp == HP_UNSET (no HP recorded yet -> the live loadout uses the kit
+	# baseline; the first-node / legacy default), and still validates (current_hp is additive, not a required field).
+	var run: RunState = RunState.new_run(4242, false, _build_route())
+	assert_equal(run.current_hp, RunState.HP_UNSET, "A fresh run's current_hp is HP_UNSET (no HP recorded yet).")
+	assert_true(run.validate().succeeded, "A fresh run (unset HP) validates.")
+
+
+func _run_with_current_hp_round_trips_through_dictionary_and_copy() -> void:
+	# Story 15.5 (D1): a run carrying a wounded current_hp round-trips through the FULL run dict (a real JSON round-trip)
+	# AND copy() (a plain int carried on a copy).
+	var run: RunState = RunState.new_run(4242, false, _build_route())
+	run.current_hp = 7  # a wounded value below any kit baseline (attrition carried between nodes)
+	var restored: RunState = RunState.from_dictionary(JSON.parse_string(JSON.stringify(run.to_dictionary())))
+	assert_true(restored != null, "The run dict must round-trip through real JSON.")
+	assert_equal(restored.current_hp, 7, "The carried current_hp survives the full run-dict round-trip.")
+	assert_equal(run.copy().current_hp, 7, "copy() carries the current_hp (a plain int).")
+
+
+func _pre_15_5_run_dict_without_current_hp_key_parses_to_unset() -> void:
+	# Story 15.5 (D1 — the back-compat default): a pre-15.5 run dict (no current_hp key) parses to HP_UNSET (the live
+	# loadout then uses the kit baseline — the fail-OPEN migration default, never 0 and never a crash).
+	var run: RunState = RunState.new_run(4242, false, _build_route())
+	var data: Dictionary = run.to_dictionary()
+	data.erase("current_hp")
+	assert_false(data.has("current_hp"), "The pre-15.5 fixture must have NO current_hp key.")
+	var restored: RunState = RunState.from_dictionary(data)
+	assert_true(restored != null, "A pre-15.5 run dict (no current_hp) must still parse.")
+	assert_equal(restored.current_hp, RunState.HP_UNSET, "A pre-15.5 run dict restores current_hp to HP_UNSET (fail-open to the kit baseline, not 0).")
+	assert_true(restored.validate().succeeded, "A pre-15.5 restored run validates.")
+
+
+func _current_hp_nests_in_the_snapshot_bridge_and_round_trips() -> void:
+	# Story 15.5 (D1): the run-level current HP NESTS inside the route_state payload of to_run_snapshot_fields() (the SAME
+	# mechanism as run_phase / selected_class_id / risk_economy — no new top-level RunSnapshot key), and
+	# try_from_run_snapshot_fields reads it back (the nested copy is the source of truth on a between-node resume).
+	var run: RunState = RunState.new_run(4242, false, _build_route())
+	run.current_hp = 9
+	var fields: Dictionary = run.to_run_snapshot_fields()
+	var route_state: Dictionary = fields.get("route_state", {})
+	assert_true(route_state.has(String(RunState.CURRENT_HP_KEY)), "The current HP nests INSIDE route_state (no new top-level key).")
+	assert_equal(int(route_state.get(String(RunState.CURRENT_HP_KEY))), 9, "The nested route_state carries the current HP.")
+	# It rides back through a real JSON round-trip of the fields.
+	var json_fields: Dictionary = JSON.parse_string(JSON.stringify(fields))
+	var restore: ActionResult = RunState.try_from_run_snapshot_fields(json_fields)
+	assert_true(restore.succeeded, "The snapshot-fields round-trip must restore: %s" % restore.metadata)
+	assert_equal((restore.metadata.get("run_state") as RunState).current_hp, 9, "The nested current HP is the source of truth on resume (round-trips through the bridge).")
 
 
 func _new_run_initializes_ac1_fields() -> void:

@@ -28,6 +28,8 @@ extends "res://tests/unit/test_case.gd"
 
 const FirstDeathNarrativeBeat = preload("res://scripts/run/first_death_narrative_beat.gd")
 const FirstVictoryRevealBeat = preload("res://scripts/run/first_victory_reveal_beat.gd")
+const MetaAwardRules = preload("res://scripts/save/meta_award_rules.gd")
+const OutpostRenderView = preload("res://scripts/ui/view_models/outpost_render_view.gd")
 const OutpostViewModel = preload("res://scripts/ui/view_models/outpost_view_model.gd")
 const ProfileRepository = preload("res://scripts/save/profile_repository.gd")
 const ProfileSnapshot = preload("res://scripts/save/snapshots/profile_snapshot.gd")
@@ -51,6 +53,12 @@ func run() -> Dictionary:
 	_threaded_sequence_id_is_unique_past_the_runs_emitted_ids()
 	_bridge_mutates_only_the_profile_and_is_rng_free()
 	_non_terminal_run_yields_null()
+	# Story 15.5 (D5 — Option B): the bridge now DRIVES AwardMetaProgressCommand at the live run-end so the meta-profile
+	# actually ACCRUES the Oath Shards (completion + D4 death), denies a manual-seed run, and never double-awards.
+	_completed_run_accrues_the_capped_award_and_summary_equals_the_profile_delta()
+	_death_run_accrues_the_d4_award()
+	_manual_seed_run_accrues_nothing()
+	_re_driven_run_end_does_not_double_award()
 	_cleanup()
 	return result()
 
@@ -286,6 +294,80 @@ func _non_terminal_run_yields_null() -> void:
 	assert_true(orchestrator.start(SEED, false, &"warrior").succeeded, "Setup: a fresh non-terminal run.")
 	assert_false(orchestrator.run.is_terminal(), "Setup: the fresh run is non-terminal.")
 	assert_true(_bridge().build_outpost(orchestrator.run, orchestrator) == null, "A non-terminal run yields null (fail-closed).")
+
+
+# ---- Story 15.5 (D5 — Option B): the bridge drives the Oath-Shard award at the live run-end -------
+
+func _completed_run_accrues_the_capped_award_and_summary_equals_the_profile_delta() -> void:
+	# D5 (Option B): the bridge DRIVES AwardMetaProgressCommand at the live run-end, so a completed run's meta-profile
+	# actually ACCRUES the Oath Shards (previously the command was NEVER called in production — the profile never gained
+	# shards). Starting from a fresh (0-shard) profile, the persisted total EQUALS MetaAwardRules.oath_shard_award_for(run)
+	# (the bounded/capped amount), and the summary's earned-this-run count EQUALS what the profile received (D5 (d) — no
+	# phantom currency: what the summary reports IS what the player got).
+	_cleanup()
+	var orchestrator: RunOrchestrator = _orchestrator_at_live_victory()
+	var expected: int = MetaAwardRules.oath_shard_award_for(orchestrator.run)
+	assert_true(expected > 0 and expected <= MetaAwardRules.MAX_AWARD, "Setup: a completed run's award is a bounded, capped, positive amount.")
+
+	var outpost: OutpostViewModel = _bridge().build_outpost(orchestrator.run, orchestrator)
+	assert_true(outpost != null, "The bridge builds an outpost off the terminal COMPLETED run.")
+
+	# The persisted profile ACCRUED exactly the award (started from 0).
+	var reread: Variant = ProfileRepository.new().read_profile(TEST_PROFILE_PATH)
+	assert_true(reread.succeeded, "The persisted profile re-reads cleanly.")
+	var persisted: ProfileSnapshot = reread.metadata.get("snapshot")
+	assert_equal(persisted.oath_shards, expected, "D5: the profile ACCRUED the completed run's capped award (from 0).")
+	assert_equal(persisted.last_awarded_run_seed, str(orchestrator.run.root_seed), "D5: the award recorded the run identity (a re-drive is a no-op).")
+	# D5 (d): what the summary reports EQUALS what the profile received.
+	assert_equal(OutpostRenderView.from_view_model(outpost).run_oath_shards_earned(), persisted.oath_shards, "D5 (d): the summary's earned-this-run count EQUALS what the profile received (no phantom currency).")
+
+
+func _death_run_accrues_the_d4_award() -> void:
+	# D4 + D5: a DEATH run now accrues too (the ratified death-awards reversal, driven through the live wiring). The live
+	# death on the depth-0 opener clears 0 nodes -> the BASE award (min(1 + 0, 5) == 1); the profile accrues it (proving a
+	# death is no longer a 0 accrual). Starting from a fresh profile, the persisted total EQUALS oath_shard_award_for(run).
+	_cleanup()
+	var orchestrator: RunOrchestrator = _orchestrator_at_live_death()
+	var expected: int = MetaAwardRules.oath_shard_award_for(orchestrator.run)
+	assert_true(expected > 0, "D4: a death now awards a positive amount (the BASE grant for reaching an ending).")
+
+	_bridge().build_outpost(orchestrator.run, orchestrator)
+	var persisted: ProfileSnapshot = ProfileRepository.new().read_profile(TEST_PROFILE_PATH).metadata.get("snapshot")
+	assert_equal(persisted.oath_shards, expected, "D4/D5: a death run ACCRUES its capped nodes-cleared award (no longer 0).")
+	assert_equal(persisted.last_awarded_run_seed, str(orchestrator.run.root_seed), "D5: the death award recorded the run identity.")
+
+
+func _manual_seed_run_accrues_nothing() -> void:
+	# D5 / FR28: a MANUAL-seed run accrues NOTHING — the award command's eligibility gate DENIES it (ZERO mutation), and
+	# the summary honestly reports 0 earned. The manual-seed denial rides through the live wiring unchanged (the first-death
+	# latch STILL records — it is eligibility-independent — but the currency does not accrue).
+	_cleanup()
+	var orchestrator: RunOrchestrator = _orchestrator_at_live_death(true)  # manual-seed death
+	assert_false(orchestrator.run.meta_progression_eligible, "Setup: a manual-seed run is meta-ineligible.")
+
+	var outpost: OutpostViewModel = _bridge().build_outpost(orchestrator.run, orchestrator)
+	var persisted: ProfileSnapshot = ProfileRepository.new().read_profile(TEST_PROFILE_PATH).metadata.get("snapshot")
+	assert_equal(persisted.oath_shards, 0, "D5/FR28: a manual-seed run accrues NO Oath Shards (the eligibility gate denies).")
+	assert_equal(persisted.last_awarded_run_seed, "", "A denied award records NO run-identity marker.")
+	assert_equal(OutpostRenderView.from_view_model(outpost).run_oath_shards_earned(), 0, "The summary honestly reports 0 earned for a manual-seed run (FR28).")
+
+
+func _re_driven_run_end_does_not_double_award() -> void:
+	# D5: re-driving the run-end (the bridge run TWICE on the same terminal run) does NOT double-award — the award
+	# command's idempotency guard (profile.last_awarded_run_seed) rejects the second award with ZERO mutation. The profile's
+	# Oath-Shard total is IDENTICAL after the second finalize (no phantom currency on a re-loaded profile).
+	_cleanup()
+	var orchestrator: RunOrchestrator = _orchestrator_at_live_victory()
+	var expected: int = MetaAwardRules.oath_shard_award_for(orchestrator.run)
+
+	_bridge().build_outpost(orchestrator.run, orchestrator)
+	var after_first: int = (ProfileRepository.new().read_profile(TEST_PROFILE_PATH).metadata.get("snapshot") as ProfileSnapshot).oath_shards
+	assert_equal(after_first, expected, "The first finalize accrues the award.")
+
+	# The SECOND finalize re-reads the (now already-awarded) profile; the award is idempotent-rejected (ZERO mutation).
+	_bridge().build_outpost(orchestrator.run, orchestrator)
+	var after_second: int = (ProfileRepository.new().read_profile(TEST_PROFILE_PATH).metadata.get("snapshot") as ProfileSnapshot).oath_shards
+	assert_equal(after_second, after_first, "D5: a re-driven run-end does NOT double-award (the idempotency guard holds).")
 
 
 func _cleanup() -> void:

@@ -34,7 +34,7 @@ func run() -> Dictionary:
 	_invalid_sequence_id_is_rejected()
 	_failed_profile_write_leaves_summary_readable()
 	_run_profile_and_unlock_state_stay_separable()
-	_failed_run_awards_zero_but_is_recorded_as_resolved()
+	_failed_run_awards_the_capped_amount_and_is_recorded_as_resolved()
 	_cleanup()
 	return result()
 
@@ -262,22 +262,27 @@ func _run_profile_and_unlock_state_stay_separable() -> void:
 	assert_false(profile.first_death_recorded, "The award must NOT touch the 8.5 first_death_recorded home.")
 
 
-func _failed_run_awards_zero_but_is_recorded_as_resolved() -> void:
-	# A failed (death) run is eligible (non-manual) but the RULE awards 0 — the command still SUCCEEDS with a 0 amount
-	# and records the run identity (so a re-award is a no-op), emitting an honest 0-amount event.
-	var run: RunState = _failed_run(3, 4242, false)
+func _failed_run_awards_the_capped_amount_and_is_recorded_as_resolved() -> void:
+	# Story 15.5 (D4 — the ratified REVERSAL of the 8.3 death-awards-zero decision): a failed (death) run is eligible
+	# (non-manual) and now AWARDS on the SAME capped nodes-cleared basis as a completion — the command SUCCEEDS with the
+	# D4 amount, RAISES the profile's cross-run total by it, records the run identity (so a re-award is a no-op), and
+	# emits an award event carrying that amount. The currency rewards the DEPTH the run reached, so unlocks are reachable
+	# even from a death. Manual-seed denial + idempotency are still enforced at the gate (the other cases below).
+	var run: RunState = _failed_run(3, 4242, false)  # 3 cleared nodes -> award = min(1 + 3, 5) = 4.
 	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_failed(1, {"cause": "hero_death"})])
 	var profile: ProfileSnapshot = ProfileSnapshot.new()
 	profile.oath_shards = 6
 
+	var expected_amount: int = MetaAwardRules.oath_shard_award_for(run)
+	assert_equal(expected_amount, 4, "D4: a failed 3-node run awards min(BASE + PER_NODE * 3, MAX) == 4 (the same basis as a completion).")
 	var award_result: ActionResult = AwardMetaProgressCommand.new(profile, summary, 1).execute(run)
-	assert_true(award_result.succeeded, "A failed (eligible) run resolves the award (with a 0 amount this story).")
-	assert_equal(award_result.metadata.get("amount"), 0, "A failed run awards 0 Oath Shards this story.")
-	assert_equal(profile.oath_shards, 6, "A failed run must not change the Oath-Shard total (0 award).")
+	assert_true(award_result.succeeded, "A failed (eligible) run resolves the award (the D4 capped amount).")
+	assert_equal(award_result.metadata.get("amount"), expected_amount, "The command awards the single-authority MetaAwardRules amount for the death run.")
+	assert_equal(profile.oath_shards, 6 + expected_amount, "D4: the death award (4) raises the prior total (6) to 10.")
 	assert_equal(profile.last_awarded_run_seed, "4242", "A failed run still records the run identity (a re-award is a no-op).")
-	# The honest 0-amount event is emitted (before + 0 == after).
-	assert_equal(award_result.events.size(), 1, "A resolved failed run emits an honest 0-amount event.")
-	assert_equal((award_result.events[0] as DomainEvent).payload.get("amount"), 0, "The event records the 0 amount.")
+	# The award event records the D4 amount (before + amount == after).
+	assert_equal(award_result.events.size(), 1, "A resolved failed run emits exactly one award event carrying the D4 amount.")
+	assert_equal((award_result.events[0] as DomainEvent).payload.get("amount"), expected_amount, "The event records the D4 death award (4).")
 
 
 # ---- fixtures -----------------------------------------------------------------------------------

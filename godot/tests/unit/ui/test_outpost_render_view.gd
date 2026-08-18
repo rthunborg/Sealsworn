@@ -59,11 +59,13 @@ func run() -> Dictionary:
 	_render_view_is_a_pure_read()
 	# Story 14.5 (AC2, D6/F-2) — the honest run-summary render decisions (outcome off phase, earned count)
 	_completed_summary_renders_victory_outcome_and_earned_count()
-	_failed_summary_renders_death_outcome_and_zero_earned()
+	_failed_summary_renders_death_outcome_and_capped_earned()
 	_manual_seed_completed_summary_earns_zero()
 	_absent_summary_has_empty_outcome_and_zero_earned()
 	# Story 14.9 (AC1, F14) — the notable-loot honest tally read (real field, empty in v0, fail-closed)
 	_notable_loot_reads_the_real_summary_field()
+	# Story 15.5 (AC4) — the honest not-yet-recorded labelling for the empty loot/passive lists (deferred event store)
+	_empty_summary_lists_are_labelled_not_yet_recorded()
 	# Story 11.6 — the shallow meta menu spend render decisions (AC1/FR59)
 	_spend_options_are_affordable_when_shards_suffice()
 	_spend_options_are_insufficient_when_shards_short()
@@ -273,16 +275,19 @@ func _completed_summary_renders_victory_outcome_and_earned_count() -> void:
 	assert_equal(view.run_oath_shards_earned(), clampi(MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * 2, 0, MetaAwardRules.MAX_AWARD), "The earned count is clampi(BASE + PER_NODE * nodes_cleared, 0, MAX) == 3.")
 
 
-func _failed_summary_renders_death_outcome_and_zero_earned() -> void:
-	# AC2 (D6): a FAILED run reads the DEATH outcome label; a death honestly earns 0 oath shards this run (MetaAwardRules
-	# gates a death to 0 — the currency rewards reaching an ending, not dying).
-	var run: RunState = _terminal_run(RunState.PHASE_FAILED, 24680, false)
+func _failed_summary_renders_death_outcome_and_capped_earned() -> void:
+	# AC2 (D6) + Story 15.5 (D4/CRUX-3): a FAILED run reads the DEATH outcome label; a death now honestly earns the
+	# SAME capped nodes-cleared award as a completion (the ratified reversal of the death-awards-zero decision — the
+	# currency rewards the DEPTH reached, so unlocks are reachable even from a death). The completed-only gate is
+	# REMOVED; the render count is SINGLE-SOURCED from MetaAwardRules so it EQUALS oath_shard_award_for(run) (CRUX-3).
+	var run: RunState = _terminal_run(RunState.PHASE_FAILED, 24680, false)  # _terminal_run clears 2 nodes -> min(1 + 2, 5) = 3.
 	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_failed(1, {"cause": "hero_death"})])
 	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), summary))
 
 	assert_equal(view.summary_outcome_label(), OutpostRenderView.SUMMARY_OUTCOME_DEATH, "A FAILED run reads the death outcome label (off phase — D6).")
-	assert_equal(view.run_oath_shards_earned(), 0, "A death earns 0 oath shards this run (honest — a death rewards nothing).")
-	assert_equal(view.run_oath_shards_earned(), MetaAwardRules.oath_shard_award_for(run), "The 0 earned matches MetaAwardRules for the death run.")
+	assert_equal(view.run_oath_shards_earned(), 3, "D4: a death earns min(BASE + PER_NODE * 2, MAX) == 3 this run (the same basis as a completion).")
+	assert_equal(view.run_oath_shards_earned(), MetaAwardRules.oath_shard_award_for(run), "The earned count matches MetaAwardRules.oath_shard_award_for for the death run (CRUX-3 single authority).")
+	assert_equal(view.run_oath_shards_earned(), clampi(MetaAwardRules.BASE_AWARD + MetaAwardRules.PER_NODE_AWARD * 2, 0, MetaAwardRules.MAX_AWARD), "The earned count is clampi(BASE + PER_NODE * nodes_cleared, 0, MAX) for the death run.")
 
 
 func _manual_seed_completed_summary_earns_zero() -> void:
@@ -346,6 +351,46 @@ func _notable_loot_reads_the_real_summary_field() -> void:
 	# The read is a FRESH copy (the no-live-handle discipline): mutating the returned list never perturbs the seam.
 	loot.clear()
 	assert_equal(loot_view.summary_notable_loot().size(), 1, "summary_notable_loot() returns a fresh copy — a caller's mutation does not perturb the seam's projection.")
+
+
+# ---- Story 15.5 (AC4): the honest not-yet-recorded labelling ------------------------------------
+
+func _empty_summary_lists_are_labelled_not_yet_recorded() -> void:
+	# AC4 (the honesty requirement): a run summary's loot / passive lists come out EMPTY in the v0 live flow (the bridge
+	# builds RunSummary.build(run, []) with an empty events list — the still-deferred run-level event store). The render
+	# view must flag them "not yet recorded" (the seam the presenter maps to NOT_YET_RECORDED_LABEL) rather than a bare
+	# empty result that reads as "you looted nothing / lost nothing". An ABSENT summary is NOT flagged (the "no just-ended
+	# run" gate handles it upstream); a POPULATED list is NOT flagged (render the real entries). The label is a non-color
+	# TEXT channel (NFR9), centralized + testable without a SceneTree.
+	assert_false(OutpostRenderView.NOT_YET_RECORDED_LABEL.is_empty(), "The not-yet-recorded affordance label is a non-empty non-color text channel.")
+	assert_equal(OutpostRenderView.NOT_YET_RECORDED_LABEL, "Not yet recorded", "The not-yet-recorded affordance label reads 'Not yet recorded'.")
+
+	# A REAL run that ended with no loot/passive events (the v0 live-flow shape): the lists are empty AND flagged.
+	var run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 4242, false)
+	var summary: RunSummary = RunSummary.build(run, [DomainEvent.run_completed(1, {"outcome": "victory"})])
+	var view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), summary))
+	assert_true(view.shows_run_summary(), "Setup: the v0-shape summary is present.")
+	assert_true(view.summary_notable_loot().is_empty(), "The v0 live flow yields an empty notable-loot list.")
+	assert_true(view.summary_passives_consumed().is_empty(), "The v0 live flow yields an empty passives-consumed list.")
+	assert_true(view.summary_passives_destroyed().is_empty(), "The v0 live flow yields an empty passives-destroyed list.")
+	assert_true(view.summary_notable_loot_not_yet_recorded(), "An empty loot list on a real run is flagged not-yet-recorded (honest — NOT 'you looted nothing').")
+	assert_true(view.summary_passives_not_yet_recorded(), "Empty passive lists on a real run are flagged not-yet-recorded (honest — NOT 'you lost nothing').")
+
+	# An ABSENT summary (a fresh session) is NOT flagged — the "no just-ended run" gate owns that surface.
+	var absent_view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile()))
+	assert_false(absent_view.shows_run_summary(), "Setup: a fresh session has no just-ended run summary.")
+	assert_false(absent_view.summary_notable_loot_not_yet_recorded(), "An absent summary is NOT flagged not-yet-recorded (the no-just-ended-run gate handles it).")
+	assert_false(absent_view.summary_passives_not_yet_recorded(), "An absent summary is NOT flagged not-yet-recorded for passives either.")
+
+	# A POPULATED loot list is NOT flagged (render the real entries, not the placeholder label).
+	var loot_run: RunState = _terminal_run(RunState.PHASE_COMPLETED, 222, false)
+	var loot_summary: RunSummary = RunSummary.build(loot_run, [
+		DomainEvent.run_completed(1, {"outcome": "victory"}),
+		DomainEvent.item_gained(2, {"item_id": "minor_healing_draught", "category": "consumable", "backpack_size_after": 1, "slot_index": 0})
+	])
+	var loot_view: OutpostRenderView = OutpostRenderView.from_view_model(OutpostViewModel.new(_populated_profile(), loot_summary))
+	assert_false(loot_view.summary_notable_loot().is_empty(), "Setup: the populated summary carries a loot entry.")
+	assert_false(loot_view.summary_notable_loot_not_yet_recorded(), "A populated loot list is NOT flagged not-yet-recorded (render the real entries).")
 
 
 # ---- Story 11.6: the shallow meta menu spend render decisions (AC1/FR59) -------------------------
