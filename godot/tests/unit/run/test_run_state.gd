@@ -57,6 +57,9 @@ func run() -> Dictionary:
 	_run_with_current_hp_round_trips_through_dictionary_and_copy()
 	_pre_15_5_run_dict_without_current_hp_key_parses_to_unset()
 	_current_hp_nests_in_the_snapshot_bridge_and_round_trips()
+	# Story 15.5 (Review Low patch): the lenient decoder — null/wrong-type -> HP_UNSET; negatives pass through (the > 0
+	# fail-open gate lives downstream in RunFlowController.hero_hp()).
+	_current_hp_decoder_rejects_null_wrong_type_and_passes_negatives()
 	return result()
 
 
@@ -115,6 +118,31 @@ func _current_hp_nests_in_the_snapshot_bridge_and_round_trips() -> void:
 	var restore: ActionResult = RunState.try_from_run_snapshot_fields(json_fields)
 	assert_true(restore.succeeded, "The snapshot-fields round-trip must restore: %s" % restore.metadata)
 	assert_equal((restore.metadata.get("run_state") as RunState).current_hp, 9, "The nested current HP is the source of truth on resume (round-trips through the bridge).")
+
+
+func _current_hp_decoder_rejects_null_wrong_type_and_passes_negatives() -> void:
+	# Story 15.5 (Review Low patch): pin the lenient _current_hp_or_unset decoder's branches. null / wrong-type FAIL OPEN
+	# to HP_UNSET; an integral value coerces to int; NaN / inf fail open; a NEGATIVE int passes THROUGH verbatim. The
+	# real fail-open guard for a non-positive value lives DOWNSTREAM in RunFlowController.hero_hp() (its `> 0` gate,
+	# test_run_flow_controller), so a tampered save's negative is preserved on RunState here but never arms a fight.
+	assert_equal(RunState._current_hp_or_unset(null), RunState.HP_UNSET, "null decodes to HP_UNSET (fail-open).")
+	assert_equal(RunState._current_hp_or_unset("18"), RunState.HP_UNSET, "A STRING value decodes to HP_UNSET (wrong type, fail-open).")
+	assert_equal(RunState._current_hp_or_unset([]), RunState.HP_UNSET, "An ARRAY value decodes to HP_UNSET (wrong type).")
+	assert_equal(RunState._current_hp_or_unset({}), RunState.HP_UNSET, "A DICTIONARY value decodes to HP_UNSET (wrong type).")
+	assert_equal(RunState._current_hp_or_unset(true), RunState.HP_UNSET, "A BOOL value decodes to HP_UNSET (wrong type).")
+	assert_equal(RunState._current_hp_or_unset(12), 12, "A positive int decodes to itself.")
+	assert_equal(RunState._current_hp_or_unset(7.0), 7, "An integral FLOAT (JSON numbers round-trip as doubles) coerces to int.")
+	assert_equal(RunState._current_hp_or_unset(NAN), RunState.HP_UNSET, "NaN decodes to HP_UNSET (fail-open).")
+	assert_equal(RunState._current_hp_or_unset(INF), RunState.HP_UNSET, "inf decodes to HP_UNSET (fail-open).")
+	assert_equal(RunState._current_hp_or_unset(-5), -5, "A NEGATIVE int passes THROUGH the decoder verbatim (the > 0 fail-open gate lives in hero_hp(), not the decoder).")
+	# End-to-end: a tampered run dict whose current_hp is negative decodes to that negative on RunState (the tamper
+	# reaches the field) — hero_hp()'s `> 0` gate (tested separately) is what refuses to arm a fight with it.
+	var run: RunState = RunState.new_run(4242, false, _build_route())
+	var data: Dictionary = run.to_dictionary()
+	data["current_hp"] = -9
+	var restored: RunState = RunState.from_dictionary(data)
+	assert_true(restored != null, "A tampered (negative current_hp) run dict still parses.")
+	assert_equal(restored.current_hp, -9, "A tampered negative current_hp reaches RunState verbatim (caught downstream by hero_hp()'s > 0 gate, not here).")
 
 
 func _new_run_initializes_ac1_fields() -> void:

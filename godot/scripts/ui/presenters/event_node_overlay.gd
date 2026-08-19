@@ -18,7 +18,8 @@ extends Control
 #
 # ⭐ Verified BY CONSTRUCTION (the compile guardrail loads this alongside the presenters that preload it); on-screen
 # legibility at the 2.0x text scale + >=44px targets is OSG-1. The testable DECISIONS live in EventViewModel /
-# EventOutcomeViewModel (unit-tested) + RunOrchestrator.resolve_event_node_live (unit-tested); this overlay owns no truth.
+# EventOutcomeViewModel (unit-tested) + RunOrchestrator.resolve_event_node_live (integration-tested via
+# tests/integration/run/test_resolve_event_node_live.gd — Story 15.5 Review Round 2); this overlay owns no truth.
 
 const EventViewModel = preload("res://scripts/ui/view_models/event_view_model.gd")
 const EventOutcomeViewModel = preload("res://scripts/ui/view_models/event_outcome_view_model.gd")

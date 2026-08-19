@@ -48,6 +48,10 @@ func run() -> Dictionary:
 	_hero_loadout_accessors_derive_from_the_class_kit()
 	_hero_hp_falls_back_to_the_driver_default_on_a_kitless_run()
 	_hands_off_flow_stays_on_the_tuned_default_loadout()
+	# Story 15.5 (Review Low patch): hero_hp() gates on > 0 (a non-positive carried HP fails open to the kit baseline).
+	_hero_hp_falls_back_to_baseline_for_non_positive_carried_hp()
+	# Story 15.5 (Review D6 — human decision, Option B): the ON-SCREEN boss fight enters at the carried HP.
+	_on_screen_boss_fight_enters_at_the_carried_hp()
 	_cleanup()
 	return result()
 
@@ -232,6 +236,60 @@ func _hands_off_flow_stays_on_the_tuned_default_loadout() -> void:
 	var result_data: Dictionary = controller.play_hands_off_to_run_end()
 	assert_true(result_data.get("ok", false), "The hands-off flow (on the tuned DEFAULT loadout, NOT the 18-HP kit) reaches a terminal outcome: %s" % result_data)
 	assert_equal(String(result_data.get("phase")), String(RunState.PHASE_COMPLETED), "The hands-off flow completes the run (the tuned default loadout wins — it is NOT crippled by the 18-HP kit).")
+
+
+func _hero_hp_falls_back_to_baseline_for_non_positive_carried_hp() -> void:
+	# Story 15.5 (Review Low patch): hero_hp() prefers the carried run.current_hp ONLY when it is > 0. Any NON-POSITIVE
+	# value — 0, or a negative int a tampered/corrupted save could decode (`_current_hp_or_unset` passes negatives through
+	# verbatim) — FAILS OPEN to the kit baseline rather than arming a fight at non-positive HP. The warrior kit is 18.
+	var controller: RunFlowController = RunFlowController.new()
+	assert_true(controller.start(FINALE_SEED, false, &"warrior").get("started"), "Setup: seat a warrior run.")
+	assert_equal(controller.hero_hp(), 18, "Setup: an unset carried HP (HP_UNSET) uses the kit baseline (18).")
+	controller.run().current_hp = 7
+	assert_equal(controller.hero_hp(), 7, "A POSITIVE carried HP (7) is used (the pre-boss attrition carry).")
+	controller.run().current_hp = 0
+	assert_equal(controller.hero_hp(), 18, "A ZERO carried HP FAILS OPEN to the kit baseline (never a 0-HP fight).")
+	controller.run().current_hp = -5
+	assert_equal(controller.hero_hp(), 18, "A NEGATIVE carried HP (a tampered save) FAILS OPEN to the kit baseline, not a non-positive fight.")
+	controller.run().current_hp = RunState.HP_UNSET
+	assert_equal(controller.hero_hp(), 18, "The HP_UNSET sentinel (-1) still falls back to the kit baseline.")
+
+
+func _on_screen_boss_fight_enters_at_the_carried_hp() -> void:
+	# Story 15.5 (Review D6 — human decision 2026-08-18, Option B): the ON-SCREEN boss fight enters at the CARRIED HP
+	# (flow.hero_hp() -> run.current_hp), NOT a hardcoded DEFAULT_HERO_HP 60. Mirrors gameplay_shell_presenter:
+	# run_to_completion parks the run at the boss terminus, then auto_play_boss_fight(flow.hero_hp()). Proven by a
+	# DIFFERENTIAL outcome on the verified finale seed 4242 (the auto-played focus-fire hero wins at 40+ HP, dies <=30):
+	# a HEALTHY carried HP WINS, a WOUNDED carried HP DIES — a hardcoded-60 fight would win at BOTH, so the differential
+	# is the proof the carried HP reaches the boss.
+	#
+	# ⭐ BALANCE NOTE (measured, reported to the human): all three MVP class kits cap at 18 HP, and 18 HP DIES on seed
+	# 4242, so a real class run's on-screen boss is now an auto-LOSS at depth — a LEGITIMATE terminal outcome (D4 awards
+	# Oath Shards on the death), NOT a soft-lock. This is the accepted Option-B consequence, test-locked here.
+
+	# -- a HEALTHY carried HP (40, above the seed-4242 boss threshold) WINS --
+	var healthy: RunFlowController = RunFlowController.new()
+	assert_true(healthy.start(FINALE_SEED, false).get("started"), "Setup: seat a run (default loadout).")
+	assert_true(healthy.orchestrator().run_to_completion().succeeded, "Setup: park at the boss terminus (default auto-resolve driver).")
+	assert_true(healthy.orchestrator().boss_encounter_pending(), "Setup: the run is parked at the boss terminus.")
+	healthy.run().current_hp = 40
+	assert_equal(healthy.hero_hp(), 40, "The carried HP (40) is the value the presenter threads into auto_play_boss_fight.")
+	var healthy_boss = healthy.orchestrator().auto_play_boss_fight(healthy.hero_hp())
+	assert_true(healthy_boss.succeeded, "The boss fight resolves: %s" % healthy_boss.metadata)
+	assert_equal(String(healthy_boss.metadata.get("resolution")), "boss_victory", "A 40-HP carried hero WINS the auto-played boss (it entered at 40; the wounded case below is the discriminator vs a hardcoded 60).")
+	assert_equal(healthy.run().phase, RunState.PHASE_COMPLETED, "The winning boss fight completes the run.")
+
+	# -- a WOUNDED carried HP (18, the class-kit cap, below the threshold) DIES, terminating the run properly --
+	var wounded: RunFlowController = RunFlowController.new()
+	assert_true(wounded.start(FINALE_SEED, false).get("started"), "Setup: seat a second run.")
+	assert_true(wounded.orchestrator().run_to_completion().succeeded, "Setup: park at the boss terminus.")
+	wounded.run().current_hp = 18
+	assert_equal(wounded.hero_hp(), 18, "The wounded carried HP (18 — the class-kit cap) is threaded into the boss.")
+	var wounded_boss = wounded.orchestrator().auto_play_boss_fight(wounded.hero_hp())
+	assert_true(wounded_boss.succeeded, "The wounded boss fight RESOLVES (a hero death is a SUCCESS result routed to run-end, NOT an is_error() strand): %s" % wounded_boss.metadata)
+	assert_equal(String(wounded_boss.metadata.get("resolution")), "boss_fight_hero_death", "A wounded 18-HP carried hero enters the boss at 18 and DIES — attrition reaches the finale (the differential vs the 40-HP win proves the carried HP reached the boss).")
+	assert_equal(wounded.run().phase, RunState.PHASE_FAILED, "The wounded boss death terminates the run properly (PHASE_FAILED, not a non-terminal strand/soft-lock).")
+	assert_equal(String(wounded.orchestrator().run_failed_cause()), "boss_defeat", "The wounded boss death uses the boss_defeat cause (a legitimate terminal failure that D4 now awards).")
 
 
 func _cleanup() -> void:

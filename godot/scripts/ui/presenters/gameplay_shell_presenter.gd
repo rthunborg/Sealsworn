@@ -130,11 +130,19 @@ func _drive_current_stage() -> void:
 
 	# The boss terminus -> drive the live boss fight to a run-END (the composed seam).
 	if orchestrator.boss_encounter_pending():
-		# Story 12.2 (scope): the boss AUTO-PLAY stays on the TUNED DEFAULT loadout (DEFAULT_HERO_HP 60), NOT the class kit
-		# — the class-kit -> combat-loadout wiring targets the PRE-BOSS combat/elite nodes (this story's core); the boss
-		# arena is the finale seam (a boss-arena class re-tune is an explicit non-goal). Threading the class 18 HP into the
-		# focus-fire boss auto-play would reproduce a mid-fight death; the on-screen boss loadout is unchanged.
-		var boss = orchestrator.auto_play_boss_fight(LiveCombatResolver.DEFAULT_HERO_HP)
+		# ⭐ Story 15.5 (Review D6 — human decision 2026-08-18, Option B): the ON-SCREEN boss fight now ENTERS at the
+		# CARRIED HP (flow.hero_hp() -> run.current_hp, the SAME accessor the pre-boss interactive branch uses at :172),
+		# NOT the tuned DEFAULT_HERO_HP 60. This REVERSES the Story-12.2 boss-decoupling FOR THE ON-SCREEN PATH: attrition
+		# (AC1 "no implicit full heal between nodes") now reaches the finale, so a hero who limped out of the last pre-boss
+		# fight fights the boss at that wounded HP — the run economy means something at the single most important fight.
+		# The auto-played boss hero is the deterministic focus-fire scripted driver, so a LOW carried HP can AUTO-LOSE the
+		# finale; that is a LEGITIMATE terminal outcome, NOT a soft-lock: auto_play_boss_fight floors HP at 1 and routes a
+		# boss-fight death through resolve_run_end(&"boss_defeat") -> PHASE_FAILED (which, per this story's D4, now AWARDS
+		# Oath Shards). NO compensating heal/floor is added (AC1 forbids inventing a heal source). The is_error() branch
+		# below is a MALFORMED-arena guard only — a wounded-hero death is a SUCCESS result routed to run-end. Only THIS
+		# on-screen call site carries HP; the hands-off smoke driver (play_hands_off_to_run_end / run_orchestrator's
+		# run-to-completion boss path) stays on DEFAULT_HERO_HP so its pinned finale seed-regression fingerprints hold.
+		var boss = orchestrator.auto_play_boss_fight(flow.hero_hp())
 		# M1 fix: a boss-fight ERROR (the bounded round loop failed to progress — a real possibility the story
 		# flags: "the scripted hero is deterministic but NOT universally-winning") leaves the run NON-terminal, so
 		# run_end_outcome() yields has_ended == false / next_destination == "" and route_after_run_end("") no-ops

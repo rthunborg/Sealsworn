@@ -90,6 +90,15 @@ const LOAD_FAILURE_CODES: Array[StringName] = [
 	&"profile_parse_failed"
 ]
 
+# Story 15.5 (Review Med patch): the AwardMetaProgressCommand reject codes that are EXPECTED + benign at the live run-end
+# — a manual-seed run (run_not_meta_eligible) and an idempotent re-drive / re-loaded already-awarded profile
+# (run_already_awarded). Both leave the profile byte-identical by design, so they are NOT diagnostics-worthy. ANY OTHER
+# reject (invalid_context — a terminal run failing its own validate()) is UNEXPECTED and IS surfaced as a warning below.
+const EXPECTED_AWARD_REJECTS: Array[StringName] = [
+	&"run_not_meta_eligible",
+	&"run_already_awarded"
+]
+
 # The ProfileRepository the bridge drives (injectable for tests — the same repository injection posture as the
 # orchestrator's; the outpost/run-end bridge is the FIRST live profile caller). A custom save_path lets a test drive a
 # throwaway profile file. There is NO SaveManager profile delegator (project-context: Epics 8-9 added none; the caller
@@ -167,7 +176,22 @@ func build_outpost(run: RunState, orchestrator: RunOrchestrator = null) -> Outpo
 	# an id). The award mutates ONLY profile.oath_shards + last_awarded_run_seed on success; a denied/idempotent reject
 	# leaves the profile byte-identical (EXPECTED — ignored, like an idempotent latch reject). ZERO RNG. Persisted below
 	# in step (3), so the accrued total survives the app restart.
-	AwardMetaProgressCommand.new(profile, _summary_for(run), sequence_id + 1).execute(run)
+	var award_result: ActionResult = AwardMetaProgressCommand.new(profile, _summary_for(run), sequence_id + 1).execute(run)
+	if award_result.is_error() and not EXPECTED_AWARD_REJECTS.has(award_result.error_code):
+		# ⭐ Story 15.5 (Review Med patch): the driven award result was previously DISCARDED, silently swallowing a genuine
+		# (non-eligibility, non-idempotency) failure. A manual-seed / already-awarded reject is expected (no-op, ignored);
+		# ANY OTHER reject means the profile is about to be persisted UN-awarded at step (3) while the summary's earned-count
+		# (run_oath_shards_earned — an independent MetaAwardRules read) still shows a non-zero "earned this run", i.e. the
+		# player is told they earned shards the profile never received. Emit a WARNING diagnostic — NOT surfaced to the
+		# player, NO control-flow change (the write + recovery ordering is unchanged) — mirroring the story 15-4 precedent
+		# for the unchecked delete_saved_run() result. RefCounted resolves Diagnostics off the main-loop tree (the
+		# settings_apply_service._resolve_audio_manager precedent); null in a bare test context (the award still ran).
+		var diagnostics: Object = _resolve_diagnostics()
+		if diagnostics != null:
+			diagnostics.warning(&"run", &"meta_award_unexpectedly_rejected", {
+				"error_code": String(award_result.error_code),
+				"run_seed": str(run.root_seed)
+			})
 
 	# (3) PERSIST the (possibly mutated) profile.
 	var write_result: ActionResult = _repository.write_profile(profile, _save_path)
@@ -199,3 +223,15 @@ func build_outpost(run: RunState, orchestrator: RunOrchestrator = null) -> Outpo
 # an honest v0 limitation). A null/non-terminal run yields the fail-closed empty summary (has_summary == false).
 func _summary_for(run: RunState) -> RunSummary:
 	return RunSummary.build(run, [])
+
+
+# Story 15.5 (Review Med patch): resolve the Diagnostics autoload from the main loop when running inside a full tree.
+# Returns null in a bare RefCounted test context (no scene tree / autoload registered), in which case the diagnostic is
+# simply skipped (the award drive + persistence contracts still hold). Mirrors settings_apply_service._resolve_audio_manager.
+func _resolve_diagnostics() -> Object:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		var root: Window = (loop as SceneTree).root
+		if root != null and root.has_node("Diagnostics"):
+			return root.get_node("Diagnostics")
+	return null

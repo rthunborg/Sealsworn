@@ -59,6 +59,9 @@ func run() -> Dictionary:
 	_death_run_accrues_the_d4_award()
 	_manual_seed_run_accrues_nothing()
 	_re_driven_run_end_does_not_double_award()
+	# Story 15.5 (Review Med patch): the drive-award result is now CHECKED; expected outcomes stay SILENT (no false-alarm
+	# warning on a manual-seed denial / idempotent re-drive / a success).
+	_expected_award_outcomes_do_not_warn()
 	_cleanup()
 	return result()
 
@@ -368,6 +371,59 @@ func _re_driven_run_end_does_not_double_award() -> void:
 	_bridge().build_outpost(orchestrator.run, orchestrator)
 	var after_second: int = (ProfileRepository.new().read_profile(TEST_PROFILE_PATH).metadata.get("snapshot") as ProfileSnapshot).oath_shards
 	assert_equal(after_second, after_first, "D5: a re-driven run-end does NOT double-award (the idempotency guard holds).")
+
+
+func _expected_award_outcomes_do_not_warn() -> void:
+	# Story 15.5 (Review Med patch): the drive-award result is now CHECKED — but ONLY an UNEXPECTED reject warns. Verify
+	# the EXPECTED outcomes are SILENT (no meta_award_unexpectedly_rejected diagnostic): a successful eligible completion,
+	# a manual-seed denial (run_not_meta_eligible), and an idempotent re-drive (run_already_awarded). This pins the
+	# "distinguish the two — do NOT log an expected no-op as a failure" half of the fix (a warning on every manual-seed /
+	# re-drive would be pure noise). The UNEXPECTED-reject warning path (invalid_context — a terminal run failing its own
+	# validate()) is structurally near-unreachable here (sequence_id+1 >= 2, the run is terminal-gated), so it is not
+	# driven; that branch is inline + precedented (the 15-4 delete_saved_run diagnostic posture).
+	var diagnostics: Object = _diagnostics_node()
+	if diagnostics == null:
+		return  # A bare context (no autoload registered) skips the diagnostic by design — nothing to assert.
+
+	# (1) a successful eligible completion does NOT warn.
+	_cleanup()
+	diagnostics.clear()
+	var victory: RunOrchestrator = _orchestrator_at_live_victory()
+	_bridge().build_outpost(victory.run, victory)
+	assert_equal(_meta_award_warning_count(diagnostics), 0, "A successful eligible award emits NO meta_award_unexpectedly_rejected warning.")
+
+	# (2) a manual-seed denial (run_not_meta_eligible) is EXPECTED -> NO warning (not logged as a failure).
+	_cleanup()
+	diagnostics.clear()
+	var manual: RunOrchestrator = _orchestrator_at_live_death(true)
+	_bridge().build_outpost(manual.run, manual)
+	assert_equal(_meta_award_warning_count(diagnostics), 0, "A manual-seed award denial (run_not_meta_eligible) is EXPECTED — NO warning.")
+
+	# (3) an idempotent re-drive (run_already_awarded) is EXPECTED -> NO warning on the second finalize.
+	_cleanup()
+	var victory2: RunOrchestrator = _orchestrator_at_live_victory()
+	_bridge().build_outpost(victory2.run, victory2)  # first award (may itself warn only if unexpected — it does not)
+	diagnostics.clear()
+	_bridge().build_outpost(victory2.run, victory2)  # re-drive -> run_already_awarded (expected)
+	assert_equal(_meta_award_warning_count(diagnostics), 0, "An idempotent re-drive (run_already_awarded) is EXPECTED — NO warning on the second finalize.")
+
+
+# Resolve the Diagnostics autoload off the main-loop tree (the same seam the bridge uses). Null in a bare context.
+func _diagnostics_node() -> Object:
+	var loop: MainLoop = Engine.get_main_loop()
+	if loop is SceneTree:
+		var root: Window = (loop as SceneTree).root
+		if root != null and root.has_node("Diagnostics"):
+			return root.get_node("Diagnostics")
+	return null
+
+
+func _meta_award_warning_count(diagnostics: Object) -> int:
+	var count: int = 0
+	for record: Variant in diagnostics.recent_records():
+		if String((record as Dictionary).get("code")) == "meta_award_unexpectedly_rejected":
+			count += 1
+	return count
 
 
 func _cleanup() -> void:

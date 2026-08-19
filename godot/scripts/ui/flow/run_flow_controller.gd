@@ -139,7 +139,12 @@ func start(root_seed: int, is_manual_seed: bool = false, class_id: StringName = 
 # reward/route/finale/combat fingerprint reads run.current_hp.
 func hero_hp() -> int:
 	var current: RunState = _orchestrator.run
-	if current != null and current.current_hp != RunState.HP_UNSET:
+	# Story 15.5 (Review Low patch): gate on `> 0`, NOT merely `!= HP_UNSET`. A live carried HP is ALWAYS positive (the
+	# victory board-read capture only writes hero.current_hp > 0), so any NON-POSITIVE value — 0, or a tampered/corrupted
+	# save whose current_hp decoded to a negative int (`_current_hp_or_unset` passes negatives through verbatim) — FAILS
+	# OPEN to the kit baseline rather than arming a fight at non-positive HP. This matters more now that hero_hp() also
+	# feeds the live boss (Review D6): a non-positive value would floor to 1 HP at the boss, an unintended fail-closed.
+	if current != null and current.current_hp > 0:
 		return current.current_hp
 	return _combat_loadout().hp
 
